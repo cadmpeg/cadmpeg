@@ -1247,6 +1247,13 @@ pub enum SketchConstraintDefinition {
         /// Source-evaluated non-negative angle difference in radians.
         value: Angle,
     },
+    /// Equality between two type-6 solver scalars.
+    ScalarEquality {
+        /// First scalar in the equality.
+        first: SketchSolverScalar,
+        /// Second scalar in the equality.
+        second: SketchSolverScalar,
+    },
     /// Two explicit Euclidean locus pairs have equal separation.
     EqualDistance {
         /// First measured locus pair.

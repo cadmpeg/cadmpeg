@@ -786,6 +786,37 @@ pub(crate) fn section_equation_scalar_values_from_coordinates(
         .collect()
 }
 
+fn direct_function_five_scalar_rows<'a>(
+    function_id: u32,
+    arguments: &[Option<u32>],
+    variables: &'a [crate::feature::FeatureVariableRow],
+) -> Option<(
+    &'a crate::feature::FeatureVariableRow,
+    &'a crate::feature::FeatureVariableRow,
+    &'a crate::feature::FeatureVariableRow,
+)> {
+    if function_id != 5 || arguments.len() != 3 {
+        return None;
+    }
+    let [Some(first), Some(second), Some(selector)] = arguments else {
+        return None;
+    };
+    let row = |ordinal: u32| {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| variables.get(ordinal))
+    };
+    let (Some(first), Some(second), Some(selector)) = (row(*first), row(*second), row(*selector))
+    else {
+        return None;
+    };
+    (first.variable_type == 6
+        && second.variable_type == 6
+        && selector.variable_type == 5
+        && first.key != second.key)
+        .then_some((first, second, selector))
+}
+
 pub(crate) fn section_equation_scalar_equality_components(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<BTreeSet<SectionScalarVariable>> {
@@ -820,38 +851,11 @@ pub(crate) fn section_equation_scalar_equality_components(
         .iter()
         .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
     {
-        let (first, second, selector) = match (equation.function_id, equation.arguments.as_slice())
-        {
-            (2, [Some(first), Some(second)]) => (*first, *second, None),
-            (5, [Some(first), Some(second), Some(selector)]) => (*first, *second, Some(*selector)),
-            _ => continue,
-        };
-        let Some(first) = usize::try_from(first)
-            .ok()
-            .and_then(|ordinal| variables.rows.get(ordinal))
-        else {
-            continue;
-        };
-        let Some(second) = usize::try_from(second)
-            .ok()
-            .and_then(|ordinal| variables.rows.get(ordinal))
-        else {
-            continue;
-        };
-        if let Some(selector) = selector {
-            let Some(selector) = usize::try_from(selector)
-                .ok()
-                .and_then(|ordinal| variables.rows.get(ordinal))
-            else {
-                continue;
-            };
-            if first.variable_type != 6
-                || second.variable_type != 6
-                || selector.variable_type != 5
-                || first.key == second.key
-            {
-                continue;
-            }
+        if let Some((first, second, selector)) = direct_function_five_scalar_rows(
+            equation.function_id,
+            &equation.arguments,
+            &variables.rows,
+        ) {
             deferred_function_five.push((
                 (first.variable_type, first.key),
                 (second.variable_type, second.key),
@@ -860,6 +864,23 @@ pub(crate) fn section_equation_scalar_equality_components(
             ));
             continue;
         }
+        let (2, [Some(first), Some(second)]) =
+            (equation.function_id, equation.arguments.as_slice())
+        else {
+            continue;
+        };
+        let Some(first) = usize::try_from(*first)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+        else {
+            continue;
+        };
+        let Some(second) = usize::try_from(*second)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+        else {
+            continue;
+        };
         if first.variable_type != second.variable_type
             || matches!(first.variable_type, 1 | 2)
             || first.key == second.key
@@ -1261,6 +1282,83 @@ pub(crate) fn resolved_section_scalar_values(
     values
         .into_iter()
         .filter_map(|(variable, value)| Some((variable, value?)))
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionFiveScalarEquality {
+    pub(crate) first: SectionScalarVariable,
+    pub(crate) second: SectionScalarVariable,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+}
+
+pub(crate) fn section_equation_function_five_scalar_equality_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<SectionFunctionFiveScalarEquality> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    equations
+        .rows
+        .iter()
+        .filter(|equation| {
+            equation.function_id == 5
+                && equation.arguments.len() == 3
+                && !section_solver_equation_is_disabled(definition, equation.equation_id)
+        })
+        .filter_map(|equation| {
+            let (first, second, selector) = direct_function_five_scalar_rows(
+                equation.function_id,
+                &equation.arguments,
+                &variables.rows,
+            )?;
+            let selector_value = reconcile_equation_value(
+                selector.value,
+                scalar_equality_values
+                    .get(&(selector.variable_type, selector.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?,
+            )
+            .ok()?;
+            if selector_value != Some(0.0) {
+                return None;
+            }
+            for scalar in [first, second] {
+                reconcile_equation_value(
+                    scalar.value,
+                    scalar_equality_values
+                        .get(&(scalar.variable_type, scalar.key))
+                        .copied()
+                        .unwrap_or(Ok(None))
+                        .ok()?,
+                )
+                .ok()?;
+            }
+            Some(SectionFunctionFiveScalarEquality {
+                first: (first.variable_type, first.key),
+                second: (second.variable_type, second.key),
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+            })
+        })
         .collect()
 }
 

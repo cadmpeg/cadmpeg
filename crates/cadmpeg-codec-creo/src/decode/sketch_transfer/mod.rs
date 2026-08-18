@@ -30,6 +30,7 @@ pub(super) use constraints::{
     reconcile_section_dimension_constraint, relation_incidence, relation_incidence_entities,
     relation_incidence_loci, section_angular_entities, section_dimension_constraints,
     section_equation_axis_distance_constraints, section_equation_equal_distance_constraints,
+    section_equation_function_five_scalar_equality_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,
     section_equation_function_sixteen_angle_difference_constraints,

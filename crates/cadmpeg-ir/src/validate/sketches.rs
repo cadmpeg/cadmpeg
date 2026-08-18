@@ -1585,6 +1585,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && value.0.is_finite()
                     && (0.0..=std::f64::consts::PI).contains(&value.0)
             }
+            Constraint::ScalarEquality { first, second } => {
+                first.variable_type == 6 && second.variable_type == 6 && first.key != second.key
+            }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()

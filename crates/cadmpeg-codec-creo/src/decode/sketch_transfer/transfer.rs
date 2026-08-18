@@ -28,6 +28,7 @@ use super::{
     reconcile_section_dimension_constraint, resolved_profile_chains, section_degenerate_axis_line,
     section_dimension_constraints, section_equation_axis_distance_constraints,
     section_equation_equal_distance_constraints,
+    section_equation_function_five_scalar_equality_constraints,
     section_equation_function_forty_two_midpoint_coordinate_constraints,
     section_equation_function_six_distance_constraints,
     section_equation_function_sixteen_angle_difference_constraints,
@@ -678,6 +679,9 @@ pub(in super::super) fn transfer_sketches(
                         definition, &sketch_id,
                     ),
                 )
+                .chain(section_equation_function_five_scalar_equality_constraints(
+                    definition, &sketch_id,
+                ))
                 .chain(
                     section_equation_function_sixteen_angle_difference_constraints(
                         definition, &sketch_id,

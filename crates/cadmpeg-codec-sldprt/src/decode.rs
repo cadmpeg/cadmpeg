@@ -270,6 +270,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::DistanceLociValue { .. }
         | Constraint::PolarDistance { .. }
         | Constraint::AngleDifference { .. }
+        | Constraint::ScalarEquality { .. }
         | Constraint::HorizontalDistance { .. }
         | Constraint::VerticalDistance { .. }
         | Constraint::RepeatedDistance { .. }

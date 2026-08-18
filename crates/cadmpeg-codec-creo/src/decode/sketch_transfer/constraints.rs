@@ -7,6 +7,7 @@ use super::super::feature_history::{
 };
 use super::super::sketch::{
     approximately_equal, resolved_section_coordinates, saved_section_coordinate_witnesses,
+    section_equation_function_five_scalar_equality_rows,
     section_equation_function_forty_three_axis_distance_rows,
     section_equation_function_forty_two_midpoint_coordinate_rows,
     section_equation_function_six_distance_rows,
@@ -1075,6 +1076,42 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
         .collect()
 }
 
+pub(in super::super) fn section_equation_function_five_scalar_equality_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    section_equation_function_five_scalar_equality_rows(definition)
+        .into_iter()
+        .map(|equation| {
+            let scalar = |(variable_type, key)| SketchSolverScalar { variable_type, key };
+            (
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("equation:{}", equation.equation_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::ScalarEquality {
+                        first: scalar(equation.first),
+                        second: scalar(equation.second),
+                    },
+                    name: None,
+                    driving: None,
+                    active: Some(true),
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                equation.offset,
+            )
+        })
+        .collect()
+}
+
 pub(in super::super) fn section_equation_polar_distance_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -1971,6 +2008,7 @@ pub(in super::super) fn section_linear_distance_vectors(vectors: [[Option<u32>; 
 mod tests {
     use super::{
         reconcile_section_dimension_constraint,
+        section_equation_function_five_scalar_equality_constraints,
         section_equation_function_sixteen_angle_difference_constraints,
     };
     use cadmpeg_ir::features::ParameterId;
@@ -2049,6 +2087,79 @@ mod tests {
                 },
                 value: cadmpeg_ir::features::Angle(1.5),
             }
+        );
+    }
+
+    #[test]
+    fn direct_scalar_equality_transfers_solver_scalar_operands() {
+        let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: value.is_none(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: value.is_none(),
+            offset: 0,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 40,
+            owner_feature_id: None,
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                    \xe0\x01id\0\0\xf1\xf7\x80\x9f\xe2\
+                    \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::FeatureVariableTable {
+                declared_count: 3,
+                entity_ref: None,
+                rows: vec![
+                    row(6, 10, Some(2.5)),
+                    row(6, 11, Some(2.5)),
+                    row(5, 20, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId("synthetic:test:scalar-equality".into());
+        let constraints =
+            section_equation_function_five_scalar_equality_constraints(&definition, &sketch);
+        assert_eq!(constraints.len(), 1);
+        assert_eq!(constraints[0].0.active, Some(true));
+        assert_eq!(
+            constraints[0].0.definition,
+            SketchConstraintDefinition::ScalarEquality {
+                first: SketchSolverScalar {
+                    variable_type: 6,
+                    key: 10,
+                },
+                second: SketchSolverScalar {
+                    variable_type: 6,
+                    key: 11,
+                },
+            }
+        );
+
+        let mut conflicting = definition.clone();
+        conflicting.variables.as_mut().expect("variables").rows[1].value = Some(3.5);
+        assert!(
+            section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch,)
+                .is_empty()
         );
     }
 
