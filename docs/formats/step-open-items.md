@@ -146,4 +146,63 @@ dropped measure needs no record.
 
 ## 7. Annotation, presentation, and tessellation
 
+### AP-14. Override precedence for a complex styled item
+
+**Question.** How must the reader find the attributes of an
+`OVER_RIDING_STYLED_ITEM` that is a complex instance?
+
+**Known.** `step.md` §8 "`OVER_RIDING_STYLED_ITEM` is the explicit precedence
+relation: its style takes" gives the override precedence. In a complex instance,
+each simple record holds the attributes of its own entity type only.
+`OVER_RIDING_STYLED_ITEM` gives one attribute of its own, so its partial holds
+one parameter. `crates/cadmpeg-codec-step/src/reader/presentation.rs:916-931`
+reads the target from position `len - 2` and the style set from position
+`len - 3` of that partial. Both positions are absent when the partial holds one
+parameter, and the `?` operator then gives `None` for the full function, so the
+`STYLED_ITEM` branch at
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:932-943` does not run.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:237-254` collects only the
+records that give parts, and then makes the set of overridden records from that
+collection. A complex `OVER_RIDING_STYLED_ITEM` is therefore absent from both
+sets: its style does not apply, its `over_ridden_style` is not marked, and the
+overridden style applies. No loss records this. The test
+`complex_styled_item_decodes_color_and_owns_its_curve` in
+`crates/cadmpeg-codec-step/src/reader/presentation/tests.rs` writes the
+`OVER_RIDING_STYLED_ITEM` partial with three parameters, so it holds the
+inherited attributes and does not exercise the one-parameter form.
+
+**Conflict.** The specification gives precedence to the overriding style. For a
+complex instance in the form that Part 21 gives, the decoder applies the
+overridden style instead, and reports nothing.
+
+**Need.** A color that a file overrides is a visible result. The answer reads
+the `STYLED_ITEM` partial for the inherited style set and target, and reads the
+`OVER_RIDING_STYLED_ITEM` partial for `over_ridden_style`. Add a witness that
+writes each partial with its own attributes only, and that shows the overriding
+color in the output.
+
+### AP-15. Transparency value outside its permitted range
+
+**Question.** What must the reader do with a `SURFACE_STYLE_TRANSPARENT` value
+that is finite and outside `0..=1`?
+
+**Known.** `step.md` §8 "CADIR decision: if a malformed rendering record contains
+multiple finite" makes more than one finite value a conflict that omits
+transparency and records `presentation.surface-transparency-conflict`.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1278-1283` keeps a finite
+value, and then removes each value outside `0..=1` before the count.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1284-1298` counts what
+remains. A record with two finite values, of which one is outside the range,
+therefore keeps one candidate and applies it, and no conflict loss is reported. A
+record with one finite value outside the range keeps no candidate, so the
+rendering becomes opaque, and no loss is reported. The specification gives no
+range rule for this value.
+
+**Need.** A dropped transparency gives an appearance that a consumer cannot
+separate from a file that declares no transparency. The two rules also disagree:
+the specification counts finite values, and the decoder counts values inside the
+range. Give the range rule and its loss, or count each finite value as the
+specification gives. Add a witness with one out-of-range value, and a witness
+with one value inside the range and one value outside it.
+
 ## 8. Product structure and placement
