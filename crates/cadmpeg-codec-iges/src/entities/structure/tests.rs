@@ -710,6 +710,27 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
 }
 
 #[test]
+fn decode_accepts_same_sheet_number_with_distinct_revision_ids() {
+    let mut bytes = duplicate_drawing_sheet_ids_file();
+    let revision = bytes
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == b"1HC;").then_some(offset))
+        .nth(1)
+        .expect("second sheet revision");
+    bytes[revision + 2] = b'D';
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

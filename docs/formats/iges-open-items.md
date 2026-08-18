@@ -347,16 +347,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `d11d59213` reconciled local behavior but did not establish the format rule.
 
-### PS-07. Type 406 Form 33 requires a file-global unique identity
-
-**Question.** Must a Type 406 Form 33 sheet identifier be unique across the file?
-
-**Known.** `structure.rs:1033-1045` rejects duplicate `(number, name)` pairs across the file. A separate path enforces at most one identifier per drawing owner. The current documentation states both policies.
-
-**Need.** We need the identity scope and duplicate behavior from the IGES specification or exporter-authored witness files.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `9d0164b00` added a file-global uniqueness rule and self-authored duplicates, but did not establish that scope.
-
 ## 7. Write path
 
 ### WR-01. An unclassified loop is written as an inner loop
