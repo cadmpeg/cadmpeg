@@ -62,6 +62,16 @@ fn type230_sectioned_area_entity(label: &str, parameters: &str) -> OwnedTestEnti
     }
 }
 
+fn type132_connect_point_entity(label: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 132,
+        form: 0,
+        label: label.into(),
+        status: "00000400",
+        parameters: "132,0,0,0,0,101,1,2HP1,0,3HPIN,0,1,1,0,0;".into(),
+    }
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -1255,6 +1265,250 @@ fn type230_truncated_island_suppresses_generic_suffix_candidate() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type320_count_driven_boundary_follows_member_and_connect_lists() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("CHILD1"),
+                type212_note_entity("CHILD2"),
+                type132_connect_point_entity("CONNECT"),
+                type212_note_entity("TARGET"),
+                OwnedTestEntity {
+                    entity_type: 320,
+                    form: 0,
+                    label: "NETWORK".into(),
+                    status: "00000200",
+                    parameters: "320,0,3HNET,2,1,3,1,2HPR,0,1,5,1,7,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#9")
+        .unwrap();
+    assert_eq!(
+        network.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#7"])
+    );
+    let fields = network.fields();
+    let references = fields["references"].as_array().unwrap();
+    for (parameter_index, raw_pointer) in [(4, 1), (5, 3), (10, 5), (12, 7)] {
+        let reference = references
+            .iter()
+            .find(|reference| reference["parameter_index"] == parameter_index)
+            .unwrap();
+        assert_eq!(reference["raw_pointer"], raw_pointer);
+    }
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type320_zero_counts_keep_the_count_defined_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                OwnedTestEntity {
+                    entity_type: 320,
+                    form: 0,
+                    label: "EMPTY".into(),
+                    status: "00000200",
+                    parameters: "320,0,5HEMPTY,0,1,2HPR,0,0,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(
+        network.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let fields = network.fields();
+    let association = fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["parameter_index"] == 9)
+        .unwrap();
+    assert_eq!(association["raw_pointer"], 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn type320_wrong_connect_point_keeps_count_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                type100_boundary_entity("CHILD"),
+                OwnedTestEntity {
+                    entity_type: 320,
+                    form: 0,
+                    label: "WRONG".into(),
+                    status: "00000200",
+                    parameters: "320,0,5HWRONG,1,3,1,2HPR,0,1,1,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#5")
+        .unwrap();
+    assert_eq!(
+        network.fields()["association_links"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let fields = network.fields();
+    let references = fields["references"].as_array().unwrap();
+    assert_eq!(
+        references
+            .iter()
+            .find(|reference| reference["parameter_index"] == 9)
+            .unwrap()["resolution"],
+        "wrong_type"
+    );
+    assert_eq!(
+        references
+            .iter()
+            .find(|reference| reference["parameter_index"] == 11)
+            .unwrap()["raw_pointer"],
+        1
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type320_negative_member_count_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                type212_note_entity("TARGET"),
+                OwnedTestEntity {
+                    entity_type: 320,
+                    form: 0,
+                    label: "BADCOUNT".into(),
+                    status: "00000200",
+                    parameters: "320,0,8HBADCOUNT,-1,1,2HPR,0,0,1,1,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert!(network.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!network.fields()["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reference| reference["parameter_index"] == 10));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type320_truncated_member_list_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 320,
+                form: 0,
+                label: "TRUNCMEM".into(),
+                status: "00000200",
+                parameters: "320,0,8HTRUNCMEM,2,1,1,2HPR,0,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#1")
+        .unwrap();
+    assert!(network.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::AmbiguousTrailingPointerGroups.kind()));
+}
+
+#[test]
+fn type320_truncated_connect_point_list_suppresses_generic_suffix_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 320,
+                form: 0,
+                label: "TRUNCCP".into(),
+                status: "00000200",
+                parameters: "320,0,7HTRUNCCP,0,1,2HPR,0,2,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let network = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#1")
+        .unwrap();
+    assert!(network.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(!result
         .report()
         .losses

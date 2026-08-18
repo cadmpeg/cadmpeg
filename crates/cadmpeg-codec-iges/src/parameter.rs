@@ -388,6 +388,28 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (320, 0) => {
+            let Some(member_count) = record.count(3) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(connect_count_index) = member_count.checked_add(7) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(connect_count) = record.count(connect_count_index) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = connect_count_index
+                .checked_add(1)
+                .and_then(|index| index.checked_add(connect_count))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (110, 0..=2) => ParameterBoundary::Known(7),
         (116, 0) => ParameterBoundary::Known(5),
         _ => ParameterBoundary::Unknown,
