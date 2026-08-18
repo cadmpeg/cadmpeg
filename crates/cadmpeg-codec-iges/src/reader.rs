@@ -89,6 +89,11 @@ fn decode_with_occurrence_limits(
         .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, "iges_card_storage", None))
         .transpose()?;
     let scan = card::scan_with_context(bytes, ctx)?;
+    if !options.container_only && scan.noncanonical_before_terminate {
+        return Err(crate::error::malformed(
+            "IGES Fixed ASCII has a short or overlong line before Terminate",
+        ));
+    }
     let global = global::parse(&scan)?;
     if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
         return Err(CodecError::NotImplemented(format!(

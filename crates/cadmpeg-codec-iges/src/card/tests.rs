@@ -30,7 +30,7 @@ use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 #[test]
-fn over_width_lines_split_into_cards_and_retained_remainders() {
+fn over_width_lines_are_retained_for_inspection_and_rejected_semantically() {
     let canonical = point_file();
     let line_count = canonical.split_inclusive(|byte| *byte == b'\n').count();
     let mut padded = Vec::with_capacity(canonical.len() + line_count);
@@ -43,24 +43,10 @@ fn over_width_lines_split_into_cards_and_retained_remainders() {
         padded.extend_from_slice(ending);
     }
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.report().transfer_ledger.entries.len(), 1);
-    let transfer = &result.report().transfer_ledger.entries[0];
-    assert_eq!(transfer.source, "D1");
-    assert_eq!(transfer.target.as_deref(), Some("iges:entity:directory#1"));
-    assert_eq!(
-        transfer.disposition,
-        cadmpeg_ir::report::TransferDisposition::Retained
-    );
-    assert_eq!(
-        transfer.note.as_deref(),
-        Some("native record retained; semantic projection emitted")
-    );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
-    assert!(validation.is_ok(), "{validation:#?}");
+    assert!(matches!(
+        IgesCodec.decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default()),
+        Err(CodecError::Malformed(_))
+    ));
 
     let summary = IgesCodec
         .inspect(
@@ -136,12 +122,17 @@ fn inspect_reports_sections_and_physical_line_endings() {
 }
 
 #[test]
-fn decode_retains_short_and_extended_physical_records_before_terminate() {
+fn inspect_retains_short_and_extended_physical_records_before_terminate() {
     let mut bytes = point_file();
     let mut inserted = b"short record\n".to_vec();
     inserted.extend(std::iter::repeat_n(b'x', 81));
     inserted.push(b'\n');
     bytes.splice(162..162, inserted);
+
+    assert!(matches!(
+        IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()),
+        Err(CodecError::Malformed(_))
+    ));
 
     let summary = IgesCodec
         .inspect(
