@@ -108,28 +108,6 @@ carrier.
 
 ## 3. Persistent topology identity
 
-### PT-04. Source topology index provenance
-
-**Question.** What OCCT identity and traversal rules determine whether repeated placed roots or
-equal shape-plus-location occurrences receive one shared or multiple indexed-map positions?
-
-**Known.** FreeCAD assigns non-root positions through `TopExp::MapShapes` and uses direct
-`TopoDS_Iterator` order for root-shape positions. The specification requires pre-order traversal,
-including nested same-kind topology. `topology_transfer.rs:1540-1584` assigns positions by a
-decoder-owned walk keyed by shape and composed transform.
-
-**Need.** Match the producer traversal and identity rules for every topology kind, including nested
-same-kind compounds, or carry an independently established source position through transfer.
-
-**Conflict.** At `topology_transfer.rs:1560-1568`, a matching shape is indexed and then `continue`
-skips its children. For a `Compound` containing a nested `Compound`, the outer compound receives a
-position but the nested compound is never visited; later element-map names then bind to missing or
-shifted neutral occurrences. The existing depth-first test covers Compound-to-Solid-to-... nesting,
-not same-kind nesting.
-
-**Note.** Reopened. The counter-scope correction did not establish or implement the full producer
-traversal.
-
 ### PT-05. StringHasher owner and root framing
 
 **Question.** Which direct shape-owner `StringHasher` marker and `StringHasher2` successor belong

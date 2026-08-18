@@ -240,7 +240,8 @@ repeats the same one-based position sequence. For each topology kind, the produc
 one-based positions from a `TopTools::IndexedMapOfShape` populated by `TopExp::MapShapes`.
 For each non-root topology kind, `MapShapes` visits matching subshapes in pre-order depth-first
 order through direct `TopoDS_Iterator` children, and the indexed map assigns the next position at
-first encounter. Its `TopTools_ShapeMapHasher` key uses `TopoDS_Shape::IsSame`: equal `TShape` and
+first encounter. Traversal continues after a matching node, so a nested same-kind node is visited
+before a later sibling. Its `TopTools_ShapeMapHasher` key uses `TopoDS_Shape::IsSame`: equal `TShape` and
 composed location share one position regardless of orientation; a copied `TShape` or a different
 location receives a new position. Root-shape positions use the direct `TopoDS_Iterator` child
 order. Element-map names bind to these producer positions. The decoder carries that source

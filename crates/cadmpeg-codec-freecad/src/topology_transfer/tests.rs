@@ -171,6 +171,64 @@ fn source_indices_follow_depth_first_topology_order() {
 }
 
 #[test]
+fn source_indices_visit_nested_same_kind_shapes() {
+    let use_shape = |shape: usize| TextShapeUse {
+        shape,
+        orientation: TextOrientation::Forward,
+        location: 0,
+    };
+    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
+        index,
+        kind,
+        geometry: TextTShapeGeometry::Empty,
+        flags: [false; 7],
+        children: children.into_iter().map(use_shape).collect(),
+    };
+    let tshapes = vec![
+        empty(1, TextShapeKind::Compound, vec![2, 2, 4]),
+        empty(2, TextShapeKind::Compound, vec![3]),
+        empty(3, TextShapeKind::Solid, Vec::new()),
+        empty(4, TextShapeKind::Compound, Vec::new()),
+    ];
+    let roots = [use_shape(1)];
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+
+    let indices = source_topology_indices(tables);
+
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(1, Transform::identity()),
+        )),
+        Some(&1)
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(2, Transform::identity()),
+        )),
+        Some(&2)
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(4, Transform::identity()),
+        )),
+        Some(&3)
+    );
+}
+
+#[test]
 fn endpoint_selection_requires_unique_oriented_direct_children() {
     let children = [
         TextShapeUse {
