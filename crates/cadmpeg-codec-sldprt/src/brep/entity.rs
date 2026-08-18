@@ -819,6 +819,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc28_disc26_disc24_disc1a_disc18_disc16_disc06_face_root_body(
+            &by_attr,
+        ));
+    }
+    if out.is_empty() {
         out.extend(disc22_disc1a_disc20_disc1e_disc04_face_root_body(&by_attr));
     }
     if out.is_empty() {
@@ -6514,6 +6519,27 @@ fn disc1e_disc1a_disc18_disc14_disc12_disc10_direct_face_root_body(
     )
 }
 
+fn disc28_disc26_disc24_disc1a_disc18_disc16_disc06_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_unselected_canonical_faces(
+        by_attr,
+        &[
+            (0x0028, 2),
+            (0x0026, 2),
+            (0x0024, 2),
+            (0x001a, 1),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x0006, 2),
+        ],
+        0x0014,
+        0x0022,
+        0x002a,
+        4,
+    )
+}
+
 fn disc20_disc16_disc26_disc1e_disc14_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7052,6 +7078,130 @@ fn keyed_face_root_body_with_reciprocal_face_links_with_unselected_companions(
         allow_keyed_companion_fallback,
         true,
     )
+}
+
+fn keyed_face_root_body_with_unselected_canonical_faces(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    shell_index: usize,
+) -> Vec<BodyRecord> {
+    let canonical_faces = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == canonical_disc && record.flo() == 1)
+        .collect::<Vec<_>>();
+    if canonical_faces.is_empty() {
+        return Vec::new();
+    }
+    let mut selected_keys = HashSet::new();
+    let mut selected_companions = HashSet::new();
+    let mut selected_uses = HashSet::new();
+    let mut unselected_faces = HashSet::new();
+    for face in canonical_faces {
+        let Some(key) = face.refs.first().copied().filter(|key| *key > 1) else {
+            unselected_faces.insert(face.attr);
+            continue;
+        };
+        let Some((companion, _)) = keyed_face_companion(
+            by_attr,
+            face,
+            companion_disc,
+            None,
+            KeyedLinkPolicy::ForwardKeyed,
+            true,
+        ) else {
+            unselected_faces.insert(face.attr);
+            continue;
+        };
+        if companion.refs.first() != Some(&key) {
+            return Vec::new();
+        }
+        let direct_selected = face
+            .refs
+            .get(1)
+            .and_then(|attr| by_attr.get(attr))
+            .is_some_and(|record| {
+                record.attr == companion.attr
+                    && record.disc == companion_disc
+                    && record.flo() == 1
+                    && record.refs.get(2) == Some(&face.attr)
+            });
+        let forward_keyed_selected = !direct_selected
+            && face
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .is_some_and(|record| {
+                    record.attr == companion.attr
+                        && record.disc == companion_disc
+                        && record.flo() == 1
+                        && record.refs.first() == Some(&key)
+                        && record.refs.get(1).is_some_and(|attr| *attr > 1)
+                });
+        let fallback_selected = !direct_selected
+            && !forward_keyed_selected
+            && keyed_companion_by_key(by_attr, face, companion_disc)
+                .is_some_and(|record| record.attr == companion.attr);
+        let Some((use_node, _)) = keyed_companion_use(
+            by_attr,
+            companion,
+            use_disc,
+            None,
+            KeyedLinkPolicy::ForwardKeyed,
+        ) else {
+            if fallback_selected {
+                unselected_faces.insert(face.attr);
+                continue;
+            }
+            return Vec::new();
+        };
+        if use_node.refs.first() != Some(&key)
+            || !selected_keys.insert(key)
+            || !selected_companions.insert(companion.attr)
+            || !selected_uses.insert(use_node.attr)
+        {
+            return Vec::new();
+        }
+    }
+    if selected_keys.is_empty() {
+        return Vec::new();
+    }
+    let mut filtered = by_attr.clone();
+    for attr in unselected_faces {
+        filtered.remove(&attr);
+    }
+    let mut bodies = keyed_face_root_body_with_keyed_face_links_with_unselected_companions(
+        &filtered,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index,
+            require_exact_use_population: false,
+        },
+        true,
+    );
+    for body in &mut bodies {
+        body.refs.extend(selected_keys.iter().copied());
+        body.refs.sort_unstable();
+        body.refs.dedup();
+        for shell in body
+            .regions
+            .iter_mut()
+            .flat_map(|region| &mut region.shells)
+        {
+            shell.refs.extend(selected_keys.iter().copied());
+            shell.refs.sort_unstable();
+            shell.refs.dedup();
+        }
+    }
+    bodies
 }
 
 #[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
