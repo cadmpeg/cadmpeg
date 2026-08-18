@@ -499,16 +499,37 @@ fn resolve_entity_selection_profile(
                 .sketches
                 .iter()
                 .find(|source| source.id == sketch)?;
-            let profiles = selected_profile_indices(
-                curves.iter(),
-                source.profiles.iter().map(|profile| {
-                    profile
-                        .iter()
-                        .map(|use_| &use_.entity)
-                        .collect::<HashSet<_>>()
-                }),
-            )?;
-            Some(ProfileRef::SketchProfiles { sketch, profiles })
+            let mut selected_profiles = Vec::new();
+            let mut has_unprofiled_entity = false;
+            for curve in &curves {
+                let mut matches = source
+                    .profiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == *curve));
+                let Some((profile_index, _)) = matches.next() else {
+                    has_unprofiled_entity = true;
+                    continue;
+                };
+                if matches.next().is_some() {
+                    return None;
+                }
+                let profile_index = u32::try_from(profile_index).ok()?;
+                if !selected_profiles.contains(&profile_index) {
+                    selected_profiles.push(profile_index);
+                }
+            }
+            if has_unprofiled_entity {
+                Some(ProfileRef::SketchEntities {
+                    sketch,
+                    entities: curves,
+                })
+            } else {
+                Some(ProfileRef::SketchProfiles {
+                    sketch,
+                    profiles: selected_profiles,
+                })
+            }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
             let source = resolution

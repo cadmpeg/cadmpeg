@@ -75,9 +75,9 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 - what the context UUID names
 - what the optional slot of the fixed member tail holds
 
-**Known.** `f3d.md` §3.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §3.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §3.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
+**Known.** `f3d.md` §3.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §3.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §3.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present. A class-`338` profile member with a class-`361` identity uses the fixed 49-byte identity layout in `f3d.md` and resolves to ordered neutral Sketch entities when its owner and curve identities are unique.
 
-**Need.** Each remaining unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
+**Need.** The remaining unknowns make some Extrude selections fall back to native retention. The neutral model then has no selection for those selections.
 
 ### DR-18. Extrude extent arbitration
 

@@ -1502,6 +1502,26 @@ Unstated regions:
 - `29..33` (4 B): The second marked identity slot is zero in this selection form.
 - `37..41` (4 B): The identity record stores zero bytes at offsets 37 through 40.
 
+## `class_338_sketch_curve_identity`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_prefix` | `bytes[9]` | little | spec | offsets `11..19` are zero |
+| 20 | 1 | `presence` | `u8` | little | spec | offset `20` is presence byte `1` |
+| 33 | 4 | `owner_record_index` | `u32` | little | spec | offset `33` is a u32 Sketch entity record index |
+| 37 | 4 | `owner_high_zero` | `u32` | little | spec | offset `37` is a zero u32 |
+| 41 | 4 | `curve_persistent_id` | `u32` | little | spec | offset `41` is a u32 curve persistent identity |
+| 45 | 4 | `curve_high_zero` | `u32` | little | spec | offset `45` is a zero u32 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
+- `21..33` (12 B): The first three u32 identity lanes are zero in this selection form.
+
 ## `coil_modern_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 41 B

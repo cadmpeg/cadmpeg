@@ -964,6 +964,52 @@ fn entity_selection_profile_requires_unique_profile_membership() {
 }
 
 #[test]
+fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
+    let placement = placement();
+    let sketch = neutral_sketch_id(&placement);
+    let curve = curve(30, 100, 101);
+    let entity_id = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
+    let sketch_entities = [SketchEntity::new(
+        entity_id.clone(),
+        sketch.clone(),
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    )];
+    let sketches = [Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved,
+        profiles: Vec::new(),
+        native_ref: None,
+    }];
+    let mut group = group();
+    group.role = 0x41_0000_0000;
+    group.members = vec![10];
+    let operands = [operand(10, 0, 100)];
+    let resolution = EntitySelectionPathResolution {
+        operands: &operands,
+        placements: std::slice::from_ref(&placement),
+        curve_identities: std::slice::from_ref(&curve),
+        sketches: &sketches,
+        sketch_entities: &sketch_entities,
+        spatial_sketches: &[],
+        spatial_sketch_entities: &[],
+    };
+
+    assert_eq!(
+        resolve_entity_selection_profile(&group, &resolution),
+        Some(ProfileRef::SketchEntities {
+            sketch,
+            entities: vec![entity_id],
+        })
+    );
+}
+
+#[test]
 fn planar_profile_regions_resolve_by_persistent_curve_members() {
     let placement = placement();
     let sketch = neutral_sketch_id(&placement);

@@ -943,3 +943,101 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         .iter()
         .any(invalid_identity));
 }
+
+#[test]
+fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignEntitySelectionOperand, DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let group_id = format!("{stream}:design-construction-operand-group#100");
+    let operand_id = format!("{stream}:design-entity-selection-operand#1000");
+    let group = DesignConstructionOperandGroup {
+        id: group_id,
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 900,
+        class_tag: "277".into(),
+        members: vec![200],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![926],
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 921,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+        },
+        role: 0x41_0000_0000,
+        extrude_role: Some(crate::records::DesignExtrudeOperandRole::Profile),
+        extrude_face_role: None,
+        role_offset: 953,
+        paired_class_tag: "265".into(),
+        paired_byte_offset: 1024,
+    };
+    let header = DesignRecordHeader {
+        id: format!("{stream}:design-record-header#1000"),
+        byte_offset: 1_000,
+        class_tag: "338".into(),
+        record_index: 200,
+    };
+    let operand = DesignEntitySelectionOperand {
+        id: operand_id.clone(),
+        scope_record_index: 10,
+        group_record_index: 100,
+        group_member_ordinal: 0,
+        record_index: 200,
+        byte_offset: 1_000,
+        class_tag: "338".into(),
+        asset_id: "11111111-2222-4333-8444-555555555555".into(),
+        asset_id_offset: 1_034,
+        context_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+        context_id_offset: 1_100,
+        identity_record_index: 203,
+        identity_record_offset: 2_000,
+        primary_identity: 949,
+        primary_identity_offset: 2_033,
+        secondary_identity: Some(249),
+        secondary_identity_offset: Some(2_041),
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
+        resolved_edge_slot: None,
+        next_record_index: 204,
+        next_byte_offset: 2_049,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_construction_operand_groups.push(group);
+        native.design_record_headers.push(header);
+        native.design_entity_selection_operands.push(operand);
+    }
+
+    let invalid_entity_selection = |finding: &cadmpeg_ir::Finding| {
+        finding.entity.as_deref() == Some(operand_id.as_str())
+            && finding.message
+                == "Fusion Design entity-selection operand has an invalid nested frame"
+    };
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_entity_selection));
+
+    f3d_native_mut(&mut ir).design_entity_selection_operands[0].next_byte_offset = 2_048;
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_entity_selection));
+}

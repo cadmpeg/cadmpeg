@@ -14,6 +14,7 @@ use crate::design::decode::sketch::{
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
@@ -2574,25 +2575,78 @@ pub(crate) fn parse_entity_selection_frame(
             return None;
         }
     }
+    let (identity_class_tag, _) =
+        lp_ascii_filtered(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
-    let (primary_identity_offset, secondary_identity_offset, curve_secondary_identity_offset) =
-        if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
-            && identity_at.checked_add(45)? == next_at
-            && next_record_index == record_index.checked_add(4)?
-        {
-            (
-                identity_at.checked_add(29)?,
-                Some(identity_at.checked_add(37)?),
-                Some(identity_at.checked_add(21)?),
-            )
-        } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
-            && identity_at.checked_add(29)? == next_at
-        {
-            (identity_at.checked_add(21)?, None, None)
-        } else {
-            return None;
-        };
+    let (
+        primary_identity_offset,
+        secondary_identity_offset,
+        curve_secondary_identity_offset,
+        primary_identity,
+        secondary_identity,
+        curve_secondary_identity,
+    ) = if class_tag == "338"
+        && identity_class_tag == "361"
+        && bytes.get(
+            identity_at + class_338_curve::ZERO_PREFIX..identity_at + class_338_curve::PRESENCE,
+        )? == [0; 9]
+        && bytes.get(identity_at + class_338_curve::PRESENCE) == Some(&1)
+        && bytes.get(
+            identity_at + class_338_curve::PRESENCE + 1
+                ..identity_at + class_338_curve::OWNER_RECORD_INDEX,
+        )? == [0; 12]
+        && View::u32_le_at(bytes, identity_at + class_338_curve::OWNER_HIGH_ZERO)? == 0
+        && View::u32_le_at(bytes, identity_at + class_338_curve::CURVE_HIGH_ZERO)? == 0
+        && identity_at.checked_add(class_338_curve::LEN)? == next_at
+        && next_record_index == record_index.checked_add(4)?
+    {
+        let primary_identity = u64::from(View::u32_le_at(
+            bytes,
+            identity_at + class_338_curve::OWNER_RECORD_INDEX,
+        )?);
+        let secondary_identity = u64::from(View::u32_le_at(
+            bytes,
+            identity_at + class_338_curve::CURVE_PERSISTENT_ID,
+        )?);
+        (
+            identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
+            Some(identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?),
+            None,
+            primary_identity,
+            Some(secondary_identity),
+            None,
+        )
+    } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
+        && identity_at.checked_add(45)? == next_at
+        && next_record_index == record_index.checked_add(4)?
+    {
+        let curve_secondary_identity_offset = identity_at.checked_add(21)?;
+        let primary_identity_offset = identity_at.checked_add(29)?;
+        let secondary_identity_offset = identity_at.checked_add(37)?;
+        (
+            primary_identity_offset,
+            Some(secondary_identity_offset),
+            Some(curve_secondary_identity_offset),
+            View::u64_le_at(bytes, primary_identity_offset)?,
+            Some(View::u64_le_at(bytes, secondary_identity_offset)?),
+            Some(View::u64_le_at(bytes, curve_secondary_identity_offset)?),
+        )
+    } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
+        && identity_at.checked_add(29)? == next_at
+    {
+        let primary_identity_offset = identity_at.checked_add(21)?;
+        (
+            primary_identity_offset,
+            None,
+            None,
+            View::u64_le_at(bytes, primary_identity_offset)?,
+            None,
+            None,
+        )
+    } else {
+        return None;
+    };
     Some(EntitySelectionFrame {
         record_index,
         byte_offset,
@@ -2603,15 +2657,12 @@ pub(crate) fn parse_entity_selection_frame(
         context_id_offset: prefix.context_id_offset,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
-        primary_identity: View::u64_le_at(bytes, primary_identity_offset)?,
+        primary_identity,
         primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
-        secondary_identity: secondary_identity_offset
-            .and_then(|offset| View::u64_le_at(bytes, offset)),
+        secondary_identity,
         secondary_identity_offset: secondary_identity_offset
             .and_then(|offset| u64::try_from(offset).ok()),
-        curve_secondary_identity: curve_secondary_identity_offset
-            .and_then(|offset| View::u64_le_at(bytes, offset))
-            .filter(|identity| *identity != 0),
+        curve_secondary_identity: curve_secondary_identity.filter(|identity| *identity != 0),
         curve_secondary_identity_offset: curve_secondary_identity_offset
             .filter(|offset| View::u64_le_at(bytes, *offset).is_some_and(|identity| identity != 0))
             .and_then(|offset| u64::try_from(offset).ok()),

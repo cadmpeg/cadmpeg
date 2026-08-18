@@ -359,6 +359,44 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         Some(identity_at as u64 + 21)
     );
     assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
+
+    let mut class_338_curve_identity = bytes[..identity_at].to_vec();
+    class_338_curve_identity[4..7].copy_from_slice(b"338");
+    header(&mut class_338_curve_identity, *b"361", 103);
+    class_338_curve_identity.extend_from_slice(&[0; 9]);
+    class_338_curve_identity.push(1);
+    class_338_curve_identity.extend_from_slice(&[0; 12]);
+    class_338_curve_identity.extend_from_slice(&949u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&249u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    let class_338_next_at = class_338_curve_identity.len();
+    header(&mut class_338_curve_identity, *b"268", 104);
+    let class_338_record = DesignRecordHeader {
+        class_tag: "338".into(),
+        ..record
+    };
+    let class_338_operand =
+        parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
+            .expect("class-338 Sketch-curve entity-selection frame");
+    assert_eq!(class_338_operand.primary_identity, 949);
+    assert_eq!(class_338_operand.secondary_identity, Some(249));
+    assert_eq!(class_338_operand.curve_secondary_identity, None);
+    assert_eq!(
+        class_338_operand.primary_identity_offset,
+        identity_at as u64 + 33
+    );
+    assert_eq!(
+        class_338_operand.secondary_identity_offset,
+        Some(identity_at as u64 + 41)
+    );
+    assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
+
+    let mut invalid_class_338 = class_338_curve_identity.clone();
+    invalid_class_338[identity_at + 20] = 0;
+    assert!(
+        parse_entity_selection_operand(&invalid_class_338, &group, 0, &class_338_record).is_none()
+    );
 }
 
 #[test]

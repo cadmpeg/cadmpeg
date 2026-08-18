@@ -12,6 +12,7 @@
 use crate::design::decode::scopes::is_legacy_class_415_symmetric_distance_layout;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
@@ -6349,6 +6350,25 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&operand.id);
         let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
+        let class_338_curve_identity = operand.class_tag == "338"
+            && operand.primary_identity_offset
+                == operand
+                    .identity_record_offset
+                    .saturating_add(class_338_curve::OWNER_RECORD_INDEX as u64)
+            && operand.secondary_identity_offset
+                == Some(
+                    operand
+                        .identity_record_offset
+                        .saturating_add(class_338_curve::CURVE_PERSISTENT_ID as u64),
+                )
+            && operand.secondary_identity.is_some()
+            && operand.curve_secondary_identity.is_none()
+            && operand.curve_secondary_identity_offset.is_none()
+            && operand.next_record_index == operand.record_index.saturating_add(4)
+            && operand.next_byte_offset
+                == operand
+                    .identity_record_offset
+                    .saturating_add(class_338_curve::LEN as u64);
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -6364,16 +6384,18 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && operand.identity_record_index == operand.record_index.saturating_add(3)
-            && (matches!(
+            && (class_338_curve_identity
+                || matches!(
                 (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
                 (primary, Some(_), Some(secondary))
                     if primary == operand.identity_record_offset.saturating_add(29)
                         && secondary == operand.identity_record_offset.saturating_add(37)
-            ) || matches!(
-                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
-                (primary, None, None)
-                    if primary == operand.identity_record_offset.saturating_add(21)
-            ))
+                )
+                || matches!(
+                    (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
+                    (primary, None, None)
+                        if primary == operand.identity_record_offset.saturating_add(21)
+                ))
             && match (
                 operand.curve_secondary_identity,
                 operand.curve_secondary_identity_offset,
@@ -6388,13 +6410,15 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && (operand.secondary_identity.is_none()
                 || operand.next_record_index == operand.record_index.saturating_add(4))
             && operand.next_byte_offset
-                == operand.identity_record_offset.saturating_add(
-                    if operand.secondary_identity.is_some() {
+                == operand
+                    .identity_record_offset
+                    .saturating_add(if class_338_curve_identity {
+                        class_338_curve::LEN as u64
+                    } else if operand.secondary_identity.is_some() {
                         45
                     } else {
                         29
-                    },
-                )
+                    })
             && entity_selection_slots.insert((
                 native_stream,
                 operand.group_record_index,

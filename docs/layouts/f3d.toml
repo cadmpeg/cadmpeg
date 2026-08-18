@@ -4955,6 +4955,66 @@ size = 4
 note = "The identity record stores zero bytes at offsets 37 through 40."
 
 [[record]]
+name = "class_338_sketch_curve_identity"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`338` Extrude profile member uses the persistent-selection prefix and four consecutive nested records"
+size = 49
+note = "Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed identity header occupies the first 11 bytes."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "offsets `11..19` are zero"
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "offset `20` is presence byte `1`"
+
+[[record.gap]]
+offset = 21
+size = 12
+note = "The first three u32 identity lanes are zero in this selection form."
+
+[[record.field]]
+name = "owner_record_index"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "offset `33` is a u32 Sketch entity record index"
+
+[[record.field]]
+name = "owner_high_zero"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "offset `37` is a zero u32"
+
+[[record.field]]
+name = "curve_persistent_id"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "offset `41` is a u32 curve persistent identity"
+
+[[record.field]]
+name = "curve_high_zero"
+offset = 45
+type = "u32"
+source = "spec"
+anchor = "offset `45` is a zero u32"
+
+[[record]]
 name = "coil_modern_selection_prefix"
 kind = "byte"
 section = "3.1"

@@ -2152,6 +2152,30 @@ pub(crate) mod work_point_sketch_point_identity {
     pub(crate) const POINT_PERSISTENT_ID: usize = 33;
 }
 
+/// Byte offsets for the `class_338_sketch_curve_identity` record.
+///
+/// Spec §3.1. Record length 49 B.
+///
+/// ```text
+/// Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+/// ```
+pub(crate) mod class_338_sketch_curve_identity {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `zero_prefix` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `presence` (`u8`). Spec §3.1.
+    pub(crate) const PRESENCE: usize = 20;
+    /// Offset of `owner_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_RECORD_INDEX: usize = 33;
+    /// Offset of `owner_high_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_HIGH_ZERO: usize = 37;
+    /// Offset of `curve_persistent_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURVE_PERSISTENT_ID: usize = 41;
+    /// Offset of `curve_high_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURVE_HIGH_ZERO: usize = 45;
+}
+
 /// Byte offsets for the `coil_modern_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 41 B.
