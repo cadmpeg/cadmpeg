@@ -348,6 +348,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// groups start at token ten. `TPFLAG` may be omitted and then defaults to 2.
 /// Type 406 Form 31 fixes `NP=8` at index 1 and stores four two-coordinate box
 /// corners at indexes 2 through 9, so its groups start at token ten.
+/// Type 406 Form 32 fixes `NP=3` at index 1 and stores `NAME`, `ORG`, and
+/// `DATE` at indexes 2 through 4, so its groups start at token five.
 /// Type 406 Form 36 permits `NP=1` for a curve or `NP=2` for a surface and
 /// stores `CLOSEDU` and, for a surface, `CLOSEDV`, so its groups start at
 /// token `2 + NP`.
@@ -441,6 +443,7 @@ pub(crate) fn entity_primary_end(
         (406, 28) => Some(dimension_units_primary_end(record)),
         (406, 29) => Some(dimension_tolerance_primary_end(record)),
         (406, 31) => Some(basic_dimension_primary_end(record)),
+        (406, 32) => Some(drawing_sheet_approval_primary_end(record)),
         (406, 36) => Some(closure_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
@@ -745,6 +748,14 @@ fn dimension_tolerance_primary_end(record: &ParameterRecord) -> usize {
 fn basic_dimension_primary_end(record: &ParameterRecord) -> usize {
     if record.integer(1) == Some(8) && record.tokens.len() >= 10 {
         10
+    } else {
+        record.tokens.len()
+    }
+}
+
+fn drawing_sheet_approval_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
+        5
     } else {
         record.tokens.len()
     }
