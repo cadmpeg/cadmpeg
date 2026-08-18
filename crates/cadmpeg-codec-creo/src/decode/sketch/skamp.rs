@@ -4,11 +4,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::sketch_transfer::{
-    active_complete_section_skamps, saved_section_entity_fallback_allowed, section_saved_entity,
-    section_skamp_is_line, section_skamp_is_point, unique_bounded_curve_segment,
-    unique_centered_line_segment, unique_circle_segment, unique_point_segment,
-    unique_reference_line_segment,
+    active_complete_section_skamps, saved_section_entity_fallback_allowed,
+    saved_section_line_witness_allowed, section_saved_entity, section_skamp_is_line,
+    section_skamp_is_point, unique_bounded_curve_segment, unique_centered_line_segment,
+    unique_circle_segment, unique_point_segment, unique_reference_line_segment,
 };
+
+const EPS_SAVED_LINE_AXIS: f64 = 1e-9;
 
 pub(crate) fn section_line_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
@@ -130,25 +132,27 @@ fn section_line_direct_fixed_coordinates_with_mode(
             }
         }),
     );
-    if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
-        section_saved_entity(definition, entity_id)
-    {
-        let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
-            return coordinates;
-        };
-        let scale = [x0, y0, x1, y1]
-            .into_iter()
-            .map(f64::abs)
-            .fold(1.0, f64::max);
-        let tolerance = 1e-9 * scale;
-        match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
-            [true, false] => {
-                coordinates.insert(0);
+    if saved_section_line_witness_allowed(definition, entity_id) {
+        if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
+            section_saved_entity(definition, entity_id)
+        {
+            let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
+                return coordinates;
+            };
+            let scale = [x0, y0, x1, y1]
+                .into_iter()
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            let tolerance = EPS_SAVED_LINE_AXIS * scale;
+            match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
+                [true, false] => {
+                    coordinates.insert(0);
+                }
+                [false, true] => {
+                    coordinates.insert(1);
+                }
+                _ => {}
             }
-            [false, true] => {
-                coordinates.insert(1);
-            }
-            _ => {}
         }
     }
     coordinates
@@ -989,5 +993,79 @@ mod tests {
         let mut missing_selector = definition;
         missing_selector.segments.as_mut().expect("segments").rows[0].vertical_horizontal = None;
         assert!(section_skamp_point_on_line(&missing_selector, &type_three).is_none());
+    }
+
+    #[test]
+    fn saved_line_axis_witness_requires_an_ordinary_line_identity() {
+        let line = |external_id| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        let saved_section = crate::feature::FeatureSavedSection {
+            entities: vec![crate::feature::FeatureSavedEntity::Line(
+                crate::feature::FeatureSavedLine {
+                    entity_id: 7,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(0.0), Some(0.0), Some(0.0)],
+                        [Some(0.0), Some(2.0), Some(0.0)],
+                    ],
+                    body: Vec::new(),
+                    offset: 1,
+                },
+            )],
+            offset: 1,
+        };
+        let order_table = crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 7,
+                internal_id: 7,
+                bitmask: 0,
+                offset: 1,
+            }],
+            offset: 1,
+        };
+
+        let mut special = point_definition(1, Vec::new(), Vec::new());
+        special
+            .segments
+            .as_mut()
+            .expect("segments")
+            .circle_rows
+            .push(crate::feature::FeatureCircleSegment {
+                center_id: 1,
+                radius_ref: 2,
+                external_id: 7,
+                offset: 1,
+            });
+        special.order_table = Some(order_table.clone());
+        special.saved_section = Some(saved_section.clone());
+        assert_eq!(
+            section_line_entity_fixed_coordinate_with_unique_rows(&special, 7),
+            None
+        );
+
+        let mut ordinary = special;
+        let segments = ordinary.segments.as_mut().expect("segments");
+        segments.circle_rows.clear();
+        segments.rows.push(line(7));
+        ordinary.saved_section = Some(saved_section);
+        assert_eq!(
+            section_line_entity_fixed_coordinate_with_unique_rows(&ordinary, 7),
+            Some(0)
+        );
     }
 }

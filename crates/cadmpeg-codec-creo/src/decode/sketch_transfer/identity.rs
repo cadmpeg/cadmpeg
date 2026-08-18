@@ -91,6 +91,27 @@ pub(in super::super) fn saved_section_ordinary_geometry_allowed(
             }))
 }
 
+/// A saved line may supply an axis witness only for an absent or uniquely
+/// identified ordinary line row.  Special-family and conflicting identities
+/// remain unresolved.
+pub(in super::super) fn saved_section_line_witness_allowed(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> bool {
+    let Some(segments) = definition.segments.as_ref() else {
+        return true;
+    };
+    if let Some(segment) = segments
+        .rows
+        .iter()
+        .find(|segment| segment.external_id == external_id)
+    {
+        return segment.kind == crate::feature::FeatureSegmentKind::Line
+            && saved_section_ordinary_geometry_allowed(definition, segment);
+    }
+    saved_section_entity_fallback_allowed(definition, external_id)
+}
+
 pub(in super::super) fn unique_section_segment_external_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
@@ -339,7 +360,10 @@ pub(in super::super) fn opaque_section_segment_identity_suffix(
 
 #[cfg(test)]
 mod tests {
-    use super::{saved_section_entity_fallback_allowed, saved_section_ordinary_geometry_allowed};
+    use super::{
+        saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
+        saved_section_ordinary_geometry_allowed,
+    };
 
     fn definition(
         segments: Option<crate::feature::FeatureSegmentTable>,
@@ -424,7 +448,12 @@ mod tests {
     #[test]
     fn saved_fallback_requires_absent_or_unique_opaque_identity() {
         assert!(saved_section_entity_fallback_allowed(&definition(None), 7));
+        assert!(saved_section_line_witness_allowed(&definition(None), 7));
         assert!(saved_section_entity_fallback_allowed(
+            &definition(Some(segment_table())),
+            7
+        ));
+        assert!(saved_section_line_witness_allowed(
             &definition(Some(segment_table())),
             7
         ));
@@ -453,20 +482,37 @@ mod tests {
             &ordinary_definition,
             &line
         ));
+        assert!(saved_section_line_witness_allowed(&ordinary_definition, 7));
+
+        let mut ordinary_arc = segment_table();
+        ordinary_arc.rows.push(crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            ..line.clone()
+        });
+        assert!(!saved_section_line_witness_allowed(
+            &definition(Some(ordinary_arc)),
+            7
+        ));
 
         let mut special = segment_table();
         special.circle_rows.push(circle(7));
+        let special_definition = definition(Some(special));
         assert!(!saved_section_entity_fallback_allowed(
-            &definition(Some(special)),
+            &special_definition,
             7
         ));
+        assert!(!saved_section_line_witness_allowed(&special_definition, 7));
 
         let mut cross_family_geometry = segment_table();
         cross_family_geometry.rows.push(line.clone());
         cross_family_geometry.circle_rows.push(circle(7));
         assert!(!saved_section_ordinary_geometry_allowed(
-            &definition(Some(cross_family_geometry)),
+            &definition(Some(cross_family_geometry.clone())),
             &line
+        ));
+        assert!(!saved_section_line_witness_allowed(
+            &definition(Some(cross_family_geometry)),
+            7
         ));
 
         let mut cross_family = segment_table();
@@ -481,6 +527,13 @@ mod tests {
         duplicate_opaque.opaque_rows.extend([opaque(7), opaque(7)]);
         assert!(!saved_section_entity_fallback_allowed(
             &definition(Some(duplicate_opaque)),
+            7
+        ));
+
+        let mut duplicate_line = segment_table();
+        duplicate_line.rows.extend([line.clone(), line]);
+        assert!(!saved_section_line_witness_allowed(
+            &definition(Some(duplicate_line)),
             7
         ));
     }
