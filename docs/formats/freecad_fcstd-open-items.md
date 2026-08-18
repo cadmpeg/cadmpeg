@@ -153,6 +153,57 @@ detect the divergence.
 not use and wrote that traversal into the specification. The earlier walk, which stopped at a
 matching node, gave the producer's single `Compound` position for this document.
 
+### PT-06. Element-map compatibility-marker admission
+
+**Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker
+immediately before it, and what is the malformed result when that marker is absent?
+
+**Known.** The specification requires one compatibility `ElementMap` marker followed by one
+`ElementMap2` carrier for non-empty metadata, while an empty map uses the marker alone. The
+element-map transfer at `element_map.rs:340-387` selects one direct `Part`, one direct marker, and
+one direct `ElementMap2`, and requires the marker to carry `new` and to stand immediately before the
+carrier.
+
+**Need.** Bind the map to the direct shape property and require the marker-plus-carrier sequence
+for non-empty maps. Reject or retain a nested, missing, or non-adjacent marker without assigning
+the map to neutral topology.
+
+**Conflict.** A property containing `<Part .../><ElementMap2 ...>` must not supply persistent
+topology names when the required compatibility marker is absent. Adding or removing that marker
+must not change neutral identity without a refusal or loss.
+
+**Note.** Reopened. The closing commit changes no production code. Its `element_map.rs` change is
+one test, and that test passes at the parent commit through the adjacency rule the earlier
+element-map commit added. The closure also writes that a direct `ElementMap` alone is an empty map.
+`ComplexGeoData::Restore` reads the `file` and `count` attributes of that same marker when `new` is
+absent, so a marker alone can carry a non-empty map. `PT-07` records that gap.
+
+### PT-07. Legacy element-map carrier admission
+
+**Question.** Which carrier supplies a non-empty element map when the compatibility marker has no
+`new` attribute?
+
+**Known.** FreeCAD `ComplexGeoData::Restore` reads one `ElementMap` element and moves to
+`ElementMap2` only when that marker has `new`. It then reads the `file` and `count` attributes of
+the element it stands on. A non-empty `file` names the side entry that holds the map, and a `count`
+of zero is the only empty map. With a `count` above zero and no `new`, the marker itself carries the
+map, as an inline stream for file version above one and as direct `Element` children otherwise.
+`ComplexGeoData::Save` in the current producer writes only the `new` form. `element_map.rs:373-378`
+gives no map when the marker has no `new` and no `ElementMap2` follows it. The symmetric legacy
+string-table carrier is admitted at `element_map.rs:47-51`, and the specification records that
+legacy string-table rule while it records the opposite rule for the element map.
+
+**Need.** Admit the legacy marker as a map carrier for its side-entry, inline-stream, and `Element`
+child forms, or refuse the property with an explicit result. Give the producer version that first
+writes the `new` form.
+
+**Conflict.** A shape property whose marker is `ElementMap` with a `count` above zero and a `file`
+attribute supplies persistent element names in the producer and no element-map record in the
+decoder. The transfer then reports exact coverage with no finding and no loss, and per-face material
+and color binding is skipped for that shape because no `Face` group exists.
+
+**Note.** New hostile-sweep finding.
+
 ## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
