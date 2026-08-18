@@ -74,6 +74,23 @@ pub(in super::super) fn saved_section_entity_fallback_allowed(
                 .any(|segment| segment.external_id == external_id))
 }
 
+/// A saved line or arc may reconcile one ordinary row, but not a different
+/// decoded segment family carrying the same external identifier.
+pub(in super::super) fn saved_section_ordinary_geometry_allowed(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> bool {
+    let Some(segments) = definition.segments.as_ref() else {
+        return true;
+    };
+    let count = segments.external_id_count(segment.external_id);
+    count == 0
+        || (count == 1
+            && segments.rows.iter().any(|candidate| {
+                candidate.external_id == segment.external_id && candidate.kind == segment.kind
+            }))
+}
+
 pub(in super::super) fn unique_section_segment_external_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
@@ -322,7 +339,7 @@ pub(in super::super) fn opaque_section_segment_identity_suffix(
 
 #[cfg(test)]
 mod tests {
-    use super::saved_section_entity_fallback_allowed;
+    use super::{saved_section_entity_fallback_allowed, saved_section_ordinary_geometry_allowed};
 
     fn definition(
         segments: Option<crate::feature::FeatureSegmentTable>,
@@ -420,10 +437,21 @@ mod tests {
         ));
 
         let mut ordinary = segment_table();
-        ordinary.rows.push(ordinary_line(7));
+        let line = ordinary_line(7);
+        ordinary.rows.push(line.clone());
         assert!(!saved_section_entity_fallback_allowed(
             &definition(Some(ordinary)),
             7
+        ));
+
+        let ordinary_definition = definition(Some({
+            let mut segments = segment_table();
+            segments.rows.push(line.clone());
+            segments
+        }));
+        assert!(saved_section_ordinary_geometry_allowed(
+            &ordinary_definition,
+            &line
         ));
 
         let mut special = segment_table();
@@ -431,6 +459,14 @@ mod tests {
         assert!(!saved_section_entity_fallback_allowed(
             &definition(Some(special)),
             7
+        ));
+
+        let mut cross_family_geometry = segment_table();
+        cross_family_geometry.rows.push(line.clone());
+        cross_family_geometry.circle_rows.push(circle(7));
+        assert!(!saved_section_ordinary_geometry_allowed(
+            &definition(Some(cross_family_geometry)),
+            &line
         ));
 
         let mut cross_family = segment_table();

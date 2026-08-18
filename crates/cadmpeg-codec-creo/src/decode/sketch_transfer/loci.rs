@@ -763,13 +763,14 @@ pub(in super::super) fn section_skamp_curve_entity(
                     | SectionEntityIncidenceFamily::Circular
             )
         )
-        || section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
-            matches!(
-                entity,
-                crate::feature::FeatureSavedEntity::Conic(_)
-                    | crate::feature::FeatureSavedEntity::Spline(_)
-            )
-        });
+        || (saved_section_entity_fallback_allowed(definition, item.entity_id)
+            && section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+                matches!(
+                    entity,
+                    crate::feature::FeatureSavedEntity::Conic(_)
+                        | crate::feature::FeatureSavedEntity::Spline(_)
+                )
+            }));
     is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
