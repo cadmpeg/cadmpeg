@@ -3260,18 +3260,25 @@ source = "spec"
 anchor = "One 12-byte incidence cell at marker +78"
 
 [[record.field]]
-name = "link_terminator"
+name = "zero_post_cell"
 offset = 90
+type = "bytes[4]"
+source = "spec"
+anchor = "Four zero bytes occupy marker +90 through +93"
+
+[[record.field]]
+name = "link_terminator"
+offset = 94
 type = "bytes[6]"
 source = "spec"
-anchor = "The terminator `fe ff ff ff 00 00` begins at marker +90"
+anchor = "The terminator `fe ff ff ff 00 00` begins at marker +94"
 
 [[record.field]]
 name = "trailer_prefix"
-offset = 96
-type = "bytes[44]"
+offset = 100
+type = "bytes[40]"
 source = "spec"
-anchor = "zero bytes from marker +96 through +139"
+anchor = "zero bytes from marker +100 through +139"
 
 [[record.field]]
 name = "identity"

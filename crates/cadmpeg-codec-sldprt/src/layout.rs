@@ -1069,10 +1069,12 @@ pub(crate) mod legacy_144_single_incidence_profile_point {
     pub(crate) const LINK_STATE: usize = 76;
     /// Offset of `incidence_cell` (`bytes[12]`). Spec §2.
     pub(crate) const INCIDENCE_CELL: usize = 78;
+    /// Offset of `zero_post_cell` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_POST_CELL: usize = 90;
     /// Offset of `link_terminator` (`bytes[6]`). Spec §2.
-    pub(crate) const LINK_TERMINATOR: usize = 90;
-    /// Offset of `trailer_prefix` (`bytes[44]`). Spec §2.
-    pub(crate) const TRAILER_PREFIX: usize = 96;
+    pub(crate) const LINK_TERMINATOR: usize = 94;
+    /// Offset of `trailer_prefix` (`bytes[40]`). Spec §2.
+    pub(crate) const TRAILER_PREFIX: usize = 100;
     /// Offset of `identity` (`u32`, little-endian). Spec §2.
     pub(crate) const IDENTITY: usize = 140;
 }

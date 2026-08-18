@@ -914,8 +914,9 @@ The record emits a point. Its terminal identity and next-marker boundary are fou
 | 74 | 2 | `zero_link_prefix` | `u16` | little | spec | Marker +74 is zero |
 | 76 | 2 | `link_state` | `u16` | little | spec | link-state u16 `1`, `2`, or `3` |
 | 78 | 12 | `incidence_cell` | `bytes[12]` | little | spec | One 12-byte incidence cell at marker +78 |
-| 90 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +90 |
-| 96 | 44 | `trailer_prefix` | `bytes[44]` | little | spec | zero bytes from marker +96 through +139 |
+| 90 | 4 | `zero_post_cell` | `bytes[4]` | little | spec | Four zero bytes occupy marker +90 through +93 |
+| 94 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +94 |
+| 100 | 40 | `trailer_prefix` | `bytes[40]` | little | spec | zero bytes from marker +100 through +139 |
 | 140 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +140 |
 
 ## `extended_scaled_146_profile_point`

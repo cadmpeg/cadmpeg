@@ -1217,7 +1217,7 @@ fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -
     {
         return None;
     }
-    let cell = payload.get(offset + pt_144::INCIDENCE_CELL..offset + pt_144::LINK_TERMINATOR)?;
+    let cell = payload.get(offset + pt_144::INCIDENCE_CELL..offset + pt_144::ZERO_POST_CELL)?;
     let selector = View::u16_le_at(cell, 0)?;
     let identifier = View::u16_le_at(cell, 2)?;
     if selector == 0
@@ -1225,6 +1225,8 @@ fn legacy_144_profile_point_variant_coordinates(payload: &[u8], offset: usize) -
         || identifier == u16::MAX
         || cell[4..8] != [0xff; 4]
         || cell[8..12] != [0; 4]
+        || payload.get(offset + pt_144::ZERO_POST_CELL..offset + pt_144::LINK_TERMINATOR)
+            != Some(&[0; 4])
         || payload.get(offset + pt_144::LINK_TERMINATOR..offset + pt_144::TRAILER_PREFIX)
             != Some(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00])
         || payload.get(offset + pt_144::TRAILER_PREFIX..offset + pt_144::IDENTITY)
