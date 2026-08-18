@@ -80,6 +80,21 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
     }
 }
 
+fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRecord {
+    let parameter_end = values.len();
+    ParameterRecord {
+        directory_sequence: sequence,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        parameter_end,
+        comment: Vec::new(),
+    }
+}
+
 #[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
@@ -1127,6 +1142,91 @@ fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
     assert_eq!(analysis.candidate_count, 0);
     assert_eq!(analysis.valid_candidate_count, 0);
     assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type406_form3_entity_table_boundary_follows_fixed_values() {
+    let mut source = directory_target(1, 406);
+    source.form = 3;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let record = token_parameter_record(
+        1,
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(2),
+            TokenValue::Integer(17),
+            TokenValue::String(b"POWER".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    );
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 406 Form 3 table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type406_form3_table_boundary_precedes_generic_candidate() {
+    let mut source = directory_target(1, 406);
+    source.form = 3;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let record = integer_parameter_record(1, &[406, 2, 1, 3, 0]);
+
+    let generic = structural_pointer_group_candidates(&record);
+    assert!(generic.iter().any(|candidate| candidate.token_start == 2));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type406_form3_malformed_np_or_span_does_not_enable_generic_recovery() {
+    let mut source = directory_target(1, 406);
+    source.form = 3;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(1),
+            TokenValue::Integer(17),
+            TokenValue::String(b"POWER".to_vec()),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(2),
+            TokenValue::Integer(17),
+        ],
+        vec![
+            TokenValue::Integer(406),
+            TokenValue::Integer(2),
+            TokenValue::Integer(17),
+            TokenValue::Integer(1),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    ] {
+        let generic_count =
+            structural_pointer_group_candidates(&token_parameter_record(1, values.clone())).len();
+        let record = token_parameter_record(1, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "generic_count={generic_count}");
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
 }
 
 #[test]
