@@ -2151,6 +2151,143 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "current_terminal_relation_carrier"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+kind = "byte"
+section = "2"
+anchor = "A current-prefix terminal relation carrier has kind u32 `2`"
+size = 136
+endianness = "little"
+note = "The class declaration begins at the record boundary +136 and is owned by the matching feature relation."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A current-prefix terminal relation carrier"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind u32 `2`"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "geometry locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56"
+
+[[record.field]]
+name = "terminal_header"
+offset = 64
+type = "bytes[4]"
+source = "spec"
+anchor = "`01 00 01 00` at marker +64"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +68"
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +72"
+
+[[record.field]]
+name = "terminal_selector"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +80"
+
+[[record.field]]
+name = "terminal_state"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "zero u16 at marker +84"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 86
+type = "bytes[16]"
+source = "spec"
+anchor = "four i32 `-2` cells at marker +86"
+
+[[record.field]]
+name = "zero_tail"
+offset = 102
+type = "bytes[32]"
+source = "spec"
+anchor = "32 zero bytes at marker +102"
+
+[[record.field]]
+name = "terminal_tag"
+offset = 134
+type = "u16"
+source = "spec"
+anchor = "u16 `3` at marker +134"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this relation carrier."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "extended_geometry_terminal_circle_dimension_tail"
 kind = "byte"
 section = "2"

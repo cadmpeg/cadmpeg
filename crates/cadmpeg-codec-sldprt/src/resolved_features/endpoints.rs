@@ -5093,6 +5093,45 @@ pub(super) fn compact_indexed_curve_record_end(
     }
 }
 
+/// Return the class-declaration offset for a terminal sketch relation carrier.
+///
+/// The byte shape alone is not enough to remove a marker from sketch geometry:
+/// the caller must join this declaration to a parsed relation instance owned by
+/// the same feature.
+pub(super) fn terminal_relation_class_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    let current_terminal = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 64..offset + 68) == Some(&[1, 0, 1, 0])
+        && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 80..offset + 84) == Some(&1i32.to_le_bytes())
+        && payload.get(offset + 84..offset + 86) == Some(&[0; 2])
+        && payload.get(offset + 86..offset + 102)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 102..offset + 134) == Some(&[0; 32])
+        && payload.get(offset + 134..offset + 136) == Some(&3u16.to_le_bytes())
+        && class_declaration_at(payload, offset.saturating_add(136));
+    if current_terminal {
+        return offset.checked_add(136);
+    }
+
+    (matches!(
+        compact_indexed_curve_record_end(payload, offset),
+        Some(CompactIndexedCurveRecordEnd::Continuation120)
+    ) && class_declaration_at(payload, offset.saturating_add(122)))
+    .then(|| offset.saturating_add(122))
+}
+
 pub(super) fn wide_indexed_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,

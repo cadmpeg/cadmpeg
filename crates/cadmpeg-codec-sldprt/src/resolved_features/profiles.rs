@@ -32,7 +32,7 @@ use super::endpoints::{
     legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
     marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
     packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
-    unique_arc_center_marker, wide_coordinate_roster_full_circle,
+    terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{
@@ -694,6 +694,35 @@ pub(crate) fn project_compact_sketch_profiles(
     }
 }
 
+fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
+    if !matches!(
+        marker.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) || marker.coordinates_m.is_some()
+    {
+        return false;
+    }
+    let Some(feature_ref) = marker.feature_ref.as_deref() else {
+        return false;
+    };
+    let Some(offset) = usize::try_from(marker.offset).ok() else {
+        return false;
+    };
+    let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else {
+        return false;
+    };
+    let Some(class) = lane
+        .classes
+        .iter()
+        .find(|class| class.offset == class_offset as u64)
+    else {
+        return false;
+    };
+    lane.relation_instances
+        .iter()
+        .any(|relation| relation.feature_ref == feature_ref && relation.class_ref == class.id)
+}
+
 pub(crate) fn project_marker_backed_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -835,6 +864,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 marker,
                                 &object_markers,
                             )
+                            && !terminal_relation_display_carrier(lane, marker)
                     })
                 })
                 .collect::<Vec<_>>();

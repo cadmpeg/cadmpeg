@@ -697,6 +697,50 @@ pub(crate) mod extended_geometry_116_indexed_arc {
     pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 112;
 }
 
+/// Byte offsets for the `current_terminal_relation_carrier` record.
+///
+/// Spec §2. Record length 136 B.
+///
+/// ```text
+/// The class declaration begins at the record boundary +136 and is owned by the matching feature relation.
+/// ```
+pub(crate) mod current_terminal_relation_carrier {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 136;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `terminal_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINAL_HEADER: usize = 64;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `terminal_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_SELECTOR: usize = 80;
+    /// Offset of `terminal_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_STATE: usize = 84;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 86;
+    /// Offset of `zero_tail` (`bytes[32]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 102;
+    /// Offset of `terminal_tag` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 134;
+}
+
 /// Byte offsets for the `extended_geometry_terminal_circle_dimension_tail` record.
 ///
 /// Spec §2. Record length 160 B.

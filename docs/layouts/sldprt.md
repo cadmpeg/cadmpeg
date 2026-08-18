@@ -667,6 +667,40 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `current_terminal_relation_carrier`
+
+Spec §2 · layout: byte offsets · size: 136 B
+
+The class declaration begins at the record boundary +136 and is owned by the matching feature relation.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix terminal relation carrier |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `2` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 4 | `terminal_header` | `bytes[4]` | little | spec | `01 00 01 00` at marker +64 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +68 |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +72 |
+| 80 | 4 | `terminal_selector` | `u32` | little | spec | u32 `1` at marker +80 |
+| 84 | 2 | `terminal_state` | `u16` | little | spec | zero u16 at marker +84 |
+| 86 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells at marker +86 |
+| 102 | 32 | `zero_tail` | `bytes[32]` | little | spec | 32 zero bytes at marker +102 |
+| 134 | 2 | `terminal_tag` | `u16` | little | spec | u16 `3` at marker +134 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this relation carrier.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_geometry_terminal_circle_dimension_tail`
 
 Spec §2 · layout: byte offsets · size: 160 B
