@@ -1069,6 +1069,67 @@ fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type406_form2_entity_table_boundary_follows_fixed_values() {
+    let mut source = directory_target(1, 406);
+    source.form = 2;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 406 Form 2 table boundary");
+    assert_eq!(groups.token_start, 5);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type406_form2_table_boundary_precedes_generic_candidate() {
+    let mut source = directory_target(1, 406);
+    source.form = 2;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    let record = integer_parameter_record(1, &[406, 3, 0, 1, 1, 3, 0]);
+
+    let generic = structural_pointer_group_candidates(&record);
+    assert_eq!(generic.len(), 1);
+    assert_eq!(generic[0].token_start, 4);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
+fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
+    let mut source = directory_target(1, 406);
+    source.form = 2;
+    let association = directory_target(3, 212);
+    let directory = BTreeMap::from([(1, &source), (3, &association)]);
+    for values in [
+        vec![406, 2, 0, 1, 1, 3, 0],
+        vec![406, 4, 0, 1, 2, 3, 0],
+        vec![406, 3, 0, 1],
+    ] {
+        let record = integer_parameter_record(1, &values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+
+    let mut record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
+    record.tokens[1].value = TokenValue::Real(3.0);
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
 fn type184_entity_table_boundary_follows_item_and_transform_lists() {
     for (form, item_count, expected_start) in [(0_i64, 1_i64, 4), (0, 2, 6), (1, 3, 8)] {
         let association = directory_target(1, 212);
