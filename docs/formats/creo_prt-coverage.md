@@ -408,8 +408,9 @@ fixtures, scores above L1 remain blocked.
   complete proof.
 - Type-three and type-nine point-on-line equations accept a unique ordinary
   line row from an incomplete segment table when its stored `verhor` selector
-  supplies the held coordinate; selected unique ordinary endpoint rows are
-  also admitted. Duplicate or selector-less rows remain unresolved.
+  or an independent active unary or line-incidence proof supplies the held
+  coordinate; selected unique ordinary endpoint rows are also admitted.
+  Duplicate or unresolved-orientation rows remain unresolved.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1

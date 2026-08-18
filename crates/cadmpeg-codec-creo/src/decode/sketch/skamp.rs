@@ -22,6 +22,21 @@ pub(crate) fn section_line_entity_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> Option<usize> {
+    section_line_entity_fixed_coordinate_with_mode(definition, entity_id, false)
+}
+
+pub(crate) fn section_line_entity_fixed_coordinate_with_unique_rows(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+) -> Option<usize> {
+    section_line_entity_fixed_coordinate_with_mode(definition, entity_id, true)
+}
+
+fn section_line_entity_fixed_coordinate_with_mode(
+    definition: &crate::feature::FeatureDefinition,
+    entity_id: u32,
+    include_unique_rows: bool,
+) -> Option<usize> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
     for skamp in active_complete_section_skamps(definition) {
         let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
@@ -61,9 +76,13 @@ pub(crate) fn section_line_entity_fixed_coordinate(
     let mut coordinates = BTreeSet::new();
     for (entity_id, parity) in parities {
         coordinates.extend(
-            section_line_direct_fixed_coordinates(definition, entity_id)
-                .into_iter()
-                .map(|coordinate| coordinate ^ parity),
+            section_line_direct_fixed_coordinates_with_mode(
+                definition,
+                entity_id,
+                include_unique_rows,
+            )
+            .into_iter()
+            .map(|coordinate| coordinate ^ parity),
         );
     }
     coordinates
@@ -72,11 +91,17 @@ pub(crate) fn section_line_entity_fixed_coordinate(
         .filter(|_| coordinates.len() == 1)
 }
 
-pub(crate) fn section_line_direct_fixed_coordinates(
+fn section_line_direct_fixed_coordinates_with_mode(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
+    include_unique_rows: bool,
 ) -> BTreeSet<usize> {
-    let mut coordinates = unique_section_skamp_segment(definition, entity_id)
+    let segment = if include_unique_rows {
+        unique_decoded_section_segment(definition, entity_id)
+    } else {
+        unique_section_skamp_segment(definition, entity_id)
+    };
+    let mut coordinates = segment
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
         .and_then(|segment| segment.vertical_horizontal)
         .and_then(|selector| match selector {
@@ -146,10 +171,8 @@ pub(crate) fn section_skamp_point_on_line(
     };
     let line_for_item = |item: &crate::feature::FeatureSkampItem| {
         unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
-            unique_decoded_section_segment(definition, item.entity_id).filter(|segment| {
-                segment.kind == crate::feature::FeatureSegmentKind::Line
-                    && matches!(segment.vertical_horizontal, Some(0 | 1))
-            })
+            unique_decoded_section_segment(definition, item.entity_id)
+                .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
         })
     };
     let pair = match skamp.kind {
@@ -178,11 +201,7 @@ pub(crate) fn section_skamp_point_on_line(
     let coordinate = if definition.segments.as_ref()?.is_complete() {
         section_line_fixed_coordinate(definition, pair.0)?
     } else {
-        match unique_decoded_section_segment(definition, pair.0.external_id)?.vertical_horizontal {
-            Some(0) => 0,
-            Some(1) => 1,
-            _ => return None,
-        }
+        section_line_entity_fixed_coordinate_with_unique_rows(definition, pair.0.external_id)?
     };
     Some((pair.0.point_ids[0], pair.1, coordinate))
 }
@@ -263,16 +282,8 @@ pub(crate) fn section_skamp_axis_symmetry(
     };
     (axis_item.sense == 0 && section_skamp_is_line(definition, axis_item)).then_some(())?;
     let unique_row = unique_decoded_section_segment(definition, axis_item.entity_id);
-    let coordinate = section_line_entity_fixed_coordinate(definition, axis_item.entity_id)
-        .or_else(|| {
-            let segment = unique_row?;
-            (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-            match segment.vertical_horizontal {
-                Some(0) => Some(0),
-                Some(1) => Some(1),
-                _ => None,
-            }
-        })?;
+    let coordinate =
+        section_line_entity_fixed_coordinate_with_unique_rows(definition, axis_item.entity_id)?;
     let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
     {
         SectionSymmetryAxis::Point(segment.point_ids[0])
@@ -488,8 +499,10 @@ pub(crate) fn saved_section_point(
 #[cfg(test)]
 mod tests {
     use super::{
-        section_skamp_axis_symmetry, section_skamp_point_entity_id, section_skamp_point_on_line,
-        section_skamp_point_symmetry, section_skamp_selected_point_id, SectionPointSource,
+        section_line_entity_fixed_coordinate,
+        section_line_entity_fixed_coordinate_with_unique_rows, section_skamp_axis_symmetry,
+        section_skamp_point_entity_id, section_skamp_point_on_line, section_skamp_point_symmetry,
+        section_skamp_selected_point_id, SectionPointSource,
     };
 
     fn point_definition(
@@ -793,6 +806,14 @@ mod tests {
             Vec::new(),
         );
         incomplete_axis.segments.as_mut().expect("segments").rows[0].vertical_horizontal = Some(0);
+        assert_eq!(
+            section_line_entity_fixed_coordinate(&incomplete_axis, 99),
+            None
+        );
+        assert_eq!(
+            section_line_entity_fixed_coordinate_with_unique_rows(&incomplete_axis, 99),
+            Some(0)
+        );
         let Some((axis, first, second, coordinate)) =
             section_skamp_axis_symmetry(&incomplete_axis, &skamp)
         else {
@@ -813,6 +834,38 @@ mod tests {
         let mut duplicate_axis_skamp = skamp.clone();
         duplicate_axis_skamp.items[0].entity_id = 99;
         assert!(section_skamp_axis_symmetry(&duplicate_axis, &duplicate_axis_skamp).is_none());
+
+        let mut conflicting_orientation = incomplete_axis;
+        conflicting_orientation.relations = Some(crate::feature::FeatureRelationTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: Vec::new(),
+            skamps: vec![crate::feature::FeatureSkamp {
+                id: 1,
+                kind: 1,
+                flags: 0,
+                status: 1,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                }],
+                offset: 0,
+            }],
+            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 0,
+                offset: 0,
+            }),
+            triples: Vec::new(),
+            triples_header: None,
+            offset: 0,
+        });
+        assert!(section_line_entity_fixed_coordinate_with_unique_rows(
+            &conflicting_orientation,
+            99
+        )
+        .is_none());
+        assert!(section_skamp_axis_symmetry(&conflicting_orientation, &skamp).is_none());
     }
 
     #[test]
@@ -864,6 +917,37 @@ mod tests {
         };
         assert_eq!(
             section_skamp_point_on_line(&definition, &type_three),
+            Some((1, 3, 1))
+        );
+
+        let mut unary_orientation = definition.clone();
+        unary_orientation.segments.as_mut().expect("segments").rows[0].vertical_horizontal = None;
+        unary_orientation.relations = Some(crate::feature::FeatureRelationTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: Vec::new(),
+            skamps: vec![crate::feature::FeatureSkamp {
+                id: 1,
+                kind: 1,
+                flags: 0,
+                status: 1,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 10,
+                    sense: 0,
+                }],
+                offset: 0,
+            }],
+            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 0,
+                offset: 0,
+            }),
+            triples: Vec::new(),
+            triples_header: None,
+            offset: 0,
+        });
+        assert_eq!(
+            section_skamp_point_on_line(&unary_orientation, &type_three),
             Some((1, 3, 1))
         );
 
