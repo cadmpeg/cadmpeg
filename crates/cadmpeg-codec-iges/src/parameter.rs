@@ -349,6 +349,19 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (402, 1 | 7 | 14 | 15) => {
+            let Some(member_count) = record.count(1) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = member_count.checked_add(2) else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (110, 0..=2) => ParameterBoundary::Known(7),
         (116, 0) => ParameterBoundary::Known(5),
         _ => ParameterBoundary::Unknown,
