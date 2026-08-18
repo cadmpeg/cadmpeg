@@ -316,6 +316,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// start at token `5 + N2` after the entity type token.
 /// Type 143 Form 0 puts the boundary count at index 3, so its groups start at
 /// token `4 + N` after the entity type token.
+/// Type 141 Form 0 puts the model-curve count at index 4. Each item consumes
+/// three fields plus its `K` parameter-curve pointers, so its groups start at
+/// token `5 + 3*N + sum(K(i))` after the entity type token.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -341,6 +344,7 @@ pub(crate) fn entity_primary_end(
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
         (128, 0..=9) => Some(rational_bspline_surface_primary_end(record)),
+        (141, 0) => Some(boundary_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
@@ -475,6 +479,33 @@ fn bounded_surface_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|boundary_count| boundary_count.checked_add(4))
         .unwrap_or(record.tokens.len())
+}
+
+fn boundary_primary_end(record: &ParameterRecord) -> usize {
+    let Some(segment_count) = record
+        .integer(4)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let mut index = 5;
+    for _ in 0..segment_count {
+        let Some(pcurve_count) = record
+            .integer(index + 2)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next_index) = index
+            .checked_add(3)
+            .and_then(|start| start.checked_add(pcurve_count))
+        else {
+            return record.tokens.len();
+        };
+        index = next_index;
+    }
+    index
 }
 
 fn trimmed_surface_primary_end(record: &ParameterRecord) -> usize {
