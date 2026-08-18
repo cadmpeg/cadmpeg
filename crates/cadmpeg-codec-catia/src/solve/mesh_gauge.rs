@@ -1359,6 +1359,12 @@ fn relation_row_gauge_mapping(
         if source.len() != targets.len() {
             return None;
         }
+        if source.len() == 1 {
+            // A one-to-one structural group has no row-order gauge. Its map
+            // is fixed by the input option relation and needs no state scan.
+            *row_mapping.get_mut(source[0])? = targets[0];
+            continue;
+        }
         let mut ordered = source
             .into_iter()
             .map(|edge| Some((relation_row_signature(state, edge, permutation)?, edge)))
