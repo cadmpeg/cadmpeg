@@ -391,9 +391,10 @@ fixtures, scores above L1 remain blocked.
   incomplete or competing frame boundaries remain unresolved.
 - Type-zero and type-three coincidence incidences add point-coordinate
   equalities when their selected point or endpoint-bearing section entities are
-  unique. This includes type-12 bounded-curve and type-25 reference-line
-  endpoints and the two-sense-zero-point form of type three; contradictory
-  components retain stored non-conflicting coordinates.
+  unique, including endpoints from unique ordinary line or arc rows in an
+  incomplete segment table. This includes type-12 bounded-curve and type-25
+  reference-line endpoints and the two-sense-zero-point form of type three;
+  contradictory components retain stored non-conflicting coordinates.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
   incident section entities when no segment spans the pair. Standalone type-1

@@ -24,9 +24,9 @@ use super::equations_scalar::{
 use super::geometry::{saved_section_circle_values, saved_section_segment_point_coordinates};
 use super::radii::section_relation_length_dimension;
 use super::skamp::{
-    section_line_fixed_coordinate, section_skamp_axis_symmetry, section_skamp_point_entity_id,
-    section_skamp_point_on_line, section_skamp_point_symmetry, section_skamp_saved_point_on_line,
-    section_skamp_selected_point, SectionPointSource, SectionSymmetryAxis,
+    section_line_fixed_coordinate, section_skamp_axis_symmetry, section_skamp_coincidence_point,
+    section_skamp_point_entity_id, section_skamp_point_on_line, section_skamp_point_symmetry,
+    section_skamp_saved_point_on_line, SectionPointSource, SectionSymmetryAxis,
 };
 
 const EPS_SECTION_COORDINATE: f64 = 1e-9;
@@ -100,8 +100,8 @@ pub(crate) fn resolved_section_coordinates(
             };
             let pair = match skamp.kind {
                 0 => Some([
-                    section_skamp_selected_point(definition, first)?,
-                    section_skamp_selected_point(definition, second)?,
+                    section_skamp_coincidence_point(definition, first)?,
+                    section_skamp_coincidence_point(definition, second)?,
                 ]),
                 3 => {
                     let first_point = section_skamp_point_entity_id(definition, first);
@@ -113,10 +113,10 @@ pub(crate) fn resolved_section_coordinates(
                         ]),
                         (Some(point), None) => Some([
                             SectionPointSource::Point(point),
-                            section_skamp_selected_point(definition, second)?,
+                            section_skamp_coincidence_point(definition, second)?,
                         ]),
                         (None, Some(point)) => Some([
-                            section_skamp_selected_point(definition, first)?,
+                            section_skamp_coincidence_point(definition, first)?,
                             SectionPointSource::Point(point),
                         ]),
                         _ => None,
@@ -659,4 +659,163 @@ pub(crate) fn resolved_section_points(
         .into_iter()
         .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolved_section_points;
+    use crate::feature::{
+        FeatureDefinition, FeaturePointSegment, FeatureRelationTable, FeatureSectionPoint,
+        FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
+        FeatureSolverTableHeader, FeatureVariableTable,
+    };
+
+    fn incomplete_segment_definition() -> FeatureDefinition {
+        FeatureDefinition {
+            id: 1,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(2.0),
+                        v: Some(3.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 2,
+                        u: None,
+                        v: None,
+                    },
+                ],
+                offset: 0,
+            }),
+            segments: Some(FeatureSegmentTable {
+                declared_count: 3,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: vec![FeatureSegment {
+                    kind: FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 7,
+                    body: Vec::new(),
+                    offset: 0,
+                }],
+                circle_rows: Vec::new(),
+                point_rows: vec![FeaturePointSegment {
+                    point_id: 2,
+                    external_id: 8,
+                    offset: 1,
+                }],
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(FeatureRelationTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: vec![
+                    FeatureSkamp {
+                        id: 1,
+                        kind: 0,
+                        flags: 0,
+                        status: 1,
+                        items: vec![
+                            FeatureSkampItem {
+                                entity_id: 7,
+                                sense: 2,
+                            },
+                            FeatureSkampItem {
+                                entity_id: 7,
+                                sense: 3,
+                            },
+                        ],
+                        offset: 0,
+                    },
+                    FeatureSkamp {
+                        id: 2,
+                        kind: 3,
+                        flags: 0,
+                        status: 1,
+                        items: vec![
+                            FeatureSkampItem {
+                                entity_id: 8,
+                                sense: 0,
+                            },
+                            FeatureSkampItem {
+                                entity_id: 7,
+                                sense: 2,
+                            },
+                        ],
+                        offset: 1,
+                    },
+                ],
+                skamp_header: Some(FeatureSolverTableHeader {
+                    declared_count: 2,
+                    entity_ref: 0,
+                    offset: 0,
+                }),
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn incomplete_unique_ordinary_rows_supply_coincidence_point_ids() {
+        let definition = incomplete_segment_definition();
+        assert_eq!(
+            resolved_section_points(&definition).get(&2),
+            Some(&[2.0, 3.0])
+        );
+
+        let mut duplicate_ordinary = definition.clone();
+        let duplicate = duplicate_ordinary.segments.as_ref().expect("segments").rows[0].clone();
+        duplicate_ordinary
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(FeatureSegment {
+                offset: 2,
+                ..duplicate
+            });
+        assert!(!resolved_section_points(&duplicate_ordinary).contains_key(&2));
+
+        let mut duplicate_family = definition;
+        duplicate_family
+            .segments
+            .as_mut()
+            .expect("segments")
+            .point_rows
+            .push(FeaturePointSegment {
+                point_id: 1,
+                external_id: 7,
+                offset: 2,
+            });
+        assert!(!resolved_section_points(&duplicate_family).contains_key(&2));
+    }
 }

@@ -406,6 +406,20 @@ pub(crate) fn section_skamp_selected_point(
         .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
 }
 
+pub(crate) fn section_skamp_coincidence_point(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SectionPointSource> {
+    section_skamp_selected_point(definition, item).or_else(|| {
+        section_skamp_selected_point_id_with_ordinary_segment(
+            definition,
+            item,
+            unique_decoded_section_segment(definition, item.entity_id),
+        )
+        .map(SectionPointSource::Point)
+    })
+}
+
 pub(crate) fn saved_section_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
