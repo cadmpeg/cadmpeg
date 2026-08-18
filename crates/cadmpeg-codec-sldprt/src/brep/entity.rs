@@ -923,6 +923,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         out.extend(disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e_face_root_body(&by_attr));
     }
     if out.is_empty() {
+        out.extend(disc24_disc22_disc20_disc1c_disc16_disc14_disc0e_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(
             disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06_face_root_body(&by_attr),
         );
@@ -6450,6 +6453,47 @@ fn disc24_disc20_disc1e_disc1a_disc16_disc14_disc0e_face_root_body(
     )
 }
 
+fn disc24_disc22_disc20_disc1c_disc16_disc14_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_population_policy_and_bridges(
+        by_attr,
+        &[
+            (0x0024, 2),
+            (0x0022, 2),
+            (0x0020, 2),
+            (0x001c, 2),
+            (0x0016, 1),
+            (0x0014, 2),
+            (0x000e, 2),
+        ],
+        0x0004,
+        0x001e,
+        0x0026,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        Some(&[
+            KeyedFaceBridge {
+                disc: 0x0010,
+                flo: 1,
+            },
+            KeyedFaceBridge {
+                disc: 0x001a,
+                flo: 2,
+            },
+        ]),
+        None,
+        KeyedLinkPolicy::Reciprocal,
+        true,
+        true,
+        true,
+    )
+}
+
 fn disc22_disc20_disc1e_disc1a_disc18_disc16_disc14_disc12_disc06_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
@@ -7510,6 +7554,24 @@ fn keyed_face_companion<'a>(
     link_policy: KeyedLinkPolicy,
     allow_keyed_companion_fallback: bool,
 ) -> Option<(&'a EntityRecord, Option<&'a EntityRecord>)> {
+    keyed_face_companion_with_bridges(
+        by_attr,
+        face,
+        companion_disc,
+        canonical_face_bridge.as_slice(),
+        link_policy,
+        allow_keyed_companion_fallback,
+    )
+}
+
+fn keyed_face_companion_with_bridges<'a>(
+    by_attr: &HashMap<u16, &'a EntityRecord>,
+    face: &EntityRecord,
+    companion_disc: u16,
+    canonical_face_bridges: &[KeyedFaceBridge],
+    link_policy: KeyedLinkPolicy,
+    allow_keyed_companion_fallback: bool,
+) -> Option<(&'a EntityRecord, Option<&'a EntityRecord>)> {
     let direct = face
         .refs
         .get(1)
@@ -7521,29 +7583,37 @@ fn keyed_face_companion<'a>(
                 && record.refs.get(2) == Some(&face.attr)
         })
         .map(|companion| (companion, None));
-    let bridged = canonical_face_bridge.and_then(|bridge_shape| {
-        let bridge = face
-            .refs
-            .get(1)
-            .and_then(|attr| by_attr.get(attr))
-            .copied()
-            .filter(|record| {
-                record.disc == bridge_shape.disc
-                    && record.flo() == bridge_shape.flo
-                    && record.refs.get(2) == Some(&face.attr)
-            })?;
-        let companion = bridge
-            .refs
-            .get(1)
-            .and_then(|attr| by_attr.get(attr))
-            .copied()
-            .filter(|record| {
-                record.disc == companion_disc
-                    && record.flo() == 1
-                    && record.refs.get(2) == Some(&bridge.attr)
-            })?;
-        Some((companion, Some(bridge)))
-    });
+    let bridged_candidates = canonical_face_bridges
+        .iter()
+        .filter_map(|bridge_shape| {
+            let bridge = face
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| {
+                    record.disc == bridge_shape.disc
+                        && record.flo() == bridge_shape.flo
+                        && record.refs.get(2) == Some(&face.attr)
+                })?;
+            let companion = bridge
+                .refs
+                .get(1)
+                .and_then(|attr| by_attr.get(attr))
+                .copied()
+                .filter(|record| {
+                    record.disc == companion_disc
+                        && record.flo() == 1
+                        && record.refs.get(2) == Some(&bridge.attr)
+                })?;
+            Some((companion, bridge))
+        })
+        .collect::<Vec<_>>();
+    let bridged = match bridged_candidates.as_slice() {
+        [] => None,
+        [(companion, bridge)] => Some((*companion, Some(*bridge))),
+        _ => return None,
+    };
     let forward_keyed = if direct.is_none()
         && bridged.is_none()
         && matches!(link_policy, KeyedLinkPolicy::ForwardKeyed)
@@ -7949,6 +8019,37 @@ fn keyed_face_root_body_with_keyed_face_links_with_population_policy(
     allow_unselected_companions: bool,
     allow_keyed_use_fallback: bool,
 ) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_population_policy_and_bridges(
+        by_attr,
+        chain_shape,
+        canonical_disc,
+        companion_disc,
+        use_disc,
+        options,
+        None,
+        companion_use_bridge,
+        link_policy,
+        allow_keyed_companion_fallback,
+        allow_unselected_companions,
+        allow_keyed_use_fallback,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Each argument identifies an independent layout role or link policy.
+fn keyed_face_root_body_with_keyed_face_links_with_population_policy_and_bridges(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    options: KeyedFaceRootOptions,
+    canonical_face_bridges: Option<&[KeyedFaceBridge]>,
+    companion_use_bridge: Option<KeyedFaceBridge>,
+    link_policy: KeyedLinkPolicy,
+    allow_keyed_companion_fallback: bool,
+    allow_unselected_companions: bool,
+    allow_keyed_use_fallback: bool,
+) -> Vec<BodyRecord> {
     let bodies = keyed_face_root_body_with_companion_use_bridge_and_fallback(
         by_attr,
         chain_shape,
@@ -7956,6 +8057,7 @@ fn keyed_face_root_body_with_keyed_face_links_with_population_policy(
         companion_disc,
         use_disc,
         options,
+        canonical_face_bridges,
         companion_use_bridge,
         link_policy,
         allow_keyed_companion_fallback,
@@ -7965,16 +8067,18 @@ fn keyed_face_root_body_with_keyed_face_links_with_population_policy(
     if bodies.is_empty() {
         return bodies;
     }
+    let canonical_face_bridge_shapes =
+        canonical_face_bridges.unwrap_or(options.canonical_face_bridge.as_slice());
     let keyed_links = by_attr
         .values()
         .copied()
         .filter(|record| record.disc == canonical_disc && record.flo() == 1)
         .all(|face| {
-            let Some((companion, bridge)) = keyed_face_companion(
+            let Some((companion, bridge)) = keyed_face_companion_with_bridges(
                 by_attr,
                 face,
                 companion_disc,
-                options.canonical_face_bridge,
+                canonical_face_bridge_shapes,
                 link_policy,
                 allow_keyed_companion_fallback,
             ) else {
@@ -8073,6 +8177,7 @@ fn keyed_face_root_body_with_keyed_face_links_with_multiple_matching_chains(
         companion_disc,
         use_disc,
         options,
+        None,
         companion_use_bridge,
         link_policy,
         allow_keyed_companion_fallback,
@@ -8179,6 +8284,7 @@ fn keyed_face_root_body_with_companion_use_bridge(
         companion_disc,
         use_disc,
         options,
+        None,
         companion_use_bridge,
         KeyedLinkPolicy::Reciprocal,
         false,
@@ -8195,6 +8301,7 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
     companion_disc: u16,
     use_disc: u16,
     options: KeyedFaceRootOptions,
+    canonical_face_bridges: Option<&[KeyedFaceBridge]>,
     companion_use_bridge: Option<KeyedFaceBridge>,
     link_policy: KeyedLinkPolicy,
     allow_keyed_companion_fallback: bool,
@@ -8208,6 +8315,7 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback(
         companion_disc,
         use_disc,
         options,
+        canonical_face_bridges,
         companion_use_bridge,
         link_policy,
         allow_keyed_companion_fallback,
@@ -8225,6 +8333,7 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback_with_chain_policy
     companion_disc: u16,
     use_disc: u16,
     options: KeyedFaceRootOptions,
+    canonical_face_bridges: Option<&[KeyedFaceBridge]>,
     companion_use_bridge: Option<KeyedFaceBridge>,
     link_policy: KeyedLinkPolicy,
     allow_keyed_companion_fallback: bool,
@@ -8292,12 +8401,14 @@ fn keyed_face_root_body_with_companion_use_bridge_and_fallback_with_chain_policy
     if canonical_faces.is_empty() {
         return Vec::new();
     }
+    let canonical_face_bridge_shapes =
+        canonical_face_bridges.unwrap_or(options.canonical_face_bridge.as_slice());
     let companion_of = |face: &EntityRecord| {
-        keyed_face_companion(
+        keyed_face_companion_with_bridges(
             by_attr,
             face,
             companion_disc,
-            options.canonical_face_bridge,
+            canonical_face_bridge_shapes,
             link_policy,
             allow_keyed_companion_fallback,
         )
