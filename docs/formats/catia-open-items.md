@@ -220,6 +220,26 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and dependency roles for each admitted feature family, including regeneration semantics.
 
+### DI-26. `7C0A` payload `0x3c` form
+
+**Question.** What does a `0x3c` byte introduce in a `7C0A` payload, and which field gives its extent?
+
+**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" enumerates the assigned payload forms and states that bytes outside those forms stay literals and make no reference. `0x3c` is not an assigned form. `crates/cadmpeg-codec-catia/src/object_graph.rs:1160-1181` reads `3c <atom> <u32le>` as a bulk-table header when the `u32le` is not more than the remaining payload byte count, and reads the `0x3c` byte as a literal atom when it is more. `crates/cadmpeg-codec-catia/src/object_graph.rs:1362-1368` then classifies the complete payload as a bulk table when one such field is present.
+
+**Need.** The two branches consume different byte counts, so the token boundary of every field after the `0x3c` byte changes. A different boundary makes or removes an object reference, and those references bind design objects. We must know the extent field to walk the payload.
+
+**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. The identifier is the original one.
+
+### DI-27. Feature-local parameter order
+
+**Question.** Which field gives the position of a parameter in the parameter list of its feature?
+
+**Known.** `catia.md` §7.3 "An object graph is preceded by" gives the byte offset of a design object's first field and the zero-based position of that object in the graph. It gives no order for the parameters of one feature. `crates/cadmpeg-codec-catia/src/design_feature.rs:256-286` sorts the exact feature-owned parameters by object-record byte offset, then by entity byte offset, then by the identifier that the codec makes, and publishes that rank in the field that `crates/cadmpeg-ir/src/features.rs:289` documents as the position among parameters in the same ownership scope. One feature can own parameters from more than one design object, so the sort interleaves records of different objects by file position alone.
+
+**Need.** We must know the field to order the parameter list of one feature.
+
+**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. The identifier is the original one. The document-scope half of the original item is settled: `crates/cadmpeg-codec-catia/src/design_feature.rs:295-315` gives the parameters that no feature owns their own contiguous scope.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-01. `a5 03 32` header type codes
