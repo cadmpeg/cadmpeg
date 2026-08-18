@@ -69,6 +69,9 @@ mod pcurves;
 pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
 #[cfg(test)]
 #[allow(unused_imports)]
+pub(crate) use pcurves::complete_tolerant_intersection_pcurves_from_serialized_branches;
+#[cfg(test)]
+#[allow(unused_imports)]
 pub(crate) use pcurves::{
     attach_tolerant_edge_intersections, blend_boundary_parameter_from_support_spine_with_index,
     coincident_pcurve_pair, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
@@ -76,8 +79,7 @@ pub(crate) use pcurves::{
 };
 #[allow(unused_imports)]
 pub(crate) use pcurves::{
-    attach_tolerant_edge_intersections_with_budget, boundary_curve_affine_breaks,
-    curve_is_cache_backed, exact_analytic_isocurve_pcurve_with_budget, exact_boundary_curve_breaks,
+    attach_tolerant_edge_intersections_with_budget, exact_boundary_curve_breaks,
     ordered_parameter_range, pcurve_matches_edge_range_with_index_and_budget,
     pcurve_parameter_range, reverse_pcurve_over_range,
 };
@@ -87,11 +89,6 @@ pub(crate) use pcurves::{
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget,
-};
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use pcurves::{
-    complete_tolerant_intersection_pcurves_from_serialized_branches, exact_analytic_isocurve_pcurve,
 };
 
 mod offset;
@@ -103,9 +100,9 @@ pub(crate) use offset::{
     intersection_parameter_tangent, intersection_side, least_squares_step, lift_periodic_parameter,
     model_surface_derivative, normalize_pcurve_parameters, null_vector_3x4, nurbs_active_domain,
     parameter_derivative_step, point_distance, positive_weights, saved_offset_carriers, solve_4x4,
-    solve_damped_least_squares_4x4, subdivide_offset_rectangle, surface_parameter_domain,
-    surface_parameter_periods, surface_parameters, translation_net_normal,
-    HomogeneousControlBounds, HomogeneousSurfaceNet, IntersectionParameterSpace,
+    solve_damped_least_squares_4x4, subdivide_offset_rectangle, surface_parameters,
+    translation_net_normal, HomogeneousControlBounds, HomogeneousSurfaceNet,
+    IntersectionParameterSpace,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

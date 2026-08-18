@@ -168,15 +168,30 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ]);
 
     let range = [0.0, std::f64::consts::TAU];
-    let cone_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &cone_ellipse, &cone, range, 1.0e-12)
-            .expect("cone ellipse");
-    let sphere_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &sphere_circle, &sphere, range, 1.0e-12)
-            .expect("sphere parallel");
-    let torus_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &torus_circle, &torus, range, 1.0e-12)
-            .expect("torus meridian");
+    let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &cone_ellipse,
+        &cone,
+        range,
+        1.0e-12,
+    )
+    .expect("cone ellipse");
+    let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &sphere_circle,
+        &sphere,
+        range,
+        1.0e-12,
+    )
+    .expect("sphere parallel");
+    let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &torus_circle,
+        &torus,
+        range,
+        1.0e-12,
+    )
+    .expect("torus meridian");
     assert!(matches!(
         sphere_pcurve,
         PcurveGeometry::Line { origin, direction }

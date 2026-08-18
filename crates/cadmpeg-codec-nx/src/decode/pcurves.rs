@@ -17,7 +17,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index_and_budget,
-    point_distance, surface_parameter_domain, surface_parameter_periods,
+    point_distance, surface_parameter_domain_with_index, surface_parameter_periods_with_index,
 };
 use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
@@ -1108,7 +1108,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 target,
                 pcurve,
                 tolerance,
-                curve_is_cache_backed(ir, &procedural.curve),
+                curve_is_cache_backed_with_index(&model_index, &procedural.curve),
             ))
         })
         .collect::<Vec<_>>();
@@ -1222,6 +1222,13 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let vertex_points = vertex_point_positions(ir);
     let edges_by_curve = edge_indices_by_curve(ir);
+    let procedural_indices = ir.model.procedural_curves.iter().enumerate().fold(
+        BTreeMap::new(),
+        |mut indices, (index, procedural)| {
+            indices.entry(procedural.id.clone()).or_insert(index);
+            indices
+        },
+    );
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let replacements = ir
         .model
@@ -1265,11 +1272,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     parameterization: None,
                 } => {
                     let range = if edge.start == edge.end
-                        && ir
-                            .model
-                            .curves
-                            .iter()
-                            .find(|candidate| candidate.id == procedural.curve)
+                        && model_index
+                            .curves(procedural.curve.0.as_str())
                             .is_some_and(|curve| {
                                 matches!(
                                     curve.geometry,
@@ -1288,7 +1292,6 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             let candidates = [first_surface, second_surface].map(|surface| {
                 exact_boundary_pcurve_with_index(
                     &model_index,
-                    ir,
                     &procedural.curve,
                     surface,
                     endpoints,
@@ -1301,7 +1304,6 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 [Some(first), Some(second)] => {
                     if coincident_pcurve_pair_with_index(
                         &model_index,
-                        ir,
                         [first_surface, second_surface],
                         [&first, &second],
                         range,
@@ -1380,7 +1382,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 procedural.id.clone(),
                 pcurves,
                 tolerance,
-                curve_is_cache_backed(ir, &procedural.curve),
+                curve_is_cache_backed_with_index(&model_index, &procedural.curve),
                 procedural.curve.clone(),
                 range,
                 tolerant,
@@ -1389,12 +1391,10 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         .collect::<Vec<_>>();
     let mut bounded_tolerant_curves = Vec::new();
     for (procedural_id, pcurves, tolerance, cache_backed, curve, range, tolerant) in replacements {
-        let Some(procedural) = ir
-            .model
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+        let Some(procedural_index) = procedural_indices.get(&procedural_id).copied() else {
+            continue;
+        };
+        let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
         match &mut procedural.definition {
@@ -1427,23 +1427,25 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         }
     }
     for (curve, range) in bounded_tolerant_curves {
-        if let Some(edge) = ir
-            .model
-            .edges
-            .iter_mut()
-            .find(|edge| edge.curve.as_ref() == Some(&curve))
-        {
+        let Some(edge_indices) = edges_by_curve.get(&curve) else {
+            continue;
+        };
+        let [edge_index] = edge_indices.as_slice() else {
+            continue;
+        };
+        if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.param_range = Some(range);
             annotations.derived(&edge.id, "param_range");
         }
     }
 }
 
-pub(crate) fn curve_is_cache_backed(ir: &CadIr, curve: &CurveId) -> bool {
-    ir.model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)
+fn curve_is_cache_backed_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    curve: &CurveId,
+) -> bool {
+    index
+        .curves(curve.0.as_str())
         .is_some_and(|carrier| !matches!(&carrier.geometry, CurveGeometry::Procedural { .. }))
 }
 
@@ -1460,7 +1462,6 @@ pub(crate) fn exact_boundary_pcurve(
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_boundary_pcurve_with_index(
         &index,
-        ir,
         curve,
         surface,
         endpoints,
@@ -1473,7 +1474,6 @@ pub(crate) fn exact_boundary_pcurve(
 #[allow(clippy::too_many_arguments)]
 fn exact_boundary_pcurve_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
     endpoints: [Point3; 2],
@@ -1487,13 +1487,9 @@ fn exact_boundary_pcurve_with_index(
         && tolerance.is_finite()
         && tolerance >= 0.0)
         .then_some(())?;
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
-    if let Some(candidate) = exact_analytic_isocurve_pcurve_with_budget(
-        ir,
+    let carrier = index.surfaces(surface.0.as_str())?;
+    if let Some(candidate) = exact_analytic_isocurve_pcurve_with_index_and_budget(
+        index,
         curve,
         surface,
         range,
@@ -1544,7 +1540,6 @@ fn exact_boundary_pcurve_with_index(
         };
         return exact_boundary_pcurve_matches_carrier_with_index(
             index,
-            ir,
             curve,
             surface,
             &candidate,
@@ -1597,7 +1592,6 @@ fn exact_boundary_pcurve_with_index(
         }
         return exact_boundary_pcurve_matches_carrier_with_index(
             index,
-            ir,
             curve,
             surface,
             &candidate,
@@ -1610,7 +1604,7 @@ fn exact_boundary_pcurve_with_index(
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
     };
-    let domain = surface_parameter_domain(ir, surface)?;
+    let domain = surface_parameter_domain_with_index(index, surface)?;
     let parameters = [
         nurbs_surface_parameter_within_tolerance_with_budget(
             nurbs,
@@ -1676,7 +1670,6 @@ fn exact_boundary_pcurve_with_index(
         .filter(|candidate| {
             exact_boundary_pcurve_matches_carrier_with_index(
                 index,
-                ir,
                 curve,
                 surface,
                 candidate,
@@ -1695,7 +1688,6 @@ fn exact_boundary_pcurve_with_index(
 #[allow(clippy::too_many_arguments)]
 fn exact_boundary_pcurve_matches_carrier_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
@@ -1703,18 +1695,15 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
-    let Some(carrier) = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)
-    else {
+    let Some(carrier) = index.curves(curve.0.as_str()) else {
         return false;
     };
     let Some(curve_breaks) = exact_boundary_curve_breaks(&carrier.geometry, range) else {
         return false;
     };
-    let Some(surface_breaks) = boundary_curve_affine_breaks(ir, surface, pcurve, range) else {
+    let Some(surface_breaks) =
+        boundary_curve_affine_breaks_with_index(index, surface, pcurve, range)
+    else {
         return false;
     };
     let mut breaks = curve_breaks;
@@ -1784,9 +1773,10 @@ pub(crate) fn exact_analytic_isocurve_pcurve(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    exact_analytic_isocurve_pcurve_with_budget(
-        ir,
+    exact_analytic_isocurve_pcurve_with_index_and_budget(
+        &index,
         curve,
         surface,
         range,
@@ -1795,8 +1785,8 @@ pub(crate) fn exact_analytic_isocurve_pcurve(
     )
 }
 
-pub(crate) fn exact_analytic_isocurve_pcurve_with_budget(
-    ir: &CadIr,
+fn exact_analytic_isocurve_pcurve_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     surface: &SurfaceId,
     range: [f64; 2],
@@ -1805,12 +1795,8 @@ pub(crate) fn exact_analytic_isocurve_pcurve_with_budget(
 ) -> Option<PcurveGeometry> {
     const SAMPLE_INTERVALS: usize = 8;
 
-    let curve = ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| &candidate.id == curve)?;
-    let curve_speed = match &curve.geometry {
+    let curve_carrier = index.curves(curve.0.as_str())?;
+    let curve_speed = match &curve_carrier.geometry {
         CurveGeometry::Circle { radius, .. } => radius.abs(),
         CurveGeometry::Ellipse {
             major_radius,
@@ -1819,11 +1805,7 @@ pub(crate) fn exact_analytic_isocurve_pcurve_with_budget(
         } => major_radius.abs().max(minor_radius.abs()),
         _ => return None,
     };
-    let surface_carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let surface_carrier = index.surfaces(surface.0.as_str())?;
     matches!(
         surface_carrier.geometry,
         SurfaceGeometry::Cylinder { .. }
@@ -1832,11 +1814,11 @@ pub(crate) fn exact_analytic_isocurve_pcurve_with_budget(
             | SurfaceGeometry::Torus { .. }
     )
     .then_some(())?;
-    let periods = surface_parameter_periods(ir, surface);
+    let periods = surface_parameter_periods_with_index(index, surface);
     let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
     for index in 0..=SAMPLE_INTERVALS {
         let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
-        let point = curve_point_with_budget(&curve.geometry, parameter, geometry_budget)?;
+        let point = curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
         let mut uv = analytic_surface_parameters(&surface_carrier.geometry, point)?;
         if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
             if let Some(period) = periods[0] {
@@ -1885,10 +1867,12 @@ pub(crate) fn exact_analytic_isocurve_pcurve_with_budget(
     let uv = pcurve_uv(&candidate, parameter)?;
     geometry_budget.charge().then_some(())?;
     let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
-    let curve_position = curve_point_with_budget(&curve.geometry, parameter, geometry_budget)?;
-    let curve_tangent = curve_tangent_with_budget(&curve.geometry, parameter, geometry_budget)?;
+    let curve_position =
+        curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+    let curve_tangent =
+        curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
     let curve_acceleration =
-        curve_second_derivative_with_budget(&curve.geometry, parameter, geometry_budget)?;
+        curve_second_derivative_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
     let surface_tangent = Vector3::new(
         direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
         direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
@@ -1928,7 +1912,6 @@ pub(crate) fn coincident_pcurve_pair(
     let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coincident_pcurve_pair_with_index(
         &index,
-        ir,
         surfaces,
         pcurves,
         range,
@@ -1940,7 +1923,6 @@ pub(crate) fn coincident_pcurve_pair(
 #[allow(clippy::too_many_arguments)]
 fn coincident_pcurve_pair_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
     range: [f64; 2],
@@ -1976,8 +1958,9 @@ fn coincident_pcurve_pair_with_index(
         let distance = point_distance(first, second);
         distance.is_finite().then_some(distance)
     };
-    let affine_breaks = [0usize, 1usize]
-        .map(|side| boundary_curve_affine_breaks(ir, surfaces[side], pcurves[side], range));
+    let affine_breaks = [0usize, 1usize].map(|side| {
+        boundary_curve_affine_breaks_with_index(index, surfaces[side], pcurves[side], range)
+    });
     if let [Some(first), Some(second)] = affine_breaks {
         let mut breaks = first;
         breaks.extend(second);
@@ -1992,7 +1975,6 @@ fn coincident_pcurve_pair_with_index(
         .map(|side| {
             boundary_curve_speed_bound_with_index(
                 index,
-                ir,
                 surfaces[side],
                 pcurves[side],
                 geometry_budget,
@@ -2033,17 +2015,13 @@ fn coincident_pcurve_pair_with_index(
     true
 }
 
-pub(crate) fn boundary_curve_affine_breaks(
-    ir: &CadIr,
+fn boundary_curve_affine_breaks_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     let PcurveGeometry::Line { origin, direction } = pcurve else {
         return None;
     };
@@ -2091,16 +2069,11 @@ pub(crate) fn boundary_curve_affine_breaks(
 
 fn boundary_curve_speed_bound_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    ir: &CadIr,
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let carrier = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)?;
+    let carrier = index.surfaces(surface.0.as_str())?;
     let PcurveGeometry::Line { origin, direction } = pcurve else {
         return None;
     };

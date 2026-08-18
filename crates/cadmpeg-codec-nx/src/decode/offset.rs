@@ -1240,14 +1240,6 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
     }
 }
 
-pub(crate) fn surface_parameter_domain(
-    ir: &CadIr,
-    surface: &SurfaceId,
-) -> Option<([f64; 2], [f64; 2])> {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    surface_parameter_domain_with_index(&index, surface)
-}
-
 pub(crate) fn surface_parameter_domain_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -1589,12 +1581,6 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
 
 pub(crate) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
     value + ((reference - value) / period).round() * period
-}
-
-/// Return supported parameter periods while rejecting cyclic procedural support graphs.
-pub(crate) fn surface_parameter_periods(ir: &CadIr, surface: &SurfaceId) -> [Option<f64>; 2] {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    surface_parameter_periods_with_index(&index, surface)
 }
 
 pub(crate) fn surface_parameter_periods_with_index(

@@ -392,8 +392,9 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         });
     }
 
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert_eq!(
-        crate::decode::surface_parameter_periods(&ir, &surfaces[0]),
+        crate::decode::offset::surface_parameter_periods_with_index(&model_index, &surfaces[0]),
         [None, None]
     );
 }
