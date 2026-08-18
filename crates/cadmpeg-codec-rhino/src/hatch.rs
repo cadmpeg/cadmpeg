@@ -277,7 +277,7 @@ pub(crate) fn apply_userdata(
     let mut first_gradient = None;
     for extra in userdata
         .iter()
-        .filter(|value| value.class_uuid == V5_HATCH_EXTRA)
+        .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
     {
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
@@ -589,7 +589,9 @@ pub(crate) mod tests {
 
     #[test]
     fn v5_hatch_extra_supplies_scaled_base_point() {
-        let payload = version_two_hatch_payload();
+        let mut payload = version_two_hatch_payload();
+        payload[0] = 0x11;
+        payload.truncate(payload.len() - 16);
         crate::decode::with_expand_bytes(&payload, |expand| {
             let mut hatch =
                 decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
@@ -622,6 +624,20 @@ pub(crate) mod tests {
             )
             .expect("hatch extra");
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
+
+            let mut wrong_item_descriptor = descriptor.clone();
+            wrong_item_descriptor.item_uuid = Uuid::nil();
+            let mut wrong_item_hatch =
+                decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
+            apply_userdata(
+                &extra,
+                std::slice::from_ref(&wrong_item_descriptor),
+                10.0,
+                ArchiveVersion::V5,
+                &mut wrong_item_hatch,
+            )
+            .expect("wrong hatch-extra item UUID is ignored");
+            assert_eq!(wrong_item_hatch.basepoint, [0.0, 0.0]);
 
             let mut second_body = Vec::new();
             second_body.extend([0; 16]);

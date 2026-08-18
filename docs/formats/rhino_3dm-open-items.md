@@ -181,6 +181,13 @@ extension-line origin offsets in order; an unsupported child major or
 truncated child retains the complete object record, admits no angular
 dimension, and emits the bounded dimension diagnostic. The class and item UUID
 must both match before the offsets are applied.
+The V5 hatch owner is proven for the registered
+`ON_OBSOLETE_V5_HatchExtra` carrier: its anonymous 1.0 child supplies the
+serialized base point for a packed V5 hatch; an unsupported child major or
+truncated coordinate retains the complete object record, keeps the hatch and
+loop curve typed, leaves the base point at `[0,0]`, and emits the bounded hatch
+userdata diagnostic. The class and item UUID must both match before the base
+point is applied.
 
 **Need.** A later user-data class writer and reader, or an independent witness,
 for each version that is to be typed, including its fields and boundaries. The

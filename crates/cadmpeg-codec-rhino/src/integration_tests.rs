@@ -26,6 +26,7 @@ mod mesh_modifiers_userdata;
 mod mesh_userdata;
 mod object_attributes_userdata;
 mod settings_userdata;
+mod v5_hatch_extra_userdata;
 mod views_userdata;
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     RhinoCodec
@@ -55,7 +56,6 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);
         assert_valid(&result);
-
         let container = RhinoCodec
             .decode(
                 &mut Cursor::new(bytes),
