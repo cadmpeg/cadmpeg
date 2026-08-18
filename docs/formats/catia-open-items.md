@@ -76,16 +76,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know their roles to validate and write the body.
 
-### DI-07. Compound relation-program result binding
-
-**Question.** Which compound relation-program frame slot selects the `paramout` result entity?
-
-**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
-
-**Need.** We must know the result slot to transfer a relation with an output.
-
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `5f1d8cb2d` changed only this ledger. The current parser chooses the lead-`12` context or lead-`54` trailing reference when its class is `paramout`, and formula transfer consumes that field. Corpus byte records have not yet verified that slot and class rule. Parser/spec agreement and synthetic tests are consistency, not verification of the native result binding. Compare the relation-program frames of corpus and probe-batch parts with `cadmpeg inspect` to fix the result slot.
-
 ### DI-08. Legacy relation `body` selector
 
 **Question.** What identity space does a nonlocal `body` selector on a legacy typed relation use?
