@@ -18,6 +18,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+const PRESENTATION_MIN_LINE_LENGTH: f64 = 1.0e-12;
+
 /// Record slices shared by every dimension-constraint projection: the sketch
 /// placements, parameter and companion tables, the locus/group/annotation
 /// dimension records, and the sketch geometry the loci reference.
@@ -126,7 +128,35 @@ pub fn project_dimension_constraints(
         .map(|sketch| sketch.id.clone())
         .collect::<HashSet<_>>();
     let placements = inputs.placements;
-    project_all_dimension_constraints(inputs, linear_tolerance)
+    project_all_dimension_constraints(inputs, &[], linear_tolerance)
+        .into_iter()
+        .filter(|constraint| {
+            placements
+                .iter()
+                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
+                .is_none_or(|placement| {
+                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
+                })
+        })
+        .collect()
+}
+
+/// Project planar dimensions with direct Fusion presentation frames. The
+/// presentation carrier is kept separate from the established locus inputs so
+/// callers that construct dimension fixtures do not need to synthesize an
+/// unrelated native arena.
+pub(crate) fn project_dimension_constraints_with_presentations(
+    inputs: &DimensionConstraintInputs<'_>,
+    presentation_frames: &[crate::records::DesignDimensionPresentationFrame],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    linear_tolerance: f64,
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    let spatial_sketch_ids = spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.clone())
+        .collect::<HashSet<_>>();
+    let placements = inputs.placements;
+    project_all_dimension_constraints(inputs, presentation_frames, linear_tolerance)
         .into_iter()
         .filter(|constraint| {
             placements
@@ -141,6 +171,7 @@ pub fn project_dimension_constraints(
 
 fn project_all_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
+    presentation_frames: &[crate::records::DesignDimensionPresentationFrame],
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
@@ -241,6 +272,14 @@ fn project_all_dimension_constraints(
         let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
         let parameter = *parameters.get(&(scope, record_index))?;
         Some((parameter, neutral_parameter_id(parameter)))
+    };
+    let presentation_for_owner = |scope: &str, owner_record_index: u32| {
+        let mut matches = presentation_frames.iter().filter(|frame| {
+            native_stream(&frame.id) == Some(scope)
+                && frame.governing_owner_record_index == owner_record_index
+        });
+        let frame = matches.next()?;
+        matches.next().is_none().then_some(frame)
     };
     let sketch_for_geometry = |scope: &str, indices: &[u32]| {
         let projected_sketches = indices
@@ -1122,7 +1161,20 @@ fn project_all_dimension_constraints(
         .or_else(|| {
             concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
         });
-        let exact_definition = parallel_axis_angle.or(owner_scoped_definition);
+        let presentation_definition =
+            presentation_for_owner(scope, owner.record_index).and_then(|frame| {
+                presentation_dimension_definition(
+                    scope,
+                    frame,
+                    &projected,
+                    parameter,
+                    &parameter_id,
+                    linear_tolerance,
+                )
+            });
+        let exact_definition = presentation_definition
+            .or(parallel_axis_angle)
+            .or(owner_scoped_definition);
         if exact_definition.is_none() && companion.payload_byte_length == 0 {
             return None;
         }
@@ -1159,6 +1211,252 @@ fn project_all_dimension_constraints(
     }));
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
+}
+
+/// Resolve one direct presentation carrier only when its selected geometry
+/// measures the parameter value. Presentation operands are authoritative for
+/// selection, while the geometric check prevents a presentation record from
+/// assigning a nearby entity with the same source sketch.
+fn presentation_dimension_definition(
+    scope: &str,
+    frame: &crate::records::DesignDimensionPresentationFrame,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    if !design_dimension_unit(parameter) {
+        return None;
+    }
+    let entities = frame
+        .operands
+        .iter()
+        .map(|operand| {
+            projected
+                .get(&(scope, operand.geometry_record_index))
+                .copied()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if entities.is_empty()
+        || entities
+            .iter()
+            .any(|entity| entity.sketch != entities[0].sketch)
+    {
+        return None;
+    }
+    match entities.as_slice() {
+        [entity] if parameter.source_kind.starts_with("Tangent Dimension") => {
+            tangent_radius_dimension_definition(entity, parameter, parameter_id, linear_tolerance)
+        }
+        [entity] => radial_dimension_definition_at_tolerance(
+            entity,
+            &parameter.source_kind,
+            parameter.evaluated_value,
+            parameter_id.clone(),
+            linear_tolerance,
+        )
+        .or_else(|| {
+            if !parameter.source_kind.starts_with("Linear Dimension") {
+                return None;
+            }
+            let SketchGeometry::Line { start, end } = &entity.geometry else {
+                return None;
+            };
+            let measured = (end.u - start.u).hypot(end.v - start.v);
+            linear_measurement_matches(measured, parameter.evaluated_value * 10.0, linear_tolerance)
+                .then(|| Definition::DistanceLoci {
+                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id.clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id.clone()),
+                    parameter: parameter_id.clone(),
+                })
+        }),
+        [first, second] if parameter.source_kind.starts_with("Tangent Dimension") => {
+            tangent_entity_distance_definition(
+                first,
+                second,
+                parameter,
+                parameter_id,
+                linear_tolerance,
+            )
+        }
+        [first, second] if parameter.source_kind.starts_with("Linear Dimension") => {
+            explicit_linear_dimension_definition(
+                first,
+                second,
+                parameter,
+                parameter_id,
+                linear_tolerance,
+            )
+        }
+        [first, second] if parameter.source_kind.starts_with("Angular Dimension") => {
+            line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value).then(
+                || Definition::Angle {
+                    first: first.id.clone(),
+                    second: second.id.clone(),
+                    parameter: parameter_id.clone(),
+                },
+            )
+        }
+        _ => None,
+    }
+}
+
+fn tangent_radius_dimension_definition(
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    let radius = match &entity.geometry {
+        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
+        _ => return None,
+    };
+    linear_measurement_matches(radius, parameter.evaluated_value * 10.0, linear_tolerance).then(
+        || Definition::Radius {
+            entity: entity.id.clone(),
+            parameter: parameter_id.clone(),
+        },
+    )
+}
+
+fn tangent_entity_distance_definition(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+
+    let circle_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            Some((*center, radius.0))
+        }
+        _ => None,
+    };
+    let candidates = match (&first.geometry, &second.geometry) {
+        (
+            SketchGeometry::Line { start, end },
+            SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. },
+        ) => {
+            let line = (*start, *end);
+            let circle = (*center, radius.0);
+            let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
+            let length = direction.u.hypot(direction.v);
+            if length <= PRESENTATION_MIN_LINE_LENGTH {
+                return None;
+            }
+            let offset = Point2::new(circle.0.u - line.0.u, circle.0.v - line.0.v);
+            let center_distance = (offset.u * direction.v - offset.v * direction.u).abs() / length;
+            vec![
+                center_distance + circle.1,
+                (center_distance - circle.1).abs(),
+            ]
+        }
+        (
+            SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. },
+            SketchGeometry::Line { start, end },
+        ) => {
+            let line = (*start, *end);
+            let circle = (*center, radius.0);
+            let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
+            let length = direction.u.hypot(direction.v);
+            if length <= PRESENTATION_MIN_LINE_LENGTH {
+                return None;
+            }
+            let offset = Point2::new(circle.0.u - line.0.u, circle.0.v - line.0.v);
+            let center_distance = (offset.u * direction.v - offset.v * direction.u).abs() / length;
+            vec![
+                center_distance + circle.1,
+                (center_distance - circle.1).abs(),
+            ]
+        }
+        _ if circle_geometry(first).is_some() && circle_geometry(second).is_some() => {
+            let (first_center, first_radius) = circle_geometry(first)?;
+            let (second_center, second_radius) = circle_geometry(second)?;
+            let center_distance =
+                (first_center.u - second_center.u).hypot(first_center.v - second_center.v);
+            vec![
+                center_distance + first_radius + second_radius,
+                (center_distance - first_radius - second_radius).abs(),
+                (center_distance + first_radius - second_radius).abs(),
+                (center_distance - first_radius + second_radius).abs(),
+            ]
+        }
+        _ => return None,
+    };
+    let matches = candidates
+        .into_iter()
+        .filter(|candidate| {
+            linear_measurement_matches(
+                *candidate,
+                parameter.evaluated_value * 10.0,
+                linear_tolerance,
+            )
+        })
+        .collect::<Vec<_>>();
+    let [_measured] = matches.as_slice() else {
+        return None;
+    };
+    Some(Definition::Distance {
+        entities: vec![first.id.clone(), second.id.clone()],
+        parameter: parameter_id.clone(),
+    })
+}
+
+fn explicit_linear_dimension_definition(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+    };
+
+    let expected = parameter.evaluated_value * 10.0;
+    if let Some(definition) = directional_point_dimension(
+        &[first, second],
+        expected,
+        parameter_id.clone(),
+        linear_tolerance,
+    ) {
+        return Some(definition);
+    }
+    if point_line_separation(first, second, expected, linear_tolerance)
+        || parallel_line_separation(first, second, expected)
+        || concentric_circle_separation(first, second, expected)
+    {
+        return Some(Definition::Distance {
+            entities: vec![first.id.clone(), second.id.clone()],
+            parameter: parameter_id.clone(),
+        });
+    }
+    let (
+        SketchGeometry::Point {
+            position: first_position,
+        },
+        SketchGeometry::Point {
+            position: second_position,
+        },
+    ) = (&first.geometry, &second.geometry)
+    else {
+        return None;
+    };
+    let measured =
+        (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
+    linear_measurement_matches(measured, expected, linear_tolerance).then(|| {
+        Definition::DistanceLoci {
+            first: SketchLocus::Entity(first.id.clone()),
+            second: SketchLocus::Entity(second.id.clone()),
+            parameter: parameter_id.clone(),
+        }
+    })
 }
 
 /// Resolve an angular parameter from the unique two-line point incidence
@@ -2060,7 +2358,7 @@ pub fn project_spatial_dimension_constraints(
         .iter()
         .map(|parameter| (neutral_parameter_id(parameter), parameter))
         .collect::<HashMap<_, _>>();
-    let source_constraints = project_all_dimension_constraints(inputs, linear_tolerance);
+    let source_constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance);
     let parameter_constraint_counts = source_constraints
         .iter()
         .flat_map(|constraint| constraint_parameters(&constraint.definition))

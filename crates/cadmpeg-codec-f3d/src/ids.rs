@@ -682,6 +682,11 @@ native_record_id!(
     "design-dimension-annotation-frame"
 );
 native_record_id!(
+    /// The native design-dimension-presentation-frame record key.
+    native_design_dimension_presentation_frame_id,
+    "design-dimension-presentation-frame"
+);
+native_record_id!(
     /// The native design-dimension-locus-group record key.
     native_design_dimension_locus_group_id,
     "design-dimension-locus-group"

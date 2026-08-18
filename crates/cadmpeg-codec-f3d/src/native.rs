@@ -37,8 +37,8 @@ use crate::records::{
     DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDecalImage,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignMeshFeature,
     DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
@@ -108,6 +108,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
     "design_dimension_null_locus_pairs",
+    "design_dimension_presentation_frames",
     "design_dimension_recipe_records",
     "design_edge_identity_operands",
     "design_edge_operands",
@@ -512,6 +513,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_dimension_null_locus_pairs)
         },
         len: |model| model.design_dimension_null_locus_pairs.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_dimension_presentation_frames",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_dimension_presentation_frames)
+        },
+        len: |model| model.design_dimension_presentation_frames.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1167,6 +1180,9 @@ pub struct F3dNative {
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
+    /// Fusion presentation frames governing parameter companions.
+    #[serde(default)]
+    pub design_dimension_presentation_frames: Vec<DesignDimensionPresentationFrame>,
     /// Typed paired loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
@@ -1345,6 +1361,7 @@ impl Default for F3dNative {
             design_mesh_features: Vec::new(),
             design_component_occurrences: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
+            design_dimension_presentation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
             design_dimension_null_locus_pairs: Vec::new(),
@@ -1424,6 +1441,8 @@ impl F3dNative {
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
             design_dimension_annotation_frames: namespace
                 .arena_as("design_dimension_annotation_frames")?,
+            design_dimension_presentation_frames: namespace
+                .arena_as("design_dimension_presentation_frames")?,
             design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
             design_dimension_locus_pairs: namespace.arena_as("design_dimension_locus_pairs")?,
             design_dimension_null_locus_pairs: namespace

@@ -505,6 +505,44 @@ pub struct DesignDimensionAnnotationFrame {
     pub owner_reference_offset: u64,
 }
 
+/// Paired Fusion presentation frame that directly identifies a dimension's
+/// measured sketch geometry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignDimensionPresentationFrame {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Byte length from the primary through the paired-header boundary.
+    pub frame_length: u64,
+    /// Ordered typed sketch-geometry operands.
+    pub operands: Vec<DesignDimensionAnnotationOperand>,
+    /// Opaque presentation bytes between the operand run and the paired
+    /// `EntityTracking` header.
+    pub presentation_bytes: Vec<u8>,
+    /// Byte offset of `presentation_bytes`.
+    pub presentation_byte_offset: u64,
+    /// Dynamic class tag of the paired `EntityTracking` header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+    /// Numeric suffix of the owning Sketch entity.
+    pub owner_reference: u32,
+    /// Byte offset of `owner_reference`.
+    pub owner_reference_offset: u64,
+    /// Indexed parameter-owner record governed by this frame.
+    pub governing_owner_record_index: u32,
+    /// Indexed Design parameter selected by the governing owner.
+    pub governing_parameter_record_index: u32,
+    /// Indexed parameter companion selected by the governing owner.
+    pub governing_companion_record_index: u32,
+}
+
 /// One typed geometry locus and its dimension-role code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

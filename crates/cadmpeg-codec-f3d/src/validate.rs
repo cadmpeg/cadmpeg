@@ -751,6 +751,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
     let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
     validate_dimension_annotation_frames(&ctx, &mut findings);
+    validate_dimension_presentation_frames(&ctx, &mut findings);
     let locus_group_companions = validate_dimension_locus_groups(&ctx, &mut findings);
     validate_dimension_null_locus_pairs(
         &ctx,
@@ -7676,6 +7677,102 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Design dimension annotation frame has invalid links or offsets"
+                    .into(),
+                entity: Some(frame.id.clone()),
+            });
+        }
+    }
+}
+
+/// Validate direct dimension presentation frames and their sketch-owner joins.
+fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    let parameters_by_index = &ctx.parameters_by_index;
+    let owners_by_index = &ctx.owners_by_index;
+    let companions_by_index = &ctx.companions_by_index;
+    let entities_by_suffix = &ctx.entities_by_suffix;
+    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
+    let sketch_scope_by_entity = native
+        .design_sketch_placements
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                (design_stream(&placement.id), placement.entity_suffix),
+                placement.scope_record_index?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut presentation_frame_indices = HashSet::new();
+    for frame in &native.design_dimension_presentation_frames {
+        let native_stream = design_stream(&frame.id);
+        let unique_index = presentation_frame_indices.insert((native_stream, frame.record_index));
+        let owner = owners_by_index.get(&(native_stream, frame.governing_owner_record_index));
+        let parameter =
+            parameters_by_index.get(&(native_stream, frame.governing_parameter_record_index));
+        let companion =
+            companions_by_index.get(&(native_stream, frame.governing_companion_record_index));
+        let owner_link_valid = owner.is_some_and(|owner| {
+            owner.parameter_record_index == frame.governing_parameter_record_index
+                && owner.companion_record_index == frame.governing_companion_record_index
+                && parameter.is_some_and(|parameter| {
+                    parameter.kind == records::DesignParameterKind::Dimension
+                })
+                && companion
+                    .is_some_and(|companion| companion.owner_record_index == owner.record_index)
+        });
+        let nearest_owner = native
+            .design_parameter_owners
+            .iter()
+            .filter(|candidate| {
+                design_stream(&candidate.id) == native_stream
+                    && sketch_scope_by_entity
+                        .get(&(native_stream, u64::from(frame.owner_reference)))
+                        .is_some_and(|scope_record_index| {
+                            candidate.scope_record_index == *scope_record_index
+                        })
+                    && candidate.byte_offset > frame.paired_byte_offset
+                    && parameters_by_index
+                        .get(&(native_stream, candidate.parameter_record_index))
+                        .is_some_and(|parameter| {
+                            parameter.kind == records::DesignParameterKind::Dimension
+                        })
+            })
+            .min_by_key(|candidate| candidate.byte_offset);
+        let governing_owner_is_nearest = nearest_owner
+            .is_some_and(|candidate| candidate.record_index == frame.governing_owner_record_index);
+        let operand_start = frame.byte_offset.saturating_add(24);
+        let operands_valid = !frame.operands.is_empty()
+            && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
+                let start = operand_start.saturating_add((ordinal as u64).saturating_mul(15));
+                operand.geometry_reference_offset == start.saturating_add(1)
+                    && operand.role_offset == start.saturating_add(11)
+                    && sketch_geometry_indices
+                        .contains(&(native_stream, operand.geometry_record_index))
+            });
+        let owner_is_sketch = entities_by_suffix
+            .get(&(native_stream, u64::from(frame.owner_reference)))
+            .is_some_and(|entity| entity.in_sketch_module());
+        let valid = valid_dynamic_class_tag(&frame.class_tag)
+            && valid_dynamic_class_tag(&frame.paired_class_tag)
+            && unique_index
+            && frame.paired_byte_offset > frame.byte_offset
+            && frame.frame_length == frame.paired_byte_offset.saturating_sub(frame.byte_offset)
+            && frame.presentation_byte_offset
+                == operand_start.saturating_add((frame.operands.len() as u64).saturating_mul(15))
+            && frame
+                .presentation_byte_offset
+                .saturating_add(frame.presentation_bytes.len() as u64)
+                == frame.paired_byte_offset
+            && frame.owner_reference_offset == frame.paired_byte_offset.saturating_add(20)
+            && owner_link_valid
+            && governing_owner_is_nearest
+            && operands_valid
+            && owner_is_sketch;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension presentation frame has invalid links or offsets"
                     .into(),
                 entity: Some(frame.id.clone()),
             });

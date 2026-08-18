@@ -346,6 +346,7 @@
           "design_dimension_locus_groups": [],
           "design_dimension_locus_pairs": [],
           "design_dimension_null_locus_pairs": [],
+          "design_dimension_presentation_frames": [],
           "design_dimension_recipe_records": [],
           "design_edge_identity_operands": [],
           "design_edge_operands": [],

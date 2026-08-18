@@ -4,16 +4,19 @@
 use crate::bytes::lp_ascii_filtered;
 use crate::container::{role, ContainerScan};
 use crate::design::construction_recipe_family_name_len;
-use crate::design::decode::sketch::{decode_constraint_kinds, next_indexed_record_offset};
+use crate::design::decode::meta::{decode_types, stream_types_by_entity};
+use crate::design::decode::sketch::{
+    decode_constraint_kinds, indexed_record_offsets, next_indexed_record_offset,
+};
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeOperand,
-    DesignEntityHeader, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, PersistentSubentityTag,
-    SketchCurveIdentity, SketchPoint,
+    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
+    DesignEdgeOperand, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -24,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 /// geometry tables that locate each dimension's owning companion and geometry.
 pub struct DimensionDecodeInputs<'a> {
     pub(crate) scan: &'a ContainerScan<'a>,
+    pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) parameters: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) companions: &'a [DesignParameterCompanion],
@@ -583,6 +587,7 @@ pub fn decode_dimension_locus_pairs(
         headers,
         points,
         curves,
+        ..
     } = inputs;
     let parameters = parameters
         .iter()
@@ -809,6 +814,7 @@ pub fn decode_dimension_null_locus_pairs(
         headers,
         points,
         curves,
+        ..
     } = inputs;
     let parameters = parameters
         .iter()
@@ -1016,6 +1022,7 @@ pub fn decode_dimension_annotation_frames(
         headers,
         points,
         curves,
+        ..
     } = inputs;
     let parameters = parameters
         .iter()
@@ -1333,6 +1340,246 @@ pub(crate) fn parse_dimension_annotation_frame(
     })
 }
 
+/// Stable Fusion type whose indexed records carry the older direct dimension
+/// presentation geometry.
+const DIMENSION_PRESENTATION_TYPE_GUID: &str = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57";
+/// Stable Fusion type whose indexed records carry the current direct
+/// dimension presentation geometry.
+const DIMENSION_PRESENTATION_V3_TYPE_GUID: &str = "8C780195-72C0-4a56-A911-E43AB14357F2";
+/// Stable `EntityTracking` type used by a dimension presentation's paired
+/// header.
+const DIMENSION_PRESENTATION_PAIR_TYPE_GUID: &str = "90055C05-546C-4EE7-B3C9-3DD922AD0C9C";
+
+fn is_dimension_presentation_type(type_guid: &str) -> bool {
+    type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_TYPE_GUID)
+        || type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_V3_TYPE_GUID)
+}
+
+/// Decode direct presentation frames that precede a dimension parameter's
+/// owner. The type table selects the primary and paired classes; no numeric
+/// class tag is treated as a cross-stream type identity.
+pub fn decode_dimension_presentation_frames(
+    inputs: &DimensionDecodeInputs<'_>,
+    entities: &[DesignEntityHeader],
+) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
+    let &DimensionDecodeInputs {
+        scan,
+        placements,
+        parameters,
+        owners,
+        points,
+        curves,
+        ..
+    } = inputs;
+    let parameter_kinds = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                (native_stream(&parameter.id)?, parameter.record_index),
+                parameter.kind,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let dimension_owners = owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id).is_some_and(|stream| {
+                parameter_kinds.get(&(stream, owner.parameter_record_index))
+                    == Some(&DesignParameterKind::Dimension)
+            })
+        })
+        .collect::<Vec<_>>();
+    let sketch_scope_by_entity = placements
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                (native_stream(&placement.id)?, placement.entity_suffix),
+                placement.scope_record_index?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let types = decode_types(scan)?;
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
+        let stream = ids::native_scope(&entry.name);
+        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let presentation_classes = stream_types
+            .iter()
+            .filter_map(|(class_tag, (type_guid, _version))| {
+                is_dimension_presentation_type(type_guid).then_some((*class_tag, *type_guid))
+            })
+            .collect::<HashMap<_, _>>();
+        if presentation_classes.is_empty() {
+            continue;
+        }
+        let paired_classes = stream_types
+            .iter()
+            .filter_map(|(class_tag, (type_guid, _version))| {
+                type_guid
+                    .eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
+                    .then_some(class_tag.to_string())
+            })
+            .collect::<HashSet<_>>();
+        if paired_classes.is_empty() {
+            continue;
+        }
+        let geometry_indices = points
+            .iter()
+            .filter(|point| native_stream(&point.id) == Some(stream.as_str()))
+            .map(|point| point.record_index)
+            .chain(
+                curves
+                    .iter()
+                    .filter(|curve| native_stream(&curve.id) == Some(stream.as_str()))
+                    .map(|curve| curve.record_index),
+            )
+            .collect::<HashSet<_>>();
+        let sketch_entities = entities
+            .iter()
+            .filter(|entity| {
+                native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
+            })
+            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .collect::<HashSet<_>>();
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for start in indexed_record_offsets(bytes) {
+            let Some(class_tag) = bytes
+                .get(start + 4..start + 7)
+                .and_then(|tag| std::str::from_utf8(tag).ok())
+            else {
+                continue;
+            };
+            let Some(primary_type_guid) = presentation_classes.get(
+                &class_tag
+                    .parse::<u64>()
+                    .expect("indexed dimension presentation class tag is numeric"),
+            ) else {
+                continue;
+            };
+            let Some(mut frame) = parse_dimension_presentation_frame(
+                bytes,
+                start,
+                primary_type_guid,
+                &geometry_indices,
+                &sketch_entities,
+                &paired_classes,
+            ) else {
+                continue;
+            };
+            let Some(owner) = dimension_owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(&owner.id) == Some(stream.as_str())
+                        && owner.byte_offset > frame.paired_byte_offset
+                        && sketch_scope_by_entity
+                            .get(&(stream.as_str(), u64::from(frame.owner_reference)))
+                            .is_some_and(|scope_record_index| {
+                                owner.scope_record_index == *scope_record_index
+                            })
+                })
+                .min_by_key(|owner| owner.byte_offset)
+            else {
+                continue;
+            };
+            frame.id =
+                ids::native_design_dimension_presentation_frame_id(&entry.name, frame.byte_offset);
+            frame.governing_owner_record_index = owner.record_index;
+            frame.governing_parameter_record_index = owner.parameter_record_index;
+            frame.governing_companion_record_index = owner.companion_record_index;
+            out.push(frame);
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+pub(crate) fn parse_dimension_presentation_frame(
+    bytes: &[u8],
+    start: usize,
+    primary_type_guid: &str,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+    paired_classes: &HashSet<String>,
+) -> Option<DesignDimensionPresentationFrame> {
+    if !is_dimension_presentation_type(primary_type_guid) {
+        return None;
+    }
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    if after_tag != start.checked_add(7)?
+        || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+        || bytes.get(start + 19) != Some(&1)
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(bytes, after_tag)?;
+    let count = usize::try_from(View::u32_le_at(bytes, start + 20)?).ok()?;
+    if !(1..=64).contains(&count) {
+        return None;
+    }
+    let mut position = start.checked_add(24)?;
+    let mut operands = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(position) != Some(&1)
+            || bytes.get(position + 5..position + 11) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let geometry_record_index = View::u32_le_at(bytes, position + 1)?;
+        if geometry_record_index == 0 || !geometry_indices.contains(&geometry_record_index) {
+            return None;
+        }
+        operands.push(DesignDimensionAnnotationOperand {
+            geometry_record_index,
+            geometry_reference_offset: u64::try_from(position + 1).ok()?,
+            role: View::u32_le_at(bytes, position + 11)?,
+            role_offset: u64::try_from(position + 11).ok()?,
+        });
+        position = position.checked_add(15)?;
+    }
+    let presentation_byte_offset = position;
+    let mut paired_search = position;
+    let (paired_byte_offset, paired_class_tag) = loop {
+        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let (tag, after) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
+        if View::u32_le_at(bytes, after) == Some(record_index)
+            && paired_classes.contains(tag.as_str())
+        {
+            if bytes.get(at + 11..at + 19) != Some(&[0; 8]) || bytes.get(at + 19) != Some(&1) {
+                return None;
+            }
+            break (at, tag);
+        }
+        paired_search = at.checked_add(1)?;
+    };
+    let owner_reference = View::u32_le_at(bytes, paired_byte_offset + 20)?;
+    if !sketch_entities.contains(&owner_reference) {
+        return None;
+    }
+    Some(DesignDimensionPresentationFrame {
+        id: String::new(),
+        byte_offset: u64::try_from(start).ok()?,
+        class_tag,
+        record_index,
+        frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
+        operands,
+        presentation_bytes: bytes
+            .get(presentation_byte_offset..paired_byte_offset)?
+            .to_vec(),
+        presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
+        paired_class_tag,
+        paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
+        owner_reference,
+        owner_reference_offset: u64::try_from(paired_byte_offset + 20).ok()?,
+        governing_owner_record_index: 0,
+        governing_parameter_record_index: 0,
+        governing_companion_record_index: 0,
+    })
+}
+
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 pub fn decode_dimension_locus_groups(
@@ -1348,6 +1595,7 @@ pub fn decode_dimension_locus_groups(
         headers,
         points,
         curves,
+        ..
     } = inputs;
     let parameters = parameters
         .iter()

@@ -2304,6 +2304,7 @@ impl<'a> F3dDecodeSession<'a> {
         );
         let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
             scan,
+            placements: &self.native.design_sketch_placements,
             parameters: &self.native.design_parameters,
             owners: &self.native.design_parameter_owners,
             companions: &self.native.design_parameter_companions,
@@ -2318,6 +2319,11 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+                &dimension_inputs,
+                &self.native.design_entity_headers,
+            )?;
+        self.native.design_dimension_presentation_frames =
+            crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
@@ -2640,13 +2646,24 @@ impl<'a> F3dDecodeSession<'a> {
             curves: &self.native.sketch_curve_identities,
             entities: &self.ir.model.sketch_entities,
         };
-        self.ir.model.sketch_constraints.extend(
+        let dimension_constraints = if self.native.design_dimension_presentation_frames.is_empty() {
             crate::design::dimensions::project_dimension_constraints(
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear,
-            ),
-        );
+            )
+        } else {
+            crate::design::dimensions::project_dimension_constraints_with_presentations(
+                &constraint_inputs,
+                &self.native.design_dimension_presentation_frames,
+                &self.ir.model.spatial_sketches,
+                self.ir.tolerances.linear,
+            )
+        };
+        self.ir
+            .model
+            .sketch_constraints
+            .extend(dimension_constraints);
         self.ir.model.spatial_sketch_constraints.extend(
             crate::design::dimensions::project_spatial_dimension_constraints(
                 &constraint_inputs,
@@ -3695,6 +3712,22 @@ fn populate_annotations(
         for entity in &native.design_dimension_annotation_frames {
             note(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
+                note(projected, "sketch_constraint");
+            }
+        }
+        for entity in &native.design_dimension_presentation_frames {
+            note(&entity.id, "design_dimension_presentation_frame");
+            let projected = native
+                .design_parameter_companions
+                .iter()
+                .find_map(|companion| {
+                    (crate::ids::native_stream(&companion.id)
+                        == crate::ids::native_stream(&entity.id)
+                        && companion.record_index == entity.governing_companion_record_index)
+                        .then(|| constraints_by_native.get(companion.id.as_str()))
+                        .flatten()
+                });
+            if let Some(projected) = projected {
                 note(projected, "sketch_constraint");
             }
         }
