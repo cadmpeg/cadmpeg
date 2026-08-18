@@ -6492,11 +6492,33 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
+        let Some(third) = View::u32_le_at(bytes, index_start + 8).map(|value| value as usize)
+        else {
+            continue;
+        };
         let Some(last) = View::u32_le_at(bytes, count_offset - 4).map(|value| value as usize)
         else {
             continue;
         };
-        if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
+        if first < count_offset + 4
+            || first >= second
+            || second > third
+            || third > last
+            || last > bytes.len()
+        {
+            continue;
+        }
+        // The first two data ranges contain the sole product marker. Reject
+        // random count words before allocating and walking the full offset
+        // table; malformed payloads commonly satisfy the cheap monotonicity
+        // checks while carrying no self-framed NX record at all.
+        let product_record_count = product_record_ranges
+            .iter()
+            .filter(|(start, end)| {
+                (first <= *start && *end <= second) || (second <= *start && *end <= third)
+            })
+            .count();
+        if product_record_count != 1 {
             continue;
         }
         let mut offsets = Vec::with_capacity(offset_count);
@@ -6515,14 +6537,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         {
             continue;
         }
-        let product_record_count = product_record_ranges
-            .iter()
-            .filter(|(start, end)| {
-                (offsets[0] <= *start && *end <= offsets[1])
-                    || (offsets[1] <= *start && *end <= offsets[2])
-            })
-            .count();
-        if product_record_count != 1 || !seen_record_starts.insert(offsets[1]) {
+        if !seen_record_starts.insert(offsets[1]) {
             continue;
         }
         let records = offsets[1..]
