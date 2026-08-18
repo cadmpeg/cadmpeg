@@ -3022,6 +3022,56 @@ fn selected_work_planes<'a>(
     Some(planes)
 }
 
+fn resolved_split_face_path(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<cadmpeg_ir::features::PathRef> {
+    use cadmpeg_ir::features::PathRef;
+
+    let previous_state_id =
+        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
+    let stream = native_stream(&scope.id)?;
+    let feature = neutral_feature_id(scope);
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    let prefix = ids::history_input_prefix(feature_key, previous_state_id);
+    let mut edge_slots = Vec::with_capacity(group.members.len());
+    for (ordinal, member) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let mut selections = entity_selection_operands.iter().filter(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == scope.record_index
+                && selection.group_record_index == group.record_index
+                && selection.group_member_ordinal == ordinal
+                && selection.record_index == *member
+        });
+        let selection = selections.next()?;
+        if selections.next().is_some()
+            || selection.secondary_identity.is_some()
+            || selection.curve_secondary_identity.is_some()
+        {
+            return None;
+        }
+        let edge_slot = selection.resolved_edge_slot?;
+        if edge_slots.contains(&edge_slot) {
+            return None;
+        }
+        edge_slots.push(edge_slot);
+    }
+    (!edge_slots.is_empty()).then(|| PathRef::HistoricalEdges {
+        state: feature_input_topology_id(&feature, previous_state_id),
+        edges: edge_slots
+            .into_iter()
+            .map(|edge_slot| ids::history_input_edge_id(&prefix, edge_slot))
+            .collect(),
+        native: group.id.clone(),
+    })
+}
+
 /// Return the unique non-empty construction operand group in `scope` carrying
 /// `role`. Yields `None` unless exactly one such group exists.
 fn single_operand_group<'a>(
@@ -6594,21 +6644,27 @@ fn project_split_face(
         return None;
     }
     let target_selection = project_face_selection(scope, targets, face_operands, histories);
-    let tool = selected_work_planes(scope, tool, entity_selection_operands, scopes).map_or_else(
-        || SplitFaceTool::Path(PathRef::Native(tool.id.clone())),
-        |planes| {
-            let planes = planes
-                .into_iter()
-                .map(neutral_feature_id)
-                .collect::<Vec<_>>();
-            match planes.as_slice() {
-                [plane] => SplitFaceTool::Plane {
-                    plane: plane.clone(),
-                },
-                _ => SplitFaceTool::Planes { planes },
-            }
-        },
-    );
+    let tool = resolved_split_face_path(scope, tool, entity_selection_operands, histories)
+        .map_or_else(
+            || {
+                selected_work_planes(scope, tool, entity_selection_operands, scopes).map_or_else(
+                    || SplitFaceTool::Path(PathRef::Native(tool.id.clone())),
+                    |planes| {
+                        let planes = planes
+                            .into_iter()
+                            .map(neutral_feature_id)
+                            .collect::<Vec<_>>();
+                        match planes.as_slice() {
+                            [plane] => SplitFaceTool::Plane {
+                                plane: plane.clone(),
+                            },
+                            _ => SplitFaceTool::Planes { planes },
+                        }
+                    },
+                )
+            },
+            SplitFaceTool::Path,
+        );
     Some(FeatureDefinition::SplitFace {
         targets: if matches!(target_selection, FaceSelection::Native(_)) {
             FaceSelection::Native(targets.id.clone())

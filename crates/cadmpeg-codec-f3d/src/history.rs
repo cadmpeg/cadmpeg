@@ -6032,14 +6032,26 @@ pub(crate) fn bind_entity_selection_history(
         let Some(topology) = &state.topology else {
             continue;
         };
-        let Some(secondary_identity) = operand.secondary_identity else {
-            continue;
-        };
-        operand.historical_edge_candidates = entity_selection_edge_candidates(
-            [operand.primary_identity, secondary_identity],
-            previous_state_id,
-            &identities,
-            topology,
+        let identity_pair = operand
+            .secondary_identity
+            .map(|secondary| [operand.primary_identity, secondary]);
+        operand.historical_edge_candidates = identity_pair.as_ref().map_or_else(
+            || {
+                entity_selection_edge_candidates(
+                    std::slice::from_ref(&operand.primary_identity),
+                    previous_state_id,
+                    &identities,
+                    topology,
+                )
+            },
+            |identities_pair| {
+                entity_selection_edge_candidates(
+                    identities_pair,
+                    previous_state_id,
+                    &identities,
+                    topology,
+                )
+            },
         );
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
@@ -6666,7 +6678,7 @@ fn entity_selection_face_candidates(
 }
 
 fn entity_selection_edge_candidates(
-    identities: [u64; 2],
+    identities: &[u64],
     previous_state_id: i64,
     history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
@@ -6674,7 +6686,8 @@ fn entity_selection_edge_candidates(
     use crate::records::DesignEntitySelectionEdgeCandidate;
 
     identities
-        .into_iter()
+        .iter()
+        .copied()
         .enumerate()
         .filter_map(|(identity_ordinal, local_id)| {
             let (kind, entity_ref, states) =

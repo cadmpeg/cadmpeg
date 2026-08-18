@@ -1698,7 +1698,7 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         }],
     };
     let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
-    let candidates = entity_selection_edge_candidates([700, 800], 3, &identities, &topology);
+    let candidates = entity_selection_edge_candidates(&[700, 800], 3, &identities, &topology);
     assert_eq!(
         candidates,
         [

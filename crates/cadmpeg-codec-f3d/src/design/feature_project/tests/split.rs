@@ -94,3 +94,81 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.paired_class_tag = "266".into();
     assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_none());
 }
+
+#[test]
+fn direct_single_identity_split_face_member_projects_historical_edge_path() {
+    let scope_record_index = 77;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        "SplitFace",
+        scope_record_index,
+    );
+    scope.class_tag = "277".into();
+    scope.paired_class_tag = "258".into();
+    scope.frame_length = 407;
+    scope.previous_history_state_id = Some(7);
+    scope.reference_members = (100..112).collect();
+
+    let groups = [
+        group(scope_record_index, 0, 100, vec![101], 0x0000_0021_0000_0000),
+        group(
+            scope_record_index,
+            2,
+            102,
+            (103..112).collect(),
+            0x0000_0010_0000_0000,
+        ),
+    ];
+    let selections = [crate::records::DesignEntitySelectionOperand {
+        id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
+        scope_record_index,
+        group_record_index: 100,
+        group_member_ordinal: 0,
+        record_index: 101,
+        byte_offset: 0,
+        class_tag: "277".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        context_id: "context".into(),
+        context_id_offset: 0,
+        identity_record_index: 102,
+        identity_record_offset: 0,
+        primary_identity: 225,
+        primary_identity_offset: 0,
+        secondary_identity: None,
+        secondary_identity_offset: None,
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
+        resolved_edge_slot: Some(42),
+        next_record_index: 103,
+        next_byte_offset: 0,
+    }];
+
+    let definition = project_split_face(&scope, &[scope.clone()], &groups, &selections, &[], &[])
+        .expect("class-277 direct edge path");
+    let FeatureDefinition::SplitFace {
+        tool:
+            cadmpeg_ir::features::SplitFaceTool::Path(cadmpeg_ir::features::PathRef::HistoricalEdges {
+                state,
+                edges,
+                native,
+            }),
+        ..
+    } = definition
+    else {
+        panic!("expected historical edge path");
+    };
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::history_input_prefix(
+        feature
+            .0
+            .split_once('#')
+            .map_or(feature.0.as_str(), |(_, key)| key),
+        7,
+    );
+    assert_eq!(state, feature_input_topology_id(&feature, 7),);
+    assert_eq!(edges, vec![crate::ids::history_input_edge_id(&prefix, 42)],);
+    assert_eq!(native, groups[0].id);
+}
