@@ -368,9 +368,17 @@ fn blend_surface_parameters_inner(
                     first.1.total_cmp(&second.1)
                 }
             })
-            .map(|(parameters, _, _)| parameters)
+            .map(|(parameters, distance, _)| (parameters, distance))
     });
-    if let Some(initial) = angular {
+    if let Some((initial, angular_distance)) = angular {
+        // The angular candidate has already been evaluated against the query
+        // point. A fit-qualified candidate is a complete inverse result; do
+        // not spend the recursive Newton solve to rediscover the same proof.
+        if section_domain.contains(initial.v)
+            && fit_tolerance.is_some_and(|tolerance| angular_distance <= tolerance)
+        {
+            return Some(initial);
+        }
         let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
             surface,
