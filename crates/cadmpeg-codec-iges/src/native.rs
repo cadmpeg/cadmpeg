@@ -1461,7 +1461,7 @@ pub(crate) fn store(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    structure_admitted: &BTreeSet<u32>,
+    structure_admitted: Option<&BTreeSet<u32>>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
     limits: ProductOccurrenceLimits,
@@ -4780,9 +4780,13 @@ pub(crate) fn store(
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
         .collect::<BTreeMap<_, _>>();
+    // Semantic decode supplies an admission set; container-only decode passes
+    // None so native expansion retains every parseable structure record.
     let occurrence_definitions = all_occurrence_definitions
         .into_iter()
-        .filter(|(sequence, _)| structure_admitted.contains(sequence))
+        .filter(|(sequence, _)| {
+            structure_admitted.is_none_or(|admitted| admitted.contains(sequence))
+        })
         .collect::<BTreeMap<_, _>>();
     let contained_instances = occurrence_definitions
         .values()
@@ -4851,7 +4855,7 @@ pub(crate) fn store(
         for entry in directory.iter().filter(|entry| {
             matches!(entry.entity_type, 408 | 420)
                 && entry.form == 0
-                && !structure_admitted.contains(&entry.sequence)
+                && structure_admitted.is_some_and(|admitted| !admitted.contains(&entry.sequence))
         }) {
             let Some(record) = by_directory.get(&entry.sequence).copied() else {
                 continue;
@@ -4885,7 +4889,7 @@ pub(crate) fn store(
             for root in directory.iter().filter(|entry| {
                 matches!(entry.entity_type, 408 | 420)
                     && entry.form == 0
-                    && structure_admitted.contains(&entry.sequence)
+                    && structure_admitted.is_none_or(|admitted| admitted.contains(&entry.sequence))
                     && !contained_instances.contains(&entry.sequence)
             }) {
                 if let Some(source_sequence) = expansion.expand(

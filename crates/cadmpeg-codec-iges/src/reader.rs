@@ -151,6 +151,7 @@ fn decode_with_occurrence_limits(
         charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
     };
+    let semantic_structure_admitted = (!options.container_only).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
@@ -160,7 +161,7 @@ fn decode_with_occurrence_limits(
         &scan,
         &directory,
         &parameters,
-        &projection.decoded,
+        semantic_structure_admitted,
         &mut references,
         &global,
         native::ProductOccurrenceLimits::new(

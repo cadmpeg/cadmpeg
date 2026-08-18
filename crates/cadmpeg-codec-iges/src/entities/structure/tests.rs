@@ -1461,6 +1461,32 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
 }
 
 #[test]
+fn container_only_preserves_raw_occurrence_expansion_without_structure_admission() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert!(!result.report().geometry_transferred);
+    assert_eq!(native.arenas["product_occurrences"].len(), 3);
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 3);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_preserves_network_definition_and_anisotropic_instance() {
     let result = IgesCodec
         .decode(
