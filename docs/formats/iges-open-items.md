@@ -185,16 +185,6 @@ Type 402 Form 21 evidence: [IGES 5.3 §4.95](https://paulbourke.net/dataformats/
 
 **Note.** Closure audit 2026-08-10: reopened. Commit `de6b6d5bf` changed the documentation and tests together, but the IGES specification has not been cited for converting an overlong line into a card plus a separate record. The current policy can turn malformed input into a valid card with ignored tail bytes.
 
-### PH-05. Disagreement between the declared and actual Parameter Data card count
-
-**Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
-
-**Known.** `parameter.rs:326-350` treats the declared count as a lower bound. More owned cards produce a warning and are consumed; fewer cards reject the entity. The format documentation states that the declared count defines the expected contiguous range.
-
-**Need.** We need the authority rule for both directions of count disagreement. The same producer defect must not be recoverable in one direction and fatal in the other without evidence.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `316a50b13` changed the behavior and the self-authored fixtures, but did not establish whether the count or the pointers is authoritative.
-
 ## 2. Global metadata
 
 ### GL-01. Global defaults, and defaults applied to unparseable fields

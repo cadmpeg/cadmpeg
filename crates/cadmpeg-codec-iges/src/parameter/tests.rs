@@ -306,6 +306,28 @@ fn parameter_card_count_must_equal_the_owned_contiguous_range() {
 }
 
 #[test]
+fn parameter_card_count_rejects_fewer_owned_cards() {
+    let mut bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00010000",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let marker = bytes
+        .windows(8)
+        .position(|window| window == b"D      2")
+        .expect("second Directory Entry card");
+    let card_start = marker - 72;
+    bytes[card_start + 24..card_start + 32].copy_from_slice(b"       2");
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
 fn type116_association_group_defaults_np_at_record_delimiter() {
     for parameters in ["116,1.25,2.5,3.75,0,1,1;", "116,1.25,2.5,3.75,,1,1;"] {
         let result = IgesCodec
