@@ -23,6 +23,18 @@ use crate::NxCodec;
 
 use super::*;
 
+fn attribute_field_name(
+    topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
+    value_use: &str,
+    class_uses: &[crate::native::parasolid::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::parasolid::ParasolidAttributeDefinition],
+    field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
+    field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
+) -> Option<String> {
+    super::ParasolidAttributeNameIndex::new(class_uses, definitions, field_uses, field_names)
+        .field_name(topology_reference, value_use)
+}
+
 #[test]
 fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use crate::native::features::{
@@ -1223,20 +1235,27 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         definition_xmt: definition.xmt,
         attribute_definition: definition.id.clone(),
     };
+    let class_uses = [class_use];
+    let definitions = [definition];
+    let sources = super::ParasolidNumericAttributeSources {
+        numeric_uses: &uses,
+        integers: &[integer],
+        doubles: &[double],
+    };
+    let topology_attribute_index = super::ParasolidTopologyAttributeIndex::new(
+        &ir,
+        &references,
+        &class_uses,
+        &definitions,
+        &[],
+        &[],
+    );
     let mut annotations = AnnotationBuilder::new();
 
     super::attach_parasolid_topology_numeric_attributes(
         &mut ir,
-        &super::ParasolidNumericAttributeSources {
-            topology_references: &references,
-            class_uses: &[class_use],
-            definitions: &[definition],
-            field_uses: &[],
-            field_names: &[],
-            numeric_uses: &uses,
-            integers: &[integer],
-            doubles: &[double],
-        },
+        &sources,
+        &topology_attribute_index,
         &mut annotations,
     );
 
@@ -1344,7 +1363,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     };
 
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "double-use",
             std::slice::from_ref(&class_use),
@@ -1366,7 +1385,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         ..field_use.clone()
     };
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "string-use",
             std::slice::from_ref(&class_use),
@@ -1384,7 +1403,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         ..definition.clone()
     };
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "double-use",
             std::slice::from_ref(&class_use),
@@ -1410,7 +1429,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         names: vec!["width".into(), "units".into()],
     };
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "double-use",
             std::slice::from_ref(&class_use),
@@ -1426,7 +1445,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         id: "duplicate-class-use".into(),
         ..class_use.clone()
     };
-    assert!(super::parasolid_topology_attribute_field_name(
+    assert!(attribute_field_name(
         &reference,
         "double-use",
         &[class_use, duplicate_class],
@@ -1503,7 +1522,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     };
 
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "text-use",
             std::slice::from_ref(&class_use),
@@ -1515,7 +1534,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         Some("SDL/TYSA_BLEND_ID.field_0.parasolid_type_3")
     );
     assert_eq!(
-        super::parasolid_topology_attribute_field_name(
+        attribute_field_name(
             &reference,
             "numeric-use",
             std::slice::from_ref(&class_use),
@@ -1617,20 +1636,25 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     })
     .collect::<Vec<_>>();
     let mut annotations = AnnotationBuilder::new();
+    let sources = super::ParasolidStructuredAttributeSources {
+        structured_uses: &uses,
+        vectors: &vectors,
+        axes: &[axis],
+        tags: &[tag],
+        unicode: &[unicode],
+    };
+    let topology_attribute_index = super::ParasolidTopologyAttributeIndex::new(
+        &ir,
+        std::slice::from_ref(&reference),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
     super::attach_parasolid_topology_structured_attributes(
         &mut ir,
-        &super::ParasolidStructuredAttributeSources {
-            topology_references: &[reference],
-            class_uses: &[],
-            definitions: &[],
-            field_uses: &[],
-            field_names: &[],
-            structured_uses: &uses,
-            vectors: &vectors,
-            axes: &[axis],
-            tags: &[tag],
-            unicode: &[unicode],
-        },
+        &sources,
+        &topology_attribute_index,
         &mut annotations,
     );
 
