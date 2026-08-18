@@ -34,28 +34,6 @@ decision distinguishing intentional native-only data from an unimplemented neutr
 **Note.** Reopened. Native retention is safe, but it does not answer the remaining semantic
 question.
 
-### GP-09. Camera settings carrier and Position cardinality
-
-**Question.** Which serialized camera carrier supplies camera position and orientation, and what
-cardinality rule applies to any XML `Position` values?
-
-**Known.** FreeCAD `Gui::Document::SaveDocFile` writes one self-closing `Camera` element whose
-`settings` attribute contains the serialized Inventor camera state. The decoder retains that
-attribute and all descendants in `gui.rs:662-704`, while `camera_state_value` at `gui.rs:495-541`
-searches descendant `Position` elements and an `orientation` attribute.
-
-**Need.** Establish the `settings` grammar and its `SoCamera` field cardinality, then parse or
-explicitly retain the authoritative carrier. Any XML compatibility form must have an attributable
-selection rule and duplicate handling.
-
-**Conflict.** A real FreeCAD camera's position and orientation are inside the `settings` string, not
-in descendant `Position` elements. The one-`Camera` gate therefore accepts the record while the
-neutral camera omits persisted position and orientation; the duplicate-`Position` refusal only
-guards synthetic XML that the producer does not write.
-
-**Note.** Reopened. The camera cardinality fix does not bind to the producer's authoritative value
-carrier.
-
 ### GP-10. Topology color-array count admission
 
 **Question.** What is the result when a per-face, per-edge, or per-vertex color-list count does not

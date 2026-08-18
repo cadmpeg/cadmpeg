@@ -16,7 +16,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1" active="UnrecognizedRootState">
  <ViewProviderData Count="0"/>
- <Camera settings="OrthographicCamera { position 1 2 3 }"/>
+ <Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"/>
  <ClipPlane enabled="true" file="section.bin"/>
 </Document>"#;
     let bytes = archive_entries(&[
@@ -44,7 +44,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     );
     assert_eq!(
         documents[0].states[0].attributes["settings"],
-        "OrthographicCamera { position 1 2 3 }"
+        "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
     assert_eq!(documents[0].states[1].side_entries, ["section.bin"]);
     let entries = namespace
@@ -60,11 +60,11 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
     let camera = presentation.camera.as_ref().expect("camera state");
-    assert_eq!(camera.position, None);
-    assert_eq!(camera.orientation, None);
+    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
+    assert_eq!(camera.orientation, Some([0.0, 0.0, 1.0, 0.25]));
     assert_eq!(
         camera.properties["settings"],
-        "OrthographicCamera { position 1 2 3 }"
+        "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
     assert_eq!(presentation.states[1].assets.len(), 1);
     assert!(presentation.states[1].assets[0].ends_with("section.bin"));
@@ -120,10 +120,11 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
     let gui_documents = [
         r#"<Document schemaVersion="1"><ViewProviderData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#,
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="NaN" y="1" z="2"/></Camera></Document>"#,
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera><Position x="0" y="0" z="0"/></Camera></Document>"#,
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera orientation="NaN 0 0 1"/></Document>"#,
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera orientation="0 0 0 0"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position NaN 1 2 orientation 0 0 1 0 }"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation NaN 0 0 1 }"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 0 0 }"/></Document>"#,
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="not a camera"/></Document>"#,
     ];
     for gui in gui_documents {
         let error = FcstdCodec
@@ -140,12 +141,12 @@ fn rejects_noncanonical_gui_schema_and_invalid_camera_values() {
 }
 
 #[test]
-fn rejects_duplicate_camera_position_values() {
+fn ignores_non_authoritative_camera_descendant_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="0"><!-- no providers --></ViewProviderData>
-<Camera><Position x="1" y="2" z="3"/><Position x="4" y="5" z="6"/></Camera></Document>"#;
-    let error = FcstdCodec
+<Camera settings="" orientation="9 9 9 9"><Position x="NaN" y="1" z="2"/><Position x="4" y="5" z="6"/></Camera></Document>"#;
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document),
@@ -153,12 +154,42 @@ fn rejects_duplicate_camera_position_values() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("duplicate camera positions");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("multiple Position values")
-    ));
+        .expect("non-authoritative camera descendants");
+    let camera = result.ir().model.presentation_documents[0]
+        .camera
+        .as_ref()
+        .expect("camera state");
+    assert_eq!(camera.position, None);
+    assert_eq!(camera.orientation, None);
+    assert_eq!(camera.properties["orientation"], "9 9 9 9");
+}
+
+#[test]
+fn rejects_duplicate_camera_settings_fields() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    for settings in [
+        "OrthographicCamera { position 1 2 3 position 4 5 6 orientation 0 0 1 0 }",
+        "PerspectiveCamera { position 1 2 3 orientation 0 0 1 0 orientation 0 1 0 0.5 }",
+    ] {
+        let gui = format!(
+            "<Document SchemaVersion=\"1\"><ViewProviderData Count=\"0\"/><Camera settings=\"{settings}\"/></Document>"
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("duplicate camera settings field");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("multiple")
+        ));
+    }
 }
 
 #[test]

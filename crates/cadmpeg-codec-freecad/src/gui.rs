@@ -26,6 +26,11 @@ pub(crate) struct Graph {
     pub(crate) properties: Vec<GuiPropertyRecord>,
 }
 
+struct CameraSettings {
+    position: Option<[f64; 3]>,
+    orientation: Option<[f64; 4]>,
+}
+
 /// Whether the shared application-property registry knows this GUI property.
 pub(crate) fn has_registered_property_grammar(property_name: &str, type_name: &str) -> bool {
     gui_value_tag(type_name).is_some()
@@ -493,45 +498,27 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
 }
 
 fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError> {
-    let position_values = state
-        .values
-        .iter()
-        .filter(|value| value.tag == "Position")
-        .collect::<Vec<_>>();
-    if position_values.len() > 1 {
-        return Err(CodecError::Malformed(
-            "GUI camera has multiple Position values".into(),
-        ));
-    }
-    let position_value = position_values.into_iter().next();
-    let position = position_value
-        .map(|value| vector3(&value.attributes))
-        .transpose()
-        .map_err(|()| CodecError::Malformed("GUI camera Position is invalid".into()))?;
-    let orientation = state
+    let settings = state
         .attributes
-        .get("orientation")
-        .map(|value| parse_vector::<4>(value))
-        .transpose()
-        .map_err(|()| CodecError::Malformed("GUI camera orientation is invalid".into()))?;
+        .get("settings")
+        .ok_or_else(|| CodecError::Malformed("GUI Camera has no settings attribute".into()))?;
+    let CameraSettings {
+        position,
+        orientation,
+    } = parse_camera_settings(settings)?;
     if position.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
         return Err(CodecError::Malformed(
-            "GUI camera Position contains a non-finite component".into(),
+            "GUI camera settings position contains a non-finite component".into(),
         ));
     }
     if orientation.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
         return Err(CodecError::Malformed(
-            "GUI camera orientation contains a non-finite component".into(),
-        ));
-    }
-    if position.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
-        return Err(CodecError::Malformed(
-            "GUI camera Position must be nonzero".into(),
+            "GUI camera settings orientation contains a non-finite component".into(),
         ));
     }
     if orientation.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
         return Err(CodecError::Malformed(
-            "GUI camera orientation must be nonzero".into(),
+            "GUI camera settings orientation must be nonzero".into(),
         ));
     }
     Ok(CameraState {
@@ -541,20 +528,80 @@ fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError>
     })
 }
 
-fn vector3(attributes: &BTreeMap<String, String>) -> Result<[f64; 3], ()> {
-    Ok([
-        attributes.get("x").ok_or(())?.parse().map_err(|_| ())?,
-        attributes.get("y").ok_or(())?.parse().map_err(|_| ())?,
-        attributes.get("z").ok_or(())?.parse().map_err(|_| ())?,
-    ])
+fn parse_camera_settings(settings: &str) -> Result<CameraSettings, CodecError> {
+    if settings.trim().is_empty() {
+        return Ok(CameraSettings {
+            position: None,
+            orientation: None,
+        });
+    }
+
+    let tokens = settings.split_whitespace().collect::<Vec<_>>();
+    let valid_shape = tokens.len() >= 3
+        && tokens[1] == "{"
+        && tokens.last() == Some(&"}")
+        && matches!(tokens[0], "OrthographicCamera" | "PerspectiveCamera");
+    if !valid_shape {
+        return Err(CodecError::Malformed(
+            "GUI camera settings are not an Inventor camera node".into(),
+        ));
+    }
+
+    let end = tokens.len() - 1;
+    let mut position = None;
+    let mut orientation = None;
+    let mut index = 2;
+    while index < end {
+        match tokens[index] {
+            "position" => {
+                if position.is_some() {
+                    return Err(CodecError::Malformed(
+                        "GUI camera settings have multiple position fields".into(),
+                    ));
+                }
+                position = Some(camera_field::<3>(&tokens, index + 1, end, "position")?);
+                index += 4;
+            }
+            "orientation" => {
+                if orientation.is_some() {
+                    return Err(CodecError::Malformed(
+                        "GUI camera settings have multiple orientation fields".into(),
+                    ));
+                }
+                orientation = Some(camera_field::<4>(&tokens, index + 1, end, "orientation")?);
+                index += 5;
+            }
+            _ => index += 1,
+        }
+    }
+    Ok(CameraSettings {
+        position,
+        orientation,
+    })
 }
 
-fn parse_vector<const N: usize>(value: &str) -> Result<[f64; N], ()> {
-    let values = value
-        .split_whitespace()
-        .map(|value| value.parse::<f64>().map_err(|_| ()))
-        .collect::<Result<Vec<f64>, _>>()?;
-    values.try_into().map_err(|_| ())
+fn camera_field<const N: usize>(
+    tokens: &[&str],
+    start: usize,
+    end: usize,
+    field: &str,
+) -> Result<[f64; N], CodecError> {
+    let values = tokens
+        .get(start..start.saturating_add(N))
+        .filter(|values| values.len() == N && start.saturating_add(N) <= end)
+        .ok_or_else(|| CodecError::Malformed(format!("GUI camera {field} field is incomplete")))?
+        .iter()
+        .map(|value| {
+            value.parse::<f64>().map_err(|_| {
+                CodecError::Malformed(format!("GUI camera {field} field is not numeric"))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    values.try_into().map_err(|_| {
+        CodecError::Malformed(format!(
+            "GUI camera {field} field has the wrong cardinality"
+        ))
+    })
 }
 
 fn transfer_edge_appearance(
