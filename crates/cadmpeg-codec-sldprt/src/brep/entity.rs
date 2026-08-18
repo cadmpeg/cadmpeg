@@ -460,17 +460,51 @@ pub fn scan_final_bridge_selector(streams: &[(&[u8], &str, bool)]) -> Option<Has
     })
 }
 
-pub(crate) fn scan_combined_bodies(streams: &[(&[u8], &str, bool)]) -> (Vec<BodyRecord>, usize) {
-    let entities = scan_combined_body_entities(streams);
-    bodies(&entities)
-}
-
 /// Combine body records from related partition and deltas streams.
 ///
 /// Entity sequence numbers are local to a stream. Partition records therefore
-/// own an attribute identity when both streams contain it; deltas records can
-/// add only an identity absent from the partition set. This preserves the
-/// partition body hierarchy while admitting delta-only subordinate records.
+/// own an attribute identity when both streams contain it; delta records can
+/// add only an identity absent from the partition set. If that merge admits no
+/// body, a delta-only body layout is selected from the delta entity view and
+/// receives the complete same-site entity population for face binding.
+pub(crate) fn scan_combined_bodies(streams: &[(&[u8], &str, bool)]) -> (Vec<BodyRecord>, usize) {
+    let entities = scan_combined_body_entities(streams);
+    let combined = bodies(&entities);
+    if !combined.0.is_empty() {
+        return combined;
+    }
+    for (body, schema, is_deltas) in streams {
+        if !is_deltas {
+            continue;
+        }
+        let delta = bodies(&scan_entities(body, schema, true));
+        if !delta.0.is_empty() {
+            let mut refs = scan_stream_entities(streams)
+                .0
+                .into_iter()
+                .map(|record| record.attr)
+                .collect::<Vec<_>>();
+            refs.sort_unstable();
+            refs.dedup();
+            let mut records = delta.0;
+            for record in &mut records {
+                record.refs.clone_from(&refs);
+                for region in &mut record.regions {
+                    for shell in &mut region.shells {
+                        shell.refs.clone_from(&refs);
+                    }
+                }
+            }
+            return (records, delta.1);
+        }
+    }
+    combined
+}
+
+/// Merge entity records from related partition and deltas streams.
+///
+/// Partition records own an attribute identity when both streams contain it;
+/// delta records add only identities absent from the partition set.
 fn scan_combined_body_entities(streams: &[(&[u8], &str, bool)]) -> Vec<EntityRecord> {
     let mut partition_entities = Vec::new();
     let mut deltas_entities = Vec::new();
@@ -869,6 +903,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     }
     if out.is_empty() {
         out.extend(disc28_disc26_disc24_disc1a_disc18_disc16_disc06_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
+        out.extend(disc22_disc28_disc20_disc04_disc1a_disc1e_face_root_body(
+            &by_attr,
+        ));
     }
     if out.is_empty() {
         out.extend(disc22_disc1a_disc20_disc1e_disc04_face_root_body(&by_attr));
@@ -7067,15 +7106,32 @@ fn disc22_disc20_disc1e_disc18_disc16_disc0e_disc04_face_root_body(
 fn disc22_disc20_disc1e_disc18_disc16_disc0e_disc04_keyed_population_face_root_body(
     by_attr: &HashMap<u16, &EntityRecord>,
 ) -> Vec<BodyRecord> {
-    let chain_shape = [
-        (0x0022, 2),
-        (0x0020, 2),
-        (0x001e, 2),
-        (0x0018, 2),
-        (0x0016, 2),
-        (0x000e, 2),
-        (0x0004, 1),
-    ];
+    keyed_population_face_root_body(
+        by_attr,
+        &[
+            (0x0022, 2),
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x0018, 2),
+            (0x0016, 2),
+            (0x000e, 2),
+            (0x0004, 1),
+        ],
+        0x0010,
+        0x001c,
+        0x0024,
+        4,
+    )
+}
+
+fn keyed_population_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+    chain_shape: &[(u16, u8)],
+    canonical_disc: u16,
+    companion_disc: u16,
+    use_disc: u16,
+    shell_index: usize,
+) -> Vec<BodyRecord> {
     let matching_chains = keyed_forward_chain_candidates(by_attr)
         .into_iter()
         .filter(|chain| {
@@ -7103,17 +7159,19 @@ fn disc22_disc20_disc1e_disc18_disc16_disc0e_disc04_keyed_population_face_root_b
             .filter_map(|record| record.refs.first().copied().filter(|key| *key > 1))
             .collect::<HashSet<_>>()
     };
-    let canonical_keys = keyed_population(0x0010, 1);
+    let canonical_keys = keyed_population(canonical_disc, 1);
     if canonical_keys.is_empty()
-        || !canonical_keys.is_subset(&keyed_population(0x001c, 1))
-        || !canonical_keys.is_subset(&keyed_population(0x0024, 4))
+        || !canonical_keys.is_subset(&keyed_population(companion_disc, 1))
+        || !canonical_keys.is_subset(&keyed_population(use_disc, 4))
     {
         return Vec::new();
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
     refs.sort_unstable();
     let root = chain[0];
-    let shell = chain[4];
+    let Some(shell) = chain.get(shell_index).copied() else {
+        return Vec::new();
+    };
     vec![BodyRecord {
         attr: root.attr,
         kind: BodyKind::Solid,
@@ -7151,6 +7209,26 @@ fn disc22_disc20_disc1e_disc16_disc14_disc10_disc0e_face_root_body(
         None,
         3,
         true,
+    )
+}
+
+fn disc22_disc28_disc20_disc04_disc1a_disc1e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_population_face_root_body(
+        by_attr,
+        &[
+            (0x0022, 2),
+            (0x0028, 2),
+            (0x0020, 2),
+            (0x0004, 1),
+            (0x001a, 2),
+            (0x001e, 2),
+        ],
+        0x0010,
+        0x0026,
+        0x002a,
+        3,
     )
 }
 
