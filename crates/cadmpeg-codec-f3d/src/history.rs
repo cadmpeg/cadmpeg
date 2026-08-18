@@ -3250,11 +3250,16 @@ pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::DesignFaceOperand],
     scopes: &[crate::records::DesignParameterScope],
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
+    recipes: &[crate::records::ConstructionRecipe],
     histories: &[AsmHistory],
 ) {
     if projection_was_finalized(histories) {
         return;
     }
+    let recipe_record_indices = recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe.record_index))
+        .collect::<HashMap<_, _>>();
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -3333,7 +3338,11 @@ pub(crate) fn bind_face_operand_history_candidates(
             if groups.next().is_some() {
                 return None;
             }
-            crate::design::face_resolve::legacy_face_recipe_reference_candidates(operand)
+            let recipe_record_index = recipe_record_indices.get(operand.recipe_id.as_str())?;
+            crate::design::face_resolve::legacy_face_recipe_reference_candidates(
+                operand,
+                *recipe_record_index,
+            )
         })
         .flatten();
         let history_candidates = thread_face_candidates

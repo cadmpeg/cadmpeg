@@ -4431,6 +4431,7 @@ fn extend_related_design_records(
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
+        &native.construction_recipes,
         &native.asm_histories,
     );
     crate::history::bind_mirror_selection_planes(

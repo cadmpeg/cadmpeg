@@ -1113,16 +1113,19 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
         .then_some(header_value)
 }
 
-/// Return the first result-face lane of a legacy bounded-face recipe.
+/// Return the result-face lane of a legacy bounded-face recipe.
 ///
-/// Older Extrude envelopes do not repeat the recipe's own Design reference in
-/// the aggregate candidate lane. Their first persistent recipe reference is
-/// still the result-face lane. It is admitted here only when the counted
-/// envelope and node run are complete, the operand has no alternate or
-/// unreferenced lane, and any aggregate candidate lane equals that first lane;
-/// otherwise the ordinary candidate and support rules remain authoritative.
+/// Older Extrude envelopes do not carry a separate lane ordinal. The
+/// construction recipe's source `record_index` is the Design reference used
+/// to build the aggregate result-face candidate lane. All persistent recipe
+/// references carrying that Design reference therefore belong to the lane,
+/// regardless of their position among context references. The rule is
+/// admitted only when the counted envelope and node run are complete, the
+/// operand has no alternate or unreferenced lane, and the selected references
+/// agree with the aggregate candidate set.
 pub(crate) fn legacy_face_recipe_reference_candidates(
     operand: &DesignFaceOperand,
+    recipe_record_index: i32,
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
     if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
         || !matches!(
@@ -1136,12 +1139,19 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
     {
         return None;
     }
-    let reference = operand.recipe_references.first()?;
-    let mut candidates = if reference.candidate_faces.is_empty() {
-        reference.alternate_selector_faces.clone()
-    } else {
-        reference.candidate_faces.clone()
-    };
+    let mut candidates = operand
+        .recipe_references
+        .iter()
+        .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
+        .flat_map(|reference| {
+            if reference.candidate_faces.is_empty() {
+                reference.alternate_selector_faces.iter()
+            } else {
+                reference.candidate_faces.iter()
+            }
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     candidates.sort_by(|left, right| left.0.cmp(&right.0));
     candidates.dedup();
     if !operand.candidate_faces.is_empty()
@@ -1871,14 +1881,14 @@ mod tests {
 
         operand.candidate_faces.clear();
         operand.recipe_references = vec![
+            reference(30, "context", 202),
             reference(10, "selected-a", 201),
             reference(20, "selected-b", 201),
-            reference(30, "context", 202),
         ];
-        operand.candidate_faces = vec![face(10)];
+        operand.candidate_faces = vec![face(10), face(20)];
         assert_eq!(
-            legacy_face_recipe_reference_candidates(&operand),
-            Some(vec![face(10)])
+            legacy_face_recipe_reference_candidates(&operand, 201),
+            Some(vec![face(10), face(20)])
         );
         operand.candidate_faces.clear();
         assert_eq!(
@@ -1889,10 +1899,11 @@ mod tests {
             })
         );
         assert_eq!(
-            legacy_face_recipe_reference_candidates(&operand),
-            Some(vec![face(10)])
+            legacy_face_recipe_reference_candidates(&operand, 201),
+            Some(vec![face(10), face(20)])
         );
-        operand.recipe_references.pop();
+        assert!(legacy_face_recipe_reference_candidates(&operand, 999).is_none());
+        operand.recipe_references.remove(0);
         operand.recipe_references[0]
             .alternate_selector_faces
             .push(face(30));

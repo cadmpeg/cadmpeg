@@ -1482,6 +1482,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut operands,
         std::slice::from_ref(&scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&history),
     );
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
@@ -1543,6 +1544,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut cylinder_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&cylinder_history),
     );
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
@@ -1556,6 +1558,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut ambiguous_source_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&cylinder_history),
     );
     assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
@@ -1580,6 +1583,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut ambiguous_geometry_operands,
         &[cylinder_scope],
         std::slice::from_ref(&group),
+        &[],
         &[ambiguous_geometry_history],
     );
     assert!(ambiguous_geometry_operands[0]
@@ -1589,7 +1593,13 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let mut unrelated_group = group;
     unrelated_group.role = 0x0000_0011_0000_0000;
     let mut rejected = vec![operand];
-    bind_face_operand_history_candidates(&mut rejected, &[scope], &[unrelated_group], &[history]);
+    bind_face_operand_history_candidates(
+        &mut rejected,
+        &[scope],
+        &[unrelated_group],
+        &[],
+        &[history],
+    );
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());

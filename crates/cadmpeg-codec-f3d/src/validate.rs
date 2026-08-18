@@ -675,6 +675,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &mut expected_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
+        &native.construction_recipes,
         &native.asm_histories,
     );
     let decoded_profile_face_groups = native
