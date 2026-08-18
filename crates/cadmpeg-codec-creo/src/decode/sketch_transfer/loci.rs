@@ -9,9 +9,10 @@ use super::super::sketch::{
 };
 use super::super::sketch_ids::sketch_entity_id;
 use super::{
-    semantic_saved_section_entities, solver_only_section_entities,
-    solver_only_section_entity_family, unique_section_incidence_curve_family,
-    unique_section_segment_external_ids, SectionEntityIncidenceFamily,
+    saved_section_entity_fallback_allowed, semantic_saved_section_entities,
+    solver_only_section_entities, solver_only_section_entity_family,
+    unique_section_incidence_curve_family, unique_section_segment_external_ids,
+    SectionEntityIncidenceFamily,
 };
 use cadmpeg_ir::sketches::{
     SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
@@ -667,12 +668,7 @@ pub(in super::super) fn section_skamp_is_line(
     if unique_reference_line_segment(definition, item.entity_id).is_some() {
         return true;
     }
-    let has_segment = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == item.entity_id);
-    if has_segment {
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
             segment.kind == crate::feature::FeatureSegmentKind::Line
                 || section_degenerate_axis_line(definition, segment)
@@ -738,12 +734,7 @@ pub(in super::super) fn section_skamp_is_arc(
     {
         return true;
     }
-    let has_segment = definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == item.entity_id);
-    if has_segment {
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc);
     }
@@ -875,15 +866,7 @@ pub(in super::super) fn section_skamp_is_circular(
     if unique_circle_segment(definition, item.entity_id).is_some() {
         return true;
     }
-    let has_segment = definition
-        .segments
-        .iter()
-        .flat_map(|segments| &segments.rows)
-        .any(|segment| segment.external_id == item.entity_id);
-    if has_segment {
-        unique_decoded_section_segment(definition, item.entity_id)
-            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
-    } else {
+    if saved_section_entity_fallback_allowed(definition, item.entity_id) {
         section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
             matches!(
                 entity,
@@ -891,6 +874,9 @@ pub(in super::super) fn section_skamp_is_circular(
                     | crate::feature::FeatureSavedEntity::Circle(_)
             )
         })
+    } else {
+        unique_decoded_section_segment(definition, item.entity_id)
+            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
     }
 }
 
@@ -916,6 +902,9 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
         if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
             return (segment.kind == crate::feature::FeatureSegmentKind::Line)
                 .then_some(segment.point_ids.map(SectionPointSource::Point));
+        }
+        if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
+            return None;
         }
         let crate::feature::FeatureSavedEntity::Line(line) =
             section_saved_entity(definition, item.entity_id)?
@@ -993,6 +982,9 @@ pub(in super::super) fn section_skamp_arc_midpoint(
         let first = complete_section_coordinate(coordinates, segment.point_ids[0])?;
         let second = complete_section_coordinate(coordinates, segment.point_ids[1])?;
         return oriented_arc_midpoint(center, first, second, None);
+    }
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
+        return None;
     }
     let crate::feature::FeatureSavedEntity::Arc(arc) =
         section_saved_entity(definition, item.entity_id)?
@@ -1827,5 +1819,96 @@ mod tests {
                 offset: 99,
             });
         assert!(section_skamp_same_coordinate_sources(&cross_family, &same_coordinate).is_none());
+    }
+
+    #[test]
+    fn saved_line_fallback_rejects_special_segment_identity_collision() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: Vec::new(),
+                circle_rows: vec![crate::feature::FeatureCircleSegment {
+                    center_id: 1,
+                    radius_ref: 2,
+                    external_id: 10,
+                    offset: 10,
+                }],
+                point_rows: vec![crate::feature::FeaturePointSegment {
+                    point_id: 7,
+                    external_id: 20,
+                    offset: 20,
+                }],
+                centered_line_rows: Vec::new(),
+                reference_line_rows: Vec::new(),
+                bounded_curve_rows: Vec::new(),
+                conic_rows: Vec::new(),
+                opaque_rows: Vec::new(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: Some(crate::feature::FeatureOrderTable {
+                declared_count: 1,
+                has_prototype: false,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureOrderRow {
+                    external_id: 10,
+                    internal_id: 30,
+                    bitmask: 0,
+                    offset: 30,
+                }],
+                offset: 0,
+            }),
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::FeatureSavedSection {
+                entities: vec![crate::feature::FeatureSavedEntity::Line(
+                    crate::feature::FeatureSavedLine {
+                        entity_id: 30,
+                        references: Vec::new(),
+                        attributes: Vec::new(),
+                        endpoints: [
+                            [Some(0.0), Some(0.0), Some(0.0)],
+                            [Some(0.0), Some(2.0), Some(0.0)],
+                        ],
+                        body: Vec::new(),
+                        offset: 40,
+                    },
+                )],
+                offset: 40,
+            }),
+            offset: 0,
+        };
+        let special_item = crate::feature::FeatureSkampItem {
+            entity_id: 10,
+            sense: 0,
+        };
+        assert!(!section_skamp_is_line(&definition, &special_item));
+        assert!(!section_skamp_is_arc(&definition, &special_item));
+
+        let midpoint = crate::feature::FeatureSkamp {
+            id: 35,
+            kind: 35,
+            flags: 0,
+            status: 1,
+            items: vec![
+                special_item,
+                crate::feature::FeatureSkampItem {
+                    entity_id: 20,
+                    sense: 0,
+                },
+            ],
+            offset: 0,
+        };
+        assert!(section_skamp_line_midpoint_sources(&definition, &midpoint).is_none());
     }
 }

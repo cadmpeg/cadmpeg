@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::sketch_transfer::{
-    active_complete_section_skamps, section_saved_entity, section_skamp_is_line,
-    section_skamp_is_point, unique_bounded_curve_segment, unique_centered_line_segment,
-    unique_circle_segment, unique_point_segment, unique_reference_line_segment,
+    active_complete_section_skamps, saved_section_entity_fallback_allowed, section_saved_entity,
+    section_skamp_is_line, section_skamp_is_point, unique_bounded_curve_segment,
+    unique_centered_line_segment, unique_circle_segment, unique_point_segment,
+    unique_reference_line_segment,
 };
 
 pub(crate) fn section_line_fixed_coordinate(
@@ -241,12 +242,7 @@ pub(crate) fn section_skamp_saved_point_on_line(
             }),
         _ => None,
     }?;
-    if definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == line_item.entity_id)
-    {
+    if !saved_section_entity_fallback_allowed(definition, line_item.entity_id) {
         return None;
     }
     let crate::feature::FeatureSavedEntity::Line(line) =
@@ -466,12 +462,7 @@ pub(crate) fn saved_section_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<[f64; 2]> {
-    if definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == item.entity_id)
-    {
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return None;
     }
     let coordinates = match (

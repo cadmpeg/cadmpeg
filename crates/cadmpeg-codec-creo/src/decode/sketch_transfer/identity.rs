@@ -56,6 +56,24 @@ pub(in super::super) fn section_segment_external_id_counts(
         })
 }
 
+/// A saved-section entity may stand in for one opaque segment row, but it
+/// must not override a decoded segment family with a different identity.
+pub(in super::super) fn saved_section_entity_fallback_allowed(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> bool {
+    let Some(segments) = definition.segments.as_ref() else {
+        return true;
+    };
+    let count = segments.external_id_count(external_id);
+    count == 0
+        || (count == 1
+            && segments
+                .opaque_rows
+                .iter()
+                .any(|segment| segment.external_id == external_id))
+}
+
 pub(in super::super) fn unique_section_segment_external_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
@@ -299,5 +317,135 @@ pub(in super::super) fn opaque_section_segment_identity_suffix(
         segment.external_id.to_string()
     } else {
         format!("opaque:offset:{}", segment.offset)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::saved_section_entity_fallback_allowed;
+
+    fn definition(
+        segments: Option<crate::feature::FeatureSegmentTable>,
+    ) -> crate::feature::FeatureDefinition {
+        crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    fn segment_table() -> crate::feature::FeatureSegmentTable {
+        crate::feature::FeatureSegmentTable {
+            declared_count: 0,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: Vec::new(),
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }
+    }
+
+    fn ordinary_line(external_id: u32) -> crate::feature::FeatureSegment {
+        crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        }
+    }
+
+    fn circle(external_id: u32) -> crate::feature::FeatureCircleSegment {
+        crate::feature::FeatureCircleSegment {
+            center_id: 1,
+            radius_ref: 2,
+            external_id,
+            offset: external_id as usize,
+        }
+    }
+
+    fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
+        crate::feature::FeatureOpaqueSegment {
+            kind: 25,
+            directions: [None; 3],
+            point_ids: [None; 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        }
+    }
+
+    #[test]
+    fn saved_fallback_requires_absent_or_unique_opaque_identity() {
+        assert!(saved_section_entity_fallback_allowed(&definition(None), 7));
+        assert!(saved_section_entity_fallback_allowed(
+            &definition(Some(segment_table())),
+            7
+        ));
+
+        let mut unique_opaque = segment_table();
+        unique_opaque.opaque_rows.push(opaque(7));
+        assert!(saved_section_entity_fallback_allowed(
+            &definition(Some(unique_opaque)),
+            7
+        ));
+
+        let mut ordinary = segment_table();
+        ordinary.rows.push(ordinary_line(7));
+        assert!(!saved_section_entity_fallback_allowed(
+            &definition(Some(ordinary)),
+            7
+        ));
+
+        let mut special = segment_table();
+        special.circle_rows.push(circle(7));
+        assert!(!saved_section_entity_fallback_allowed(
+            &definition(Some(special)),
+            7
+        ));
+
+        let mut cross_family = segment_table();
+        cross_family.opaque_rows.push(opaque(7));
+        cross_family.rows.push(ordinary_line(7));
+        assert!(!saved_section_entity_fallback_allowed(
+            &definition(Some(cross_family)),
+            7
+        ));
+
+        let mut duplicate_opaque = segment_table();
+        duplicate_opaque.opaque_rows.extend([opaque(7), opaque(7)]);
+        assert!(!saved_section_entity_fallback_allowed(
+            &definition(Some(duplicate_opaque)),
+            7
+        ));
     }
 }

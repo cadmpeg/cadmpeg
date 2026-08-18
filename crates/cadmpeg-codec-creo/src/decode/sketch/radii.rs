@@ -11,9 +11,9 @@ use super::super::feature_history::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
 use super::super::sketch_transfer::{
-    active_complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
-    section_solver_relation_is_disabled, unique_circle_segment,
-    unique_section_segment_external_ids,
+    active_complete_section_skamps, saved_section_entity_fallback_allowed,
+    section_degenerate_axis_line, section_saved_entity, section_solver_relation_is_disabled,
+    unique_circle_segment, unique_section_segment_external_ids,
 };
 use super::coordinates::{resolved_section_coordinates, resolved_section_points};
 use super::equations_coordinate::{
@@ -403,12 +403,7 @@ pub(crate) fn section_skamp_radius_source(
             .flatten()
             .map(SectionRadiusSource::Reference);
     }
-    if definition
-        .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .any(|segment| segment.external_id == item.entity_id)
-    {
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return None;
     }
     let radius = match section_saved_entity(definition, item.entity_id)? {

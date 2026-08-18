@@ -6,9 +6,10 @@ use super::super::sketch::{trim_segment_id, unique_decoded_section_segment};
 use super::super::sketch_ids::sketch_entity_id;
 use super::super::uniqueness::exactly_one;
 use super::{
-    complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
-    section_skamp_active, unique_bounded_curve_segment, unique_centered_line_segment,
-    unique_circle_segment, unique_point_segment, unique_reference_line_segment,
+    complete_section_skamps, saved_section_entity_fallback_allowed, section_degenerate_axis_line,
+    section_saved_entity, section_skamp_active, unique_bounded_curve_segment,
+    unique_centered_line_segment, unique_circle_segment, unique_point_segment,
+    unique_reference_line_segment,
 };
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -355,6 +356,9 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if unique_circle_segment(definition, item.entity_id).is_some() {
         return item.sense == 4;
     }
+    if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
+        return false;
+    }
     matches!(
         (section_saved_entity(definition, item.entity_id), item.sense),
         (Some(crate::feature::FeatureSavedEntity::Line(_)), 2 | 3)
@@ -562,15 +566,17 @@ pub(in super::super) fn solver_only_section_entity_family(
                                         | crate::feature::FeatureSegmentKind::Arc
                                 )
                             })
-                            || section_saved_entity(definition, target.entity_id).is_some_and(
-                                |saved| {
+                            || (saved_section_entity_fallback_allowed(
+                                definition,
+                                target.entity_id,
+                            ) && section_saved_entity(definition, target.entity_id)
+                                .is_some_and(|saved| {
                                     matches!(
                                         saved,
                                         crate::feature::FeatureSavedEntity::Line(_)
                                             | crate::feature::FeatureSavedEntity::Arc(_)
                                     )
-                                },
-                            ))
+                                })))
                 })
                 .count()
                 == 1
