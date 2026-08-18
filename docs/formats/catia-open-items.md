@@ -548,6 +548,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" states that in compact groups the selected record is an identity anchor and not a class declaration, and that owner class and storage stay unset. `crates/cadmpeg-codec-catia/src/design_feature.rs:728-740` reads the owner class name and class entry from that record.
 
+### SN-35. Same-incidence row endpoint assignment
+
+**Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
+
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:4833-4846` binds the row of rank `k` in the group's serialized order to the vertex row of rank `k` on each sorted side of the relation, and writes that one pair as the row's domain. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:4935-4938` writes a second such domain for the anchored diagonal stage. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3792-3798` makes the reduced set the solver's candidate domain. The retry at `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3877-3905` searches that same reduced set, so a removed pair does not return. The stage runs only for a line or spline family, a matching sorted face pair, an identical normalized relation, a complete bipartite relation, and a matching boundary frontier.
+
+**Need.** A complete bipartite relation over `n` rows admits `n!` matchings, and the vertex rows are distinct points, so the matchings are not equivalent. A wrong matching gives a wrong line origin, a wrong direction, wrong edge endpoints, and a wrong parameter range. We must know the relation to bind the row.
+
+**Conflict.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" applies allocation rank only after the mesh constraints leave an equivalent complete relation. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3792-3798` applies it before them.
+
+**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. Its original identifier was `SN-32`, which now names another item.
+
+### SN-36. Allocation-rank binding rule
+
+**Question.** Does allocation rank bind a same-incidence row, and under which condition?
+
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row because it is not a serialized endpoint identity, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `catia.md` §5.6 "Same-incidence spline or line rows of one curve family" gives rank-binding stages in the same section, and one of them binds the lexicographically ordered pairs of a circle-row relation by equal rank.
+
+**Need.** The two paragraphs give opposite answers for one construct, so the specification does not state a rule that a decoder or a writer can apply. `SN-35` records what the decoder does now.
+
+**Conflict.** The two paragraphs of `catia.md` §5.6 disagree. One removes lexicographic order as a binding relation; the other makes it one.
+
+**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. That pass recorded the disagreement inside its `SN-32` item.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
