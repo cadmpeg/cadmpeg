@@ -191,16 +191,6 @@ Type 510/514 evidence: the official [IGES 5.3 §§4.146–4.147](https://paulbou
 
 ## 4. Geometry carriers and tolerances
 
-### GE-03. Type 112 segment continuity
-
-**Question.** What continuity tolerance applies between adjacent Type 112 segments?
-
-**Known.** `splines.rs` uses Global real-precision intervals for adjacent endpoint comparisons. The fixtures exercise the selected interval, not an independently specified producer boundary.
-
-**Need.** We need the continuity rule and its numeric tolerance from the IGES specification or from exporter-authored witness files.
-
-**Note.** Closure audit 2026-08-10: reopened. Commit `2481439ee` established an internal interval calculation, not conformance evidence.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

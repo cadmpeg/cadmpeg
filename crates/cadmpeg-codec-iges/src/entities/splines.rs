@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{coincident_distance, Global, RealPrecision};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -296,41 +296,11 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
         let mut continuous = true;
         let precision = global.real_precision();
-        let mut previous_terminal = None;
+        let resolution = global.minimum_resolution_mm();
+        let mut previous_terminal = None::<Point3>;
         for (segment, values) in coefficients.chunks_exact(12).enumerate() {
             let width = breakpoints[segment + 1] - breakpoints[segment];
-            let width_interval =
-                declared_interval(record, 5 + segment + 1, breakpoints[segment + 1], precision)
-                    .subtract(declared_interval(
-                        record,
-                        5 + segment,
-                        breakpoints[segment],
-                        precision,
-                    ));
             let segment_start = coefficient_start + segment * 12;
-            let intervals = [
-                terminal_intervals(
-                    record,
-                    segment_start,
-                    &values[0..4],
-                    width_interval,
-                    precision,
-                ),
-                terminal_intervals(
-                    record,
-                    segment_start + 4,
-                    &values[4..8],
-                    width_interval,
-                    precision,
-                ),
-                terminal_intervals(
-                    record,
-                    segment_start + 8,
-                    &values[8..12],
-                    width_interval,
-                    precision,
-                ),
-            ];
             if dimensions == 2
                 && (1..4).any(|power| {
                     !declared_interval(
@@ -342,18 +312,6 @@ pub(super) fn project(
                     .contains(0.0)
                 })
             {
-                continuous = false;
-                break;
-            }
-            let starts = [0, 4, 8].map(|offset| {
-                declared_interval(record, segment_start + offset, values[offset], precision)
-            });
-            if previous_terminal.is_some_and(|previous: [DeclaredInterval; 3]| {
-                previous
-                    .into_iter()
-                    .zip(starts)
-                    .any(|(left, right)| !left.overlaps(right))
-            }) {
                 continuous = false;
                 break;
             }
@@ -381,12 +339,19 @@ pub(super) fn project(
                     ))
                 })
                 .collect::<Vec<_>>();
+            if previous_terminal.is_some_and(|previous| {
+                !coincident_distance(previous.distance(bezier[0]), resolution)
+            }) {
+                continuous = false;
+                break;
+            }
+            let terminal = bezier[3];
             if control_points.is_empty() {
                 control_points.extend(bezier);
             } else {
                 control_points.extend_from_slice(&bezier[1..]);
             }
-            previous_terminal = Some([intervals[0][0], intervals[1][0], intervals[2][0]]);
+            previous_terminal = Some(terminal);
         }
         if !continuous {
             losses.push(entity_loss(

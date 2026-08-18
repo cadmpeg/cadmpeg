@@ -186,15 +186,40 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
 }
 
 #[test]
-fn decode_propagates_declared_precision_through_parametric_spline_segments() {
-    for (first_slope, second_start, terminal_x, decoded, terminal_loss) in [
-        ("1.", "1000.009999", "2000.012", true, false),
-        ("1.", "1000.010001", "2000.02", false, false),
-        ("1.D0", "1000.004D0", "2000.004D0", false, false),
-        ("1.", "1000.004", "2000.1", true, true),
+fn decode_uses_global_euclidean_resolution_for_parametric_spline_segments() {
+    for (first_slope, second_start, second_y, terminal_x, terminal_y, decoded, terminal_loss) in [
+        ("1.", "1000.0009", "0.", "2000.0009", "0.", true, false),
+        (
+            "1.",
+            "1000.0010000000001",
+            "0.",
+            "2000.0010000000001",
+            "0.",
+            false,
+            false,
+        ),
+        (
+            "1.D0",
+            "1000.0009D0",
+            "0.",
+            "2000.0009D0",
+            "0.",
+            true,
+            false,
+        ),
+        ("1.", "1000.004", "0.", "2000.004", "0.", false, false),
+        (
+            "1.",
+            "1000.0008",
+            "0.0008",
+            "2000.0008",
+            "0.0008",
+            false,
+            false,
+        ),
     ] {
         let parameters = format!(
-            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,0,0,0,0,0,0,0,0,{terminal_x},1.,0,0,0,0,0,0,0,0,0,0;"
+            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,{second_y},0,0,0,0,0,0,0,{terminal_x},1.,0,0,{terminal_y},0,0,0,0,0,0,0;"
         );
         let result = IgesCodec
             .decode(
