@@ -985,6 +985,9 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         );
     }
     if out.is_empty() {
+        out.extend(disc20_disc1e_disc1c_disc18_disc14_disc10_disc0e_face_root_body(&by_attr));
+    }
+    if out.is_empty() {
         out.extend(
             disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc04_face_root_body(&by_attr),
         );
@@ -4311,6 +4314,37 @@ fn disc20_disc1e_disc1c_disc18_disc16_disc14_disc12_disc0e_face_root_body(
             require_exact_use_population: false,
         },
         false,
+    )
+}
+
+fn disc20_disc1e_disc1c_disc18_disc14_disc10_disc0e_face_root_body(
+    by_attr: &HashMap<u16, &EntityRecord>,
+) -> Vec<BodyRecord> {
+    keyed_face_root_body_with_keyed_face_links_with_population_policy(
+        by_attr,
+        &[
+            (0x0020, 2),
+            (0x001e, 2),
+            (0x001c, 2),
+            (0x0018, 2),
+            (0x0014, 2),
+            (0x0010, 2),
+            (0x000e, 1),
+        ],
+        0x0016,
+        0x001a,
+        0x0022,
+        KeyedFaceRootOptions {
+            canonical_face_bridge: None,
+            face_use_shape: None,
+            shell_index: 4,
+            require_exact_use_population: false,
+        },
+        None,
+        KeyedLinkPolicy::Reciprocal,
+        true,
+        false,
+        true,
     )
 }
 
