@@ -17,7 +17,11 @@ use super::offset::{
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
     surface_parameters,
 };
-use super::pcurves::pcurve_matches_edge_range_with_index_and_budget;
+use super::pcurves::{
+    blend_boundary_parameter_from_support_spine_with_index_and_budget,
+    pcurve_matches_edge_range_with_index_and_budget,
+    surface_parameters_for_fit_with_index_and_budget,
+};
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
@@ -608,6 +612,7 @@ fn complete_support_uv_wave(
             };
             let attempt_key = (procedural_id.clone(), side);
             let source_pcurve = context.sides[1 - side].pcurve.as_ref();
+            let other_surface_id = context.sides[1 - side].surface.as_ref();
             if failed_attempts
                 .get(&attempt_key)
                 .is_some_and(|previous| previous.as_ref() == source_pcurve)
@@ -672,6 +677,7 @@ fn complete_support_uv_wave(
                     ))
                 });
             let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
+            let mut all_parameters_certified = true;
             for (point_index, point) in points.iter().enumerate() {
                 if !support_budget.charge() {
                     uv.clear();
@@ -689,6 +695,7 @@ fn complete_support_uv_wave(
                             effective_fit_tolerance,
                             geometry_budget,
                         )
+                        .map(|parameters| (parameters, true))
                     }
                     SurfaceGeometry::Procedural { .. } => {
                         let solve_blend_parameters = if source_chart_available {
@@ -727,6 +734,21 @@ fn complete_support_uv_wave(
                                     )
                                 },
                             )
+                            .map(|parameters| (parameters, true))
+                            .or_else(|| {
+                                other_surface_id.and_then(|other_surface| {
+                                    blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                                        &model_index,
+                                        surface_id,
+                                        other_surface,
+                                        *point,
+                                        seed,
+                                        effective_fit_tolerance,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                })
+                            })
                             .or_else(|| {
                                 offset_surface_parameters_with_tolerance_with_index_and_budget(
                                     &model_index,
@@ -736,6 +758,7 @@ fn complete_support_uv_wave(
                                     Some(effective_fit_tolerance),
                                     geometry_budget,
                                 )
+                                .map(|parameters| (parameters, true))
                             })
                             .or_else(|| {
                                 solve_blend_parameters(
@@ -747,6 +770,7 @@ fn complete_support_uv_wave(
                                     BlendParameterGrid::Disabled,
                                     geometry_budget,
                                 )
+                                .map(|parameters| (parameters, true))
                             })
                             .or_else(|| {
                                 let blend_grid = blend_parameter_grids
@@ -767,14 +791,17 @@ fn complete_support_uv_wave(
                                     blend_grid.as_deref()?,
                                     geometry_budget,
                                 )
+                                .map(|parameters| (parameters, true))
                             })
                     }
-                    geometry => analytic_surface_parameters(geometry, *point),
+                    geometry => analytic_surface_parameters(geometry, *point)
+                        .map(|parameters| (parameters, false)),
                 };
-                let Some(parameters) = parameters else {
+                let Some((parameters, certified)) = parameters else {
                     uv.clear();
                     break;
                 };
+                all_parameters_certified &= certified;
                 uv.push(parameters);
             }
             if uv.len() != points.len() {
@@ -793,18 +820,19 @@ fn complete_support_uv_wave(
                     uv[index].u += turns * std::f64::consts::TAU;
                 }
             }
-            let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
-                decoded_surface_point_with_geometry_and_budget(
-                    &model_index,
-                    surface_id,
-                    &surface.geometry,
-                    uv.u,
-                    uv.v,
-                    0,
-                    geometry_budget,
-                )
-                .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
-            });
+            let reproduces_chart = all_parameters_certified
+                || uv.iter().zip(points).all(|(uv, point)| {
+                    decoded_surface_point_with_geometry_and_budget(
+                        &model_index,
+                        surface_id,
+                        &surface.geometry,
+                        uv.u,
+                        uv.v,
+                        0,
+                        geometry_budget,
+                    )
+                    .is_some_and(|actual| point_distance(actual, *point) <= effective_fit_tolerance)
+                });
             if reproduces_chart {
                 replacements.push((
                     procedural_id.clone(),
@@ -883,6 +911,58 @@ pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
 }
 
+fn complete_blend_boundary_support_uv_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surfaces: [&SurfaceId; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    seeds: [Option<Point2>; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<[Vec<Point2>; 2]> {
+    let (blend_side, support_side) = (0..2).find_map(|blend_side| {
+        let (supports, _, _, _) = blend_surface_definition_with_index(index, surfaces[blend_side])?;
+        let support_matches = supports
+            .iter()
+            .filter(|support| {
+                parameterization_equivalent_surfaces_with_index(
+                    index,
+                    support,
+                    surfaces[1 - blend_side],
+                )
+            })
+            .count();
+        (support_matches == 1).then_some((blend_side, 1 - blend_side))
+    })?;
+    let mut lanes = [
+        Vec::with_capacity(points.len()),
+        Vec::with_capacity(points.len()),
+    ];
+    for point in points {
+        let blend_seed = seeds[blend_side].or_else(|| lanes[blend_side].last().copied());
+        let support_seed = seeds[support_side].or_else(|| lanes[support_side].last().copied());
+        let blend_parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
+            index,
+            surfaces[blend_side],
+            surfaces[support_side],
+            *point,
+            blend_seed,
+            fit_tolerance,
+            geometry_budget,
+        )?;
+        let support_parameters = surface_parameters_for_fit_with_index_and_budget(
+            index,
+            surfaces[support_side],
+            *point,
+            support_seed,
+            fit_tolerance,
+            geometry_budget,
+        )?;
+        lanes[blend_side].push(blend_parameters);
+        lanes[support_side].push(support_parameters);
+    }
+    Some(lanes)
+}
+
 fn complete_coupled_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
@@ -955,7 +1035,15 @@ fn complete_coupled_support_uv(
             .sides
             .each_ref()
             .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
-        let Some(lanes) =
+        let lanes = complete_blend_boundary_support_uv_with_index_and_budget(
+            &model_index,
+            surfaces,
+            points,
+            *fit_tolerance,
+            seeds,
+            geometry_budget,
+        )
+        .or_else(|| {
             continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
                 &model_index,
                 surfaces,
@@ -965,7 +1053,8 @@ fn complete_coupled_support_uv(
                 geometry_budget,
                 &mut blend_parameter_grids,
             )
-        else {
+        });
+        let Some(lanes) = lanes else {
             continue;
         };
         for side in 0..2 {

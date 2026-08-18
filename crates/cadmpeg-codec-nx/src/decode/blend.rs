@@ -182,6 +182,7 @@ pub(crate) fn blend_surface_parameters_for_fit(
 
 #[derive(Clone, Copy)]
 pub(crate) enum BlendParameterGrid<'a> {
+    #[cfg(test)]
     Build,
     Disabled,
     Provided(&'a [(Point2, Point3)]),
@@ -443,6 +444,7 @@ fn blend_surface_parameters_inner(
         }
     }
     let initial = match grid {
+        #[cfg(test)]
         BlendParameterGrid::Build => coarse_blend_surface_parameters_with_index_and_budget(
             index,
             surface,
@@ -521,6 +523,7 @@ pub(crate) fn coarse_blend_surface_parameters(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn coarse_blend_surface_parameters_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,

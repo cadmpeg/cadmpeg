@@ -850,7 +850,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         return None;
     }
     let mut starts = Vec::with_capacity(3);
-    let mut add_start = |candidate: Option<Point2>| {
+    let add_start = |starts: &mut Vec<Point2>, candidate: Option<Point2>| {
         let Some(mut candidate) = candidate else {
             return;
         };
@@ -862,21 +862,10 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             starts.push(candidate);
         }
     };
-    add_start(seed);
-    add_start(initial_surface_parameters_with_index_and_budget(
-        index,
-        support,
-        point,
-        None,
-        support_fit_tolerance,
-        geometry_budget,
-    ));
-    add_start(domain.and_then(|domain| {
-        coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
-    }));
+    add_start(&mut starts, seed);
 
     let mut best = None;
-    for mut parameters in starts {
+    let mut process_start = |mut parameters: Point2| -> Option<Point2> {
         for _ in 0..OFFSET_NEWTON_ITERATIONS {
             if !geometry_budget.charge() {
                 break;
@@ -898,7 +887,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             if fit_tolerance
                 .is_some_and(|tolerance| dot_vector(residual, residual) <= tolerance * tolerance)
             {
-                break;
+                return Some(parameters);
             }
             let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
             let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
@@ -938,18 +927,16 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 break;
             }
         }
-        let Some(position) = model_surface_point_by_id_with_budget(
+        let position = model_surface_point_by_id_with_budget(
             index,
             surface,
             parameters.u,
             parameters.v,
             geometry_budget,
-        ) else {
-            continue;
-        };
+        )?;
         let residual = point_distance(position, point);
         if !residual.is_finite() {
-            continue;
+            return None;
         }
         if fit_tolerance.is_some_and(|tolerance| residual <= tolerance) {
             return Some(parameters);
@@ -957,6 +944,34 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         let replace = best.is_none_or(|(_, best_residual)| residual < best_residual);
         if replace {
             best = Some((parameters, residual));
+        }
+        None
+    };
+    for parameters in starts.drain(..) {
+        if let Some(parameters) = process_start(parameters) {
+            return Some(parameters);
+        }
+    }
+    add_start(
+        &mut starts,
+        initial_surface_parameters_with_index_and_budget(
+            index,
+            support,
+            point,
+            None,
+            support_fit_tolerance,
+            geometry_budget,
+        ),
+    );
+    add_start(
+        &mut starts,
+        domain.and_then(|domain| {
+            coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
+        }),
+    );
+    for parameters in starts {
+        if let Some(parameters) = process_start(parameters) {
+            return Some(parameters);
         }
     }
     fit_tolerance
