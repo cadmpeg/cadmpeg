@@ -583,6 +583,22 @@ fn specified_parameter_end(
                 ParameterBoundary::Invalid
             }
         }
+        (316, 0) => {
+            let Some(unit_count) = record.count_with_stride(1, 3).filter(|count| *count > 0) else {
+                return ParameterBoundary::Invalid;
+            };
+            let Some(end) = unit_count
+                .checked_mul(3)
+                .and_then(|width| width.checked_add(2))
+            else {
+                return ParameterBoundary::Invalid;
+            };
+            if end <= record.tokens.len() {
+                ParameterBoundary::Known(end)
+            } else {
+                ParameterBoundary::Invalid
+            }
+        }
         (406, 14) => {
             let Some(value_count) = record.count(1).filter(|count| *count > 0) else {
                 return ParameterBoundary::Invalid;
