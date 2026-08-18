@@ -898,6 +898,155 @@ fn type230_malformed_island_counts_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type132_fixed_primary_boundary_follows_fourteen_fields() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(7, 132);
+    source.form = 0;
+    let directory = BTreeMap::from([(3, &association), (7, &source)]);
+    let record = token_parameter_record(
+        7,
+        vec![
+            132.into(),
+            1.0.into(),
+            2.0.into(),
+            3.0.into(),
+            0.into(),
+            101.into(),
+            1.into(),
+            TokenValue::String(b"C1".to_vec()),
+            0.into(),
+            TokenValue::String(b"PORT".to_vec()),
+            0.into(),
+            42.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            3.into(),
+            0.into(),
+        ],
+    );
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 132 table boundary");
+    assert_eq!(groups.token_start, 15);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type132_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let mut source = directory_target(9, 132);
+    source.form = 0;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property_5),
+        (7, &property_7),
+        (9, &source),
+    ]);
+    let record = token_parameter_record(
+        9,
+        vec![
+            132.into(),
+            1.0.into(),
+            2.0.into(),
+            3.0.into(),
+            0.into(),
+            101.into(),
+            1.into(),
+            TokenValue::String(b"C1".to_vec()),
+            0.into(),
+            TokenValue::String(b"PORT".to_vec()),
+            0.into(),
+            42.into(),
+            1.into(),
+            0.into(),
+            2.into(),
+            1.into(),
+            3.into(),
+            2.into(),
+            5.into(),
+            7.into(),
+        ],
+    );
+
+    let generic = structural_pointer_group_candidates(&record);
+    assert_eq!(
+        generic
+            .iter()
+            .map(|candidate| candidate.token_start)
+            .collect::<Vec<_>>(),
+        vec![14, 15]
+    );
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 132 table boundary");
+    assert_eq!(groups.token_start, 15);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5, 7]);
+}
+
+#[test]
+fn type132_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(3, 212);
+    let mut source = directory_target(7, 132);
+    source.form = 0;
+    let directory = BTreeMap::from([(3, &association), (7, &source)]);
+    let wrong_fields = token_parameter_record(
+        7,
+        vec![
+            132.into(),
+            TokenValue::String(b"bad".to_vec()),
+            2.into(),
+            3.into(),
+            0.into(),
+            999.into(),
+            1.into(),
+            TokenValue::String(b"C1".to_vec()),
+            0.into(),
+            TokenValue::String(b"PORT".to_vec()),
+            0.into(),
+            42.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            3.into(),
+            0.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis
+            .groups
+            .expect("Type 132 table boundary")
+            .token_start,
+        15
+    );
+
+    for values in [
+        vec![132, 1, 2, 3, 0, 101, 1, 0, 0, 0, 0, 42, 1, 0],
+        vec![132, 1, 2, 3, 0, 101, 1, 0, 0, 0, 0, 42, 1, 0, 0, 1, 3],
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+}
+
+#[test]
 fn type320_entity_table_boundary_follows_member_and_connect_counts() {
     for (member_count, connect_count, expected_start) in
         [(0_i64, 0_i64, 8), (1, 0, 9), (0, 1, 9), (2, 1, 11)]

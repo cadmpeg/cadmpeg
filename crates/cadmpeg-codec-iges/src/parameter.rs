@@ -408,6 +408,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// `LC` position numbers, so its groups start at token `11 + LC`.
 /// Type 408 Form 0 stores a definition pointer, three translation values, and
 /// an optional scale at indexes 1 through 5, so its groups start at token 6.
+/// Type 132 Form 0 stores fourteen fixed primary fields, so its groups start
+/// at token 15.
 /// Type 402 Form 19 puts the block count at index 1 and stores six fields per
 /// view/segment block, so its groups start at token `2 + 6*N`.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
@@ -475,6 +477,7 @@ pub(crate) fn entity_primary_end(
         (406, 27) => Some(generic_data_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
+        (132, 0) => Some(fixed_primary_end(record, 15)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
