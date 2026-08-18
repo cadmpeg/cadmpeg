@@ -402,6 +402,65 @@ pub(super) fn continue_fixed_kind_operations(
             opposite_angle_offset: None,
         })
     );
+
+    let class403_start = bytes.len();
+    let mut class403_revolve = vec![0; 387];
+    class403_revolve[21..25].copy_from_slice(&2u32.to_le_bytes());
+    class403_revolve[25..29].copy_from_slice(&2u32.to_le_bytes());
+    class403_revolve[29..31].copy_from_slice(&[0, 1]);
+    class403_revolve[34] = 1;
+    class403_revolve[35..39].copy_from_slice(&indexed_angle_record_index.to_le_bytes());
+    let mut class403_guid = Vec::new();
+    lp_utf16(&mut class403_guid, "00000000-0000-0000-0000-000000000000");
+    class403_revolve[107..183].copy_from_slice(&class403_guid);
+    bytes.extend_from_slice(&class403_revolve);
+    let mut class403_scope = revolve_scope.clone();
+    class403_scope.class_tag = "403".into();
+    class403_scope.paired_class_tag = "258".into();
+    class403_scope.byte_offset = class403_start as u64;
+    class403_scope.frame_length = 387;
+    class403_scope.reference_members = vec![
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        indexed_angle_record_index,
+    ];
+    let mut class403_angle = indexed_angle.clone();
+    class403_angle.scope_record_index = class403_scope.record_index;
+    class403_angle.evaluated_value_offset = (class403_start + 40) as u64;
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &class403_scope,
+            std::slice::from_ref(&class403_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: (class403_start + 21) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: indexed_angle_record_index,
+            angle_offset: (class403_start + 40) as u64,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
+    bytes[class403_start + 34] = 0;
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &class403_scope,
+            std::slice::from_ref(&class403_angle),
+        ),
+        None
+    );
+    bytes[class403_start + 34] = 1;
+
     let legacy_revolve_start = bytes.len();
     let legacy_angle_record_index = 1_800u32;
     let mut legacy_revolve = vec![0; 359];

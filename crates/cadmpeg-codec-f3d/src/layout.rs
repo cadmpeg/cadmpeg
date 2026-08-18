@@ -2702,6 +2702,46 @@ pub(crate) mod coil_compact_placement_matrix_frame {
     pub(crate) const MATRIX: usize = 66;
 }
 
+/// Byte offsets for the `class_403_revolve_scope_frame` record.
+///
+/// Spec §3.1. Record length 387 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
+/// ```
+pub(crate) mod class_403_revolve_scope_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 387;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 25;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Offset of `envelope_marker` (`u8`). Spec §3.1.
+    pub(crate) const ENVELOPE_MARKER: usize = 30;
+    /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE_MARKER: usize = 34;
+    /// Offset of `angle_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ANGLE_RECORD_INDEX: usize = 35;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 107;
+    /// Offset of `guid_utf16` (`bytes[72]`). Spec §3.1.
+    pub(crate) const GUID_UTF16: usize = 111;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 186;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 278;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 282;
+    /// Offset of `kind_utf16` (`bytes[14]`). Spec §3.1.
+    pub(crate) const KIND_UTF16: usize = 286;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 300;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 341;
+}
+
 /// Byte offsets for the `marker_one_revolve_prologue` record.
 ///
 /// Spec §3.1. Record length 38 B.

@@ -32,6 +32,7 @@ use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
 use crate::layout::coil_compact_placement_owner_identity_frame as coil_owner_identity;
@@ -5265,6 +5266,24 @@ pub(crate) fn exact_fixed_chamfer_parameters(
     })
 }
 
+fn unique_revolve_angle_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: Option<u32>,
+) -> Option<&'a DesignParameterOwner> {
+    let mut candidates = parameter_owners.iter().filter(|owner| {
+        native_stream(&owner.id) == native_stream(&scope.id)
+            && owner.scope_record_index == scope.record_index
+            && scope.reference_members.contains(&owner.record_index)
+            && record_index.is_none_or(|index| owner.record_index == index)
+            && owner.local_ordinal == 0
+            && owner.evaluated_value.is_finite()
+            && owner.evaluated_value > 0.0
+    });
+    let angle = candidates.next()?;
+    candidates.next().is_none().then_some(angle)
+}
+
 pub(crate) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -5290,20 +5309,7 @@ pub(crate) fn exact_path_feature_construction(
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0)
                 && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
         {
-            let candidates = parameter_owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(&owner.id) == native_stream(&scope.id)
-                        && owner.scope_record_index == scope.record_index
-                        && scope.reference_members.contains(&owner.record_index)
-                        && owner.local_ordinal == 0
-                        && owner.evaluated_value.is_finite()
-                        && owner.evaluated_value > 0.0
-                })
-                .collect::<Vec<_>>();
-            let [angle] = candidates.as_slice() else {
-                return None;
-            };
+            let angle = unique_revolve_angle_owner(scope, parameter_owners, None)?;
             Some(DesignPathFeatureConstruction::Revolve {
                 operation: operation(start + revolve::OPERATION)?,
                 operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
@@ -5366,23 +5372,34 @@ pub(crate) fn exact_path_feature_construction(
             if scope.reference_members.get(6) != Some(&angle_record_index) {
                 return None;
             }
-            let candidates = parameter_owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(&owner.id) == native_stream(&scope.id)
-                        && owner.scope_record_index == scope.record_index
-                        && owner.record_index == angle_record_index
-                        && owner.local_ordinal == 0
-                        && owner.evaluated_value.is_finite()
-                        && owner.evaluated_value > 0.0
-                })
-                .collect::<Vec<_>>();
-            let [angle] = candidates.as_slice() else {
-                return None;
-            };
+            let angle =
+                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
             Some(DesignPathFeatureConstruction::Revolve {
                 operation: operation(start + 21)?,
                 operation_offset: u64::try_from(start + 21).ok()?,
+                angle: angle.evaluated_value,
+                angle_record_index,
+                angle_offset: angle.evaluated_value_offset,
+                opposite_angle_record_index: None,
+                opposite_angle_offset: None,
+            })
+        }
+        DesignFeatureFamily::Revolve
+            if scope.class_tag == "403"
+                && scope.paired_class_tag == "258"
+                && scope.frame_length == 387
+                && scope.reference_members.len() == 8
+                && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
+                && bytes.get(start + class_403_revolve::DIRECTION_KIND..start + 31)
+                    == Some(&[0, 1]) =>
+        {
+            let angle_record_index =
+                marked_record_reference(bytes, start + class_403_revolve::ANGLE_REFERENCE_MARKER)?;
+            let angle =
+                unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
+            Some(DesignPathFeatureConstruction::Revolve {
+                operation: operation(start + class_403_revolve::OPERATION)?,
+                operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
                 angle: angle.evaluated_value,
                 angle_record_index,
                 angle_offset: angle.evaluated_value_offset,
