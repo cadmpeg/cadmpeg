@@ -3,7 +3,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::sketch_transfer::section_solver_equation_is_disabled;
+use super::super::feature_history::{
+    feature_dimension_table_complete, feature_relation_table_complete,
+};
+use super::super::sketch_transfer::{
+    section_solver_equation_is_disabled, section_solver_relation_is_disabled,
+};
 use super::coordinates::resolved_section_coordinates;
 use super::equations_coordinate::{
     approximately_equal, section_equation_function_six_distance_values,
@@ -471,6 +476,56 @@ pub(crate) fn merge_scalar_value_candidate(
     }
 }
 
+pub(crate) fn section_relation_radius_scalar_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<(SectionScalarVariable, f64)> {
+    let Some(dimensions) = definition
+        .dimensions
+        .as_ref()
+        .filter(|table| feature_dimension_table_complete(table))
+    else {
+        return Vec::new();
+    };
+    definition
+        .relations
+        .iter()
+        .filter(|table| feature_relation_table_complete(table))
+        .flat_map(|table| &table.rows)
+        .filter_map(|relation| {
+            if section_solver_relation_is_disabled(definition, relation.relation_id)
+                || relation.relation_type != 14
+                || relation.sign != 1
+            {
+                return None;
+            }
+            let vectors = relation.operand_vectors?;
+            let [Some(radius), Some(0), Some(0), Some(0)] = vectors[0] else {
+                return None;
+            };
+            if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
+                return None;
+            }
+            let dimension = dimensions
+                .rows
+                .get(usize::try_from(relation.dimension_id).ok()?)?;
+            if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !matches!(dimension.dimension_type, 1..=5)
+            {
+                return None;
+            }
+            let value = dimension
+                .value
+                .filter(|value| value.is_finite() && *value > 0.0)?;
+            let value = if dimension.dimension_type == 4 {
+                value / 2.0
+            } else {
+                value
+            };
+            value.is_finite().then_some(((3, radius), value))
+        })
+        .collect()
+}
+
 pub(crate) fn section_equation_scalar_seed_values(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, Option<f64>> {
@@ -512,6 +567,9 @@ pub(crate) fn section_equation_scalar_seed_values(
     {
         merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+    }
+    for (variable, value) in section_relation_radius_scalar_values(definition) {
+        merge_scalar_value_candidate(&mut values, variable, value);
     }
     for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
@@ -1182,6 +1240,9 @@ pub(crate) fn resolved_section_scalar_values(
     {
         merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
         merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+    }
+    for (variable, value) in section_relation_radius_scalar_values(definition) {
+        merge_scalar_value_candidate(&mut values, variable, value);
     }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &ambiguous_point_ids)

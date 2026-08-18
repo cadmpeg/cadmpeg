@@ -782,12 +782,13 @@ pub(crate) fn resolved_section_points(
 
 #[cfg(test)]
 mod tests {
+    use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
     use crate::feature::{
         FeatureDefinition, FeatureDimension, FeatureDimensionTable, FeaturePointSegment,
-        FeatureRelationTable, FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
-        FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader,
-        FeatureVariableRow, FeatureVariableTable,
+        FeatureRelation, FeatureRelationTable, FeatureSectionPoint, FeatureSegment,
+        FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
+        FeatureSolverTableHeader, FeatureVariableRow, FeatureVariableTable,
     };
 
     fn incomplete_segment_definition() -> FeatureDefinition {
@@ -1445,6 +1446,107 @@ mod tests {
         assert_eq!(
             resolved_section_points(&definition).get(&40),
             Some(&[3.0, 1.0])
+        );
+    }
+
+    #[test]
+    fn relation_dimension_radius_feeds_polar_constraint() {
+        let row = |variable_type, key, value| FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: false,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven: false,
+            offset: 0,
+        };
+        let mut body = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
+            .to_vec();
+        body.extend_from_slice(b"\x01\x00\xf8\x06\x01\x02\x03\x04\x00\x05\xf6\xe2");
+        let definition = FeatureDefinition {
+            id: 8,
+            owner_feature_id: None,
+            body,
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 6,
+                entity_ref: None,
+                rows: vec![
+                    row(3, 42, None),
+                    row(1, 30, Some(1.0)),
+                    row(2, 30, Some(1.0)),
+                    row(1, 40, None),
+                    row(2, 40, None),
+                    row(4, 3, Some(0.0)),
+                ],
+                points: Vec::new(),
+                offset: 0,
+            }),
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(FeatureDimensionTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![FeatureDimension {
+                    dimension_type: 3,
+                    value: Some(2.0),
+                    value_body: Vec::new(),
+                    unresolved_value_token: None,
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: None,
+                    auxiliary_body: Vec::new(),
+                    external_id: 1,
+                    references: None,
+                    offset: 0,
+                }],
+                offset: 0,
+            }),
+            relations: Some(FeatureRelationTable {
+                declared_count: 3,
+                entity_ref: None,
+                rows: vec![FeatureRelation {
+                    relation_id: 1,
+                    used: 1,
+                    operands: Vec::new(),
+                    operand_vectors: Some([
+                        [Some(42), Some(0), Some(0), Some(0)],
+                        [Some(0); 4],
+                        [Some(15), Some(0), Some(0), Some(0)],
+                    ]),
+                    sign: 1,
+                    dimension_id: 0,
+                    relation_type: 14,
+                    body: Vec::new(),
+                    offset: 0,
+                }],
+                skamps: Vec::new(),
+                skamp_header: None,
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+
+        assert_eq!(
+            resolved_section_points(&definition).get(&40),
+            Some(&[3.0, 1.0])
+        );
+        assert_eq!(
+            resolved_section_scalar_values(&definition).get(&(3, 42)),
+            Some(&2.0)
         );
     }
 }

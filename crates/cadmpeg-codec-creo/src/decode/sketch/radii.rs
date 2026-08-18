@@ -21,6 +21,7 @@ use super::equations_coordinate::{
 };
 use super::equations_scalar::{
     section_equation_radial_constraints, section_equation_scalar_equality_components,
+    section_relation_radius_scalar_values,
 };
 use super::geometry::{
     resolved_section_segment_geometry_with_missing_line, saved_section_arc_carrier,
@@ -127,34 +128,9 @@ pub(crate) fn resolved_section_radii(
                 .entry(relation.dimension_id)
                 .or_default()
                 .push(radius);
-            continue;
         }
-        if relation.relation_type != 14 || relation.sign != 1 {
-            continue;
-        }
-        let Some(vectors) = relation.operand_vectors else {
-            continue;
-        };
-        let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
-            continue;
-        };
-        if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
-            continue;
-        }
-        let Some(dimension) = section_relation_length_dimension(definition, relation) else {
-            continue;
-        };
-        let Some(value) = dimension
-            .value
-            .filter(|value| value.is_finite() && *value > 0.0)
-        else {
-            continue;
-        };
-        let value = if dimension.dimension_type == 4 {
-            value / 2.0
-        } else {
-            value
-        };
+    }
+    for ((_, radius_id), value) in section_relation_radius_scalar_values(definition) {
         candidates.entry(radius_id).or_default().push(value);
     }
     if let Some(dimensions) = definition
