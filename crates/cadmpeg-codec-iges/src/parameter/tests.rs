@@ -2039,3 +2039,106 @@ fn decode_uses_type144_entity_boundary_for_form0_association() {
         &[serde_json::json!("iges:entity:directory#17")]
     );
 }
+
+#[test]
+fn type143_entity_table_boundary_uses_boundary_count() {
+    for (boundary_count, expected_start) in [(0_i64, 4_usize), (1, 5), (2, 6)] {
+        let association = directory_target(1, 212);
+        let source = directory_target(3, 143);
+        let directory = BTreeMap::from([(1, &association), (3, &source)]);
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 143;
+        values[1] = 1;
+        values[2] = 1;
+        values[3] = boundary_count;
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end: expected_start + 3,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 143 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type143_entity_table_boundary_precedes_valid_generic_alternative() {
+    let target_1 = directory_target(1, 212);
+    let target_3 = directory_target(3, 212);
+    let source = directory_target(5, 143);
+    let directory = BTreeMap::from([(1, &target_1), (3, &target_3), (5, &source)]);
+    let values = [143, 1, 1, 1, 2, 1, 3, 0];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: values.len(),
+        comment: Vec::new(),
+    };
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 143 table boundary");
+    assert_eq!(groups.token_start, 5);
+    assert_eq!(groups.associations, vec![3]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type143_malformed_boundary_counts_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let source = directory_target(3, 143);
+    let directory = BTreeMap::from([(1, &association), (3, &source)]);
+    for values in [
+        vec![143, 1, 1, -1, 0, 1, 1, 0],
+        vec![143, 1, 1, 100, 0, 1, 1, 0],
+        vec![143, 1, 1],
+    ] {
+        let parameter_end = values.len();
+        let record = ParameterRecord {
+            directory_sequence: 3,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            parameter_end,
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
