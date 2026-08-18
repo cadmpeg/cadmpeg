@@ -5952,6 +5952,51 @@ fn endpoint_relation_state_signature(
     )
 }
 
+/// Return the edge-pair superset admitted by the surviving relation domains.
+/// A relation branch can only select pairs from this set, so coordinate
+/// infeasibility of the superset is a sound branch rejection.
+fn relation_coordinate_candidate_domains(
+    domains: &[Vec<MeshEndpointRelationChoice>],
+    assigned: &[Option<[usize; 2]>],
+    base_candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    if assigned.len() != base_candidates.len() {
+        return None;
+    }
+    let has_unknown_choice = domains
+        .iter()
+        .flatten()
+        .any(|choice| choice.edge_pairs.is_empty());
+    let mut candidates = base_candidates.to_vec();
+    let mut possible = (0..base_candidates.len())
+        .map(|_| Vec::<[usize; 2]>::new())
+        .collect::<Vec<_>>();
+    if !has_unknown_choice {
+        for choice in domains.iter().flatten() {
+            for &(edge, pair) in &choice.edge_pairs {
+                possible.get_mut(edge)?.push(pair);
+            }
+        }
+    }
+    for (edge, (assigned, base)) in assigned.iter().zip(base_candidates).enumerate() {
+        if let Some(pair) = assigned {
+            candidates[edge].retain(|candidate| same_unordered_pair(*candidate, *pair));
+        } else if !has_unknown_choice && !possible[edge].is_empty() {
+            candidates[edge].retain(|candidate| {
+                possible[edge]
+                    .iter()
+                    .any(|possible| same_unordered_pair(*candidate, *possible))
+            });
+        } else {
+            candidates[edge].clone_from(base);
+        }
+        if candidates[edge].is_empty() {
+            return None;
+        }
+    }
+    Some(candidates)
+}
+
 #[derive(Clone)]
 struct MeshEndpointRelationArc {
     neighbor: usize,
@@ -6304,6 +6349,8 @@ fn walk_endpoint_relation_domains<F>(
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
     priority_edges: Option<&[bool]>,
     partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
+    coordinate_domains: Option<&MeshCoordinateRootDomains>,
+    coordinate_budget: Option<&WorkBudget<'_>>,
     evaluate: &mut F,
 ) -> bool
 where
@@ -6360,6 +6407,26 @@ where
         );
         if possible_points.len() < point_count {
             return false;
+        }
+    }
+    if let (Some(coordinate_domains), Some(coordinate_budget)) =
+        (coordinate_domains, coordinate_budget)
+    {
+        if !coordinate_budget.exhausted() {
+            let Some(candidates) = relation_coordinate_candidate_domains(
+                &domains,
+                &assigned,
+                coordinate_domains.edge_candidates(),
+            ) else {
+                return false;
+            };
+            if coordinate_domains
+                .refine_candidates(&candidates, Some(coordinate_budget))
+                .is_none()
+                && !coordinate_budget.exhausted()
+            {
+                return false;
+            }
         }
     }
     if state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
@@ -6511,6 +6578,8 @@ where
             candidate_gauge,
             priority_edges,
             partial_solution_valid,
+            coordinate_domains,
+            coordinate_budget,
             evaluate,
         ) {
             return true;
@@ -6538,6 +6607,7 @@ fn resolve_endpoint_configuration_relation_streaming(
     complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
     priority_edges: Option<&[bool]>,
+    coordinate_domains: Option<&MeshCoordinateRootDomains>,
 ) -> Option<MeshEndpointResolve> {
     if assignments.len() != endpoint_configurations.len()
         || edge_candidates.iter().any(Vec::is_empty)
@@ -6629,6 +6699,8 @@ fn resolve_endpoint_configuration_relation_streaming(
         HashSet::<(MeshEndpointRelationSelections, Vec<[usize; 2]>)>::new();
     let mut relation_pre_state_memo = HashSet::<MeshEndpointRelationStateSignature>::new();
     let mut relation_walk_state_memo = HashSet::<MeshEndpointRelationStateSignature>::new();
+    let coordinate_budget =
+        coordinate_domains.map(|_| budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS));
     let mut ambiguous = false;
     let mut exhausted = false;
     let mut evaluate = |selections: MeshEndpointRelationSelections,
@@ -6764,6 +6836,8 @@ fn resolve_endpoint_configuration_relation_streaming(
         candidate_gauge,
         priority_edges,
         partial_solution_valid,
+        coordinate_domains,
+        coordinate_budget.as_ref(),
         &mut evaluate,
     );
     if ambiguous {
@@ -8885,6 +8959,18 @@ fn resolve_standard_mesh_endpoint_candidates(
     ) {
         return resolved;
     }
+    let coordinate_domains = (|| {
+        let preparation_limit = quotient
+            .clone()
+            .coordinate_domain_preparation_limit(vertex_points.len(), &edge_candidates)?;
+        let preparation_budget = budget.session_child_slice(preparation_limit);
+        let mut coordinate_quotient = quotient.clone();
+        coordinate_quotient.prepare_coordinate_root_domains(
+            vertex_points.len(),
+            &edge_candidates,
+            Some(&preparation_budget),
+        )
+    })();
     let face_work = assignments
         .iter()
         .map(|assignments| Some(assignments.len()))
@@ -8955,6 +9041,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         complete_solution_valid,
         candidate_gauge,
         priority_edges,
+        coordinate_domains.as_ref(),
     );
     if let Some(resolved) = relation {
         return resolved;
@@ -9350,6 +9437,44 @@ where
 }
 
 #[test]
+fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
+    let base_candidates = vec![vec![[0, 1], [0, 2]], vec![[1, 2]]];
+    let domains = vec![
+        vec![MeshEndpointRelationChoice {
+            id: 0,
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1]), (1, [1, 2])],
+        }],
+        vec![MeshEndpointRelationChoice {
+            id: 1,
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        }],
+    ];
+    let assigned = vec![None, None];
+    assert_eq!(
+        relation_coordinate_candidate_domains(&domains, &assigned, &base_candidates),
+        Some(vec![vec![[0, 1]], vec![[1, 2]]]),
+    );
+
+    let unknown_domains = vec![vec![MeshEndpointRelationChoice {
+        id: 0,
+        assignments: vec![usize::MAX],
+        edge_pairs: Vec::new(),
+    }]];
+    assert_eq!(
+        relation_coordinate_candidate_domains(&unknown_domains, &assigned, &base_candidates),
+        Some(base_candidates.clone()),
+    );
+    assert!(relation_coordinate_candidate_domains(
+        &domains,
+        &[Some([2, 3]), None],
+        &base_candidates,
+    )
+    .is_none());
+}
+
+#[test]
 fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(matches!(
@@ -9421,6 +9546,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
             &vertex_points,
             &port_identities,
             &budget,
+            None,
             None,
             None,
             None,
