@@ -355,6 +355,19 @@ fn standard_line_pair_preference_rejects_partial_collinear_overlap() {
         &options,
         &overlapping,
     ));
+    let zero_length = [Some([1, 1]), None, None];
+    assert!(!standard_line_pair_solution_is_simple(
+        &points,
+        &supports,
+        &options,
+        &zero_length,
+    ));
+    assert!(!standard_line_pair_solution_is_simple_cached(
+        &points,
+        &supports,
+        &options,
+        &zero_length,
+    ));
 }
 
 #[test]

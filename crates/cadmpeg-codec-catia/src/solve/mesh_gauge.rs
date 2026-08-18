@@ -564,7 +564,7 @@ fn canonicalize_partial_endpoint_pair_gauge(
     Some(canonical)
 }
 
-pub(crate) fn canonicalize_endpoint_pair_gauge(
+pub(crate) fn canonicalize_complete_endpoint_pairs(
     pairs: &[[usize; 2]],
     gauge: MeshCandidateGauge<'_>,
 ) -> Option<Vec<[usize; 2]>> {
@@ -574,26 +574,36 @@ pub(crate) fn canonicalize_endpoint_pair_gauge(
         .collect()
 }
 
-fn canonicalize_endpoint_relation_choice(
-    choice: &MeshEndpointRelationChoice,
-    edge_count: usize,
+pub(crate) fn canonicalize_coordinate_endpoint_pairs(
+    pairs: &[[usize; 2]],
     gauge: MeshCandidateGauge<'_>,
-) -> Option<Vec<(usize, [usize; 2])>> {
-    let mut pairs = alloc_filled(edge_count, None, "catia_relation_choice_gauge_pairs").ok()?;
-    for &(edge, mut pair) in &choice.edge_pairs {
-        pair.sort_unstable();
-        let slot = pairs.get_mut(edge)?;
-        if slot.replace(pair).is_some() {
-            return None;
+) -> Option<Vec<[usize; 2]>> {
+    let mut canonical = pairs
+        .iter()
+        .copied()
+        .map(|mut pair| {
+            pair.sort_unstable();
+            pair
+        })
+        .collect::<Vec<_>>();
+    let Some(coordinate_gauge) = gauge.coordinate_gauge else {
+        return Some(canonical);
+    };
+    for permutations in &coordinate_gauge.components {
+        let mut best = canonical.clone();
+        for permutation in permutations {
+            let candidate = canonical
+                .iter()
+                .copied()
+                .map(|pair| mapped_endpoint_pair(Some(pair), Some(permutation)))
+                .collect::<Option<Vec<_>>>()?;
+            if candidate < best {
+                best = candidate;
+            }
         }
+        canonical = best;
     }
-    Some(
-        canonicalize_partial_endpoint_pair_gauge(&pairs, gauge)?
-            .into_iter()
-            .enumerate()
-            .filter_map(|(edge, pair)| pair.map(|pair| (edge, pair)))
-            .collect(),
-    )
+    Some(canonical)
 }
 
 fn canonicalize_mesh_edge_row_gauges(
@@ -977,9 +987,11 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
         coordinate_gauge: None,
     };
 
+    let left = [[0, 1], [2, 3]].into_iter().map(Some).collect::<Vec<_>>();
+    let right = [[2, 3], [0, 1]].into_iter().map(Some).collect::<Vec<_>>();
     assert_eq!(
-        canonicalize_endpoint_pair_gauge(&[[0, 1], [2, 3]], gauge),
-        canonicalize_endpoint_pair_gauge(&[[2, 3], [0, 1]], gauge),
+        canonicalize_partial_endpoint_pair_gauge(&left, gauge),
+        canonicalize_partial_endpoint_pair_gauge(&right, gauge),
     );
 }
 
@@ -1174,24 +1186,35 @@ pub(crate) fn canonicalize_endpoint_relation_state(
     assigned: &[Option<[usize; 2]>],
     gauge: MeshCandidateGauge<'_>,
 ) -> Option<MeshEndpointRelationStateSignature> {
-    // Partial relation states are search keys, not emitted candidates. The
-    // row quotient is cheap enough for every state; coordinate permutations
-    // are applied only by the bounded state-specific helper below.
-    let row_gauge = MeshCandidateGauge {
-        coordinate_gauge: None,
-        ..gauge
-    };
-    let assigned = canonicalize_partial_endpoint_pair_gauge(assigned, row_gauge)?;
+    let assigned = assigned
+        .iter()
+        .copied()
+        .map(|pair| {
+            pair.map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+        })
+        .collect::<Vec<_>>();
     let domains = domains
         .iter()
         .map(|choices| {
             let mut choices = choices
                 .iter()
                 .map(|choice| {
-                    Some((
-                        choice.assignments.clone(),
-                        canonicalize_endpoint_relation_choice(choice, assigned.len(), row_gauge)?,
-                    ))
+                    let mut assignments = choice.assignments.clone();
+                    assignments.sort_unstable();
+                    assignments.dedup();
+                    let mut edge_pairs = choice
+                        .edge_pairs
+                        .iter()
+                        .map(|&(edge, mut pair)| {
+                            pair.sort_unstable();
+                            (edge, pair)
+                        })
+                        .collect::<Vec<_>>();
+                    edge_pairs.sort_unstable();
+                    Some((assignments, edge_pairs))
                 })
                 .collect::<Option<Vec<_>>>()?;
             choices.sort_unstable();
@@ -1199,29 +1222,42 @@ pub(crate) fn canonicalize_endpoint_relation_state(
         })
         .collect::<Option<Vec<_>>>()?;
     let mut state = (assigned, domains);
+
+    let point_count = gauge
+        .coordinate_gauge
+        .and_then(|coordinate_gauge| {
+            coordinate_gauge
+                .components
+                .iter()
+                .filter_map(|permutations| permutations.first())
+                .map(Vec::len)
+                .next()
+        })
+        .unwrap_or_else(|| {
+            gauge
+                .edge_candidates
+                .iter()
+                .flatten()
+                .flatten()
+                .copied()
+                .max()
+                .map_or(0, |point| point.saturating_add(1))
+        });
+    let identity = (0..point_count).collect::<Vec<_>>();
+    state = map_endpoint_relation_state(&state, gauge, &identity)?;
     if let Some(coordinate_gauge) = gauge.coordinate_gauge {
         for permutations in &coordinate_gauge.components {
             if permutations.len() <= 1 {
                 continue;
             }
-            let support = coordinate_gauge_support(permutations);
-            let base_projection = assigned_coordinate_projection(&state.0, &support, None)?;
-            if base_projection.is_empty() {
-                continue;
-            }
-            let mut best_projection = base_projection;
-            let mut best_permutation = None;
+            let mut best = state.clone();
             for permutation in permutations {
-                let projection =
-                    assigned_coordinate_projection(&state.0, &support, Some(permutation))?;
-                if projection < best_projection {
-                    best_projection = projection;
-                    best_permutation = Some(permutation);
+                let candidate = map_endpoint_relation_state(&state, gauge, permutation)?;
+                if candidate < best {
+                    best = candidate;
                 }
             }
-            if let Some(permutation) = best_permutation {
-                state = map_endpoint_relation_state(&state, permutation)?;
-            }
+            state = best;
         }
     }
     Some(state)
@@ -1229,16 +1265,25 @@ pub(crate) fn canonicalize_endpoint_relation_state(
 
 fn map_endpoint_relation_state(
     state: &MeshEndpointRelationStateSignature,
+    gauge: MeshCandidateGauge<'_>,
     permutation: &[usize],
 ) -> Option<MeshEndpointRelationStateSignature> {
-    let assigned = state
-        .0
-        .iter()
-        .map(|pair| match pair {
-            Some(pair) => Some(mapped_endpoint_pair(Some(*pair), Some(permutation))?),
-            None => None,
-        })
-        .collect::<Vec<_>>();
+    let row_mapping = relation_row_gauge_mapping(state, gauge, permutation)?;
+    let assigned = state.0.iter().copied().enumerate().try_fold(
+        (0..state.0.len())
+            .map(|_| None)
+            .collect::<Vec<Option<[usize; 2]>>>(),
+        |mut mapped, (edge, pair)| {
+            let target = *row_mapping.get(edge)?;
+            let pair = match pair {
+                Some(pair) => Some(mapped_endpoint_pair(Some(pair), Some(permutation))?),
+                None => None,
+            };
+            let slot = mapped.get_mut(target)?;
+            *slot = pair;
+            Some(mapped)
+        },
+    )?;
     let domains = state
         .1
         .iter()
@@ -1246,13 +1291,20 @@ fn map_endpoint_relation_state(
             let mut choices = choices
                 .iter()
                 .map(|(assignments, pairs)| {
-                    let pairs = pairs
-                        .iter()
-                        .map(|&(edge, pair)| {
-                            Some((edge, mapped_endpoint_pair(Some(pair), Some(permutation))?))
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some((assignments.clone(), pairs))
+                    let mut mapped_pairs = Vec::with_capacity(pairs.len());
+                    for &(edge, pair) in pairs {
+                        let target = *row_mapping.get(edge)?;
+                        if mapped_pairs
+                            .iter()
+                            .any(|(candidate, _)| *candidate == target)
+                        {
+                            return None;
+                        }
+                        mapped_pairs
+                            .push((target, mapped_endpoint_pair(Some(pair), Some(permutation))?));
+                    }
+                    mapped_pairs.sort_unstable();
+                    Some((assignments.clone(), mapped_pairs))
                 })
                 .collect::<Option<Vec<_>>>()?;
             choices.sort_unstable();
@@ -1262,39 +1314,95 @@ fn map_endpoint_relation_state(
     Some((assigned, domains))
 }
 
-fn coordinate_gauge_support(permutations: &[Vec<usize>]) -> Vec<usize> {
-    let mut support = Vec::new();
-    for permutation in permutations {
-        for (point, target) in permutation.iter().copied().enumerate() {
-            if point != target && !support.contains(&point) {
-                support.push(point);
-            }
-            if point != target && !support.contains(&target) {
-                support.push(target);
-            }
+fn relation_row_gauge_mapping(
+    state: &MeshEndpointRelationStateSignature,
+    gauge: MeshCandidateGauge<'_>,
+    permutation: &[usize],
+) -> Option<Vec<usize>> {
+    let edge_count = state.0.len();
+    let identity = || (0..edge_count).collect::<Vec<_>>();
+    if gauge.edge_rows.len() != edge_count
+        || gauge.edge_faces.len() != edge_count
+        || gauge.edge_classes.len() != edge_count
+        || gauge.edge_candidates.len() != edge_count
+        || gauge.edge_identity_evidence.len() != edge_count
+    {
+        return Some(identity());
+    }
+
+    let mut source_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
+    let mut target_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
+    for edge in 0..edge_count {
+        if gauge.edge_identity_evidence[edge] {
+            continue;
+        }
+        let base =
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_classes)?;
+        let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
+        let target_options =
+            mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?;
+        source_groups
+            .entry((base, target_options))
+            .or_default()
+            .push(edge);
+        target_groups
+            .entry((base, source_options))
+            .or_default()
+            .push(edge);
+    }
+
+    let mut row_mapping = identity();
+    for (key, mut source) in source_groups {
+        let mut targets = target_groups.remove(&key)?;
+        source.sort_unstable();
+        targets.sort_unstable();
+        if source.len() != targets.len() {
+            return None;
+        }
+        let mut ordered = source
+            .into_iter()
+            .map(|edge| Some((relation_row_signature(state, edge, permutation)?, edge)))
+            .collect::<Option<Vec<_>>>()?;
+        ordered.sort_unstable();
+        for (target, (_, source)) in targets.into_iter().zip(ordered) {
+            *row_mapping.get_mut(source)? = target;
         }
     }
-    support.sort_unstable();
-    support
+    target_groups.is_empty().then_some(row_mapping)
 }
 
-fn assigned_coordinate_projection(
-    assigned: &[Option<[usize; 2]>],
-    support: &[usize],
-    permutation: Option<&[usize]>,
-) -> Option<Vec<[usize; 2]>> {
-    assigned
+fn relation_row_signature(
+    state: &MeshEndpointRelationStateSignature,
+    edge: usize,
+    permutation: &[usize],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let choice_count = state
+        .1
         .iter()
-        .copied()
-        .filter_map(|pair| {
-            let pair = pair?;
-            support
-                .iter()
-                .any(|support_point| pair.contains(support_point))
-                .then_some(pair)
-        })
-        .map(|pair| mapped_endpoint_pair(Some(pair), permutation))
-        .collect()
+        .map(Vec::len)
+        .try_fold(0usize, usize::checked_add)?;
+    let mut signature = Vec::with_capacity(choice_count.saturating_add(1));
+    let assigned = match *state.0.get(edge)? {
+        Some(pair) => Some(mapped_endpoint_pair(Some(pair), Some(permutation))?),
+        None => None,
+    };
+    signature.push(assigned);
+    for choices in &state.1 {
+        for (_, pairs) in choices {
+            let mut value = None;
+            for &(candidate, pair) in pairs {
+                if candidate != edge {
+                    continue;
+                }
+                if value.is_some() {
+                    return None;
+                }
+                value = Some(mapped_endpoint_pair(Some(pair), Some(permutation))?);
+            }
+            signature.push(value);
+        }
+    }
+    Some(signature)
 }
 
 #[test]
@@ -1346,4 +1454,101 @@ fn relation_state_memo_collapses_coordinate_gauge() {
     };
 
     assert_eq!(state(false), state(true));
+}
+
+#[test]
+fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
+    let edge_rows = [
+        EdgeRow {
+            kind: 1,
+            handles: vec![10],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 1,
+            handles: vec![11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_classes = [0, 0];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = [true, true];
+    let coordinate_gauge = MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1, 2, 3], vec![1, 0, 3, 2]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &edge_faces,
+        edge_classes: &edge_classes,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let state = |swapped: bool| {
+        let pairs = if swapped {
+            vec![(0, [1, 2]), (1, [0, 3])]
+        } else {
+            vec![(0, [0, 3]), (1, [1, 2])]
+        };
+        let domains = vec![vec![MeshEndpointRelationChoice {
+            id: 0,
+            assignments: vec![0],
+            edge_pairs: pairs,
+        }]];
+        canonicalize_endpoint_relation_state(&domains, &[None, None], gauge)
+            .expect("coordinate gauge state")
+    };
+
+    assert_eq!(state(false), state(true));
+}
+
+#[test]
+fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
+    let edge_rows = [
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_classes = [0, 0];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+    let coordinate_gauge = build_mesh_coordinate_gauge(
+        4,
+        &edge_rows,
+        &edge_faces,
+        &edge_classes,
+        &edge_candidates,
+        &edge_identity_evidence,
+    );
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &edge_faces,
+        edge_classes: &edge_classes,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let state = |assigned: Vec<Option<[usize; 2]>>, pairs: Vec<(usize, [usize; 2])>| {
+        let domains = vec![vec![MeshEndpointRelationChoice {
+            id: 0,
+            assignments: vec![0],
+            edge_pairs: pairs,
+        }]];
+        canonicalize_endpoint_relation_state(&domains, &assigned, gauge)
+            .expect("row-coordinate gauge state")
+    };
+
+    let left = state(vec![Some([0, 3]), None], vec![(0, [1, 2]), (1, [0, 3])]);
+    let right = state(vec![None, Some([0, 3])], vec![(0, [0, 3]), (1, [1, 2])]);
+
+    assert_eq!(left, right);
 }

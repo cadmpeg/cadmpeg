@@ -3825,17 +3825,23 @@ fn attach_standard_topology(
             .collect::<Vec<_>>();
         let line_preference = StandardLinePairPreference::new(&ir.model.points, &supports, options);
         let line_preference_active = line_preference.has_flexible_edges();
+        let partial_constraint_edges = circle_constraint_edges
+            .iter()
+            .zip(line_preference.flexible_edge_mask())
+            .map(|(circle, line)| *circle || *line)
+            .collect::<Vec<_>>();
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
             &solver_options,
             &edge_classes,
             &edge_identity_evidence,
-            &circle_constraint_edges,
+            &partial_constraint_edges,
             &branch_preferred_edges,
+            Some(&partial_constraint_edges),
             branch_assignment_dependencies.as_deref(),
             &preferred_budget,
-            |pairs| line_preference.is_simple(pairs),
+            |pairs| line_preference.is_valid(pairs),
             |pairs| {
                 let branch_valid = fbb_only
                     || standard_curve_branch_assignment_is_ranked(
@@ -3878,20 +3884,22 @@ fn attach_standard_topology(
                     &solver_options,
                     &edge_classes,
                     &edge_identity_evidence,
-                    &circle_constraint_edges,
+                    &partial_constraint_edges,
                     &branch_preferred_edges,
+                    Some(&partial_constraint_edges),
                     branch_assignment_dependencies.as_deref(),
                     &fallback_budget,
-                    |_| true,
+                    |pairs| line_preference.is_valid(pairs),
                     |pairs| {
-                        fbb_only
-                            || standard_curve_branch_assignment_is_ranked(
-                                &supports,
-                                &solver_options,
-                                &branch_groups,
-                                pairs,
-                                None,
-                            )
+                        line_preference.is_valid(pairs)
+                            && (fbb_only
+                                || standard_curve_branch_assignment_is_ranked(
+                                    &supports,
+                                    &solver_options,
+                                    &branch_groups,
+                                    pairs,
+                                    None,
+                                ))
                     },
                 )
             })
@@ -7495,6 +7503,7 @@ type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 
 struct StandardLinePairPreference {
     points: Vec<Point3>,
+    line_edges: Vec<bool>,
     flexible_edges: Vec<bool>,
     edges_by_face: HashMap<usize, Vec<usize>>,
     simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
@@ -7509,6 +7518,15 @@ impl StandardLinePairPreference {
         let points = points
             .iter()
             .map(|point| point.position)
+            .collect::<Vec<_>>();
+        let line_edges = supports
+            .iter()
+            .map(|support| {
+                matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Line
+                )
+            })
             .collect::<Vec<_>>();
         let mut flexible_edges = vec![false; supports.len()];
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
@@ -7532,6 +7550,7 @@ impl StandardLinePairPreference {
 
         Self {
             points,
+            line_edges,
             flexible_edges,
             edges_by_face,
             simplicity_cache: RefCell::new(HashMap::new()),
@@ -7542,7 +7561,29 @@ impl StandardLinePairPreference {
         self.flexible_edges.iter().any(|flexible| *flexible)
     }
 
+    fn flexible_edge_mask(&self) -> &[bool] {
+        &self.flexible_edges
+    }
+
+    fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+        pairs.iter().enumerate().all(|(edge, pair)| {
+            if !self.line_edges.get(edge).copied().unwrap_or(false) {
+                return true;
+            }
+            let Some(pair) = pair else {
+                return true;
+            };
+            let Some(segment) = standard_line_segment(&self.points, *pair) else {
+                return false;
+            };
+            standard_line_segment_is_materializable(segment)
+        })
+    }
+
     fn is_simple(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+        if !self.is_valid(pairs) {
+            return false;
+        }
         let mut selected = vec![None; self.flexible_edges.len()];
         for (edge, pair) in pairs.iter().enumerate() {
             if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
@@ -7613,6 +7654,12 @@ fn standard_line_segment(points: &[Point3], pair: [usize; 2]) -> Option<Standard
         start: *points.get(pair[0])?,
         end: *points.get(pair[1])?,
     })
+}
+
+fn standard_line_segment_is_materializable(segment: StandardLineSegment) -> bool {
+    let delta = segment.end.vector_from(segment.start);
+    let length = delta.x.hypot(delta.y).hypot(delta.z);
+    length.is_finite() && length != 0.0
 }
 
 fn standard_line_segments_are_simple(
@@ -7688,6 +7735,23 @@ pub(crate) fn standard_line_pair_solution_is_simple(
             ))
         })
         .collect::<Vec<_>>();
+    if supports.iter().zip(pairs).any(|(support, pair)| {
+        matches!(
+            support.geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+        ) && pair.is_some_and(|pair| {
+            standard_line_segment(&point_positions, pair)
+                .is_none_or(|segment| !standard_line_segment_is_materializable(segment))
+        })
+    }) {
+        return false;
+    }
+    if segments
+        .iter()
+        .any(|(_, segment)| !standard_line_segment_is_materializable(*segment))
+    {
+        return false;
+    }
     let mut segments_by_face = HashMap::<usize, Vec<StandardLineSegment>>::new();
     for (faces, segment) in segments {
         for face in faces {

@@ -5,9 +5,9 @@
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 use super::mesh_gauge::{
-    build_mesh_coordinate_gauge, canonicalize_endpoint_pair_gauge,
-    canonicalize_endpoint_relation_state, mesh_candidates_equivalent_with_context,
-    MeshCandidateGauge,
+    build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
+    canonicalize_coordinate_endpoint_pairs, canonicalize_endpoint_relation_state,
+    mesh_candidates_equivalent_with_context, MeshCandidateGauge,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -43,6 +43,9 @@ use std::sync::Arc;
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 /// Caps the optional exact-state memo without turning it into a search refusal.
 pub(crate) const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
+/// Bounds reuse of deterministic endpoint-resolution results across incidence
+/// assignments without retaining an unbounded set of complete topologies.
+pub(crate) const MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES: usize = 256;
 pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
 /// Bounds one complete mesh-constraint phase, including exhaustive endpoint
 /// orientation selection. The decode session applies its own global work cap.
@@ -106,6 +109,7 @@ pub(crate) enum MeshCandidateSolve {
     Exhausted(MeshCandidateExhaustion),
 }
 
+#[derive(Clone)]
 enum MeshEndpointResolve {
     Solved(StandardTopology, Vec<usize>),
     Rejected,
@@ -6298,6 +6302,8 @@ fn walk_endpoint_relation_domains<F>(
     pre_state_memo: &mut HashSet<MeshEndpointRelationStateSignature>,
     state_memo: &mut HashSet<MeshEndpointRelationStateSignature>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
+    priority_edges: Option<&[bool]>,
+    partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     evaluate: &mut F,
 ) -> bool
 where
@@ -6309,18 +6315,26 @@ where
     let mut domains = domains;
     let mut assigned = assigned;
     if pre_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-        if let Some(signature) =
-            endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
-        {
-            if !pre_state_memo.insert(signature) {
-                return false;
-            }
+        // The raw key avoids canonicalizing the broad pre-propagation state.
+        // The post-propagation key below applies the evidence-preserving
+        // gauge once the state has been reduced.
+        let signature = raw_endpoint_relation_state_signature(&domains, &assigned);
+        if !pre_state_memo.insert(signature) {
+            return false;
         }
     }
-    if !domains.iter().all(|choices| choices.len() == 1)
-        && !propagate_endpoint_relation_domains(&mut domains, &mut assigned, constraints, budget)
-    {
+    let propagated = domains.iter().all(|choices| choices.len() == 1)
+        || propagate_endpoint_relation_domains(&mut domains, &mut assigned, constraints, budget);
+    if !propagated {
         return false;
+    }
+    // The partial predicate is monotone by contract: it can reject only
+    // assignments that no completion can repair. Apply it as soon as
+    // propagation fixes endpoint pairs, before branching over domains.
+    if let Some(valid) = partial_solution_valid {
+        if !valid(&assigned) {
+            return false;
+        }
     }
     // The final coordinate binding is surjective: every coordinate row must
     // occur in the selected endpoint pairs. When every surviving relation
@@ -6349,19 +6363,44 @@ where
         }
     }
     if state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-        if let Some(signature) =
-            endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
-        {
+        const MAX_GAUGE_STATE_ALTERNATIVES: usize = 512;
+        let alternative_count = domains.iter().map(Vec::len).sum::<usize>();
+        let signature =
+            if candidate_gauge.is_some() && alternative_count <= MAX_GAUGE_STATE_ALTERNATIVES {
+                endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
+            } else {
+                Some(raw_endpoint_relation_state_signature(&domains, &assigned))
+            };
+        if let Some(signature) = signature {
             if !state_memo.insert(signature) {
                 return false;
             }
         }
     }
+    // Visit a face touching a monotone preference-dependent edge before an
+    // unrelated face. Within each tier use minimum remaining values first;
+    // relation degree is only a deterministic tie breaker.
     let Some((face, choices)) = domains
         .iter()
         .enumerate()
         .filter(|(_, choices)| choices.len() > 1)
-        .min_by_key(|(face, choices)| (choices.len(), *face))
+        .min_by_key(|(face, choices)| {
+            let priority_count = priority_edges.map_or(0, |edges| {
+                choices
+                    .iter()
+                    .flat_map(|choice| choice.edge_pairs.iter().map(|(edge, _)| *edge))
+                    .filter(|edge| edges.get(*edge).copied().unwrap_or(false))
+                    .collect::<HashSet<_>>()
+                    .len()
+            });
+            (
+                priority_count == 0,
+                std::cmp::Reverse(priority_count),
+                choices.len(),
+                std::cmp::Reverse(constraints.arcs.get(*face).map_or(0, Vec::len)),
+                *face,
+            )
+        })
     else {
         let mut edge_pairs = assigned;
         for choice in domains.iter().filter_map(|choices| choices.first()) {
@@ -6376,6 +6415,15 @@ where
         let Some(edge_pairs) = edge_pairs.into_iter().collect::<Option<Vec<_>>>() else {
             return false;
         };
+        if let Some(gauge) = candidate_gauge {
+            let Some(canonical_pairs) = canonicalize_coordinate_endpoint_pairs(&edge_pairs, gauge)
+            else {
+                return false;
+            };
+            if canonical_pairs != edge_pairs {
+                return false;
+            }
+        }
         let selections = domains
             .iter()
             .enumerate()
@@ -6461,6 +6509,8 @@ where
             pre_state_memo,
             state_memo,
             candidate_gauge,
+            priority_edges,
+            partial_solution_valid,
             evaluate,
         ) {
             return true;
@@ -6487,6 +6537,7 @@ fn resolve_endpoint_configuration_relation_streaming(
     partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
+    priority_edges: Option<&[bool]>,
 ) -> Option<MeshEndpointResolve> {
     if assignments.len() != endpoint_configurations.len()
         || edge_candidates.iter().any(Vec::is_empty)
@@ -6523,8 +6574,13 @@ fn resolve_endpoint_configuration_relation_streaming(
                 {
                     continue;
                 }
+                let mut relation_configuration = configuration.clone();
+                for (_, pair) in &mut relation_configuration {
+                    pair.sort_unstable();
+                }
+                relation_configuration.sort_unstable();
                 choices_by_configuration
-                    .entry(configuration.clone())
+                    .entry(relation_configuration)
                     .or_default()
                     .push(assignment);
             }
@@ -6588,15 +6644,16 @@ fn resolve_endpoint_configuration_relation_streaming(
                 return false;
             }
         }
-        if let Some(gauge) = candidate_gauge {
-            if relation_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-                let Some(canonical_pairs) = canonicalize_endpoint_pair_gauge(&edge_pairs, gauge)
-                else {
-                    return false;
-                };
-                if !relation_state_memo.insert((selections.clone(), canonical_pairs)) {
-                    return false;
-                }
+        if relation_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
+            let canonical_pairs = candidate_gauge.map_or_else(
+                || Some(edge_pairs.clone()),
+                |gauge| canonicalize_complete_endpoint_pairs(&edge_pairs, gauge),
+            );
+            let Some(canonical_pairs) = canonical_pairs else {
+                return false;
+            };
+            if !relation_state_memo.insert((selections.clone(), canonical_pairs)) {
+                return false;
             }
         }
         let assignment_domains = selections
@@ -6645,6 +6702,7 @@ fn resolve_endpoint_configuration_relation_streaming(
                 partial_solution_valid,
                 complete_solution_valid,
                 candidate_gauge,
+                priority_edges,
             )
         };
         match outcome {
@@ -6660,11 +6718,12 @@ fn resolve_endpoint_configuration_relation_streaming(
                 }
                 let candidate = (topology, assignment);
                 if let Some(previous) = &resolved {
-                    if !mesh_candidates_equivalent_with_context(
+                    let equivalent = mesh_candidates_equivalent_with_context(
                         previous,
                         &candidate,
                         candidate_gauge,
-                    ) {
+                    );
+                    if !equivalent {
                         ambiguous = true;
                         return true;
                     }
@@ -6703,6 +6762,8 @@ fn resolve_endpoint_configuration_relation_streaming(
         &mut relation_pre_state_memo,
         &mut relation_walk_state_memo,
         candidate_gauge,
+        priority_edges,
+        partial_solution_valid,
         &mut evaluate,
     );
     if ambiguous {
@@ -6753,6 +6814,19 @@ fn resolve_fixed_mesh_endpoint_pairs(
         .any(|candidates| candidates.len() != 1)
     {
         return MeshEndpointResolve::Rejected;
+    }
+    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        &assignment_domains,
+        port_identities,
+        budget,
+        candidate_gauge,
+    ) {
+        if !matches!(&resolved, MeshEndpointResolve::Rejected) {
+            return resolved;
+        }
     }
     let edge_pairs = edge_candidates
         .iter()
@@ -8305,6 +8379,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         None,
         None,
         None,
+        None,
     )
     .into_option()
 }
@@ -8775,6 +8850,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     partial_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     complete_solution_valid: Option<&MeshEndpointSolutionPredicate<'_>>,
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
+    priority_edges: Option<&[bool]>,
 ) -> MeshEndpointResolve {
     const MAX_SELECTION_WORK: usize = 100_000;
     let face_count = assignments.len();
@@ -8878,6 +8954,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         partial_solution_valid,
         complete_solution_valid,
         candidate_gauge,
+        priority_edges,
     );
     if let Some(resolved) = relation {
         return resolved;
@@ -8951,6 +9028,7 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     edge_identity_evidence: &[bool],
     partial_constraint_edges: &[bool],
     preferred_assignment_edges: &[bool],
+    priority_edges: Option<&[bool]>,
     assignment_dependencies: Option<&[Vec<usize>]>,
     budget: &WorkBudget<'_>,
     partial_solution_valid: FP,
@@ -9014,6 +9092,7 @@ where
         || edge_rows.len() != edge_classes.len()
         || edge_rows.len() != partial_constraint_edges.len()
         || edge_rows.len() != preferred_assignment_edges.len()
+        || priority_edges.is_some_and(|edges| edges.len() != edge_rows.len())
         || assignment_dependencies.is_some_and(|dependencies| {
             dependencies.len() != edge_rows.len()
                 || dependencies
@@ -9101,6 +9180,7 @@ where
     let mut incidence_solution = None;
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
+    let mut endpoint_resolution_memo = HashMap::<Vec<[usize; 2]>, MeshEndpointResolve>::new();
     let pair_solutions = visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
         &edge_rows,
         &vertex_points,
@@ -9124,34 +9204,48 @@ where
             )
         },
         &mut |pairs| {
-            let singleton = pairs
-                .iter()
-                .copied()
-                .map(|pair| vec![pair])
-                .collect::<Vec<_>>();
-            let Some(mut mesh_assignments) = standard_mesh_boundary_assignments_from_context(
-                &boundary_context,
-                Some(&singleton),
-            ) else {
-                return ControlFlow::Continue(());
+            let endpoint_key = pairs.to_vec();
+            let endpoint_resolution = if let Some(cached) =
+                endpoint_resolution_memo.get(&endpoint_key).cloned()
+            {
+                cached
+            } else {
+                let singleton = pairs
+                    .iter()
+                    .copied()
+                    .map(|pair| vec![pair])
+                    .collect::<Vec<_>>();
+                let Some(mut mesh_assignments) = standard_mesh_boundary_assignments_from_context(
+                    &boundary_context,
+                    Some(&singleton),
+                ) else {
+                    return ControlFlow::Continue(());
+                };
+                deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+                // This child owns the incidence-to-endpoint relation phase. The
+                // complete materialization invoked by that relation takes its
+                // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
+                let endpoint_resolution_budget =
+                    endpoint_budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
+                let resolution = resolve_standard_mesh_endpoint_candidates(
+                    &edge_rows,
+                    &vertex_points,
+                    &singleton,
+                    mesh_assignments,
+                    &port_identities,
+                    &endpoint_resolution_budget,
+                    Some(&constrained_partial_solution_valid),
+                    Some(&constrained_complete_solution_valid),
+                    candidate_gauge,
+                    priority_edges,
+                );
+                if !matches!(resolution, MeshEndpointResolve::Exhausted)
+                    && endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES
+                {
+                    endpoint_resolution_memo.insert(endpoint_key, resolution.clone());
+                }
+                resolution
             };
-            deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
-            // This child owns the incidence-to-endpoint relation phase. The
-            // complete materialization invoked by that relation takes its
-            // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
-            let endpoint_resolution_budget =
-                endpoint_budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
-            let endpoint_resolution = resolve_standard_mesh_endpoint_candidates(
-                &edge_rows,
-                &vertex_points,
-                &singleton,
-                mesh_assignments,
-                &port_identities,
-                &endpoint_resolution_budget,
-                Some(&constrained_partial_solution_valid),
-                Some(&constrained_complete_solution_valid),
-                candidate_gauge,
-            );
             let candidate = match endpoint_resolution {
                 MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
                 MeshEndpointResolve::Rejected => return ControlFlow::Continue(()),
@@ -9232,6 +9326,7 @@ where
             Some(&constrained_partial_solution_valid),
             Some(&constrained_complete_solution_valid),
             candidate_gauge,
+            priority_edges,
         ))
     })();
     match fallback {
@@ -9242,7 +9337,11 @@ where
             MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
         }
         Some(MeshEndpointResolve::Exhausted) => {
-            MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::EndpointResolution)
+            MeshCandidateSolve::Exhausted(if complete_preference_rejected.get() {
+                MeshCandidateExhaustion::PreferredSolutionSearch
+            } else {
+                MeshCandidateExhaustion::EndpointResolution
+            })
         }
         Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected(
             MeshCandidateRejection::EndpointIncidence(incidence_rejection),
@@ -9262,6 +9361,7 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
             &[],
             &[],
             &[],
+            None,
             None,
             &budget,
             |_| true,
@@ -9321,6 +9421,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
             &vertex_points,
             &port_identities,
             &budget,
+            None,
             None,
             None,
             None,
