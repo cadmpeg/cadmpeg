@@ -79,14 +79,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** The remaining unknowns make some Extrude selections fall back to native retention. The neutral model then has no selection for those selections.
 
-### DR-18. Extrude extent arbitration
-
-**Question.** Which field determines the extent form when an extent discriminator and the stored termination reference disagree?
-
-**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the two per-side discriminators, their enum, and the parameter and reference set each value implies. Every implication holds in both directions, so no record separates the discriminator from the reference: the two never disagree. Extent value `2` uses either the role-`0x0000001100000000` face-termination form or the role-`0x0000000500000000` target-shape form. The class-`330`/`258` 476-byte reference-aware one-sided face form omits its zero-valued `Side1Offset` owner and parameter; other one-sided face forms carry the owner, including explicit zero values. Extent value `3` does not occur, so neither its termination-entity search nor the tool-body extension mode of value `4` is exercised.
-
-**Need.** A writer needs to know which field a reader follows before it can emit a record where the two differ, and whether value `3` may be written without a termination reference. A design authored with a to-object termination whose side is then switched to `to next` without clearing the object settles it.
-
 ### DR-19. Construction-group fields
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?

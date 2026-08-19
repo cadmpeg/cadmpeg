@@ -14,6 +14,7 @@ mod assembly;
 mod combine;
 mod existing;
 mod extrude_coil;
+mod extrude_extent;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
 mod flange;
