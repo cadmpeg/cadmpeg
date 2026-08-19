@@ -3339,9 +3339,24 @@ pub(crate) fn pcurve_matches_edge_endpoints_with_index(
     coincident_surface: [Point3; 2],
     fit_tolerance: Option<f64>,
 ) -> bool {
-    let Some(edge) = index.edges(edge_id.0.as_str()) else {
+    let Some((edge_endpoints, edge_allowance)) =
+        pcurve_edge_endpoint_contract_with_index(index, edge_id)
+    else {
         return false;
     };
+    pcurve_matches_edge_endpoint_contract(
+        coincident_surface,
+        edge_endpoints,
+        edge_allowance,
+        fit_tolerance,
+    )
+}
+
+pub(crate) fn pcurve_edge_endpoint_contract_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    edge_id: &EdgeId,
+) -> Option<([Point3; 2], f64)> {
+    let edge = index.edges(edge_id.0.as_str())?;
     let vertex = |id: &VertexId| {
         let vertex = index.vertices(id.0.as_str())?;
         let point = index.points(vertex.point.0.as_str())?;
@@ -3350,19 +3365,27 @@ pub(crate) fn pcurve_matches_edge_endpoints_with_index(
     let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
         (vertex(&edge.start), vertex(&edge.end))
     else {
-        return false;
+        return None;
     };
-    let allowance = [
-        edge.tolerance,
-        start_tolerance,
-        end_tolerance,
-        fit_tolerance,
-    ]
-    .into_iter()
-    .flatten()
-    .fold(0.0_f64, f64::max);
-    (point_distance(coincident_surface[0], start) <= allowance
-        && point_distance(coincident_surface[1], end) <= allowance)
-        || (point_distance(coincident_surface[0], end) <= allowance
-            && point_distance(coincident_surface[1], start) <= allowance)
+    let allowance = [edge.tolerance, start_tolerance, end_tolerance]
+        .into_iter()
+        .flatten()
+        .fold(0.0_f64, f64::max);
+    Some(([start, end], allowance))
+}
+
+pub(crate) fn pcurve_matches_edge_endpoint_contract(
+    coincident_surface: [Point3; 2],
+    edge_endpoints: [Point3; 2],
+    edge_allowance: f64,
+    fit_tolerance: Option<f64>,
+) -> bool {
+    let allowance = [Some(edge_allowance), fit_tolerance]
+        .into_iter()
+        .flatten()
+        .fold(0.0_f64, f64::max);
+    (point_distance(coincident_surface[0], edge_endpoints[0]) <= allowance
+        && point_distance(coincident_surface[1], edge_endpoints[1]) <= allowance)
+        || (point_distance(coincident_surface[0], edge_endpoints[1]) <= allowance
+            && point_distance(coincident_surface[1], edge_endpoints[0]) <= allowance)
 }

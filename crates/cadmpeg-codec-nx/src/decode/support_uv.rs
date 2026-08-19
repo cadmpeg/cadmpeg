@@ -21,7 +21,8 @@ use super::offset::{
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
-    pcurve_matches_edge_endpoints_with_index, pcurve_surface_endpoints_with_index_and_budget,
+    pcurve_edge_endpoint_contract_with_index, pcurve_matches_edge_endpoint_contract,
+    pcurve_surface_endpoints_with_index_and_budget,
     surface_parameters_for_fit_with_index_and_budget,
 };
 use super::MISSING_TOLERANCE;
@@ -1512,6 +1513,16 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
 
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        let edge_endpoint_contracts = coedge_candidates
+            .iter()
+            .map(|(_, edge_id, ..)| edge_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|edge_id| {
+                pcurve_edge_endpoint_contract_with_index(&model_index, &edge_id)
+                    .map(|contract| (edge_id, contract))
+            })
+            .collect::<BTreeMap<_, _>>();
         let candidate_endpoints = candidates
             .iter()
             .filter_map(|(key, values)| {
@@ -1542,11 +1553,13 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
                 let coincident_surface = candidate_endpoints
                     .get(&(curve, surface.clone()))?
                     .as_ref()?;
+                let (edge_endpoints, edge_allowance) =
+                    edge_endpoint_contracts.get(&edge_id).copied()?;
                 let fit_tolerance = candidate.2.or(edge_tolerance);
-                pcurve_matches_edge_endpoints_with_index(
-                    &model_index,
-                    &edge_id,
+                pcurve_matches_edge_endpoint_contract(
                     *coincident_surface,
+                    edge_endpoints,
+                    edge_allowance,
                     fit_tolerance,
                 )
                 .then(|| (coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
