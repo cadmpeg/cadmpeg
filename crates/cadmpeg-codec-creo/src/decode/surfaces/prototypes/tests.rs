@@ -162,3 +162,141 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
 
     assert_eq!(super::prototype_local_frame(&record), None);
 }
+
+#[test]
+fn legacy_ascii_cylinder_carrier_transfers_with_canonical_units() {
+    let data = r"#UGC:2 PART 1
+#-END_OF_UGC_HEADER
+#P_OBJECT 6
+@Sld_VisGeom 1 0
+@active_geom 2 0
+@srf_array 3 0
+@geom_type 4 1
+@geom_id 5 1
+@feat_id 6 1
+@boundary_type 7 1
+@next_geom_ptr 8 1
+@orient 9 1
+@srf_prim_ptr(cylinder) 10 0
+@local_sys 11 2
+@radius 12 2
+@principal_sys_units 13 10
+0 13 Inch lbm Second (Pro/E Default)
+0 1 ->
+1 2 ->
+2 3 [1]
+3 3 ->
+4 4 36
+4 5 42
+4 6 7
+4 7 0
+4 8 0
+4 9 1
+4 10 ->
+5 11 [4][3]
+$3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
+5 12 4000000000000000
+#END_OF_P_OBJECT
+#Pro/ENGINEER  TM  Version H-01-21
+"
+    .to_owned();
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy analytic surface decode");
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
+        .expect("legacy cylinder surface");
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = surface.geometry
+    else {
+        panic!("legacy surface geometry: {:?}", surface.geometry);
+    };
+    assert_eq!(origin, [0.0, 0.0, 0.0].into());
+    assert_eq!(axis, [0.0, 0.0, 1.0].into());
+    assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
+    assert_eq!(radius, 50.8);
+    assert_eq!(
+        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        1
+    );
+    assert_eq!(
+        result.report().coverage["untransferred_visible_surface_row_count"],
+        0
+    );
+}
+
+#[test]
+fn legacy_ascii_plane_carrier_transfers_row_major_origin_and_axes() {
+    let data = r"#UGC:2 PART 1
+#-END_OF_UGC_HEADER
+#P_OBJECT 6
+@Sld_VisGeom 1 0
+@active_geom 2 0
+@srf_array 3 0
+@geom_type 4 1
+@geom_id 5 1
+@feat_id 6 1
+@boundary_type 7 1
+@next_geom_ptr 8 1
+@orient 9 1
+@srf_prim_ptr(plane) 10 0
+@local_sys 11 2
+@principal_sys_units 12 10
+0 12 millimeter Newton Second (mmNs)
+0 1 ->
+1 2 ->
+2 3 [1]
+3 3 ->
+4 4 34
+4 5 42
+4 6 7
+4 7 0
+4 8 0
+4 9 1
+4 10 ->
+5 11 [4][3]
+$3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
+#END_OF_P_OBJECT
+#Pro/ENGINEER  TM  Version H-01-21
+"
+    .to_owned();
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy analytic plane decode");
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
+        .expect("legacy plane surface");
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = surface.geometry
+    else {
+        panic!("legacy surface geometry: {:?}", surface.geometry);
+    };
+    assert_eq!(origin, [1.0, 2.0, 3.0].into());
+    assert_eq!(normal, [0.0, 0.0, 1.0].into());
+    assert_eq!(u_axis, [1.0, 0.0, 0.0].into());
+    assert_eq!(
+        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        1
+    );
+}

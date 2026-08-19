@@ -143,6 +143,27 @@ depth one greater with the same attribute identifier. Each direct row stores
 one scalar type-10 value. An incomplete array retains its declared dimensions
 and present elements; missing rows do not supply default strings.
 
+In legacy ASCII geometry persistence, `Sld_VisGeom.active_geom.srf_array` is
+the visible surface-row namespace and `Sld_NonVisGeom.inactive_geom.srf_array`
+is the non-visible namespace. The direct elements of each complete array are
+the rows. A complete row has one scalar child for each of `geom_type`,
+`geom_id`, `feat_id`, `boundary_type`, `next_geom_ptr`, and `orient`. The
+`geom_type` values `0x22`, `0x24`, `0x25`, `0x26`, `0x28`, `0x29`, `0x2a`, and
+`0x2c` select plane, cylinder, cone, torus-or-sphere, spline, fillet, and
+linear-extrusion families, respectively; `0x2a` and `0x2c` select the same
+linear-extrusion family. A row is complete only when `boundary_type` is a
+defined surface-boundary value and `orient` is `1` or `-1`.
+
+A visible plane or cylinder row has one direct `srf_prim_ptr(plane)` or
+`srf_prim_ptr(cylinder)` child of the matching family. Its complete `local_sys`
+type-2 array has dimensions `[4][3]` and twelve scalar slots in row-major
+order. Columns zero, one, and two are the first radial direction, second
+radial direction, and normal or axis; slots nine through eleven are the model
+origin. The three directions form a right-handed orthonormal frame. A
+cylinder also has one positive finite scalar `radius`. A missing, repeated,
+incomplete, non-finite, non-positive, or conflicting field leaves the bounded
+row and prototype native.
+
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
 compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only
@@ -246,6 +267,15 @@ in millimeters. `Inch lbm Second (Pro/E Default)` stores lengths in inches, so
 lengths are multiplied by `25.4` for canonical millimeters. An absent,
 repeated, differently typed, continued, or unrecognized scalar does not select
 a coordinate unit system.
+
+When that scalar is absent, one complete `unit_arr` object array can select the
+legacy length unit. Its first direct element is the active length record. That
+record has one `unit_type` scalar equal to `0`, one nonempty UTF-8 `name`, and
+one finite positive `factor` scalar. `factor` is the number of inches in one
+stored length unit; the canonical length scale is `25.4 * factor` millimeters.
+Every direct element must be a complete `unit_arr` object, and the array and
+all three selected fields must be unique. A missing, repeated, incomplete,
+non-finite, or conflicting record does not select a coordinate unit system.
 
 Unit-definition records can include inactive units. `history_scale` is a version/history array and does not scale coordinates.
 

@@ -7,8 +7,9 @@ belong in [creo_prt.md](creo_prt.md); unresolved byte meanings belong in
 
 ## Envelope
 
-The implemented format band is `#UGC:2` PSB part documents using the ND or
-DEPDB section layouts recognized by the container scanner. This is not yet a
+The implemented format band is `#UGC:2` PSB part documents using the legacy
+ASCII, ND, or DEPDB section layouts recognized by the container scanner. This
+is not yet a
 closed support envelope: supported Creo release bounds, required and optional
 section combinations, and the admitted geometry and feature-family matrix have
 not been fixed. Until that matrix is closed and exercised by representative
@@ -33,6 +34,17 @@ fixtures, scores above L1 remain blocked.
 - Paired `9e` and `a3` scalars require one distinct section-cache `46` image
   for their six-byte tail; duplicate images are valid and differing payload
   bytes withhold the scalar.
+- Legacy ASCII `Sld_VisGeom.active_geom.srf_array` and
+  `Sld_NonVisGeom.inactive_geom.srf_array` are namespace-bounded object arrays.
+  Complete rows transfer their fixed-prefix surface fields. Complete plane and
+  cylinder rows transfer analytic carriers from their matching primitive
+  object and twelve-slot row-major `local_sys` frame, including canonical unit
+  scaling. Incomplete, duplicate, conflicting, or non-visible carriers remain
+  native.
+- When a legacy ASCII part has no unique `principal_sys_units` scalar, its
+  unique complete `unit_arr` length record supplies the stored-to-millimeter
+  scale from `25.4 * factor`. Missing or ambiguous unit records do not select
+  a scale.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
 - Section lines with a uniquely proven fixed coordinate and unresolved

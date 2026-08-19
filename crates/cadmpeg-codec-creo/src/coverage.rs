@@ -134,6 +134,8 @@ pub(crate) const TRANSFERRED_FILLET_FEATURE_COUNT: CoverageKey =
     CoverageKey("transferred_fillet_feature_count");
 pub(crate) const TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT: CoverageKey =
     CoverageKey("transferred_first_instance_prototype_surface_count");
+pub(crate) const TRANSFERRED_LEGACY_ASCII_SURFACE_CARRIER_COUNT: CoverageKey =
+    CoverageKey("transferred_legacy_ascii_surface_carrier_count");
 pub(crate) const TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT: CoverageKey =
     CoverageKey("transferred_geometry_generator_feature_count");
 pub(crate) const TRANSFERRED_HOLE_FEATURE_COUNT: CoverageKey =

@@ -332,6 +332,8 @@ pub struct SurfaceScan {
     /// Bounded named surface-prototype records from the separate invisible
     /// and construction geometry namespace.
     pub nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
+    /// Complete analytic carriers from legacy visible surface prototypes.
+    pub legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
 }
 
 /// Plane support frames, envelopes, placed planes, and datum planes.
@@ -2224,6 +2226,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     } else {
         None
     };
+    let legacy_surface_geometry = legacy_ascii
+        .as_ref()
+        .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
+        .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = binary_principal_unit(&data)
@@ -2251,8 +2257,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     loop_array_sections.sort_by_key(|section| section.offset);
     loop_array_sections.dedup_by_key(|section| section.offset);
     let loop_arrays = loop_array_scan(&data, &loop_array_sections);
-    let nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
-    let surface_rows = surface_rows(&data, &model_geometry_sections);
+    let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
+    nonvisible_surface_rows.extend(legacy_surface_geometry.nonvisible_rows);
+    nonvisible_surface_rows.sort_by_key(|row| row.offset);
+    let mut surface_rows = surface_rows(&data, &model_geometry_sections);
+    surface_rows.extend(legacy_surface_geometry.rows);
+    surface_rows.sort_by_key(|row| row.offset);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
@@ -2469,6 +2479,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             prototypes: surface_prototypes,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
+            legacy_carriers: legacy_surface_geometry.carriers,
         },
         planes: PlaneScan {
             local_systems: plane_local_systems,

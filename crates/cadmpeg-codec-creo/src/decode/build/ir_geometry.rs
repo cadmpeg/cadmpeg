@@ -27,11 +27,11 @@ use super::super::surfaces::{
     transfer_cap_pair_cylinders, transfer_carrier_intersection_curves,
     transfer_circular_sweep_cylinders, transfer_constrained_slot_fillet_cylinders,
     transfer_cross_section_planes, transfer_fc05_cap_circles,
-    transfer_first_instance_prototype_surfaces, transfer_hole_cylinders, transfer_native_brep,
-    transfer_nurbs_boundary_curves, transfer_paired_envelope_spheres, transfer_part_product,
-    transfer_positional_cones, transfer_positional_cylinders,
-    transfer_positional_line_extrusion_planes, transfer_positional_tori,
-    transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
+    transfer_first_instance_prototype_surfaces, transfer_hole_cylinders,
+    transfer_legacy_ascii_surface_carriers, transfer_native_brep, transfer_nurbs_boundary_curves,
+    transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
+    transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
+    transfer_positional_tori, transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
     transfer_tabulated_cylinder_spline_extrusions,
 };
 use super::super::sweep::{
@@ -50,6 +50,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, ir, annotations);
+    let legacy_ascii_surface_carrier_count =
+        transfer_legacy_ascii_surface_carriers(scan, ir, annotations);
     let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
     let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
     let positional_line_extrusion_plane_count =
@@ -284,6 +286,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
             "transferred_first_instance_prototype_surface_count".to_string(),
             first_instance_prototype_surface_count,
         );
+        if legacy_ascii_surface_carrier_count != 0 {
+            coverage.insert(
+                crate::coverage::TRANSFERRED_LEGACY_ASCII_SURFACE_CARRIER_COUNT
+                    .0
+                    .to_string(),
+                legacy_ascii_surface_carrier_count,
+            );
+        }
         coverage.insert(
             "transferred_paired_envelope_sphere_count".to_string(),
             paired_envelope_sphere_count,

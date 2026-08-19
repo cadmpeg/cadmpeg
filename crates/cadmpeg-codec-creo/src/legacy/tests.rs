@@ -94,6 +94,63 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
 }
 
 #[test]
+fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        r"@Solid 1 0
+@unit_arr 2 0
+@type 3 1
+@unit_type 4 1
+@factor 5 2
+@name 6 10
+0 1 ->
+1 2 [1]
+2 2 ->
+3 3 11
+3 4 0
+3 5 {factor_bits:016X}
+3 6 CM
+",
+        factor_bits = factor.to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+
+    assert_eq!(
+        persistence
+            .principal_unit_system()
+            .and_then(PrincipalUnitSystem::length_scale_mm),
+        Some(10.0)
+    );
+}
+
+#[test]
+fn legacy_unit_array_conflict_withholds_length_scale() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        r"@Solid 1 0
+@unit_arr 2 0
+@type 3 1
+@unit_type 4 1
+@factor 5 2
+@name 6 10
+0 1 ->
+1 2 [1]
+2 2 ->
+3 3 11
+3 4 0
+3 5 {factor_bits:016X}
+3 5 {other_factor_bits:016X}
+3 6 CM
+",
+        factor_bits = factor.to_bits(),
+        other_factor_bits = (factor * 2.0).to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+
+    assert_eq!(persistence.principal_unit_system(), None);
+}
+
+#[test]
 fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
     let data = b"@scalar 1 2\n0 1 3FF\n\
             @scale 2 2\n0 2 40396R\n\

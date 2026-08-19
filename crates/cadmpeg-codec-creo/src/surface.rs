@@ -64,7 +64,7 @@ pub enum SurfaceKind {
 }
 
 impl SurfaceKind {
-    fn from_byte(value: u8) -> Option<Self> {
+    pub(crate) fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x22 => Some(Self::Plane),
             0x24 => Some(Self::Cylinder),
@@ -89,6 +89,28 @@ impl SurfaceKind {
             Self::Extrusion => 0x2a,
         }
     }
+}
+
+pub(crate) fn is_surface_boundary_type(value: u8) -> bool {
+    BOUNDARY_TYPES.contains(&value)
+}
+
+pub(crate) fn valid_right_handed_frame(first: [f64; 3], second: [f64; 3], third: [f64; 3]) -> bool {
+    let cross = [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ];
+    let handedness = cross
+        .into_iter()
+        .zip(third)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    valid_orthonormal_frame_directions(third, first)
+        && valid_orthonormal_frame_directions(third, second)
+        && valid_orthonormal_frame_directions(first, second)
+        && handedness.is_finite()
+        && (handedness - 1.0).abs() <= EPS_FRAME_ORTHOGONAL
 }
 
 /// One `srf_array` row whose fixed prefix passed the row grammar.

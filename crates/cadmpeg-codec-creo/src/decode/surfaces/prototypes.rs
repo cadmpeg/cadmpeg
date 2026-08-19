@@ -350,5 +350,80 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     transferred
 }
 
+pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+        return 0;
+    }
+    let mut carrier_counts = BTreeMap::<u32, usize>::new();
+    for carrier in &scan.surfaces.legacy_carriers {
+        *carrier_counts.entry(carrier.surface_id).or_default() += 1;
+    }
+
+    let mut transferred = 0;
+    for carrier in &scan.surfaces.legacy_carriers {
+        if carrier_counts.get(&carrier.surface_id) != Some(&1) {
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, carrier.surface_id)
+        else {
+            continue;
+        };
+        let geometry = match carrier.geometry {
+            crate::legacy_geometry::LegacySurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } if row.kind == crate::surface::SurfaceKind::Plane => SurfaceGeometry::Plane {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            },
+            crate::legacy_geometry::LegacySurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            } if row.kind == crate::surface::SurfaceKind::Cylinder => SurfaceGeometry::Cylinder {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius,
+            },
+            _ => continue,
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", carrier.surface_id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "legacy_ascii",
+            carrier.offset as u64,
+            "legacy_surface_prototype_carrier",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", carrier.surface_id),
+                name: None,
+                color: None,
+                visible: Some(true),
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 #[cfg(test)]
 mod tests;
