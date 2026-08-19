@@ -78,6 +78,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             "design_copy_paste",
             f3d_with_smbh_and_protein_with_generated_copy_paste(&synthetic_geometry_smbh()),
         ),
+        (
+            "design_copy_paste_bodies",
+            f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh()),
+        ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (
             "mesh_surface",

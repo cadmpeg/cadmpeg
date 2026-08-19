@@ -1686,6 +1686,30 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 }
 
 #[test]
+fn generated_copy_paste_bodies_scope_matches_operation_layout() {
+    let (bytes, _) = crate::test_support::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let headers =
+        crate::design::decode::scopes::parameter_scope_candidate_headers(&bytes, &records)
+            .into_iter()
+            .filter(|header| header.record_index == 1_400)
+            .collect::<Vec<_>>();
+    assert_eq!(headers.len(), 1);
+    let scope = crate::design::decode::scopes::parse_parameter_scope(&bytes, &records, &headers[0])
+        .expect("scope");
+    assert_eq!(scope.kind, "CopyPasteBodies");
+    assert_eq!(scope.reference_members, [1_500, 1_600]);
+    assert_eq!(scope.frame_length, 225);
+    let operation =
+        crate::design::decode::scopes::exact_copy_paste_bodies_operation(&bytes, &records, &scope)
+            .expect("CopyPasteBodies operation");
+    assert_eq!(operation.body_group_record_index, 1_500);
+    assert_eq!(operation.relation_record_index, 1_700);
+    assert_eq!(operation.source_body_entity_suffixes, [985]);
+    assert_eq!(operation.copied_body_entity_suffixes, [8_422]);
+}
+
+#[test]
 fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     let mut bytes = vec![0; 325];
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
