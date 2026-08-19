@@ -1054,20 +1054,17 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
 
 /// Resolve the explicit point-center form of a circular dimension.
 ///
-/// Tags `d4 80` and `d5 80` carry the point identity in the resolved operand
+/// A native operand tag carries the point identity in the resolved operand
 /// reference. The reference must resolve to a point marker in the unique
-/// `sgEntHandle` lane, and its local identifier must equal the operand
-/// address. No radius-based pair or marker-family fallback is valid for these
-/// tags.
+/// `sgEntHandle` lane, and its local identifier must equal the operand address.
+/// No radius-based pair or marker-family fallback is valid for this explicit
+/// identity form.
 pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Option<&'a SketchInputEntity> {
-    if !matches!(
-        operand.kind,
-        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
-    ) {
+    if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
         return None;
     }
     let entity_ref = operand.entity_ref.as_deref()?;
@@ -1146,6 +1143,26 @@ pub(super) fn declared_entity_handle_has_resolved_pair(
         return false;
     };
     !declared_entity_handle_pairs(lane, feature).is_empty()
+}
+
+/// Test whether an explicit point reference is the radial member of a
+/// declared entity-handle pair. Radial identity cannot be reinterpreted as a
+/// center by the native point-identity fallback.
+pub(super) fn declared_entity_handle_point_is_declared_radial(
+    lanes: &[FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+) -> bool {
+    let Some(entity_ref) = operand.entity_ref.as_deref() else {
+        return false;
+    };
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return false;
+    };
+    declared_entity_handle_pairs(lane, feature)
+        .iter()
+        .any(|[_, radial]| radial.id == entity_ref)
 }
 
 fn declared_entity_handle_pairs<'a>(

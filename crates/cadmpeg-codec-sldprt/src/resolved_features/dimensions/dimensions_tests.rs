@@ -440,7 +440,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
 }
 
 #[test]
-fn explicit_point_entity_handle_circle_dimension_uses_tagged_center() {
+fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
     let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
         id: id.into(),
         parent: "lane".into(),
@@ -497,7 +497,9 @@ fn explicit_point_entity_handle_circle_dimension_uses_tagged_center() {
     for kind in [
         FeatureInputOperandKind::Native(0x80d4),
         FeatureInputOperandKind::Native(0x80d5),
+        FeatureInputOperandKind::Native(0x80dd),
     ] {
+        let strict_point_tag = matches!(kind, FeatureInputOperandKind::Native(0x80d4 | 0x80d5));
         let operand = FeatureInputOperand {
             offset: 100,
             reference_ref: "reference".into(),
@@ -505,7 +507,10 @@ fn explicit_point_entity_handle_circle_dimension_uses_tagged_center() {
             entity_index: 0,
             entity_ref: Some("center".into()),
         };
-        let lane = lane(kind);
+        let mut lane = lane(kind);
+        if !strict_point_tag {
+            lane.sketch_entities.truncate(1);
+        }
         let markers_by_id = lane
             .sketch_entities
             .iter()
@@ -518,27 +523,29 @@ fn explicit_point_entity_handle_circle_dimension_uses_tagged_center() {
             &operand,
             5.0,
         )
-        .expect("tagged explicit point center");
+        .expect("explicit point center identity");
         assert_eq!(carrier.marker.id, "center");
         assert_eq!(carrier.center, [0.010, 0.020]);
         assert!(carrier.curve.is_none());
         assert_eq!(carrier.construction, Some(false));
 
-        let mut wrong_marker_kind_lane = lane.clone();
-        wrong_marker_kind_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
-        let wrong_marker_kind = wrong_marker_kind_lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id.as_str(), marker))
-            .collect::<HashMap<_, _>>();
-        assert!(dimensioned_relation_carrier(
-            std::slice::from_ref(&wrong_marker_kind_lane),
-            &wrong_marker_kind,
-            "feature",
-            &operand,
-            5.0,
-        )
-        .is_none());
+        if strict_point_tag {
+            let mut wrong_marker_kind_lane = lane.clone();
+            wrong_marker_kind_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+            let wrong_marker_kind = wrong_marker_kind_lane
+                .sketch_entities
+                .iter()
+                .map(|marker| (marker.id.as_str(), marker))
+                .collect::<HashMap<_, _>>();
+            assert!(dimensioned_relation_carrier(
+                std::slice::from_ref(&wrong_marker_kind_lane),
+                &wrong_marker_kind,
+                "feature",
+                &operand,
+                5.0,
+            )
+            .is_none());
+        }
 
         let mut wrong_address = operand.clone();
         wrong_address.entity_index = 1;
@@ -1975,3 +1982,5 @@ fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
     payload[66..68].copy_from_slice(&8u16.to_le_bytes());
     assert_eq!(extended_radial_circle_index(&payload, 0), None);
 }
+
+mod point_identity;

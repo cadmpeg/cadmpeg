@@ -10,8 +10,9 @@ use super::markers::{
 use super::relation_geometry::{
     declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
     declared_entity_handle_indexed_circle_dimension_center, declared_entity_handle_owner,
-    declared_entity_handle_point_dimension_center, declared_slot_handle_dimension_center,
-    implicit_circle_marker, owned_relation_parameters, DeclaredEntityHandleOwner,
+    declared_entity_handle_point_dimension_center, declared_entity_handle_point_is_declared_radial,
+    declared_slot_handle_dimension_center, implicit_circle_marker, owned_relation_parameters,
+    DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -299,6 +300,12 @@ fn dimensioned_relation_carrier<'a>(
         .entity_ref
         .as_deref()
         .and_then(|id| markers_by_id.get(id).copied());
+    let explicit_point_marker = explicit.is_some_and(|marker| {
+        matches!(
+            marker.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+    });
     if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
         return Some(DimensionedRelationCarrier {
             marker,
@@ -336,12 +343,6 @@ fn dimensioned_relation_carrier<'a>(
             SketchInputKind::LineOrCircle | SketchInputKind::Arc
         )
     });
-    let explicit_point_marker = explicit.is_some_and(|marker| {
-        matches!(
-            marker.kind,
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-        )
-    });
     let explicit_current_arc_handle_point = explicit_point_marker
         && explicit.is_some_and(|marker| {
             let Ok(offset) = usize::try_from(marker.offset) else {
@@ -362,10 +363,20 @@ fn dimensioned_relation_carrier<'a>(
         (explicit?, None, None)
     } else if declared_entity_handle && !explicit_circular_marker {
         if explicit.is_none() || explicit_point_marker {
-            let (marker, curve) = unique_unlinked_declared_entity_handle_circular_carrier(
+            if let Some((marker, curve)) = unique_unlinked_declared_entity_handle_circular_carrier(
                 lanes, feature, operand, radius,
-            )?;
-            (marker, None, Some(curve))
+            ) {
+                (marker, None, Some(curve))
+            } else if matches!(operand.kind, FeatureInputOperandKind::Native(_))
+                && explicit_point_marker
+                && !declared_entity_handle_point_is_declared_radial(lanes, feature, operand)
+            {
+                let marker =
+                    declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
+                (marker, None, None)
+            } else {
+                return None;
+            }
         } else {
             // A declared handle blocks point-based guessing. An explicit native
             // line-or-circle or arc marker remains a direct geometry carrier.
