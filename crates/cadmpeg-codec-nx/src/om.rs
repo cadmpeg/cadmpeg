@@ -6374,6 +6374,25 @@ pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
     }) && bytes.get(end) == Some(&0)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ProductRecordRange {
+    start: usize,
+    end: usize,
+}
+
+/// Count validated product records fully contained in `[lower, upper]`.
+///
+/// A validated product record cannot contain another validated product-record
+/// start: its text is restricted to printable ASCII and spaces, while a record
+/// start begins with a non-printable byte. The discovery pass therefore orders
+/// both starts and ends. This makes the containment query a pair of binary
+/// searches instead of a scan over every product record for every candidate.
+fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, upper: usize) -> usize {
+    let first = ranges.partition_point(|range| range.start < lower);
+    let end = ranges.partition_point(|range| range.end <= upper);
+    end.saturating_sub(first)
+}
+
 /// Locate validated NX OM entity-index/object-id-table pairs.
 ///
 /// A candidate is accepted only when the arrays are adjacent, the index is
@@ -6389,7 +6408,10 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             is_product_record(suffix).then_some(())?;
             let text_length = usize::from(*suffix.get(2)?).checked_sub(2)?;
             let record_len = 3usize.checked_add(text_length)?.checked_add(1)?;
-            Some((offset, offset.checked_add(record_len)?))
+            Some(ProductRecordRange {
+                start: offset,
+                end: offset.checked_add(record_len)?,
+            })
         })
         .collect::<Vec<_>>();
     for table in 0..bytes.len().saturating_sub(4) {
@@ -6518,12 +6540,10 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         // random count words before allocating and walking the full offset
         // table; malformed payloads commonly satisfy the cheap monotonicity
         // checks while carrying no self-framed NX record at all.
-        let product_record_count = product_record_ranges
-            .iter()
-            .filter(|(start, end)| {
-                (first <= *start && *end <= second) || (second <= *start && *end <= third)
-            })
-            .count();
+        let product_record_count =
+            product_record_count_within(&product_record_ranges, first, second).saturating_add(
+                product_record_count_within(&product_record_ranges, second, third),
+            );
         if product_record_count != 1 {
             continue;
         }

@@ -1232,6 +1232,21 @@ fn om_offset_only_index_ignores_product_marker_crossing_record_boundary() {
 }
 
 #[test]
+fn om_product_record_count_respects_containment_boundaries() {
+    let ranges = [
+        super::ProductRecordRange { start: 10, end: 20 },
+        super::ProductRecordRange { start: 30, end: 40 },
+        super::ProductRecordRange { start: 50, end: 60 },
+    ];
+
+    assert_eq!(super::product_record_count_within(&ranges, 10, 20), 1);
+    assert_eq!(super::product_record_count_within(&ranges, 11, 20), 0);
+    assert_eq!(super::product_record_count_within(&ranges, 10, 19), 0);
+    assert_eq!(super::product_record_count_within(&ranges, 20, 60), 2);
+    assert_eq!(super::product_record_count_within(&ranges, 20, 50), 1);
+}
+
+#[test]
 fn om_offset_only_index_requires_one_supported_product_record() {
     let mut duplicate = control_root_offset_only_indexed_om_section();
     let first_column = duplicate
