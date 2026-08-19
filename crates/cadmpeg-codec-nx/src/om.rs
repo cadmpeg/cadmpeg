@@ -2472,29 +2472,19 @@ impl<'a> Section<'a> {
         boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
     }
 
-    /// Bound operation records by consecutive validated operation headers.
-    pub fn operation_records(&self) -> Vec<OperationRecord<'a>> {
+    /// Bound operation records and retain their ordinal in the complete label sequence.
+    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
         let Some(bytes) = self.record_area else {
             return Vec::new();
         };
         let Some(base_offset) = self.record_area_offset else {
             return Vec::new();
         };
-        operation_records_with_labels(bytes, base_offset, &self.cached_operation_labels)
-    }
-
-    /// Bound operation records and retain their ordinal in the complete label sequence.
-    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
-        let labels = self.operation_labels();
-        self.operation_records()
-            .into_iter()
-            .filter_map(|record| {
-                labels
-                    .iter()
-                    .position(|label| label.offset == record.label.offset)
-                    .map(|ordinal| (ordinal, record))
-            })
-            .collect()
+        operation_records_with_labels_and_ordinals(
+            bytes,
+            base_offset,
+            &self.cached_operation_labels,
+        )
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -2585,6 +2575,17 @@ fn operation_records_with_labels<'a>(
     base_offset: usize,
     labels: &[OperationLabel<'a>],
 ) -> Vec<OperationRecord<'a>> {
+    operation_records_with_labels_and_ordinals(bytes, base_offset, labels)
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect()
+}
+
+fn operation_records_with_labels_and_ordinals<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<(usize, OperationRecord<'a>)> {
     labels
         .iter()
         .enumerate()
@@ -2597,13 +2598,16 @@ fn operation_records_with_labels<'a>(
             let payload_start = label_at
                 .checked_add(usize::from(*bytes.get(label_at + 1)?))?
                 .checked_add(1)?;
-            Some(OperationRecord {
-                offset: label.header_offset,
-                bytes: bytes.get(start..end)?,
-                payload_offset: base_offset + payload_start,
-                payload: bytes.get(payload_start..end)?,
-                label: *label,
-            })
+            Some((
+                ordinal,
+                OperationRecord {
+                    offset: label.header_offset,
+                    bytes: bytes.get(start..end)?,
+                    payload_offset: base_offset + payload_start,
+                    payload: bytes.get(payload_start..end)?,
+                    label: *label,
+                },
+            ))
         })
         .collect()
 }

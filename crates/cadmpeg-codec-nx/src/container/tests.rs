@@ -82,7 +82,10 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         assert_eq!(entry.name, "/Root/om");
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
-        assert_eq!(section.operation_records(), expected.operation_records());
+        assert_eq!(
+            section.operation_records_with_label_ordinals(),
+            expected.operation_records_with_label_ordinals()
+        );
     }
     let repeated = container.om_sections();
     assert_eq!(repeated, cached);
