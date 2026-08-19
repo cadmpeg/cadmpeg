@@ -384,9 +384,13 @@ An unlabeled persistence payload does not define geometry rows.
 A counted surface-array frame ends at the next `srf_array`, `crv_array`,
 `lo_array`, or `qlt_array` label. Header-shaped bytes outside that frame do not
 belong to it. A byte range owned by a bounded named prototype parameter cannot
-start a sibling surface row. The frame materializes only when the number of
-unique validated rows equals its stored count; a count mismatch leaves the
-frame opaque.
+start a sibling surface row. The count is the frame's slot extent; a slot may
+have no materialized fixed-prefix row header. Every unique validated row inside
+the frame is retained when the validated-row count does not exceed the stored
+count. More validated headers than slots makes the frame invalid and withholds
+all rows from it. A frame is complete only when its number of unique validated
+rows equals the stored count. Datum and prototype joins require a complete
+frame and do not use rows from an incomplete frame.
 
 A positional surface parameter body ends at its compound close, the next validated surface-row header, or a named-record header. A named-record boundary has `e0`, a field-type byte in `00..24`, a nonempty ASCII identifier beginning with a letter, and a null terminator. An `e0` byte inside an opaque numeric or pointer token is not a boundary.
 

@@ -2020,7 +2020,11 @@ fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
 /// Discover positional rows from every `srf_array` namespace in `payload`.
 /// The scan anchors on the surface-kind byte and validates both adjacent
 /// compact-integer fields and the orientation/boundary discriminators. This
-/// retains only byte-backed rows; a link target never inherits a kind.
+/// retains only byte-backed rows; a link target never inherits a kind. A
+/// counted frame can contain unmaterialized slots, so validated rows are
+/// retained even when their count does not equal the frame count. Consumers
+/// that require a complete frame use [`counted_row_bounds`] or
+/// [`complete_surface_array_bounds`].
 pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, BOUNDARY_TYPES)
 }
@@ -2219,7 +2223,14 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
                 selected.push(row.clone());
             }
             saw_framed_candidate |= !selected.is_empty();
-            if selected.len() == frame.count {
+            // The count is the frame's slot extent. Releases can leave slots
+            // without a materialized fixed-prefix header; retaining the
+            // validated headers preserves the rows that are present without
+            // treating an incomplete frame as complete. More headers than
+            // slots is structurally invalid, so withhold that frame. Exact-
+            // count callers are kept separate in `counted_row_bounds` and
+            // `complete_surface_array_bounds`.
+            if selected.len() <= frame.count {
                 framed.extend(selected);
             }
         }

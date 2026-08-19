@@ -57,7 +57,7 @@ fn accepts_type24_row_with_boundary_type_eight() {
 }
 
 #[test]
-fn cross_section_count_rejects_boundary_one_body_candidate() {
+fn cross_section_filters_boundary_one_body_candidate() {
     let payload =
         b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x24\x04\x01\x06\0\x2d\x25\x32\xf6\x01\x01\xe2";
 
@@ -225,13 +225,18 @@ fn surface_array_frame_excludes_following_curve_namespace_bytes() {
 }
 
 #[test]
-fn surface_array_frame_withholds_a_count_mismatch() {
-    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+fn sparse_surface_array_retains_rows_but_not_complete_frame() {
+    let mut payload = b"srf_array\0\xf8\x03".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
     payload.extend_from_slice(b"crv_array\0\xf8\x00");
 
-    assert!(rows(&payload).is_empty());
+    assert_eq!(
+        rows(&payload).iter().map(|row| row.id).collect::<Vec<_>>(),
+        [7, 8]
+    );
+    assert!(counted_row_bounds(&payload).is_empty());
+    assert!(complete_surface_array_bounds(&payload).is_empty());
 }
 
 #[test]

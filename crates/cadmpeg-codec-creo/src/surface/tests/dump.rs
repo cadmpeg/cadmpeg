@@ -922,7 +922,7 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
 }
 
 #[test]
-fn decode_does_not_use_section_wide_prototype_join_for_an_incomplete_frame() {
+fn decode_does_not_use_incomplete_frame_for_prototype_join() {
     let mut payload = b"srf_array\0\xf8\x02".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     push_named_analytic_prototype(&mut payload, "plane", &[]);
@@ -935,12 +935,7 @@ fn decode_does_not_use_section_wide_prototype_join_for_an_incomplete_frame() {
         )
         .expect("decode");
 
-    assert!(!result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
         result
             .report()
