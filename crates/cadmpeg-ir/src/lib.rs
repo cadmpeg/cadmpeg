@@ -93,8 +93,8 @@ pub use features::{
 pub use ids::{format_identity, is_valid_identity, IdentityError};
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, PmiAnnotation,
+    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,

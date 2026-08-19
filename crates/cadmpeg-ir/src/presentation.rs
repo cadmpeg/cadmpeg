@@ -179,7 +179,7 @@ pub enum PresentationItem {
     },
 }
 
-/// One named presentation layer.
+/// One presentation layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PresentationLayer {
@@ -190,7 +190,10 @@ pub struct PresentationLayer {
     /// Optional layer description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Assigned items in source order.
+    /// Explicit layer visibility; `false` means the layer is hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
+    /// Assigned items in deterministic projection order; order has no semantic meaning.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<PresentationItem>,
 }
@@ -210,6 +213,23 @@ mod tests {
             id: LayerId("test:presentation:layer#construction".into()),
             name: "construction".into(),
             description: None,
+            visible: None,
+            items: vec![PresentationItem::Source {
+                source_id: "#42".into(),
+            }],
+        });
+
+        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn empty_layer_name_is_valid() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: LayerId("test:presentation:layer#unnamed".into()),
+            name: String::new(),
+            description: None,
+            visible: None,
             items: vec![PresentationItem::Source {
                 source_id: "#42".into(),
             }],
@@ -225,6 +245,7 @@ mod tests {
             id: LayerId("test:presentation:layer#missing".into()),
             name: "missing".into(),
             description: None,
+            visible: None,
             items: vec![PresentationItem::Face {
                 face: FaceId("test:model:face#missing".into()),
             }],

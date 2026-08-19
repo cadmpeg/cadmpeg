@@ -408,6 +408,7 @@ fn attach_rm_appearances(
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
@@ -455,6 +456,7 @@ fn attach_rm_appearances(
             appearance: appearance_id,
             source_entity_id: Some(binding.face_id),
             object_type: Some("Parasolid FACE".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }

@@ -3,35 +3,29 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::StepCodec;
+
+const EPS_SAME_POINT: f64 = 1.0e-12;
+
+fn assert_point3_close(actual: Point3, expected: Point3) {
+    assert!((actual.x - expected.x).abs() < EPS_SAME_POINT);
+    assert!((actual.y - expected.y).abs() < EPS_SAME_POINT);
+    assert!((actual.z - expected.z).abs() < EPS_SAME_POINT);
+}
+
+fn assert_vector3_close(actual: Vector3, expected: Vector3) {
+    assert!((actual.x - expected.x).abs() < EPS_SAME_POINT);
+    assert!((actual.y - expected.y).abs() < EPS_SAME_POINT);
+    assert!((actual.z - expected.z).abs() < EPS_SAME_POINT);
+}
 
 #[test]
 pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
@@ -44,7 +38,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(result.ir().model.bodies.len(), 1);
     let mesh = &result.ir().model.tessellations[0];
     assert_eq!(mesh.vertices.len(), 3);
-    assert_eq!(mesh.vertices[1].x, 10.0);
+    assert!((mesh.vertices[1].x - 10.0).abs() < EPS_SAME_POINT);
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
@@ -59,9 +53,9 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .find(|mesh| mesh.id.ends_with("#7"))
         .unwrap();
     assert_eq!(complex.triangles, [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
-    assert_eq!(complex.vertices[0], Point3::new(10.0, 10.0, 0.0));
+    assert_point3_close(complex.vertices[0], Point3::new(10.0, 10.0, 0.0));
     assert_eq!(complex.normals.len(), 4);
-    assert_eq!(complex.normals[0].x, 1.0);
+    assert!((complex.normals[0].x - 1.0).abs() < EPS_SAME_POINT);
     assert!(result
         .ir()
         .model
@@ -152,7 +146,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         .find(|mesh| mesh.id.ends_with("#4"))
         .expect("complex tessellated face");
     assert_eq!(mesh.vertices.len(), 3);
-    assert_eq!(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+    assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
     assert_eq!(mesh.triangles, [[0, 1, 2]]);
     assert_eq!(mesh.normals.len(), 3);
     assert_eq!(
@@ -195,6 +189,511 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("invalid pnindex")));
+}
+
+#[test]
+fn product_linked_bodyless_tessellated_representation_declares_mesh() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=PRODUCT_DEFINITION_SHAPE('', '', #81);\n#81=PRODUCT_DEFINITION('', '', '', #82);\n#82=PRODUCT_DEFINITION_FORMATION('', '', #83);\n#83=PRODUCT('', '', '', ());\n#84=SHAPE_DEFINITION_REPRESENTATION(#80,#8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode product-linked bodyless tessellated representation");
+    assert!(decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .any(|mesh| mesh.id == "step:tessellation:mesh#7" && mesh.body.is_none()));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn generic_representation_relationship_does_not_admit_product_tessellation() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=SHAPE_REPRESENTATION('carrier',(#10),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=PRODUCT_DEFINITION_SHAPE('', '', #81);\n#81=PRODUCT_DEFINITION('', '', '', #82);\n#82=PRODUCT_DEFINITION_FORMATION('', '', #83);\n#83=PRODUCT('', '', '', ());\n#84=SHAPE_DEFINITION_REPRESENTATION(#80,#39);\n#90=REPRESENTATION_RELATIONSHIP('generic bridge','',#39,#8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode generic representation relationship witness");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("generic bridge tessellation");
+    assert!(mesh.body.is_none());
+    assert_eq!(
+        mesh.source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#7")
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn shape_representation_relationship_admits_product_tessellation() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#39=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#38),#2);",
+        "#39=SHAPE_REPRESENTATION('carrier',(#10),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=PRODUCT_DEFINITION_SHAPE('', '', #81);\n#81=PRODUCT_DEFINITION('', '', '', #82);\n#82=PRODUCT_DEFINITION_FORMATION('', '', #83);\n#83=PRODUCT('', '', '', ());\n#84=SHAPE_DEFINITION_REPRESENTATION(#80,#39);\n#90=(REPRESENTATION_RELATIONSHIP('typed shape bridge','',#39,#8) SHAPE_REPRESENTATION_RELATIONSHIP());\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode typed shape representation relationship witness");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("typed bridge tessellation");
+    assert!(mesh.body.is_none());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn accuracy_parameter_representation_uses_inherited_items_and_context() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#8=TESSELLATED_SHAPE_REPRESENTATION('complex mesh',(#7),#2);",
+        "#8=TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS('complex mesh',(#7),#2,(CHORDAL_DEVIATION(0.1)));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('', '', #39, #8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode accuracy-parameter tessellated representation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("accuracy-parameter tessellation");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        (loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            || loss.code == StepLossCode::TessellationItemBodyUnresolved.kind())
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP native namespace")
+        .iter()
+        .any(|record| {
+            record.id.as_str()
+                == "step:data:tessellated_shape_representation_with_accuracy_parameters#8"
+        }));
+}
+
+#[test]
+fn repositioned_annotation_mesh_transfers_one_placement() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=CARTESIAN_POINT('',(100.,200.,300.));\n#81=DIRECTION('',(0.,0.,1.));\n#82=DIRECTION('',(1.,0.,0.));\n#83=AXIS2_PLACEMENT_3D('annotation placement',#80,#81,#82);\n#84=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('repositioned mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#85=TESSELLATED_ANNOTATION_OCCURRENCE('repositioned mesh',(),#84);\n#86=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('repositioned exact mesh') TESSELLATED_GEOMETRIC_SET((#4)) TESSELLATED_ITEM());\n#87=TESSELLATED_ANNOTATION_OCCURRENCE('repositioned exact mesh',(),#86);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode repositioned annotation tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("repositioned annotation mesh");
+    assert_point3_close(mesh.vertices[0], Point3::new(110.0, 210.0, 300.0));
+    assert_vector3_close(mesh.normals[0], Vector3::new(1.0, 0.0, 0.0));
+    assert!(mesh.body.is_none());
+    let exact_mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("exact body mesh");
+    assert_point3_close(exact_mesh.vertices[0], Point3::new(0.0, 0.0, 0.0));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP native namespace")
+        .iter()
+        .any(|record| record.id.0.ends_with("#84")));
+}
+
+#[test]
+fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_coordinates() {
+    for (source, unresolved_placement) in [
+        (
+            include_bytes!("tests/data/ts01_repositioned_missing_placement.p21").as_slice(),
+            false,
+        ),
+        (
+            include_bytes!("tests/data/ts01_repositioned_missing_placement_slot.p21").as_slice(),
+            false,
+        ),
+        (
+            include_bytes!("tests/data/ts01_repositioned_unresolved_placement.p21").as_slice(),
+            true,
+        ),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode invalid repositioned placement tessellation");
+        let mesh = decoded
+            .ir()
+            .model
+            .tessellations
+            .iter()
+            .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+            .expect("invalid-placement tessellation");
+        assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
+                && loss.message.contains("repositioned tessellated item #5")
+                && loss.message.contains("unresolved placement is not applied")
+        }));
+        assert!(decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP native namespace")
+            .iter()
+            .any(|record| record.id.0.ends_with("#5")));
+        if unresolved_placement {
+            assert!(decoded
+                .ir()
+                .native_unknowns("step")
+                .expect("STEP native namespace")
+                .iter()
+                .any(|record| record.id.0 == "step:data:axis2_placement_3d#99"));
+        }
+        let validation =
+            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn unresolved_outer_repositioning_preserves_inner_valid_placement() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=CARTESIAN_POINT('',(100.,200.,300.));\n#81=DIRECTION('',(0.,0.,1.));\n#82=DIRECTION('',(1.,0.,0.));\n#83=AXIS2_PLACEMENT_3D('inner placement',#80,#81,#82);\n#84=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('inner mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#85=TESSELLATED_ANNOTATION_OCCURRENCE('inner mesh',(),#84);\n#88=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#85) REPRESENTATION_ITEM('unresolved outer placement') TESSELLATED_GEOMETRIC_SET((#84)) TESSELLATED_ITEM());\n#89=TESSELLATED_ANNOTATION_OCCURRENCE('unresolved outer placement',(),#88);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested unresolved repositioning");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("nested repositioned annotation mesh");
+    assert_point3_close(mesh.vertices[0], Point3::new(110.0, 210.0, 300.0));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
+            && loss.message.contains("repositioned tessellated item #88")
+            && loss.message.contains("unresolved placement is not applied")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP native namespace")
+        .iter()
+        .any(|record| record.id.0.ends_with("#88")));
+}
+
+#[test]
+fn repositioned_annotation_mesh_rejects_conflicting_placements() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=CARTESIAN_POINT('',(100.,200.,300.));\n#81=DIRECTION('',(0.,0.,1.));\n#82=DIRECTION('',(1.,0.,0.));\n#83=AXIS2_PLACEMENT_3D('first placement',#80,#81,#82);\n#84=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('first repositioned mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#85=TESSELLATED_ANNOTATION_OCCURRENCE('first repositioned mesh',(),#84);\n#86=CARTESIAN_POINT('',(-100.,-200.,-300.));\n#87=AXIS2_PLACEMENT_3D('second placement',#86,#81,#82);\n#88=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#87) REPRESENTATION_ITEM('second repositioned mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#89=TESSELLATED_ANNOTATION_OCCURRENCE('second repositioned mesh',(),#88);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode conflicting repositioned annotation tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("conflicting repositioned annotation mesh");
+    assert_point3_close(mesh.vertices[0], Point3::new(10.0, 10.0, 0.0));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationPlacementAmbiguous.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn tessellated_shape_relationship_supplies_exact_body_owner() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),#37);",
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),$);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('','',#39,#5);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode related tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("related mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #4")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss.message.contains("TESSELLATED_SHELL #40")
+    }));
+}
+
+#[test]
+fn direct_tessellated_representation_item_uses_exact_body_relationship() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('', '', #39, #8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode directly represented tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("directly represented mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn nested_tessellated_body_container_uses_exact_body_link() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),#37);",
+        "#40=TESSELLATED_SHELL('sheet mesh',(#91),#37);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#91=TESSELLATED_GEOMETRIC_SET('nested mesh',(#4));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested body-container tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("nested body-container mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #4")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #4")
+    }));
+}
+
+#[test]
+fn nested_tessellated_representation_item_uses_exact_body_relationship() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#8=TESSELLATED_SHAPE_REPRESENTATION('complex mesh',(#7),#2);",
+        "#8=TESSELLATED_SHAPE_REPRESENTATION('complex mesh',(#91),#2);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#91=TESSELLATED_GEOMETRIC_SET('nested mesh',(#7));\n#90=SHAPE_REPRESENTATION_RELATIONSHIP('', '', #39, #8);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested represented tessellation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#7")
+        .expect("nested represented mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #7")
+    }));
+}
+
+#[test]
+fn complex_tessellated_shape_representation_inherits_items() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#5=TESSELLATED_SHAPE_REPRESENTATION('mesh',(#40),#2);",
+        "#5=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('mesh',(#40),#2) TESSELLATED_SHAPE_REPRESENTATION());",
+    )
+    .replace(
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),#37);",
+        "#40=TESSELLATED_SHELL('sheet mesh',(#4),$);",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=SHAPE_REPRESENTATION_RELATIONSHIP('','',#39,#5);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex tessellated representation");
+
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id == "step:tessellation:mesh#4")
+        .expect("complex representation mesh");
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+            && loss.message.contains("tessellation item #4")
+    }));
 }
 
 #[test]
@@ -250,6 +749,27 @@ fn complex_triangle_strip_alternates_winding() {
         result.ir().model.tessellations[0].triangles,
         [[0, 1, 2], [2, 1, 3]]
     );
+}
+
+#[test]
+fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
+    let cases = [
+        (
+            include_bytes!("tests/data/ap07_complex_strip_and_fan.p21").as_slice(),
+            vec![[0, 1, 2], [2, 1, 3], [0, 3, 4]],
+        ),
+        (
+            include_bytes!("tests/data/ap07_malformed_short_strip.p21").as_slice(),
+            vec![[0, 1, 2], [2, 1, 3]],
+        ),
+    ];
+    for (input, expected) in cases {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode strip witness");
+        assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert_eq!(result.ir().model.tessellations[0].triangles, expected);
+    }
 }
 
 #[test]

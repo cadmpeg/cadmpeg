@@ -1717,6 +1717,7 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
         appearance: appearance.id.clone(),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::new(),
     }];
     ir.model.appearances = vec![appearance];

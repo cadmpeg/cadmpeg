@@ -26,10 +26,13 @@ pub(crate) fn has_zip_magic(bytes: &[u8]) -> bool {
 
 /// Returns whether a detection prefix names the required STEP root member.
 pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
+    // CE-07: the root name is evidence only when it is an entry in a
+    // structurally parsed ZIP central directory. Payloads, comments, and
+    // unrelated entry names are not root evidence.
     has_zip_magic(prefix)
-        && prefix
-            .windows(ROOT_NAME.len())
-            .any(|window| window == ROOT_NAME.as_bytes())
+        && ArchiveSnapshot::new(View::over_retained(prefix))
+            .ok()
+            .is_some_and(|archive| archive.entry(ROOT_NAME).is_some())
 }
 
 /// Opens and validates the required root member of one STEP ZIP container.
@@ -40,6 +43,11 @@ pub(crate) fn open_root<'a>(
     let archive = ArchiveSnapshot::new(root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
+        if entry.uses_utf8_name_encoding() {
+            return Err(CodecError::Malformed(
+                "STEP ZIP uses prohibited Unicode filename support".into(),
+            ));
+        }
         if entry.compression == EntryCompression::Zstd {
             return Err(CodecError::NotImplemented(
                 "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
@@ -128,6 +136,7 @@ pub(crate) fn root_reference_notes(
         .collect::<Vec<_>>();
     let mut notes = Vec::new();
     for (name, uri) in uris {
+        let uri = forwarded_reference_uri(&exchange, uri);
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal { member, fragment } => {
                 if archive.entry(&member).is_none() {
@@ -144,6 +153,21 @@ pub(crate) fn root_reference_notes(
         }
     }
     Ok(notes)
+}
+
+fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
+    let Some(fragment) = uri.strip_prefix('#') else {
+        return uri;
+    };
+    exchange
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == fragment)
+        .and_then(|anchor| match &anchor.value {
+            crate::parse::Value::Resource(uri) => Some(uri.as_str()),
+            _ => None,
+        })
+        .unwrap_or(uri)
 }
 
 fn has_uri_scheme(uri: &str) -> bool {

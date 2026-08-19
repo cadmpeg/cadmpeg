@@ -236,6 +236,14 @@ pub trait Codec: CodecBackend + sealed::Sealed {
     ) -> Result<ContainerSummary, CodecError>;
 
     /// Decodes the source under its input and resource limits.
+    ///
+    /// [`DecodeMode::Strict`] refuses the decode with
+    /// [`CodecError::StrictRefusal`] for the first reported loss whose
+    /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. This gate owns
+    /// the refusal predicate and the refusal class for every codec. A backend
+    /// reports its losses with their strict floors and adds no strict gate of
+    /// its own; a local gate widens the predicate and reclassifies the refusal
+    /// without the caller seeing it.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
@@ -278,10 +286,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
                 .iter()
                 .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
             {
-                return Err(CodecError::Malformed(format!(
-                    "strict mode rejects {}: {}",
-                    loss.code, loss.message
-                )));
+                return Err(CodecError::StrictRefusal {
+                    loss_code: loss.code.to_string(),
+                    message: loss.message.clone(),
+                });
             }
         }
         Ok(result)
