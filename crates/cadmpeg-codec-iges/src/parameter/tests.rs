@@ -1510,6 +1510,95 @@ fn type206_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type216_forms_share_five_fixed_primary_field_boundary() {
+    let association = directory_target(7, 212);
+    let property = directory_target(9, 406);
+    for form in 0..=2 {
+        let mut source = directory_target(11, 216);
+        source.form = form;
+        let directory = BTreeMap::from([(7, &association), (9, &property), (11, &source)]);
+        let record = integer_parameter_record(11, &[216, 1, 3, 5, 0, 0, 1, 7, 1, 9]);
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form {form}");
+        let groups = analysis.groups.expect("Type 216 table boundary");
+        assert_eq!(groups.token_start, 6, "form {form}");
+        assert_eq!(groups.associations, vec![7], "form {form}");
+        assert_eq!(groups.properties, vec![9], "form {form}");
+    }
+}
+
+#[test]
+fn type216_table_boundary_precedes_valid_generic_alternative() {
+    let first_association = directory_target(1, 212);
+    let association = directory_target(7, 212);
+    let property = directory_target(9, 406);
+    let mut source = directory_target(11, 216);
+    source.form = 2;
+    let directory = BTreeMap::from([
+        (1, &first_association),
+        (7, &association),
+        (9, &property),
+        (11, &source),
+    ]);
+    let record = integer_parameter_record(11, &[216, 1, 3, 5, 0, 2, 1, 7, 1, 9]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![5, 6]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 216 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![7]);
+    assert_eq!(groups.properties, vec![9]);
+}
+
+#[test]
+fn type216_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(7, 212);
+    let property = directory_target(9, 406);
+    let mut source = directory_target(11, 216);
+    source.form = 1;
+    let directory = BTreeMap::from([(7, &association), (9, &property), (11, &source)]);
+    let wrong_fields = token_parameter_record(
+        11,
+        vec![
+            216.into(),
+            TokenValue::Real(1.5),
+            3.into(),
+            5.into(),
+            0.into(),
+            TokenValue::Omitted,
+            1.into(),
+            7.into(),
+            1.into(),
+            9.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(analysis.groups.expect("Type 216 boundary").token_start, 6);
+
+    for values in [vec![216, 1, 3, 5, 0], vec![216, 1, 3, 5, 0, 0, 1, 7, 1]] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+}
+
+#[test]
 fn type104_forms_share_eleven_field_boundary() {
     let association = directory_target(1, 212);
     let property = directory_target(5, 406);
