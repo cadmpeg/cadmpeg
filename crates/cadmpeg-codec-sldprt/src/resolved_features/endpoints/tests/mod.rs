@@ -23,6 +23,7 @@ use std::collections::HashMap;
 mod arcs;
 mod circles;
 mod compact;
+mod construction_lines;
 mod extended;
 mod profile_lines;
 mod terminals;

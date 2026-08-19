@@ -499,22 +499,53 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             indices
                 .into_iter()
                 .filter_map(|index| {
-                    let mut candidates = markers.iter().copied().filter(|marker| {
+                    let owned = |marker: &&SketchInputEntity| {
                         marker.feature_ref == curve.feature_ref
                             && marker.object_index == Some(index)
                             && marker.coordinates_m.is_some()
-                            && ((!point_object_construction && selected_construction)
-                                || matches!(
+                    };
+                    if point_object_construction {
+                        let mut points = markers.iter().copied().filter(|marker| {
+                            owned(marker)
+                                && matches!(
                                     marker.kind,
                                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                                ))
-                    });
-                    let candidate = candidates.next()?;
-                    candidates.next().is_none().then_some(candidate)
+                                )
+                        });
+                        match (points.next(), points.next()) {
+                            (Some(point), None) => Some(point),
+                            (None, None) if selected_construction => {
+                                let mut geometry = markers.iter().copied().filter(|marker| {
+                                    owned(marker)
+                                        && matches!(
+                                            marker.kind,
+                                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                        )
+                                });
+                                let candidate = geometry.next()?;
+                                geometry.next().is_none().then_some(candidate)
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        let mut candidates = markers.iter().copied().filter(|marker| {
+                            owned(marker)
+                                && (selected_construction
+                                    || matches!(
+                                        marker.kind,
+                                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                                    ))
+                        });
+                        let candidate = candidates.next()?;
+                        candidates.next().is_none().then_some(candidate)
+                    }
                 })
                 .collect::<Vec<_>>()
         };
         let indexed = resolve_indexed(indices);
+        if point_object_construction && indexed.len() == 1 {
+            return Vec::new();
+        }
         if indexed.len() != 2 {
             if let Some(raw_indices) = compact_indexed_curve_raw_endpoint_indices(payload, offset) {
                 let raw = resolve_indexed(raw_indices);
