@@ -12026,6 +12026,135 @@ fn type142_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type208_form0_follows_leader_count() {
+    let note = directory_target(3, 212);
+    let leader_one = {
+        let mut entry = directory_target(5, 214);
+        entry.form = 1;
+        entry
+    };
+    let leader_two = {
+        let mut entry = directory_target(7, 214);
+        entry.form = 1;
+        entry
+    };
+    let association = directory_target(9, 212);
+    let property = directory_target(11, 406);
+    let source = directory_target(13, 208);
+    let directory = BTreeMap::from([
+        (3, &note),
+        (5, &leader_one),
+        (7, &leader_two),
+        (9, &association),
+        (11, &property),
+        (13, &source),
+    ]);
+
+    for (values, expected_start) in [
+        (vec![208, 0, 0, 0, 0, 3, 0, 1, 9, 1, 11], 7_usize),
+        (vec![208, 0, 0, 0, 0, 3, 2, 5, 7, 1, 9, 1, 11], 9_usize),
+    ] {
+        let record = integer_parameter_record(13, &values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 208 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![9]);
+        assert_eq!(groups.properties, vec![11]);
+    }
+}
+
+#[test]
+fn type208_table_boundary_precedes_valid_generic_alternative() {
+    let first_association = directory_target(1, 212);
+    let note = directory_target(3, 212);
+    let second_association = directory_target(9, 212);
+    let property = directory_target(11, 406);
+    let source = directory_target(13, 208);
+    let directory = BTreeMap::from([
+        (1, &first_association),
+        (3, &note),
+        (9, &second_association),
+        (11, &property),
+        (13, &source),
+    ]);
+    let record = integer_parameter_record(13, &[208, 0, 0, 0, 0, 3, 0, 2, 1, 9, 1, 11]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![7, 8]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 208 table boundary");
+    assert_eq!(groups.token_start, 7);
+    assert_eq!(groups.associations, vec![1, 9]);
+    assert_eq!(groups.properties, vec![11]);
+}
+
+#[test]
+fn type208_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let note = directory_target(3, 212);
+    let association = directory_target(9, 212);
+    let property = directory_target(11, 406);
+    let source = directory_target(13, 208);
+    let directory = BTreeMap::from([
+        (3, &note),
+        (9, &association),
+        (11, &property),
+        (13, &source),
+    ]);
+
+    for preference in [TokenValue::String(b"bad".to_vec()), TokenValue::Real(2.5)] {
+        let wrong = token_parameter_record(
+            13,
+            vec![
+                208.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                preference,
+                3.into(),
+                0.into(),
+                1.into(),
+                9.into(),
+                1.into(),
+                11.into(),
+            ],
+        );
+        let analysis = analyze_trailing_pointer_groups(&wrong, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        assert_eq!(
+            analysis
+                .groups
+                .expect("Type 208 wrong-field boundary")
+                .token_start,
+            7
+        );
+    }
+
+    for values in [
+        vec![208, 0, 0, 0, 0, 3],
+        vec![208, 0, 0, 0, 0, 3, 0, 1, 9, 1],
+        vec![208, 0, 0, 0, 0, 3, -1, 1, 9, 1, 11],
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(13, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type410_entity_table_boundaries_follow_view_fields() {
     let cases = [
         (0_i64, vec![410, 1, 1, 0, 0, 0, 0, 0, 0, 1, 3, 0], 9_usize),
