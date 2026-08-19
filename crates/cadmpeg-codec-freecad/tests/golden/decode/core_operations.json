@@ -20948,6 +20948,7 @@
           "definition": {
             "closed": false,
             "definition": "loft",
+            "linearize": false,
             "max_degree": 4,
             "op": "new_body",
             "ruled": true,

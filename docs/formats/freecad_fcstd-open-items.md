@@ -123,7 +123,7 @@ linearization when selected at `:224-245`. PartDesign loft declares `Ruled=false
 `ProfileBased::setupObject()` changes `AllowMultiFace` only for a newly created object at
 `FeatureSketchBased.cpp:123-126`; `PropertyContainer.cpp:324-404` leaves an omitted carrier at
 the constructor value during restore. `PropertyStandard.cpp:2258-2277` writes and restores the
-direct Bool roots.
+direct Bool roots. PartDesign loft does not declare `Linearize`.
 
 Part `Sweep` declares `Solid=true`, `Frenet=true`, `Transition=1`, and `Linearize=false` at
 `PartFeatures.cpp:256-275`; its executor consumes the two booleans and applies linearization at
@@ -147,6 +147,13 @@ pipe and standalone sweep reports one blocking native loss; malformed lofts with
 use `StoredGeometry` and report no loss. The owner test
 `distinguishes_absent_and_malformed_loft_sweep_boolean_flags` covers the same absent, valid, and
 malformed admissions without cached shapes.
+
+The standalone Part loft `Linearize` carrier is now represented by the Loft neutral
+`linearize` Boolean. The producer witness `dp15-loft-sweep-flags-default.Document.xml` contains
+`Linearize=false`, and `dp15-loft-sweep-flags-selected.Document.xml` contains `Linearize=true`;
+`dp15-loft-sweep-flag-restore.log` records `Linearize=false` after the carrier is removed. The
+owner test also admits an exact direct true carrier, preserves false for an absent carrier and a
+same-named PartDesign carrier, and retains a wrong-runtime Part carrier natively.
 
 Part::Extrusion `DirMode` is an `App::PropertyEnumeration` with constructor default `0`.
 Indices `0`, `1`, and `2` mean Custom, Edge, and Normal; they select `Dir`, `DirLink`, and the
@@ -268,16 +275,15 @@ integer-runtime, invalid-value, nested, and duplicate carriers.
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
 absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale, and
-`CosmeticThread` boolean flags are settled above. The standalone loft `Linearize` carrier and
-the legacy `CheckCompatibility` carrier still need a neutral representation or a traced
-retention decision.
+`CosmeticThread` boolean flags are settled above. The legacy `CheckCompatibility` carrier still
+needs a neutral representation or a traced retention decision.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. The remaining `Linearize`/compatibility,
-helix, ShapeBinder, and pattern flags still require their own writer and restore evidence before
-the generic fallback sites can change.
+neutral semantics or discard a valid legacy default. The remaining compatibility, helix,
+ShapeBinder, and pattern flags still require their own writer and restore evidence before the
+generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
@@ -288,8 +294,7 @@ exact-carrier decoder rule. Revolution and Groove boolean flags, loft and sweep 
 dress-up `UseAllEdges` and
 `FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
 modes, Hole boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are
-covered; standalone loft `Linearize`, legacy loft compatibility, and the remaining design
-operation flags stay open.
+covered; legacy loft compatibility and the remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

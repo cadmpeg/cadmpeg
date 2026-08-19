@@ -4705,6 +4705,11 @@ fn loft_definition(
             bool_selector(properties, "Solid", true)?
         },
         ruled: bool_selector(properties, "Ruled", false)?,
+        linearize: if part_design {
+            false
+        } else {
+            bool_selector(properties, "Linearize", false)?
+        },
         max_degree,
         check_compatibility,
         allow_multi_profile_faces: if part_design {

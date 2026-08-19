@@ -4938,6 +4938,7 @@ pub(crate) fn project_fixed_loft(
         closed: false,
         solid: true,
         ruled: false,
+        linearize: false,
         max_degree: None,
         check_compatibility: None,
         allow_multi_profile_faces: None,

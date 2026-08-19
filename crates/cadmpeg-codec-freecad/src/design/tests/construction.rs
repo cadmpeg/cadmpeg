@@ -1043,7 +1043,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     }
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="15">
+<Objects Count="17">
  <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
  <Object type="Sketcher::SketchObject" name="Section" id="2"/>
  <Object type="Sketcher::SketchObject" name="Path" id="3"/>
@@ -1059,20 +1059,23 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
  <Object type="PartDesign::AdditivePipe" name="PipeBadAux" id="13"/>
  <Object type="Part::Sweep" name="SweepBadSolid" id="14"/>
  <Object type="Part::Sweep" name="SweepBadFrenet" id="15"/>
+ <Object type="Part::Loft" name="LoftLinearized" id="16"/>
+ <Object type="Part::Loft" name="LoftBadLinearize" id="17"/>
 </Objects>
-<ObjectData Count="15">
+<ObjectData Count="17">
  <Object name="Profile"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="LoftAbsent"><Properties Count="1">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
  </Properties></Object>
- <Object name="LoftValid"><Properties Count="5">
+ <Object name="LoftValid"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
   <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Section" sub=""/></LinkSubList></Property>
   <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
  <Object name="SweepAbsent"><Properties Count="2">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
@@ -1133,6 +1136,14 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
   <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>
  </Properties></Object>
+ <Object name="LoftLinearized"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadLinearize"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Linearize" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -1147,6 +1158,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
             closed: false,
             solid: true,
             ruled: false,
+            linearize: false,
             allow_multi_profile_faces: None,
             ..
         }
@@ -1157,7 +1169,19 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
             closed: true,
             solid: true,
             ruled: true,
+            linearize: false,
             allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "LoftLinearized"),
+        FeatureDefinition::Loft {
+            closed: false,
+            solid: true,
+            ruled: false,
+            linearize: true,
+            allow_multi_profile_faces: None,
             ..
         }
     ));
@@ -1213,13 +1237,14 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
         ("PipeBadAux", "PartDesign::AdditivePipe"),
         ("SweepBadSolid", "Part::Sweep"),
         ("SweepBadFrenet", "Part::Sweep"),
+        ("LoftBadLinearize", "Part::Loft"),
     ] {
         assert!(matches!(
             definition(&result, name),
             FeatureDefinition::Native { kind: actual, .. } if actual == kind
         ));
     }
-    assert_eq!(result.report().losses.len(), 6);
+    assert_eq!(result.report().losses.len(), 7);
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace == "fcstd"
             && loss.code.code == "feature.native-kind-retained"

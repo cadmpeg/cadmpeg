@@ -1193,6 +1193,9 @@ pub enum FeatureDefinition {
         /// Whether adjacent sections are connected by straight ruled spans.
         #[serde(default)]
         ruled: bool,
+        /// Whether linear edges and planar faces are simplified after construction.
+        #[serde(default)]
+        linearize: bool,
         /// Maximum polynomial degree used to interpolate the sections, when constrained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_degree: Option<u32>,

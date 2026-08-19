@@ -1415,12 +1415,14 @@ Loft `Ruled` and `Closed` are exact `App::PropertyBool` carriers with absent def
 Standalone loft `Solid` is an exact `App::PropertyBool` carrier with absent default `true`;
 PartDesign lofts are solid and have no selectable `Solid` carrier. PartDesign loft
 `AllowMultiFace` is an exact `App::PropertyBool` carrier with absent default `false`; standalone
-lofts do not own that carrier. A present carrier with another runtime type, without exactly one
-direct `Bool`, or with another value does not select a neutral loft. A malformed standalone loft
-uses its cached `Shape` as `StoredGeometry` when that shape is present; a malformed PartDesign
-loft remains native when no cached shape is available. When carried, the interpolation degree
-limit and section compatibility policy remain explicit. Standalone lofts create a new result body
-without fabricating a Boolean relationship.
+lofts do not own that carrier. Standalone loft `Linearize` is an exact `App::PropertyBool` carrier
+with absent default `false`; `true` simplifies linear edges and planar faces into lines and planes
+after loft construction. PartDesign lofts do not own `Linearize`. A present carrier with another
+runtime type, without exactly one direct `Bool`, or with another value does not select a neutral
+loft. A malformed standalone loft uses its cached `Shape` as `StoredGeometry` when that shape is
+present; a malformed PartDesign loft remains native when no cached shape is available. When
+carried, the interpolation degree limit and section compatibility policy remain explicit.
+Standalone lofts create a new result body without fabricating a Boolean relationship.
 
 Sweeps retain the primary and additional ordered sections, primary path and tangent-edge
 extension, corrected-Frenet, fixed, Frenet, auxiliary-path, or fixed-binormal orientation,
