@@ -3676,6 +3676,68 @@ pub(crate) mod edge_flange_multi_edge_fixed_operation {
     pub(crate) const EDGE_GROUP_TWO_REFERENCE: usize = 260;
 }
 
+/// Byte offsets for the `edge_flange_class364_per_edge_width_fixed_operation` record.
+///
+/// Spec §3.1. Record length 301 B.
+///
+/// ```text
+/// Offsets are relative to the primary scope header. The fixed operation fields close at the second marked role-0x08 group reference; the paired header follows the 643-byte primary frame.
+/// ```
+pub(crate) mod edge_flange_class364_per_edge_width_fixed_operation {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 301;
+    /// Offset of `bend_position` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BEND_POSITION: usize = 92;
+    /// Offset of `edge_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EDGE_COUNT: usize = 96;
+    /// Offset of `edge_wrapper_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_WRAPPER_ONE_REFERENCE: usize = 100;
+    /// Offset of `edge_wrapper_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_WRAPPER_TWO_REFERENCE: usize = 111;
+    /// Offset of `settings_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SETTINGS_REFERENCE: usize = 122;
+    /// Offset of `height_datum` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HEIGHT_DATUM: usize = 133;
+    /// Offset of `angle_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ANGLE_OWNER_REFERENCE: usize = 137;
+    /// Offset of `height_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HEIGHT_OWNER_REFERENCE: usize = 148;
+    /// Offset of `reference_side` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_SIDE: usize = 159;
+    /// Offset of `inside_bend_radius` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const INSIDE_BEND_RADIUS: usize = 165;
+    /// Offset of `result_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_COUNT: usize = 173;
+    /// Offset of `result_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_ONE_REFERENCE: usize = 177;
+    /// Offset of `result_one_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_ONE_TRAILER: usize = 188;
+    /// Offset of `result_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_TWO_REFERENCE: usize = 192;
+    /// Offset of `result_two_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_TWO_TRAILER: usize = 203;
+    /// Offset of `result_three_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_THREE_REFERENCE: usize = 207;
+    /// Offset of `result_three_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_THREE_TRAILER: usize = 218;
+    /// Offset of `result_four_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_FOUR_REFERENCE: usize = 222;
+    /// Offset of `result_four_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_FOUR_TRAILER: usize = 233;
+    /// Offset of `result_five_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_FIVE_REFERENCE: usize = 237;
+    /// Offset of `result_five_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_FIVE_TRAILER: usize = 248;
+    /// Offset of `result_separator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_SEPARATOR: usize = 252;
+    /// Offset of `aggregate_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AGGREGATE_GROUP_REFERENCE: usize = 256;
+    /// Offset of `edge_group_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_ONE_REFERENCE: usize = 279;
+    /// Offset of `edge_group_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_TWO_REFERENCE: usize = 290;
+}
+
 /// Byte offsets for the `edge_flange_class286_single_edge_fixed_operation` record.
 ///
 /// Spec §3.1. Record length 207 B.

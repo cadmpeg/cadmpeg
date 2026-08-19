@@ -3416,6 +3416,21 @@ pub(crate) fn project_edge_flange(
         (DesignEdgeWidthMode::Symmetric, [owner]) => SheetMetalFlangeWidth::Symmetric {
             width: design_length(parameter(*owner, "EdgeWidth")?)?,
         },
+        (DesignEdgeWidthMode::SymmetricPerEdge, owners)
+            if owners.len() == operation.edge_group_record_indices.len() =>
+        {
+            let widths = owners
+                .iter()
+                .map(|owner| design_length(parameter(*owner, "EdgeWidth")?))
+                .collect::<Option<Vec<_>>>()?;
+            let [first, rest @ ..] = widths.as_slice() else {
+                return None;
+            };
+            if rest.iter().any(|width| width != first) {
+                return None;
+            }
+            SheetMetalFlangeWidth::Symmetric { width: *first }
+        }
         (DesignEdgeWidthMode::TwoSides, [first, second]) => SheetMetalFlangeWidth::TwoSides {
             first: design_length(parameter(*first, "EdgeWidth_1")?)?,
             second: design_length(parameter(*second, "EdgeWidth_2")?)?,

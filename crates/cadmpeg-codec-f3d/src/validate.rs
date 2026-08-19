@@ -2219,8 +2219,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .zip(&operation.edge_operand_record_indices)
                         .all(|(group, operand)| *operand == group.saturating_add(3))
-                    && operation.aggregate_operand_record_indices
-                        == [operation.aggregate_group_record_index.saturating_add(3)]
+                    && if edge_count == 1 {
+                        operation.aggregate_operand_record_indices
+                            == [operation.aggregate_group_record_index.saturating_add(3)]
+                    } else {
+                        // Multi-edge aggregate members are named by the ordered
+                        // reference table. Their group-relative spacing is not
+                        // fixed across the settled legacy layouts.
+                        operation.aggregate_operand_record_indices.len() == edge_count
+                    }
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset

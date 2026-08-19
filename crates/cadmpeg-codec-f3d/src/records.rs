@@ -3013,8 +3013,9 @@ impl DesignSheetMetalHeightDatum {
 
 /// Extent of an `EdgeFlange` along its selected edge.
 ///
-/// The mode is carried by the count of width-distance parameter owners the scope
-/// adds to its ordered reference table, not by a discriminator.
+/// Ordinary forms derive the mode from the count of width-distance parameter
+/// owners in the ordered reference table. Classed forms can carry a distinct
+/// explicit mode when that count has per-edge meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -3025,6 +3026,11 @@ pub enum DesignEdgeWidthMode {
     Symmetric,
     /// The flange is measured from each end and adds two width owners.
     TwoSides,
+    /// The fixed section carries one symmetric-width owner per selected edge.
+    ///
+    /// Neutral projection can collapse these owners to one symmetric width only
+    /// when their stored values agree. Distinct values remain source-native.
+    SymmetricPerEdge,
 }
 
 #[cfg(test)]
@@ -3155,6 +3161,11 @@ pub struct DesignEdgeFlangeOperation {
     pub height_extent: DesignEdgeFlangeHeightExtent,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
+    /// Explicit width-mode override for classed layouts whose owner count alone
+    /// does not identify the mode. Older native records omit this field and use
+    /// the owner-count derivation below.
+    #[serde(default)]
+    pub width_mode: Option<DesignEdgeWidthMode>,
     /// Width-distance parameter-owner records the edge-width mode adds, in source order.
     pub width_distance_owner_record_indices: Vec<u32>,
     /// Indexed operation-settings record.
@@ -3172,17 +3183,19 @@ pub struct DesignEdgeFlangeOperation {
 }
 
 impl DesignEdgeFlangeOperation {
-    /// Return the extent of the flange along its selected edge.
+    /// Return the native width mode.
     ///
-    /// The width-distance owner count carries the mode, and the parser refuses a
-    /// frame whose count exceeds the two-sided form.
+    /// Classed layouts can carry an explicit mode because one owner per selected
+    /// edge is not the same as two owners for one edge. Older records omit the
+    /// override, so their owner count remains the compatibility fallback.
     #[must_use]
     pub fn edge_width_mode(&self) -> DesignEdgeWidthMode {
-        match self.width_distance_owner_record_indices.len() {
-            0 => DesignEdgeWidthMode::FullEdge,
-            1 => DesignEdgeWidthMode::Symmetric,
-            _ => DesignEdgeWidthMode::TwoSides,
-        }
+        self.width_mode
+            .unwrap_or(match self.width_distance_owner_record_indices.len() {
+                0 => DesignEdgeWidthMode::FullEdge,
+                1 => DesignEdgeWidthMode::Symmetric,
+                _ => DesignEdgeWidthMode::TwoSides,
+            })
     }
 }
 
