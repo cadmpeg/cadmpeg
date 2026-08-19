@@ -1160,6 +1160,17 @@ fn solve_nurbs_surface_parameter(
         if distance.is_finite() && distance <= tolerance {
             return Some((parameters, distance));
         }
+        if let Some(refined) =
+            refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)
+        {
+            let position = budgeted_nurbs_surface_point(surface, refined.u, refined.v, budget)?;
+            let distance = (position.x - point.x)
+                .hypot(position.y - point.y)
+                .hypot(position.z - point.z);
+            if distance.is_finite() && distance <= tolerance {
+                return Some((refined, distance));
+            }
+        }
     }
     let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?;
     let mut best = None;
@@ -1293,26 +1304,26 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
-    let mut values = vec![1.0];
+    let mut values = vec![0.0; degree + 1];
+    values[0] = 1.0;
     let mut left = vec![0.0; degree + 1];
     let mut right = vec![0.0; degree + 1];
     for j in 1..=degree {
         left[j] = t - knots[span + 1 - j];
         right[j] = knots[span + j] - t;
         let mut saved = 0.0;
-        let mut next = vec![0.0; j + 1];
-        for (r, &value) in values.iter().enumerate().take(j) {
+        for r in 0..j {
+            let value = values[r];
             let denominator = right[r + 1] + left[j - r];
             let factor = if denominator == 0.0 {
                 0.0
             } else {
                 value / denominator
             };
-            next[r] = saved + right[r + 1] * factor;
+            values[r] = saved + right[r + 1] * factor;
             saved = left[j - r] * factor;
         }
-        next[j] = saved;
-        values = next;
+        values[j] = saved;
     }
     values
 }
@@ -3993,28 +4004,120 @@ pub fn surface_point_with_budget(
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Point3> {
-    fn evaluate(
-        geometry: &SurfaceGeometry,
-        u: f64,
-        v: f64,
-        depth: usize,
-        budget: &WorkBudget<'_>,
-    ) -> Option<Point3> {
-        if depth > 256 {
-            return None;
-        }
-        match geometry {
-            SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
-            SurfaceGeometry::Transformed { basis, transform } => {
-                budget.charge().then_some(())?;
-                evaluate(basis, u, v, depth + 1, budget)
-                    .map(|point| affine_point(*transform, point))
-            }
-            _ => surface_point(geometry, u, v),
-        }
-    }
+    surface_point_with_budget_inner(geometry, u, v, 0, budget)
+}
 
-    evaluate(geometry, u, v, 0, budget)
+fn surface_point_with_budget_inner(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
+    match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let v_axis = normal.cross(*u_axis);
+            Some(offset(*origin, &[(u, *u_axis), (v, v_axis)]))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            Some(offset(
+                *origin,
+                &[
+                    (radius * cosine, *ref_direction),
+                    (radius * sine, transverse),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            let radial_slope = half_angle.tan();
+            let local_radius = radius + v * radial_slope;
+            Some(offset(
+                *origin,
+                &[
+                    (local_radius * cosine, *ref_direction),
+                    (local_radius * ratio * sine, transverse),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
+            Some(offset(
+                *center,
+                &[
+                    (radius * v_cosine * u_cosine, *ref_direction),
+                    (radius * v_cosine * u_sine, transverse),
+                    (radius * v_sine, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
+            let ring = major_radius + minor_radius * v_cosine;
+            Some(offset(
+                *center,
+                &[
+                    (ring * u_cosine, *ref_direction),
+                    (ring * u_sine, transverse),
+                    (minor_radius * v_sine, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            budget.charge().then_some(())?;
+            surface_point_with_budget_inner(basis, u, v, depth + 1, budget)
+                .map(|point| affine_point(*transform, point))
+        }
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
 }
 
 /// Evaluate a directly stored surface and its exact first partial derivatives.
@@ -4642,6 +4745,14 @@ fn model_surface_point_by_id_inner(
         result
     }
 
+    if let Some(budget) = budget {
+        if index.procedural_surface_for_surface(&surface.0).is_none() {
+            budget.charge().then_some(())?;
+            return index
+                .surfaces(&surface.0)
+                .and_then(|surface| surface_point_with_budget(&surface.geometry, u, v, budget));
+        }
+    }
     evaluate(index, surface, u, v, &mut Vec::new(), budget).map(|evaluation| evaluation.point)
 }
 
