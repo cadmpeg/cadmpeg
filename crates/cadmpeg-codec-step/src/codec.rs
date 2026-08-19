@@ -611,6 +611,7 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 mod tests {
     use std::io::Cursor;
 
+    use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
     use super::{starts_with_step_magic, StepCodec};
@@ -629,5 +630,18 @@ mod tests {
         let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
         assert_eq!(codec.detect(&with_bom), Confidence::No);
         assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
+    }
+
+    #[test]
+    fn inspect_accepts_noncanonical_complex_partial_order_and_reports_a_note() {
+        let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+        let summary = StepCodec::default()
+            .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+            .expect("inspection describes recoverable source order");
+
+        assert!(summary
+            .notes
+            .iter()
+            .any(|note| note.contains("complex partial records are not alphabetical")));
     }
 }

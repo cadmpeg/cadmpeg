@@ -1,34 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part 21 omitted-name recovery tests.
 
-#![allow(clippy::unwrap_used)]
-#![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
-
-use std::fmt::Write as _;
-
-use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::{CodecBackend, Confidence};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
-
-use crate::ids::StepIdentity;
-use crate::test_support::{decode_inline, export};
-use crate::{write_step, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
-
 #[test]
 fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";

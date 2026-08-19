@@ -1232,3 +1232,34 @@ fn writer_declares_each_supported_target_schema_exactly() {
             .expect("decode target-schema output");
     }
 }
+
+#[test]
+fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
+    let bytes = include_bytes!("../../../tests/fixtures/noncanonical_solid_angle.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode noncanonical unit fixture");
+    let mut output = Vec::new();
+    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
+        .expect("export salvaged IR");
+
+    let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
+    assert!(diagnostics.is_empty());
+    let unit = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "SOLID_ANGLE_UNIT")
+        })
+        .expect("exported solid-angle unit");
+    assert_eq!(
+        unit.partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>(),
+        ["NAMED_UNIT", "SI_UNIT", "SOLID_ANGLE_UNIT"]
+    );
+}
