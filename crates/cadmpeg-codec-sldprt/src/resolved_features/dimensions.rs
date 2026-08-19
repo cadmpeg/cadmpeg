@@ -9,8 +9,9 @@ use super::markers::{
 };
 use super::relation_geometry::{
     declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
-    declared_entity_handle_owner, declared_slot_handle_dimension_center, implicit_circle_marker,
-    owned_relation_parameters, DeclaredEntityHandleOwner,
+    declared_entity_handle_indexed_circle_dimension_center, declared_entity_handle_owner,
+    declared_slot_handle_dimension_center, implicit_circle_marker, owned_relation_parameters,
+    DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -20,7 +21,7 @@ use super::transforms::{
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputRelationFamily,
+    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
@@ -304,6 +305,17 @@ fn dimensioned_relation_carrier<'a>(
             curve: None,
             center: center.coordinates_m?,
             construction: Some(true),
+        });
+    }
+    if operand.kind == FeatureInputOperandKind::Native(0x836e) {
+        let marker = declared_entity_handle_indexed_circle_dimension_center(
+            lanes, feature, operand, radius,
+        )?;
+        return Some(DimensionedRelationCarrier {
+            marker,
+            curve: None,
+            center: marker.coordinates_m?,
+            construction: Some(false),
         });
     }
     let explicit_circular_marker = explicit.is_some_and(|marker| {

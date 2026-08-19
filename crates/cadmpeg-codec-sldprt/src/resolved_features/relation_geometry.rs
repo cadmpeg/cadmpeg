@@ -988,6 +988,70 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .then_some((marker, center))
 }
 
+/// Resolve the indexed point-pair form of a circular dimension.
+///
+/// The `6e 83` operand has no explicit sketch marker. Its `sgEntHandle`
+/// reference scopes an ordered point roster, while the operand index selects
+/// one adjacent center/radial pair. Every pair must carry the indexed
+/// center-to-radial object/local join; a radius match cannot establish the
+/// carrier on its own.
+pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<&'a SketchInputEntity> {
+    if operand.kind != FeatureInputOperandKind::Native(0x836e)
+        || operand.entity_ref.is_some()
+        || !expected_radius.is_finite()
+        || expected_radius <= 0.0
+    {
+        return None;
+    }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let mut markers = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter(|marker| {
+            marker
+                .coordinates_m
+                .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+        })
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        })
+        .collect::<Vec<_>>();
+    markers.sort_unstable_by_key(|marker| marker.offset);
+    let pairs = markers
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect::<Vec<_>>();
+    if !markers.chunks_exact(2).remainder().is_empty()
+        || pairs.iter().any(|[center, radial]| {
+            let Some(center_local_id) = center.local_id else {
+                return true;
+            };
+            center_local_id == 0
+                || radial.object_index != Some(center_local_id)
+                || radial.local_id.is_none_or(|local_id| local_id == 0)
+        })
+    {
+        return None;
+    }
+    let [center, radial] = *pairs.get(usize::from(operand.entity_index))?;
+    let [cu, cv] = center.coordinates_m?;
+    let [ru, rv] = radial.coordinates_m?;
+    let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+    same_dimension_length(radius, expected_radius).then_some(center)
+}
+
 pub(super) fn declared_entity_handle_circular_marker<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
