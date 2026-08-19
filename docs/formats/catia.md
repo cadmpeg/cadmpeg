@@ -349,6 +349,8 @@ A standard spline edge with two distinct adjacent face carriers is their exact i
 
 Generated analytic circles and ellipses use their canonical angular edge parameter, independent of the native interval used by a support pcurve. The intcurve context maps that angular interval affinely to the shared native pcurve interval, and reverses both support pcurves when their stored direction is opposite to the selected endpoint order.
 
+Endpoint angles alone identify the full analytic carrier, not the serialized edge interval. A derived circle or ellipse retains no edge parameter interval or pcurve until a face-side branch witness or a native parameter incidence selects one endpoint arc.
+
 | Surface  | kind   | prebyte | length | sign byte |
 | -------- | ------ | ------- | -----: | --------- |
 | plane    | `0x32` | `0x02`  |     49 | start+48  |

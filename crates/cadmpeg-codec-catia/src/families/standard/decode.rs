@@ -6917,12 +6917,13 @@ fn standard_oriented_analytic_curve_parameter_range(
     geometry: &mut CurveGeometry,
     start: Point3,
     end: Point3,
-    witness: Option<Point3>,
+    witness: Point3,
 ) -> Option<[f64; 2]> {
-    if let Some(range) = standard_analytic_curve_parameter_range(geometry, start, end, witness) {
+    if let Some(range) =
+        standard_analytic_curve_parameter_range(geometry, start, end, Some(witness))
+    {
         return Some(range);
     }
-    let witness = witness?;
     let original_axis = match geometry {
         CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => *axis,
         _ => return None,
@@ -7145,12 +7146,14 @@ pub(crate) fn build_standard_edge_curve(
             ir.model.points[points[0]].position,
             ir.model.points[points[1]].position,
         ];
-        param_range = standard_oriented_analytic_curve_parameter_range(
-            &mut geometry,
-            endpoints[0],
-            endpoints[1],
-            native_support.and_then(standard_native_support_witness),
-        );
+        if let Some(witness) = native_support.and_then(standard_native_support_witness) {
+            param_range = standard_oriented_analytic_curve_parameter_range(
+                &mut geometry,
+                endpoints[0],
+                endpoints[1],
+                witness,
+            );
+        }
     }
     let oriented_native_support_pcurves = if matches!(
         &support.geometry,

@@ -470,16 +470,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the endpoint-occurrence identity to bind a curve that has separated candidates instead of retaining it natively.
 
-### SN-32. Derived analytic carrier arc without a witness
-
-**Question.** Which arc of a derived analytic carrier is the edge when no branch witness and no native parameter incidence is available?
-
-**Known.** `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:7144-7159` gives a parameter interval to every derived circle and ellipse that has no interval. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:6901-6920` uses the short arc between the two endpoints when the witness is absent. The witness needs two resolved support carriers whose lifted midpoints agree inside `1e-6`, so it is absent for a derived carrier with no native support. `crates/cadmpeg-codec-catia/src/nurbs.rs:370-374` rejects a sweep that is not positive, so the short arc is accepted for one sense of the stored plane normal and refused for the opposite sense of the same geometry. `SN-15` asks for the arc selector and stays open.
-
-**Need.** We must know the selector, because the short arc and the long arc are both admissible and the neutral edge covers only one of them.
-
-**Conflict.** `catia.md` §5.8 "A standard spline edge with two distinct adjacent face carriers" states that no edge parameter interval and no pcurve is assigned without a branch witness or a native parameter incidence that selects one endpoint arc. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:7144-7159` assigns an interval with neither.
-
 ### SN-33. Spine grammar arbitration
 
 **Question.** Which container field distinguishes a standard-nested spine from an FBB-only spine when the file admits both edge-table grammars, or neither?
