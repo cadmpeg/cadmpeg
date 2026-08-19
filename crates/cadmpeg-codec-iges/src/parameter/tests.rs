@@ -1550,6 +1550,115 @@ fn type108_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type312_forms_share_ten_field_boundary() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (form, values) in [
+        (0, vec![312, 4, 2, 1, 0, 0, 0, 0, 10, 20, 0, 1, 1, 1, 3]),
+        (1, vec![312, 3, 1, 18, 0, 0, 1, 1, 2, -1, 0, 1, 1, 1, 3]),
+    ] {
+        let mut source = directory_target(5, 312);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
+        let record = integer_parameter_record(5, &values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form {form}");
+        let groups = analysis.groups.expect("Type 312 table boundary");
+        assert_eq!(groups.token_start, 11, "form {form}");
+        assert_eq!(groups.associations, vec![1], "form {form}");
+        assert_eq!(groups.properties, vec![3], "form {form}");
+    }
+}
+
+#[test]
+fn type312_table_boundary_precedes_valid_generic_alternative() {
+    let association = directory_target(1, 212);
+    let property_a = directory_target(3, 406);
+    let property_b = directory_target(7, 406);
+    let property_c = directory_target(9, 406);
+    let mut source = directory_target(5, 312);
+    source.form = 0;
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &property_a),
+        (5, &source),
+        (7, &property_b),
+        (9, &property_c),
+    ]);
+    let record =
+        integer_parameter_record(5, &[312, 4, 2, 1, 1, 0, 0, 0, 10, 20, 2, 1, 1, 3, 3, 7, 9]);
+
+    let generic = structural_pointer_group_candidates(&record);
+    let mut valid_starts = Vec::new();
+    for candidate in generic {
+        if groups_for_candidate(&record, &directory, candidate)
+            .expect("generic Type 312 candidate")
+            .fully_valid
+        {
+            valid_starts.push(candidate.token_start);
+        }
+    }
+    assert_eq!(valid_starts, vec![10, 11]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 312 table boundary");
+    assert_eq!(groups.token_start, 11);
+    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.properties, vec![3, 7, 9]);
+}
+
+#[test]
+fn type312_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (form, mut values) in [
+        (0, vec![312, 4, 2, 1, 0, 0, 0, 0, 10, 20, 0]),
+        (1, vec![312, 3, 1, 18, 0, 0, 1, 1, 2, -1, 0]),
+    ] {
+        let mut source = directory_target(5, 312);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
+        let wrong_fields = token_parameter_record(
+            5,
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    if index == 4 {
+                        TokenValue::String(b"bad-slant".to_vec())
+                    } else {
+                        TokenValue::Integer(*value)
+                    }
+                })
+                .chain([1, 1, 1, 3].into_iter().map(TokenValue::Integer))
+                .collect(),
+        );
+        let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+        assert_eq!(analysis.candidate_count, 1, "form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form {form}");
+        assert_eq!(analysis.groups.expect("Type 312 boundary").token_start, 11);
+
+        values.truncate(10);
+        let truncated_primary = integer_parameter_record(5, &values);
+        let analysis = analyze_trailing_pointer_groups(&truncated_primary, &directory);
+        assert_eq!(analysis.candidate_count, 0, "form {form}");
+        assert_eq!(analysis.valid_candidate_count, 0, "form {form}");
+        assert!(analysis.groups.is_none(), "form {form}");
+
+        values.push(0);
+        values.extend([1, 1, 1]);
+        let truncated_group = integer_parameter_record(5, &values);
+        let analysis = analyze_trailing_pointer_groups(&truncated_group, &directory);
+        assert_eq!(analysis.candidate_count, 0, "form {form}");
+        assert_eq!(analysis.valid_candidate_count, 0, "form {form}");
+        assert!(analysis.groups.is_none(), "form {form}");
+    }
+}
+
+#[test]
 fn type314_form0_boundary_follows_optional_color_name_slot() {
     let association = directory_target(1, 212);
     let property = directory_target(3, 406);
