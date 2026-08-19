@@ -153,10 +153,11 @@ and a ZIP root member that the limit refuses.
 **Question.** Which channel gives the verification status of one admitted
 pcurve relation?
 
-**Known.** `crates/cadmpeg-codec-step/src/reader/topology.rs:3116-3155` counts
-the admitted relations and keeps 8 of them, and
-`crates/cadmpeg-codec-step/src/reader/topology.rs:494` reports the one document
-warning that names those 8. The document holds no other record of an admitted
+**Known.** `crates/cadmpeg-codec-step/src/reader/topology.rs:1580` collects the
+admitted relations of each committed body,
+`crates/cadmpeg-codec-step/src/reader/topology/admissions.rs:27-52` formats the
+one document warning that names the first 8, and
+`crates/cadmpeg-codec-step/src/reader/topology.rs:499` reports it. The document holds no other record of an admitted
 relation. The exactness map (`crates/cadmpeg-ir/src/annotations.rs:13-28`) is
 the per-entity trust channel, and it uses a globally unique entity identity as
 its key. A pcurve relation is a `PcurveUse` field of a `Coedge`

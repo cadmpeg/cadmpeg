@@ -1559,7 +1559,11 @@ Successful admission transfers the optional relation. The document reports one
 warning `topology.pcurve-global-fidelity-unproved` for all admitted relations.
 The warning gives the count of admitted relations, then names the first 8
 relations in decode order by their curve, their surface, and their coedge use,
-then gives the number of admitted relations that it does not name. The report
+then gives the number of admitted relations that it does not name. The warning
+counts a relation only when the decode commits the body that holds it: a
+discarded body transfers no relation. A failure note for a pcurve relation
+stays in the report when the decode discards the body, because that note gives
+the reason for the discard. The report
 means that the finite witness did not establish the ISO global point-set and
 same-direction invariants. CADIR does not claim global pcurve fidelity for
 these relations.
