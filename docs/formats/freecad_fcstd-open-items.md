@@ -19,31 +19,6 @@ Each item has an identifier and these fields:
 
 ## 6. Semantic annotations
 
-### SA-03. Annotation value-root framing and attribute selection
-
-**Question.** Which direct value root and canonical attributes supply each registered annotation
-text, scalar, vector, and format property?
-
-**Known.** Registered annotation properties have exact runtime types. Standard property writers
-emit one direct root: `String` uses `value`, `PropertyVector` uses `valueX`, `valueY`, and `valueZ`,
-`Float` uses `value`, and `StringList` owns its ordered direct `String` children. The persistence
-layer retains every descendant as a `ValueRecord`. `annotation.rs:50-55` collects text from every
-retained descendant, while `annotation.rs:318-376` selects scalar, vector, and format values by
-retained-value count without checking the direct root tag. `annotation.rs:448-473` also accepts
-capitalized and generic text attributes that the registered property grammar does not define.
-
-**Need.** Enforce the direct root tag, root cardinality, owned child grammar, and canonical
-attributes for every registered annotation carrier before neutral transfer. Reject nested roots,
-unexpected descendants, and simultaneous or unsupported attribute spellings.
-
-**Conflict.** A registered scalar property with one nested parseable `Float` and no direct
-`Float` root passes `unique_value` and supplies a neutral position. A format `String` with both
-`value` and `Value` silently selects `value`, and an annotation text property can collect text from
-an unrelated nested descendant. Invalid nesting or attribute spelling can therefore create or
-change a neutral annotation without a loss.
-
-**Note.** New hostile-sweep finding.
-
 ## 7. TechDraw projection
 
 ### DG-05. Drawing scalar attribute spelling

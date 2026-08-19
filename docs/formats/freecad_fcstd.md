@@ -1236,6 +1236,14 @@ and exactly one root value when present. Duplicate named carriers or duplicate r
 invalid. Text-list carriers retain all ordered text values; this cardinality rule applies only to
 scalar, vector, and format carriers. An `App::PropertyEnumeration` has one selected `Integer`
 carrier; its optional `CustomEnumList` is metadata and does not count as another selected value.
+Registered annotation carriers use direct value roots. `Float` and `String` are leaf roots with
+only the lowercase `value` attribute. `PropertyVector` is a leaf root with only `valueX`, `valueY`,
+and `valueZ`. `StringList` has only the `count` attribute and direct `String` children; `count`
+equals the number of children, and each child is a leaf with only the lowercase `value` attribute.
+Nested elements, unsupported or case-variant attributes, missing required attributes, and
+non-whitespace text in these carrier roots are malformed; whitespace used for XML formatting is
+ignored. CADIR decision: an absent optional carrier remains absent, while a present malformed
+registered carrier refuses the document before neutral annotation transfer.
 `X` and `Y` use `App::PropertyDistance`; historical
 `App::PropertyLength` and `App::PropertyFloat` forms are accepted. `Scale` uses
 `App::PropertyFloatConstraint` with the historical `App::PropertyFloat` form, and `Rotation` uses
