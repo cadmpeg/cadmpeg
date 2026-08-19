@@ -432,6 +432,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// start at token eleven.
 /// Type 314 Form 0 stores three color coordinates and an optional color name,
 /// so its groups start at token five after the explicit name slot.
+/// Type 304 Form 1 stores four fixed values, so its groups start at token five;
+/// Form 2 stores `M` segment lengths and one hexadecimal pattern, so its groups
+/// start at token `M + 3`.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -503,6 +506,8 @@ pub(crate) fn entity_primary_end(
         (108, -1..=1) => Some(fixed_primary_end(record, 10)),
         (312, 0..=1) => Some(fixed_primary_end(record, 11)),
         (314, 0) => Some(fixed_primary_end(record, 5)),
+        (304, 1) => Some(fixed_primary_end(record, 5)),
+        (304, 2) => Some(line_font_pattern_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
@@ -550,6 +555,16 @@ fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
     } else {
         record.tokens.len()
     }
+}
+
+fn line_font_pattern_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_add(3))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
 }
 
 fn segmented_visibility_primary_end(record: &ParameterRecord) -> usize {
