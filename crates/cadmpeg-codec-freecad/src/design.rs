@@ -1960,7 +1960,13 @@ fn parse_constraints(
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in records.into_iter().enumerate() {
-        let type_code = int_attr(node, "Type").unwrap_or(0);
+        let (type_code, native_kind) = match node.attribute("Type") {
+            None => (None, "missing_type".to_owned()),
+            Some(value) => match value.parse::<i64>() {
+                Ok(type_code) => (Some(type_code), constraint_kind(type_code).to_owned()),
+                Err(_) => (None, "malformed_type".to_owned()),
+            },
+        };
         let operands = constraint_operands(node).map_err(|message| {
             CodecError::Malformed(format!(
                 "{} constraint {}: {message}",
@@ -1969,7 +1975,7 @@ fn parse_constraints(
             ))
         })?;
         let resolve = |entity, position| {
-            if type_code == 9 {
+            if type_code == Some(9) {
                 match entity {
                     -1 => return resolve_operand(-1, 0, entities),
                     -2 => return resolve_operand(-2, 0, entities),
@@ -1983,7 +1989,7 @@ fn parse_constraints(
             .filter_map(|(entity, position)| resolve(*entity, *position))
             .collect::<Vec<_>>();
         let all_resolved = resolved.len() == operands.len();
-        if matches!(type_code, 7 | 8) && operands.len() == 1 && resolved.len() == 1 {
+        if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
                 .iter()
                 .find(|entity| entity.id.0.ends_with(":reference-root-point"))
@@ -1991,7 +1997,7 @@ fn parse_constraints(
                 resolved.insert(0, SketchLocus::Entity(root.id.clone()));
             }
         }
-        let parameter = if matches!(type_code, 6..=9 | 11 | 16 | 18 | 19) {
+        let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
@@ -2001,8 +2007,8 @@ fn parse_constraints(
                         index + 1
                     ));
                     let value = match type_code {
-                        9 => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
-                        16 | 19 => ParameterValue::Real(value),
+                        Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
+                        Some(16 | 19) => ParameterValue::Real(value),
                         _ => ParameterValue::Length(Length(value)),
                     };
                     let path = format!("Constraints[{index}]");
@@ -2071,10 +2077,10 @@ fn parse_constraints(
                 return None;
             }
             match type_code {
-                20 => Some(SketchConstraintDefinition::Group {
+                Some(20) => Some(SketchConstraintDefinition::Group {
                     elements: resolved.clone(),
                 }),
-                21 => {
+                Some(21) => {
                     let metadata = node.attribute("MetaData")?;
                     let metadata: serde_json::Value = serde_json::from_str(metadata).ok()?;
                     Some(SketchConstraintDefinition::Text {
@@ -2093,15 +2099,20 @@ fn parse_constraints(
                 _ => None,
             }
         };
-        let midpoint = || midpoint_constraint(type_code, &operands, entities);
-        let definition = (type_code == 15 && all_resolved)
+        let midpoint =
+            || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
+        let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()
             .or_else(grouped_geometry)
             .or_else(midpoint)
-            .or_else(|| neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved))
+            .or_else(|| {
+                type_code.and_then(|type_code| {
+                    neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
+                })
+            })
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
-                native_kind: constraint_kind(type_code).into(),
+                native_kind,
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),

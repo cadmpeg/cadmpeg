@@ -17,25 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-14. Sketch constraint family-code default
-
-**Question.** How does constraint transfer distinguish an absent or malformed family code from an
-explicit disabled constraint?
-
-**Known.** The specification retains the persisted constraint family code and leaves invalid or
-future families native. `design.rs:1680-1686` parses `Constrain@Type` with
-`int_attr(...).unwrap_or(0)`, and `neutral_constraint` at `design.rs:2057-2071` interprets code `0`
-as `Disabled`.
-
-**Need.** Require a present integer family code, preserve explicit code `0` as its own value, and
-retain missing or malformed codes as attributable native relations.
-
-**Conflict.** `<Constrain First="0" FirstPos="0"/>` or `Type="bad"` defaults to code `0` and
-projects a neutral `Disabled` constraint. A malformed relation therefore changes neutral state
-without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ### DP-15. Design operation selector fallback
 
 **Question.** How are absent and malformed design operation mode or flag properties distinguished

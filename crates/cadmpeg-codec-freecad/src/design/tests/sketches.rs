@@ -407,6 +407,57 @@ fn rejects_malformed_constraint_operand_lists() {
 }
 
 #[test]
+fn distinguishes_missing_malformed_and_explicit_constraint_types() {
+    for (type_attribute, expected_kind) in [
+        (None, "missing_type"),
+        (Some("bad"), "malformed_type"),
+        (Some("99"), "unknown_future_constraint"),
+    ] {
+        let type_attribute =
+            type_attribute.map_or_else(String::new, |value| format!(" Type=\"{value}\""));
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><GeomPoint X="0" Y="0" Z="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain{type_attribute} First="0" FirstPos="0"/></ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("constraint type admission");
+        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
+            &result.ir().model.sketch_constraints[0].definition
+        else {
+            panic!("invalid or future family selected a neutral constraint");
+        };
+        assert_eq!(native_kind, expected_kind);
+        assert_valid_document(result.ir());
+    }
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><GeomPoint X="0" Y="0" Z="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain Type="0" First="0" FirstPos="0"/></ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("explicit disabled constraint");
+    assert!(matches!(
+        result.ir().model.sketch_constraints[0].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Disabled
+    ));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn retains_unknown_and_ambiguous_sketch_carriers_as_native() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>

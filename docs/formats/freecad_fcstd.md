@@ -417,7 +417,9 @@ applied. This numeric boundary and ambiguity result are CADIR projection rules, 
 tolerances.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
-operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
+operands. Each `Constrain` has a required integer `Type` attribute. Code `0` is an explicit
+disabled family; absence or a non-integer value is malformed and does not select code `0`.
+Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
 distance, horizontal/vertical distance, angle, radius, and diameter relations transfer to neutral
 constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
 refraction, B-spline weight, geometry group, and text relations retain their typed operands and
@@ -432,6 +434,9 @@ locus from the sketch root point. The persisted endpoint-one selector of an isol
 to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
+CADIR decision: a missing or malformed `Type` is retained as a native constraint with kind
+`missing_type` or `malformed_type`; a numeric code outside the known family range is retained as
+`unknown_future_constraint`. None of these cases is projected as `Disabled`.
 `ElementIds` and `ElementPositions`, when present, are complete comma- or whitespace-separated
 integer lists with equal lengths. Legacy `First`/`Second`/`Third` fields require their matching
 `*Pos` field, and each supplied value must be an integer. Malformed or incomplete operand fields
