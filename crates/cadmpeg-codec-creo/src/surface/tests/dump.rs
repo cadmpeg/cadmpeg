@@ -99,6 +99,81 @@ fn decode_transfers_positional_line_extrusion_plane() {
 }
 
 #[test]
+fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
+    for value in [0.0, 0.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+    payload.extend_from_slice(&[0x4a, 0x00, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0x0f]);
+    payload.extend_from_slice(&[0x4a, 0x10, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0x0f, 0xe3]);
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("extrusion plane");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 2.0,
+                y: 0.0,
+                z: 0.0
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: -1.0,
+                z: 0.0
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+        }
+    ));
+    let record = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_ne!(
+        record.fields()["scalar_frames"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["prefixes"][0],
+        0x4a
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["values"][0],
+        2.0
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["values"][3],
+        4.0
+    );
+    assert_eq!(
+        result
+            .report()
+            .coverage
+            .get("decoded_positional_extrusion_direction_count")
+            .copied(),
+        Some(1)
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
     let mut extrusion = visibgeom_payload(1, 0);
     extrusion.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);

@@ -1537,66 +1537,79 @@ impl SurfaceParameterRecord {
             .then_some(direction)
     }
 
-    /// Decode the two-frame positional body used by an unbound straight
+    /// Decode the positional body used by an unbound straight
     /// `surface_of_extrusion` instance.
+    ///
+    /// Generic scalar framing covers the original direction/directrix form.
+    /// The specialized tabulated-cylinder frame covers the lane-specific
+    /// coordinate form; callers must exclude rows owned by a cubic replay
+    /// before using this result.
     #[must_use]
     pub fn line_extrusion_frame(&self, type_byte: u8) -> Option<LineExtrusionFrame> {
         if self.boundary != SurfaceBodyBoundary::CompoundClose {
             return None;
         }
-        let [direction, directrix] = self.scalar_frames.as_slice() else {
-            return None;
-        };
         let direction_values = self.extrusion_direction(type_byte)?;
-        let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice() else {
-            return None;
-        };
-        let values = [
-            direction_values[0],
-            direction_values[1],
-            direction_values[2],
-            start_x.value?,
-            start_y.value?,
-            start_z.value?,
-            end_x.value?,
-            end_y.value?,
-            end_z.value?,
-        ];
-        values.iter().all(|value| value.is_finite()).then_some(())?;
-        let first_gap = self.opaque_spans.first()?;
-        if first_gap.offset
-            != direction.offset
-                + direction
-                    .slots
-                    .iter()
-                    .map(|slot| slot.length)
-                    .sum::<usize>()
-            || first_gap.raw != [0x00, 0x0c, 0x9a]
-            || directrix.offset != first_gap.offset + first_gap.length
-        {
-            return None;
-        }
-        if self.opaque_spans.len() > 2 {
-            return None;
-        }
-        if let Some(reference) = self.opaque_spans.get(1) {
-            let directrix_end = directrix.offset
-                + directrix
-                    .slots
-                    .iter()
-                    .map(|slot| slot.length)
-                    .sum::<usize>();
-            if reference.offset != directrix_end || reference.raw.first() != Some(&0xf7) {
+        if let [direction, directrix] = self.scalar_frames.as_slice() {
+            let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice()
+            else {
+                return None;
+            };
+            let values = [
+                direction_values[0],
+                direction_values[1],
+                direction_values[2],
+                start_x.value?,
+                start_y.value?,
+                start_z.value?,
+                end_x.value?,
+                end_y.value?,
+                end_z.value?,
+            ];
+            values.iter().all(|value| value.is_finite()).then_some(())?;
+            let first_gap = self.opaque_spans.first()?;
+            if first_gap.offset
+                != direction.offset
+                    + direction
+                        .slots
+                        .iter()
+                        .map(|slot| slot.length)
+                        .sum::<usize>()
+                || first_gap.raw != [0x00, 0x0c, 0x9a]
+                || directrix.offset != first_gap.offset + first_gap.length
+            {
                 return None;
             }
-            let (_, end) = psb::reference_id(&reference.raw, 1).ok()?;
-            if end != reference.raw.len() {
+            if self.opaque_spans.len() > 2 {
                 return None;
             }
+            if let Some(reference) = self.opaque_spans.get(1) {
+                let directrix_end = directrix.offset
+                    + directrix
+                        .slots
+                        .iter()
+                        .map(|slot| slot.length)
+                        .sum::<usize>();
+                if reference.offset != directrix_end || reference.raw.first() != Some(&0xf7) {
+                    return None;
+                }
+                let (_, end) = psb::reference_id(&reference.raw, 1).ok()?;
+                if end != reference.raw.len() {
+                    return None;
+                }
+            }
+            return Some(LineExtrusionFrame {
+                direction: values[0..3].try_into().ok()?,
+                directrix: [values[3..6].try_into().ok()?, values[6..9].try_into().ok()?],
+            })
+            .filter(LineExtrusionFrame::is_valid);
         }
+
+        let frame = self.tabulated_cylinder_frame?;
+        let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values;
         Some(LineExtrusionFrame {
-            direction: values[0..3].try_into().ok()?,
-            directrix: [values[3..6].try_into().ok()?, values[6..9].try_into().ok()?],
+            direction: direction_values,
+            directrix: [[start_x, start_y, start_z], [end_x, end_y, end_z]],
         })
         .filter(LineExtrusionFrame::is_valid)
     }

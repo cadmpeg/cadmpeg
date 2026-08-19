@@ -127,6 +127,9 @@ fixtures, scores above L1 remain blocked.
   is supported. Retained
   unknown rows in the same plane, cylinder, or extrusion family do not
   invalidate this proof; every materialized carrier and cap must still agree.
+- Unbound `geom_type = 2c` rows with a complete direction prefix and
+  lane-specific six-slot straight-directrix frame transfer as unbounded plane
+  carriers. Rows owned by a cubic replay remain on the replay-bound path.
 - Named `Protrusion`, `Cut`, and `Extrude` operations use the same independent
   generated-cap, positional-cylinder, NURBS-translation, and rectilinear
   carrier proofs as schema-backed linear sweeps. A resolved proof transfers
