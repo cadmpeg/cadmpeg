@@ -5429,6 +5429,9 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
     let cases = vec![
         integers(&[406, 15, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 0, 0, 1, 5]),
         integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, -1, 0, 1, 5]),
+        integers(&[
+            406, 15, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12, 1, 1, 1, 1, 1, 3, 1, 5,
+        ]),
         vec![
             integers(&[406, 14, 0, 1, 1, 3, 0, 0, 1, 0, 0, 0, 12]),
             vec![TokenValue::String(b"1".to_vec())],
