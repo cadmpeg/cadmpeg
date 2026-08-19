@@ -599,6 +599,27 @@ fn decode_general_note_truncated_count_rejects_trailing_property_group() {
 }
 
 #[test]
+fn decode_new_general_note_partial_final_block_rejects_extra_string() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 213,
+        form: 0,
+        label: "NOTE".into(),
+        status: "00000200",
+        parameters: "213,1,1,0,0,0,0,0,0,0,0,0,2,1,1,1,1,0,1,0,0H,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,1HA,1,1,1,1,0,1,0,0H,2;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+
+    assert_eq!(annotation.fields()["declared_string_count"], 2);
+    assert!(annotation.fields()["strings"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

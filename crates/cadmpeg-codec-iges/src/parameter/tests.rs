@@ -12475,6 +12475,307 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
+fn type213_form0_follows_string_count() {
+    let prefix = |count: TokenValue| -> Vec<TokenValue> {
+        vec![
+            213.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            count,
+        ]
+    };
+    let text_block = |text: &[u8]| -> Vec<TokenValue> {
+        vec![
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+            1.into(),
+            0.into(),
+            TokenValue::String(Vec::new()),
+            TokenValue::Integer(text.len() as i64),
+            1.into(),
+            1.into(),
+            1.into(),
+            std::f64::consts::FRAC_PI_2.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(text.to_vec()),
+        ]
+    };
+    let association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 213);
+    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+
+    let cases = [
+        (
+            {
+                let mut values = prefix(1.into());
+                values.extend(text_block(b"A"));
+                values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+                values
+            },
+            33_usize,
+        ),
+        (
+            {
+                let mut values = prefix(2.into());
+                values.extend(text_block(b"A"));
+                values.extend(text_block(b"BC"));
+                values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+                values
+            },
+            53_usize,
+        ),
+    ];
+
+    for (values, expected_start) in cases {
+        let record = token_parameter_record(7, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 213 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![3]);
+        assert_eq!(groups.properties, vec![5]);
+    }
+}
+
+#[test]
+fn type213_table_boundary_precedes_valid_generic_alternative() {
+    let prefix = vec![
+        213.into(),
+        1.into(),
+        1.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        1.into(),
+    ];
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 213);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (7, &source),
+    ]);
+    let mut values = prefix;
+    values.extend([
+        1.into(),
+        1.into(),
+        1.into(),
+        1.into(),
+        0.into(),
+        1.into(),
+        0.into(),
+        TokenValue::String(Vec::new()),
+        1.into(),
+        1.into(),
+        1.into(),
+        1.into(),
+        std::f64::consts::FRAC_PI_2.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        0.into(),
+        2.into(),
+        1.into(),
+        3.into(),
+        1.into(),
+        5.into(),
+    ]);
+    let record = token_parameter_record(7, values);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![32, 33]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 213 table boundary");
+    assert_eq!(groups.token_start, 33);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recover() {
+    let prefix = |count: TokenValue| -> Vec<TokenValue> {
+        vec![
+            213.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            count,
+        ]
+    };
+    let complete = |fixed: TokenValue, font: TokenValue| {
+        let mut values = prefix(1.into());
+        values.extend([
+            fixed,
+            1.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+            font,
+            0.into(),
+            TokenValue::String(Vec::new()),
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            std::f64::consts::FRAC_PI_2.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(b"A".to_vec()),
+            1.into(),
+            3.into(),
+            1.into(),
+            5.into(),
+        ]);
+        values
+    };
+    let association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 213);
+    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+
+    for values in [
+        complete(9.into(), 1.into()),
+        complete(1.into(), TokenValue::String(b"bad".to_vec())),
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(7, values), &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        assert_eq!(
+            analysis
+                .groups
+                .expect("Type 213 wrong-field boundary")
+                .token_start,
+            33
+        );
+    }
+
+    let text_block = || {
+        vec![
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+            1.into(),
+            0.into(),
+            TokenValue::String(Vec::new()),
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            std::f64::consts::FRAC_PI_2.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(b"A".to_vec()),
+        ]
+    };
+    let mut truncated_primary = prefix(1.into());
+    truncated_primary.truncate(4);
+    let mut truncated_block = prefix(1.into());
+    truncated_block.extend(text_block().into_iter().take(19));
+    let mut partial_final_block = prefix(2.into());
+    partial_final_block.extend(text_block());
+    partial_final_block.extend(text_block().into_iter().take(9));
+    let mut truncated_group = complete(1.into(), 1.into());
+    truncated_group.pop();
+    truncated_group.pop();
+    truncated_group.pop();
+    for values in [
+        {
+            let mut values = prefix(TokenValue::Real(1.5));
+            values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+            values
+        },
+        {
+            let mut values = prefix(TokenValue::Omitted);
+            values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+            values
+        },
+        {
+            let mut values = prefix(0.into());
+            values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+            values
+        },
+        {
+            let mut values = prefix((-1_i64).into());
+            values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+            values
+        },
+        {
+            let mut values = prefix(i64::MAX.into());
+            values.extend([1.into(), 3.into(), 1.into(), 5.into()]);
+            values
+        },
+        truncated_primary,
+        truncated_block,
+        partial_final_block,
+        truncated_group,
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(7, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type410_entity_table_boundaries_follow_view_fields() {
     let cases = [
         (0_i64, vec![410, 1, 1, 0, 0, 0, 0, 0, 0, 1, 3, 0], 9_usize),

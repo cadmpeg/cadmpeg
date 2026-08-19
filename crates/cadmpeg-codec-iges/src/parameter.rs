@@ -244,7 +244,12 @@ impl ParameterRecord {
             .integer(index)
             .and_then(|value| usize::try_from(value).ok())?;
         let available = end.saturating_sub(item_start);
-        let max_count = available.checked_add(stride - 1)?.checked_div(stride)?;
+        let complete_count = available / stride;
+        let max_count = if available % stride == 0 || complete_count > 0 {
+            complete_count
+        } else {
+            1
+        };
         (count <= max_count).then_some(count)
     }
 }
@@ -461,6 +466,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// `3 + N`.
 /// Type 212 Form 0 puts the positive string count `NS` at index 1 and stores
 /// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
+/// Type 213 Form 0 puts the positive string count `NS` at index 12 and stores
+/// twenty tokens per text string, so its groups start at token `33 + 20*NS`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -610,6 +617,7 @@ pub(crate) fn entity_primary_end(
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
         (212, 0) => Some(general_note_primary_end(record)),
+        (213, 0) => Some(new_general_note_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
@@ -1148,6 +1156,17 @@ fn general_note_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_mul(12))
         .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn new_general_note_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(12)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(20))
+        .and_then(|span| span.checked_add(13))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
