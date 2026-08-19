@@ -426,6 +426,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token nine.
 /// Type 104 Forms 0 through 3 store eleven fixed primary fields, so their
 /// groups start at token twelve.
+/// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
+/// groups start at token ten.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -494,6 +496,7 @@ pub(crate) fn entity_primary_end(
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
         (104, 0..=3) => Some(fixed_primary_end(record, 12)),
+        (108, -1..=1) => Some(fixed_primary_end(record, 10)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
