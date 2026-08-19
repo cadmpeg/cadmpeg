@@ -842,6 +842,8 @@ The `323 / 263` class pair uses a shifted tail: trailing-reference count `+190`,
 
 The 36-code-unit GUID payload ends at offset `+289`; its final high byte is the first byte of the zero second-side extent lane, and bytes `+289..+291` are zero. The three absent and four present nullable slots, the fixed tail references, the count, and the class-keyed paired-header distance jointly admit this grammar. The `+296 + 11i` reference run has `i = 0..12` for the 538-byte class pairs and `i = 0..10` for `323 / 263`. The four owned parameters are `Side1Offset`, `TaperAngle`, `Side2Offset`, and `Side2TaperAngle` in the 538-byte class pairs; the extent is `TwoSidedToFaces`, and the two termination groups remain in the scope's ordered reference table. This form is distinct from both the current reference-aware prologue and the shifted prologue without reference-aware fields.
 
+For this form, `direction_reversed = 0` selects `ProfileNormal` and `direction_reversed = 1` selects `ReversedProfileNormal`. The value does not change the two face-termination groups or their side order.
+
 The `323 / 263` class pair uses the 485-byte symmetric-through-all form. Its reference-count field is at `+272`, its ordered reference table has ten entries, and its paired header starts at `+485`. The shared shifted reference-aware prologue through the seven nullable slots is unchanged. The class-specific prefix is:
 
 | Relative offset | Type | Discriminant or invariant |

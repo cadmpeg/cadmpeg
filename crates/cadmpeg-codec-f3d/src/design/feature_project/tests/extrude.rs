@@ -1320,6 +1320,35 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if first_id == &face_group.id && second_id == &second_face_group.id
     ));
 
+    set_extrude_direction_reversed(&mut scope, true);
+    let reversed_two_sided_to_faces = project_extrude(
+        &scope,
+        &[
+            (0, &side_offset),
+            (1, &taper),
+            (2, &second_side_offset),
+            (3, &side_two_taper),
+        ],
+        &[
+            body_group.clone(),
+            face_group.clone(),
+            second_face_group.clone(),
+        ],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("typed reversed two-sided face-target Extrude");
+    assert!(matches!(
+        reversed_two_sided_to_faces,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ReversedProfileNormal,
+            extent: ExtrudeExtent::TwoSided { .. },
+            ..
+        }
+    ));
+    set_extrude_direction_reversed(&mut scope, false);
+
     set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistanceToFace);
     let mixed_two_sided = project_extrude(
         &scope,

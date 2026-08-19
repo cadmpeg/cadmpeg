@@ -7094,8 +7094,7 @@ pub(crate) fn project_extrude(
             )
         }
         (DesignExtrudeExtent::TwoSidedToFaces, None, None)
-            if !prologue.direction_reversed()
-                && termination_groups.len() == 2
+            if termination_groups.len() == 2
                 && target_shape_groups.is_empty()
                 && side_one_offset.is_some()
                 && side_two_offset.is_some() =>
