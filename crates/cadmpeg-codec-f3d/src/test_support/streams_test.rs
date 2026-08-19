@@ -120,6 +120,10 @@ pub(crate) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64
     )
 }
 
+pub(crate) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Form)
+}
+
 #[derive(Clone, Copy)]
 enum GeneratedDesignMetastreamVariant {
     Base,
@@ -129,6 +133,7 @@ enum GeneratedDesignMetastreamVariant {
     SurfaceStitch,
     CopyPaste,
     CopyPasteBodies,
+    Form,
 }
 
 fn generated_design_metastream_with_sketch_types(
@@ -144,6 +149,7 @@ fn generated_design_metastream_with_sketch_types(
             | GeneratedDesignMetastreamVariant::SurfaceStitch
             | GeneratedDesignMetastreamVariant::CopyPaste
             | GeneratedDesignMetastreamVariant::CopyPasteBodies
+            | GeneratedDesignMetastreamVariant::Form
     );
     let include_construction_types = matches!(
         variant,
@@ -192,6 +198,7 @@ fn generated_design_metastream_with_sketch_types(
             variant,
             GeneratedDesignMetastreamVariant::CopyPaste
                 | GeneratedDesignMetastreamVariant::CopyPasteBodies
+                | GeneratedDesignMetastreamVariant::Form
         ) {
         if matches!(variant, GeneratedDesignMetastreamVariant::CopyPasteBodies) {
             &[600, 1500, 1700]
@@ -1529,6 +1536,67 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
     relation.extend_from_slice(&[0; 6]);
     out.extend_from_slice(&relation);
     records.push((u64::from(relation_record), relation_offset));
+
+    (out, records)
+}
+
+/// Add a compact one-cage `Form` scope and its cage-list carrier.
+pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        for unit in units {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let cage_record = 1_500_u32;
+    let cage_object_record = 1_600_u32;
+
+    let scope_offset = u64::try_from(out.len()).expect("synthetic Form scope offset");
+    let mut scope = Vec::new();
+    header(&mut scope, b"268", scope_record);
+    scope.extend_from_slice(&[0; 10]);
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    marked_reference(&mut scope, cage_record);
+    scope.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut scope, "Form");
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    scope.extend_from_slice(&[0; 78]);
+    header(&mut scope, b"261", scope_record);
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
+
+    let cage_offset = u64::try_from(out.len()).expect("synthetic compact Form cage offset");
+    let mut cage = vec![0_u8; 100];
+    cage[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    cage[4..7].copy_from_slice(b"264");
+    cage[7..11].copy_from_slice(&cage_record.to_le_bytes());
+    cage[21] = 1;
+    cage[22..30].copy_from_slice(&u64::from(scope_record).to_le_bytes());
+    cage[32..36].copy_from_slice(&1_u32.to_le_bytes());
+    cage[36] = 1;
+    cage[37..45].copy_from_slice(&u64::from(cage_object_record).to_le_bytes());
+    cage[45..49].copy_from_slice(&[0, 0, 0xfc, 0]);
+    out.extend_from_slice(&cage);
+    header(&mut out, b"261", cage_record);
+    records.push((u64::from(cage_record), cage_offset));
+
+    header(&mut out, b"301", cage_object_record);
 
     (out, records)
 }

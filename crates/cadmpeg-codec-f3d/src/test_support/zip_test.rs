@@ -233,6 +233,62 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(smbh: &
     )
 }
 
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_form(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (design_bulk, design_records) = generated_design_form_bulkstream();
+    let design_metastream = generated_design_form_metastream(&design_records);
+    let tsm = generated_form_tsm();
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+        &[(
+            "FusionAssetName[Active]/TSplines.BlobParts/TSpline.synthetic.tsm",
+            &tsm,
+        )],
+    )
+}
+
+fn generated_form_tsm() -> Vec<u8> {
+    br"#TS0200
+degree 3
+cap-type G1CAPS
+star-smoothness 0
+units 1 meters
+end-conditions SUBD_CREASES
+star-knot-rule NURCCS
+f 0 0
+e 0 1
+e 2 1
+e 4 1
+e 6 1
+v 0 NORTH
+v 2 NORTH
+v 4 NORTH
+v 6 NORTH
+l 2 6 1 0 0 0 0
+l 7 3 0 3 -1 0 0
+l 4 0 3 1 0 0 0
+l 1 5 2 0 -1 0 0
+l 6 2 5 2 0 0 0
+l 3 7 4 1 -1 0 0
+l 0 4 7 3 0 0 0
+l 5 1 6 2 -1 0 0
+ec 0 0
+ec 1 0
+ec 2 0
+ec 3 0
+0g 0 0 0 1
+0g 1 0 0 1
+0g 1 1 0 1
+0g 0 1 0 1
+"
+    .to_vec()
+}
+
 fn f3d_with_smbh_and_instance_properties_and_design(
     smbh: &[u8],
     properties: &[Vec<u8>],
@@ -253,6 +309,22 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
     properties: &[Vec<u8>],
     design_bulk: &[u8],
     design_metastream: &[u8],
+) -> Vec<u8> {
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        smbh,
+        properties,
+        design_bulk,
+        design_metastream,
+        &[],
+    )
+}
+
+fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+    smbh: &[u8],
+    properties: &[Vec<u8>],
+    design_bulk: &[u8],
+    design_metastream: &[u8],
+    extra_entries: &[(&str, &[u8])],
 ) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let proteins = properties
@@ -313,6 +385,10 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
     .unwrap();
     zip.write_all(&generated_act_metastream(&act_records))
         .unwrap();
+    for (name, payload) in extra_entries {
+        zip.start_file(*name, stored).unwrap();
+        zip.write_all(payload).unwrap();
+    }
     zip.finish().unwrap().into_inner()
 }
 
