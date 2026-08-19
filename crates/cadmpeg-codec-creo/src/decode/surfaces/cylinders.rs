@@ -19,8 +19,8 @@ use super::super::feature_history::{
     round_constant_radius, section_sweep_allows_linear_extrusion, slot_fillet_cylinder,
 };
 use super::super::holes::{
-    circular_sweep_geometry, counterbore_patch_geometries,
-    cylinder_from_complementary_outline_bounds, simple_hole_geometry,
+    circular_sweep_geometry, counterbore_dimension_tuple_matches_radius, counterbore_dimensions,
+    counterbore_patch_geometries, cylinder_from_complementary_outline_bounds, simple_hole_geometry,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
@@ -479,6 +479,13 @@ pub(in super::super) fn transfer_positional_cylinders(
                 frame
             }
         };
+        if feature_class == Some(911)
+            && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
+                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
+            })
+        {
+            continue;
+        }
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;

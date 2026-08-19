@@ -193,6 +193,21 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
 }
 
 #[test]
+fn counterbore_dimension_tuple_restricts_source_radii() {
+    let dimensions = (40.0, 120.0, 8.0);
+
+    assert!(super::counterbore_dimension_tuple_matches_radius(
+        dimensions, 20.0
+    ));
+    assert!(super::counterbore_dimension_tuple_matches_radius(
+        dimensions, 60.0
+    ));
+    assert!(!super::counterbore_dimension_tuple_matches_radius(
+        dimensions, 24.5
+    ));
+}
+
+#[test]
 fn counterbore_source_patches_require_a_complete_carrier_pair() {
     let carrier = SurfaceGeometry::Cylinder {
         origin: Point3::new(1.0, 2.0, 3.0),

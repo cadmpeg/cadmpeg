@@ -105,6 +105,17 @@ pub fn counterbore_dimensions(
     })
 }
 
+/// Check whether a cylinder radius is one of the two radii declared by a
+/// complete counterbore dimension tuple.
+pub fn counterbore_dimension_tuple_matches_radius(
+    (bore_diameter, counterbore_diameter, _): (f64, f64, f64),
+    radius: f64,
+) -> bool {
+    [0.5 * bore_diameter, 0.5 * counterbore_diameter]
+        .into_iter()
+        .any(|expected| approximately_equal(radius, expected))
+}
+
 pub fn counterbore_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     generated_radii: &[f64],

@@ -886,6 +886,11 @@ grammar. The carrier is admitted only when all matching grammars produce the
 same origin, axis, reference direction, radius, and stored axial length. A
 body with conflicting complete interpretations remains native.
 
+For a class-911 row whose complete counterbore dimension tuple is established,
+the positional radius must equal the bore radius or the counterbore radius.
+Another radius remains native. An absent or ambiguous counterbore tuple does
+not supply this gate.
+
 A `tab_cyl` prototype can carry `i_pnts`, `end_tangts`, and `params` as
 separate named fields. `params` uses `f8 <count>` and contains exactly `count`
 curve parameters. Its `2d <tail7>` form reconstructs `40 <tail7>`. The `params`

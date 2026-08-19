@@ -343,6 +343,10 @@ fixtures, scores above L1 remain blocked.
   blind extent without assigning a placement face. A complete frame on the
   recipe's axis-normal step plane supplies an unoriented hole axis without
   assigning the entry position or drilling direction.
+- A class-911 positional cylinder frame is admitted against a complete
+  counterbore tuple only when its radius is the declared bore or counterbore
+  radius. A mismatching frame remains native; an unavailable or ambiguous tuple
+  does not gate the frame.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is
