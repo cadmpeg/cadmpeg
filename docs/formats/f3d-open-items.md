@@ -208,6 +208,28 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
+### DR-05. Recipe records of a non-locus parameter companion
+
+**Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
+
+**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus. The decoder retains each complete recipe record and its byte offset, and assigns `recipe_ordinal` while walking the records.
+
+**Need.** We must know the operation to build a neutral dimension from more than one recipe record.
+
+**Note.** The prior closure promoted increasing byte offset, a decoder ordering, to the source operation order. No stored operation discriminator or independent operation witness was added. Keep the reader order for deterministic retention, but do not treat it as the format's semantic operation until a controlled multi-recipe specimen separates the alternatives.
+
+### DR-32A. Component records that share one component GUID
+
+**Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
+
+**Known.** `f3d.md` §3.1 "A local component occurrence is an indexed carrier" gives the 229-byte and 357-byte frames, the two repeated component-record references, the component-definition GUID, and the occurrence GUID. The decoder validates that the two component-record references within one carrier agree. The neutral component projection currently keys a local definition by component GUID.
+
+Two valid unplaced ordinal-one carriers can have equal component GUIDs, different occurrence GUIDs, and different component-record references. Both carriers can repeat their own component-record reference at both stored offsets, so the difference is not a framing error.
+
+**Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity.
+
+**Note.** The prior closure removed the validator report and treated the component-record reference as provenance. Its only regression test constructed the two carriers from that same rule; it did not independently distinguish the two readings. The current projection can therefore merge two definitions if the component-record reference is identity-bearing. A controlled specimen with equal GUIDs and different references plus an independent definition join is required before the closure is restored.
+
 ### DR-65. Agreement test of the parallel-line and concentric-circle dimensions
 
 **Question.** Which agreement rule holds for a parallel-line separation and a concentric-circle separation?
