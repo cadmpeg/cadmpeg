@@ -10,14 +10,35 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::{
-    parametrically_bounded_plane_file, trimmed_plane_file, trimmed_plane_with_inner_loop_file,
+    parametrically_bounded_plane_file, point_file_with_global, trimmed_plane_file,
+    trimmed_plane_with_inner_loop_file,
 };
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 mod encode;
 mod roundtrip;
+
+fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+    matches!(
+        taxonomy,
+        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::LossTaxonomy::ProceduralReduced
+            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+    )
+}
+
+fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+    matches!(
+        taxonomy,
+        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+    )
+}
 
 #[test]
 fn rejects_mixed_unclassified_bounded_surface_representation() {
@@ -232,6 +253,64 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
+}
+
+#[test]
+fn encode_uses_neutral_linear_tolerance_as_global_floor() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.tolerances.linear = 2.5;
+    ir.model.points.push(Point {
+        id: PointId("point#resolution-floor".into()),
+        source_object: None,
+        position: Point3::new(1.0, 2.0, 3.0),
+    });
+
+    let plan = crate::IgesEncoder::default()
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .expect("neutral tolerance floor is writable");
+    let mut written = Vec::new();
+    let report = plan
+        .write_to(&mut written)
+        .expect("neutral tolerance floor output is writable");
+    let scan = crate::card::scan(&written).expect("neutral tolerance floor output scans");
+    let global = crate::global::parse(&scan).expect("neutral tolerance floor Global parses");
+
+    assert_eq!(global.minimum_resolution_mm(), 2.5);
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+}
+
+#[test]
+fn encode_reports_when_source_resolution_is_raised_for_geometry() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(point_file_with_global(global)),
+            &DecodeOptions::default(),
+        )
+        .expect("source resolution witness decodes");
+    assert_eq!(decoded.ir().tolerances.linear, 0.001);
+
+    let plan = crate::IgesEncoder::default()
+        .plan(EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        })
+        .expect("source resolution witness is writable");
+    let mut written = Vec::new();
+    let report = plan
+        .write_to(&mut written)
+        .expect("source resolution witness output is writable");
+    let scan = crate::card::scan(&written).expect("source resolution output scans");
+    let global = crate::global::parse(&scan).expect("source resolution output Global parses");
+
+    assert_eq!(global.minimum_resolution_mm(), 0.01);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::WriterMinimumResolutionAdjusted.kind() }));
 }
 
 #[test]

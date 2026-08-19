@@ -132,6 +132,32 @@ fn semantic_decode_applies_delegated_nmi_factor() {
 }
 
 #[test]
+fn decode_publishes_global_minimum_resolution_to_neutral_tolerance() {
+    for (global, expected) in [
+        (
+            b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
+            0.001,
+        ),
+        (
+            b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,1,2HIN,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
+            0.0254,
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(point_file_with_global(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(result.ir().tolerances.linear, expected);
+        assert_eq!(
+            result.ir().tolerances.angular,
+            cadmpeg_ir::units::Tolerances::default().angular
+        );
+    }
+}
+
+#[test]
 fn decode_enforces_each_iges_session_resource_dimension() {
     fn assert_refusal(
         edit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),

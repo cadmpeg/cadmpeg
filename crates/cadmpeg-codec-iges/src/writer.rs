@@ -288,9 +288,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         ));
     }
 
+    let minimum_resolution = minimum_resolution_for_output(ir);
+    if let Some(loss) = minimum_resolution_loss(ir, minimum_resolution) {
+        losses.push(loss);
+    }
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities, version, generated_minimum_resolution(ir))?,
+        bytes: encode_file(&entities, version, minimum_resolution)?,
         counts,
         losses,
     })
@@ -3377,6 +3381,26 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(ir);
     topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE)
+}
+
+fn minimum_resolution_for_output(ir: &CadIr) -> f64 {
+    let generated = generated_minimum_resolution(ir);
+    if ir.tolerances.linear.is_finite() && ir.tolerances.linear > 0.0 {
+        generated.max(ir.tolerances.linear)
+    } else {
+        generated
+    }
+}
+
+fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
+    ir.source.as_ref()?;
+    let declared = ir.tolerances.linear;
+    if declared.is_finite() && declared > 0.0 && emitted <= declared {
+        return None;
+    }
+    Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
+        "IGES Global minimum resolution changed from {declared:.17e} mm to {emitted:.17e} mm to cover the emitted geometry"
+    )))
 }
 
 fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {

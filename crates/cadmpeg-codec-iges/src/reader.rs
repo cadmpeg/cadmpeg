@@ -139,6 +139,9 @@ fn decode_with_occurrence_limits(
     });
 
     let mut ir = CadIr::empty(Units::default());
+    if global.has_supported_length_factor() {
+        ir.tolerances.linear = global.minimum_resolution_mm();
+    }
     ir.source = Some(source_meta(&global));
     let projection = if options.container_only {
         entities::geometry::Projection {

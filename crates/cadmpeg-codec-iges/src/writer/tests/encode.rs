@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(unused_imports)]
 
+use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
@@ -526,14 +527,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         report.losses
     );
     assert!(
-        report.losses.iter().all(|loss| {
-            matches!(
-                loss.code.taxonomy(),
-                cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-                    | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-                    | cadmpeg_ir::LossTaxonomy::ProceduralReduced
-            )
-        }),
+        report
+            .losses
+            .iter()
+            .all(|loss| accepts_procedural_reduction_loss(loss.code.taxonomy())),
         "{:#?}",
         report.losses
     );
@@ -1528,11 +1525,10 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
-        report.losses.iter().all(|loss| matches!(
-            loss.code.taxonomy(),
-            cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-                | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-        )),
+        report
+            .losses
+            .iter()
+            .all(|loss| accepts_non_manifold_write_loss(loss.code.taxonomy())),
         "{:#?}",
         report.losses
     );
