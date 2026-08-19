@@ -812,6 +812,29 @@ where
     Ok(Some(property))
 }
 
+fn direct_spreadsheet_value<'a, 'input: 'a>(
+    xml: &'a roxmltree::Document<'input>,
+    tag: &str,
+    property_id: &str,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let total = xml
+        .descendants()
+        .filter(|node| node.has_tag_name(tag))
+        .count();
+    if total == 0 {
+        return Err(malformed(format!("{property_id} has no {tag} value")));
+    }
+    if total > 1 {
+        return Err(malformed(format!(
+            "{property_id} has multiple {tag} values"
+        )));
+    }
+    xml.root_element()
+        .children()
+        .find(|node| node.has_tag_name(tag))
+        .ok_or_else(|| malformed(format!("{property_id} has no direct {tag} value")))
+}
+
 fn append_spreadsheet(
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
@@ -828,19 +851,7 @@ fn append_spreadsheet(
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::Malformed(format!("invalid spreadsheet {}: {error}", property.id))
     })?;
-    let mut cell_values = xml.descendants().filter(|node| node.has_tag_name("Cells"));
-    let Some(cells) = cell_values.next() else {
-        return Err(CodecError::Malformed(format!(
-            "{} has no Cells value",
-            property.id
-        )));
-    };
-    if cell_values.next().is_some() {
-        return Err(malformed(format!(
-            "{} has multiple Cells values",
-            property.id
-        )));
-    }
+    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -961,18 +972,7 @@ fn spreadsheet_dimensions(
             property.id
         ))
     })?;
-    let mut roots = xml
-        .descendants()
-        .filter(|node| node.has_tag_name(container));
-    let root = roots.next().ok_or_else(|| {
-        CodecError::Malformed(format!("{} has no dimension container", property.id))
-    })?;
-    if roots.next().is_some() {
-        return Err(malformed(format!(
-            "{} has multiple {container} values",
-            property.id
-        )));
-    }
+    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
     let records = root
         .children()
         .filter(|node| node.has_tag_name(element))

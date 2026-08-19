@@ -17,25 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-09. Spreadsheet carrier and value-container selection
-
-**Question.** Which property and XML value container supply spreadsheet cells and row or column
-dimensions when more than one candidate matches the spreadsheet selectors?
-
-**Known.** FreeCAD writes one direct `Cells`, `ColumnInfo`, or `RowInfo` root for the exact
-spreadsheet property runtime type. `design.rs:771-798` and `design.rs:906-930` select unique
-properties but search for the value roots through all descendants.
-
-**Need.** Enforce the producer's direct-root framing and exact property/value cardinality for cells,
-column widths, and row heights. Reject nested lookalikes before projecting spreadsheet records.
-
-**Conflict.** `<Wrapper><Cells Count="...">...</Cells></Wrapper>` and an analogous wrapper around
-`ColumnInfo` or `RowInfo` are accepted and projected. A nested lookalike can therefore supply cells
-or dimensions despite the producer's direct-root rule; existing tests cover duplicate roots but not
-nested framing.
-
-**Note.** Reopened. The uniqueness fix does not establish or enforce root ownership.
-
 ### DP-10. Design value-root framing
 
 **Question.** Which direct value root and cardinality supply named design scalar, vector, and list

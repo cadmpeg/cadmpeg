@@ -667,6 +667,34 @@ fn rejects_ambiguous_spreadsheet_selectors() {
 }
 
 #[test]
+fn rejects_nested_spreadsheet_value_roots() {
+    let decode = |properties: &str| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="2">{properties}</Properties></Object></ObjectData>
+</Document>"#
+        );
+        FcstdCodec.decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+    };
+
+    for properties in [
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Wrapper><Cells Count="1"><Cell address="A1" content="5"/></Cells></Wrapper></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><Wrapper><ColumnInfo Count="1"><Column name="A" width="120"/></ColumnInfo></Wrapper></Property>"#,
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><Wrapper><RowInfo Count="1"><Row name="1" height="45"/></RowInfo></Wrapper></Property>"#,
+    ] {
+        let error = decode(properties).expect_err("nested spreadsheet value root");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn preserves_forward_declared_feature_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
