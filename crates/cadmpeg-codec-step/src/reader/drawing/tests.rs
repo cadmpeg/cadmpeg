@@ -3,7 +3,6 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 

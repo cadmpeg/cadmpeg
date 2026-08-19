@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 use super::*;
 use crate::loss::StepLossCode;
 
@@ -70,29 +69,12 @@ fn implicit_face_plane_work_scales_with_point_count() {
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::ids::CurveId;
 
-use crate::ids::StepIdentity;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::StepCodec;
 
 #[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
