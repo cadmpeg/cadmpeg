@@ -343,6 +343,11 @@ fixtures, scores above L1 remain blocked.
   blind extent without assigning a placement face. A complete frame on the
   recipe's axis-normal step plane supplies an unoriented hole axis without
   assigning the entry position or drilling direction.
+- Complete paired terminal corner envelopes construct both source-cylinder
+  pairs when no source carrier is already admitted. The unique bore and
+  counterbore assignment supplies their exact radii, common entry origin,
+  directed axis, and canonical radial reference direction. Incomplete,
+  conflicting, or ambiguous observations remain native.
 - A class-911 positional cylinder frame is admitted against a complete
   counterbore tuple only when its radius is the declared bore or counterbore
   radius. A mismatching frame remains native; an unavailable or ambiguous tuple

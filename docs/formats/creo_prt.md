@@ -3071,6 +3071,16 @@ from that bound through the counterbore interval into the bore interval. The
 union of the two axial intervals is the full blind extent. This envelope form
 does not identify a placement face.
 
+When both source groups provide complete terminal corner envelopes, the unique
+dimension and placement join also constructs the four source cylinder carriers
+when no source geometry has already been admitted for those rows. The source
+group assigned to the bore receives half the bore diameter as its radius. The
+other group receives half the counterbore diameter. Every carrier uses the
+counterbore entry point as its origin and the directed envelope axis as its
+axis. Its reference direction is the positive model-coordinate direction of
+the first radial axis in the validated envelope layout. A partial, conflicting,
+or ambiguous source observation does not use this construction.
+
 A counterbore-form hole with a complete bound dimensional tuple has a resolved
 counterbore entry; otherwise the identified counterbore form remains
 unresolved. The two source-entity cylinder pairs are coaxial. The pair whose

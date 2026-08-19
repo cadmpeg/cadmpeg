@@ -222,3 +222,78 @@ fn counterbore_source_patches_require_a_complete_carrier_pair() {
         super::counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625,).is_none()
     );
 }
+
+fn counterbore_corner_pairs() -> [[[[f64; 3]; 2]; 2]; 2] {
+    [
+        [
+            [[-20.0, 763.0, -160.0], [20.0, 812.0, -140.0]],
+            [[-20.0, 763.0, -140.0], [20.0, 812.0, -120.0]],
+        ],
+        [
+            [[-60.0, 812.0, -200.0], [60.0, 820.0, -140.0]],
+            [[-60.0, 812.0, -140.0], [60.0, 820.0, -80.0]],
+        ],
+    ]
+}
+
+#[test]
+fn corner_envelopes_construct_dimensioned_source_cylinders() {
+    let sources = vec![vec![2636, 2662], vec![2640, 2666]];
+    let geometries = super::counterbore_source_corner_patch_geometries(
+        &sources,
+        &counterbore_corner_pairs(),
+        40.0,
+        120.0,
+        8.0,
+    )
+    .expect("complete paired corner envelopes select one counterbore assignment");
+    let expected = |radius| SurfaceGeometry::Cylinder {
+        origin: Point3::new(0.0, 820.0, -140.0),
+        axis: Vector3::new(0.0, -1.0, 0.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius,
+    };
+    assert_eq!(
+        geometries,
+        vec![
+            (2636, expected(20.0)),
+            (2662, expected(20.0)),
+            (2640, expected(60.0)),
+            (2666, expected(60.0)),
+        ]
+    );
+}
+
+#[test]
+fn corner_envelopes_reject_incomplete_or_inconsistent_source_joins() {
+    let sources = vec![vec![2636, 2662], vec![2640, 2666]];
+    let corners = counterbore_corner_pairs();
+    assert!(super::counterbore_source_corner_patch_geometries(
+        &sources, &corners, 40.0, 120.0, 7.0,
+    )
+    .is_none());
+
+    let mut shifted = corners;
+    shifted[1][0][0][0] = -59.0;
+    assert!(super::counterbore_source_corner_patch_geometries(
+        &sources, &shifted, 40.0, 120.0, 8.0
+    )
+    .is_none());
+
+    assert!(super::counterbore_source_corner_patch_geometries(
+        &[vec![2636], vec![2640, 2666]],
+        &corners,
+        40.0,
+        120.0,
+        8.0,
+    )
+    .is_none());
+    assert!(super::counterbore_source_corner_patch_geometries(
+        &[vec![2636, 2662], vec![2662, 2666]],
+        &corners,
+        40.0,
+        120.0,
+        8.0,
+    )
+    .is_none());
+}
