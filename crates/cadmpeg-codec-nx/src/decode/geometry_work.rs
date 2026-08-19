@@ -30,7 +30,7 @@ pub(crate) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 /// surface-intersection support lanes for one decoded model.
 pub(crate) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
-/// Geometry work accounting plus the cache of successful blend-frame
+/// Geometry work accounting plus the cache of successful blend-geometry
 /// certificates earned within the same accounting scope.
 pub(crate) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,

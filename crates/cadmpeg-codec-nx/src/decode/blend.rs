@@ -67,8 +67,8 @@ impl BlendSectionDomain {
 mod tests {
     use super::{
         BlendContactSeed, BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
-        BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_CONTACT_SEEDS,
-        MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES,
+        BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES,
+        MAX_BLEND_CONTACT_SEEDS, MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES,
     };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -95,6 +95,26 @@ mod tests {
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
         assert!(cache.get(&newest, -0.0, false).is_none());
+    }
+
+    #[test]
+    fn blend_boundary_point_cache_evicts_old_entries_at_its_bound() {
+        let mut cache = BlendSurfaceFrameCache::default();
+        let point = Point3::new(1.0, 2.0, 3.0);
+        for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
+            let surface = SurfaceId(format!("boundary-surface-{index}"));
+            cache.remember_boundary_point(&surface, index as f64, index % 2, point);
+        }
+
+        let first = SurfaceId("boundary-surface-0".into());
+        assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
+
+        let newest = SurfaceId("boundary-surface-newest".into());
+        cache.remember_boundary_point(&newest, 0.0, 1, point);
+        assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
+        assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
+        assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
+        assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
     }
 
     #[test]
@@ -981,6 +1001,7 @@ pub(crate) fn blend_surface_point_inner_with_index_and_budget(
 pub(crate) type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
+const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
 
 #[derive(Clone)]
 struct BlendSurfaceFrameCacheEntry {
@@ -990,19 +1011,29 @@ struct BlendSurfaceFrameCacheEntry {
     frame: BlendSurfaceFrame,
 }
 
-/// Bounded certificates for deterministic blend-frame evaluations.
+#[derive(Clone)]
+struct BlendBoundaryPointCacheEntry {
+    surface: SurfaceId,
+    parameter_bits: u64,
+    boundary: usize,
+    point: Point3,
+}
+
+/// Bounded certificates for deterministic blend-geometry evaluations.
 ///
 /// Entries belong to one [`GeometryWorkBudget`] and are valid only while its
 /// model index is unchanged. Failed evaluations are not retained because a
 /// later contact seed or route may produce a valid witness.
 pub(crate) struct BlendSurfaceFrameCache {
     entries: VecDeque<BlendSurfaceFrameCacheEntry>,
+    boundary_points: VecDeque<BlendBoundaryPointCacheEntry>,
 }
 
 impl Default for BlendSurfaceFrameCache {
     fn default() -> Self {
         Self {
             entries: VecDeque::with_capacity(MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES),
+            boundary_points: VecDeque::with_capacity(MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES),
         }
     }
 }
@@ -1050,8 +1081,52 @@ impl BlendSurfaceFrameCache {
         });
     }
 
+    fn get_boundary_point(
+        &self,
+        surface: &SurfaceId,
+        parameter: f64,
+        boundary: usize,
+    ) -> Option<Point3> {
+        self.boundary_points
+            .iter()
+            .find(|entry| {
+                entry.surface == *surface
+                    && entry.parameter_bits == parameter.to_bits()
+                    && entry.boundary == boundary
+            })
+            .map(|entry| entry.point)
+    }
+
+    fn remember_boundary_point(
+        &mut self,
+        surface: &SurfaceId,
+        parameter: f64,
+        boundary: usize,
+        point: Point3,
+    ) {
+        if let Some(entry) = self.boundary_points.iter_mut().find(|entry| {
+            entry.surface == *surface
+                && entry.parameter_bits == parameter.to_bits()
+                && entry.boundary == boundary
+        }) {
+            entry.point = point;
+            return;
+        }
+        if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
+            self.boundary_points.pop_front();
+        }
+        self.boundary_points
+            .push_back(BlendBoundaryPointCacheEntry {
+                surface: surface.clone(),
+                parameter_bits: parameter.to_bits(),
+                boundary,
+                point,
+            });
+    }
+
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
+        self.boundary_points.clear();
     }
 }
 
@@ -1485,16 +1560,32 @@ pub(crate) fn blend_boundary_point_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    spine_contact_point_with_index_and_budget(
-        index,
-        supports.get(boundary)?,
-        &spine,
-        parameter,
-        radius,
-        depth + 1,
-        geometry_budget,
-    )
+    let cached = geometry_budget
+        .blend_frame_cache()
+        .borrow()
+        .get_boundary_point(surface, parameter, boundary);
+    if let Some(point) = cached {
+        return geometry_budget.charge().then_some(point);
+    }
+    let point = (|| {
+        let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
+        spine_contact_point_with_index_and_budget(
+            index,
+            supports.get(boundary)?,
+            &spine,
+            parameter,
+            radius,
+            depth + 1,
+            geometry_budget,
+        )
+    })();
+    if let Some(point) = point {
+        geometry_budget
+            .blend_frame_cache()
+            .borrow_mut()
+            .remember_boundary_point(surface, parameter, boundary, point);
+    }
+    point
 }
 
 // Boundary inversion carries the geometric query state and the shared work

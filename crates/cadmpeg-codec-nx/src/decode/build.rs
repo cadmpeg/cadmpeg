@@ -918,7 +918,9 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
             &completion_geometry_budget,
         );
-        completion_geometry_budget.clear_blend_frame_cache();
+        // Topology completion adds incidence and pcurve carriers, but does
+        // not change surface or model-curve geometry. Keep its successful
+        // blend-geometry certificates for support validation and attachment.
         let newly_validated_endpoint_witnesses =
             invalidate_inconsistent_support_uv_with_validated_lanes(
                 &mut ir,
@@ -947,7 +949,6 @@ pub(crate) fn try_decode_geometry(
                 &coupled_support_uv_geometry_budget,
                 &mut completed_endpoint_witnesses,
             );
-        completion_geometry_budget.clear_blend_frame_cache();
         let mut validated_endpoint_witnesses = validated_support_uv_endpoint_witnesses(
             &ir,
             &pending_ext11_support_uv,
