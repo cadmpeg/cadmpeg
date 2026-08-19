@@ -5258,14 +5258,59 @@ fn binder_target(
 
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
     let property = property(properties, name)?;
-    let index = usize::try_from(integer_property(properties, name)?).ok()?;
+    if property.type_name != "App::PropertyEnumeration" {
+        return None;
+    }
     let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
-    document
-        .descendants()
-        .filter(|node| node.has_tag_name("Enum"))
-        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
-        .nth(index)
-        .map(str::to_owned)
+    let root = document.root_element();
+    if !root.has_tag_name("Property") {
+        return None;
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let (integer, custom_list) = match values.as_slice() {
+        [integer] if integer.has_tag_name("Integer") => (*integer, None),
+        [integer, custom_list]
+            if integer.has_tag_name("Integer") && custom_list.has_tag_name("CustomEnumList") =>
+        {
+            (*integer, Some(*custom_list))
+        }
+        _ => return None,
+    };
+    if integer.children().any(|child| child.is_element()) {
+        return None;
+    }
+    let custom = match integer.attribute("CustomEnum") {
+        None => false,
+        Some("true") => true,
+        Some(_) => return None,
+    };
+    if custom != custom_list.is_some() {
+        return None;
+    }
+    let index = integer.attribute("value")?.parse::<usize>().ok()?;
+    let custom_list = custom_list?;
+    let count = custom_list.attribute("count")?.parse::<usize>().ok()?;
+    let enum_values = custom_list
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if enum_values.len() != count {
+        return None;
+    }
+    enum_values
+        .into_iter()
+        .map(|value| {
+            if !value.has_tag_name("Enum") || value.children().any(|child| child.is_element()) {
+                return None;
+            }
+            value.attribute("value").map(str::to_owned)
+        })
+        .collect::<Option<Vec<_>>>()?
+        .get(index)
+        .cloned()
 }
 
 fn pattern_definition(

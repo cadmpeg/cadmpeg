@@ -38,8 +38,8 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
   <Property name="Tapered" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="TaperedAngle" type="App::PropertyAngle"><Float value="60"/></Property>
   <Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
-  <Property name="ThreadSize" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList></Property>
-  <Property name="ThreadClass" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="6H"/></CustomEnumList></Property>
+  <Property name="ThreadSize" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList></Property>
+  <Property name="ThreadClass" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="6H"/></CustomEnumList></Property>
   <Property name="Threaded" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="ModelThread" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="CosmeticThread" type="App::PropertyBool"><Bool value="false"/></Property>
@@ -242,6 +242,139 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
                     && loss.severity == cadmpeg_ir::Severity::Blocking
             }));
         }
+    }
+}
+
+#[test]
+fn uses_only_direct_custom_hole_enumeration_labels() {
+    fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Hole"))
+            .expect("hole feature")
+            .definition
+    }
+
+    fn retains_thread_size_property(
+        result: &cadmpeg_ir::codec::DecodeResult,
+        raw_value: &str,
+    ) -> bool {
+        result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .and_then(|namespace| {
+                namespace
+                    .arena_as::<crate::native::PropertyRecord>("properties")
+                    .ok()
+            })
+            .is_some_and(|properties| {
+                properties.iter().any(|property| {
+                    property.name == "ThreadSize" && property.raw_xml.contains(raw_value)
+                })
+            })
+    }
+
+    let hole_document = |type_name: &str, value: &str| {
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations" id="1"/><Object type="PartDesign::Hole" name="Hole" id="2"/></Objects>
+<ObjectData Count="2"><Object name="Locations"><Properties Count="0"/></Object><Object name="Hole"><Properties Count="7"><Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property><Property name="Diameter" type="App::PropertyLength"><Float value="6"/></Property><Property name="Depth" type="App::PropertyLength"><Float value="25"/></Property><Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property><Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property><Property name="Threaded" type="App::PropertyBool"><Bool value="true"/></Property><Property name="ThreadSize" type="{type_name}">{value}</Property></Properties></Object></ObjectData></Document>"#,
+        )
+    };
+    let decode = |type_name: &str, value: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&hole_document(type_name, value))),
+                &DecodeOptions::default(),
+            )
+            .expect("hole enumeration label document")
+    };
+    let cases = [
+        (
+            "valid direct custom list",
+            "App::PropertyEnumeration",
+            r#"<Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList>"#,
+            Some("M8"),
+        ),
+        (
+            "non-custom enumeration",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0"/>"#,
+            None,
+        ),
+        (
+            "missing custom marker",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0"/><CustomEnumList count="1"><Enum value="M6"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "invalid custom marker",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0" CustomEnum="false"/><CustomEnumList count="1"><Enum value="M6"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "missing custom list",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0" CustomEnum="true"/>"#,
+            None,
+        ),
+        (
+            "nested enum is not a leaf",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0" CustomEnum="true"/><CustomEnumList count="2"><Wrapper><Enum value="wrong"/></Wrapper><Enum value="M8"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "count mismatch",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0" CustomEnum="true"/><CustomEnumList count="2"><Enum value="M6"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "uppercase label attribute",
+            "App::PropertyEnumeration",
+            r#"<Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum Value="M6"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "out of range index",
+            "App::PropertyEnumeration",
+            r#"<Integer value="2" CustomEnum="true"/><CustomEnumList count="2"><Enum value="M6"/><Enum value="M8"/></CustomEnumList>"#,
+            None,
+        ),
+        (
+            "wrong runtime type",
+            "App::PropertyInteger",
+            r#"<Integer value="0"><Enum value="wrong"/></Integer>"#,
+            None,
+        ),
+    ];
+
+    for (case, type_name, value, expected) in cases {
+        let result = decode(type_name, value);
+        let FeatureDefinition::Hole {
+            specification: Some(specification),
+            ..
+        } = hole_definition(&result)
+        else {
+            panic!("{case}: expected typed hole");
+        };
+        assert_eq!(
+            specification.designation.as_deref(),
+            expected,
+            "{case}: label selection"
+        );
+        assert!(result.report().losses.is_empty(), "{case}");
+        assert!(
+            retains_thread_size_property(&result, value),
+            "{case}: native property was not retained"
+        );
     }
 }
 

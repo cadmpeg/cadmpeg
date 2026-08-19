@@ -761,6 +761,16 @@ DepthType 0, DrillPoint 1, ThreadDepthType 0, and ThreadDirection 0. CADIR decis
 selected carrier with another runtime type, without exactly one direct `Integer`, or with a
 non-integer, negative, duplicate, nested, or unsupported index does not select neutral hole
 semantics; the operation remains native.
+Thread-size, thread-class, and thread-fit labels are present only when the exact enumeration
+carrier has `CustomEnum="true"` on its direct `Integer` and one direct `CustomEnumList`. The list
+`count` equals its direct `Enum` child count; each child has a lowercase `value` attribute, no
+element children, and its order is the label order. The direct integer selects one label. A
+non-custom enumeration has no persisted label. CADIR decision: an absent label property leaves the
+optional neutral label unset; a present label property whose custom marker, list, count, leaf, or
+index is missing or malformed likewise leaves the corresponding optional neutral label unset while
+retaining the complete native property and the otherwise valid typed hole. An out-of-range index
+has the same result. A descendant `Enum`, an uppercase `Value`, or the numeric index itself does
+not supply a label.
 PartDesign `Hole` boolean carriers `Threaded`, `ModelThread`, `DrillForDepth`, `Tapered`,
 `UseCustomThreadClearance`, and `AllowMultiFace` are `App::PropertyBool` values. Their direct
 `Bool` values are `false` and `true`; an absent carrier means `false`. `Threaded` selects threaded

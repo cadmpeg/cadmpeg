@@ -17,28 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-17. Design enumeration label selection
-
-**Question.** Which direct `Enum` sequence supplies a design enumeration label such as a hole thread
-designation?
-
-**Known.** FreeCAD `PropertyEnumeration::Save` writes one direct `Integer` carrier, a
-`CustomEnum="true"` marker for a custom list, and one direct `CustomEnumList` whose `count` equals
-the number of its direct `Enum` children. `joint.rs:286-413` enforces that framing for `JointType`.
-`enumeration_label` at `design.rs:4637-4648` instead takes the `Enum` at the integer position from
-every descendant of the property, with no marker, root, count, or leaf check, and it accepts a
-`Value` attribute that the producer does not write. `design.rs:4362-4382` uses the result for the
-neutral hole thread designation, class, and fit.
-
-**Need.** Use the same direct-carrier framing for every enumeration label as for `JointType`.
-Refuse or retain a property whose framing does not match, instead of selecting by descendant order.
-
-**Conflict.** An `Enum` inside an extra nested wrapper joins the ordinal sequence, so a hole gets a
-neutral thread designation that the producer does not give it. An index outside the direct list
-leaves the designation absent with no refusal and no loss.
-
-**Note.** New hostile-sweep finding.
-
 ## 6. Semantic annotations
 
 ### SA-03. Annotation value-root framing and attribute selection
