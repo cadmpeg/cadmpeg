@@ -40,6 +40,7 @@ use crate::layout::compact_legacy_142_profile_curve as legacy_142;
 use crate::layout::compact_legacy_code_two_profile_point as code_two;
 use crate::layout::current_geometry_locus_arc_handle_point as current_arc_handle;
 use crate::layout::current_geometry_locus_arc_handle_point_terminal as current_arc_handle_terminal;
+use crate::layout::current_indexed_spatial_xyz_point_prefix as spatial_xyz;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
@@ -273,6 +274,9 @@ pub(crate) fn spatial_sketches(
 }
 
 pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    if current_indexed_spatial_xyz_point(payload, offset) {
+        return offset.checked_add(spatial_xyz::COORDINATES);
+    }
     if packed_legacy_marker_body(payload, offset)
         && marker_profile_curve_role(payload, offset) == Some(1)
         && payload.get(offset + 48..offset + 50) == Some(&[0x0e, 0x00])
@@ -427,6 +431,41 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
         };
     (!requires_profile_role || marker_profile_curve_role(payload, offset) == Some(1))
         .then_some(coordinate_offset)
+}
+
+fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
+    const NEXT_MARKER_OFFSETS: [usize; 2] = [158, 162];
+
+    payload.get(offset..offset + spatial_xyz::HEADER) == Some(SKETCH_MARKER)
+        && payload.get(offset + spatial_xyz::HEADER..offset + spatial_xyz::SENTINEL)
+            == Some(&[0xff; 8])
+        && payload.get(offset + spatial_xyz::SENTINEL..offset + spatial_xyz::NATIVE_KIND)
+            == Some(&(-1.0f32).to_le_bytes())
+        && View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND) == Some(0)
+        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
+            == Some(&[0x04, 0x00, 0x02, 0x00])
+        && View::u16_le_at(payload, offset + spatial_xyz::PROFILE_ROLE) == Some(1)
+        && payload.get(offset + spatial_xyz::PROFILE_ROLE + 2..offset + spatial_xyz::SELECTOR)
+            == Some(&[0; 2])
+        && payload.get(offset + spatial_xyz::SELECTOR..offset + spatial_xyz::SELECTOR + 8)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + spatial_xyz::SELECTOR + 8..offset + spatial_xyz::STATE_VALUE)
+            == Some(&[0; 9])
+        && View::f64_le_at(payload, offset + spatial_xyz::STATE_VALUE) == Some(1.0)
+        && payload.get(offset + spatial_xyz::COORDINATE_TAG..offset + spatial_xyz::COORDINATES)
+            == Some(&[0x0e, 0x00])
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(1)
+        && payload.get(offset + spatial_xyz::TAIL_ZERO..offset + spatial_xyz::TERMINATOR)
+            == Some(&[0; 6])
+        && payload.get(offset + spatial_xyz::TERMINATOR..offset + spatial_xyz::TERMINATOR + 4)
+            == Some(&[0xfe, 0xff, 0xff, 0xff])
+        && marker_object_index(payload, offset).is_some()
+        && NEXT_MARKER_OFFSETS.iter().any(|relative| {
+            offset
+                .checked_add(*relative)
+                .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+        })
 }
 
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {

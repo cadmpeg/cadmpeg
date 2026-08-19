@@ -392,6 +392,112 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
 }
 
 #[test]
+fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
+    let native_ref = "sldprt:history:feature#spatial-indexed-profile";
+    let lane_id = "sldprt:feature-input:resolved-features#spatial-indexed-profile";
+    let first =
+        super::spatial_boundaries::current_indexed_xyz_spatial_point(2, [0.0, 0.015, 0.005], 158);
+    let second =
+        super::spatial_boundaries::current_indexed_xyz_spatial_point(3, [0.0, -0.015, 0.005], 158);
+    let first_end = 4 + 158;
+    let mut payload = first;
+    payload.truncate(first_end);
+    payload[first_end - 4..first_end].copy_from_slice(&3u32.to_le_bytes());
+    payload.extend_from_slice(&second[4..]);
+
+    let mut sketch_entities = sketch_input_entities(&payload, lane_id);
+    assert_eq!(sketch_entities.len(), 2);
+    assert_eq!(
+        sketch_entities
+            .iter()
+            .map(|entity| entity.object_index)
+            .collect::<Vec<_>>(),
+        vec![Some(2), Some(3)]
+    );
+    for entity in &mut sketch_entities {
+        entity.feature_ref = Some(native_ref.into());
+        assert_eq!(entity.kind, SketchInputKind::Point);
+    }
+
+    let lane = FeatureInputLane {
+        id: lane_id.into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities,
+    };
+    let history = FeatureHistory {
+        id: "sldprt:history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![NativeFeature {
+            id: native_ref.into(),
+            parent: "sldprt:history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("spatial-indexed-profile".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "3D Sketch".into(),
+            kind: "Sketch".into(),
+            input_class: Some("mo3DProfileFeature_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("sldprt:model:feature#spatial-indexed-profile".into()),
+        ordinal: 0,
+        name: Some("3D Sketch".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch { sketch: None },
+        native_ref: Some(native_ref.into()),
+    }];
+
+    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(entities.len(), 2);
+    assert!(matches!(
+        &entities[0].geometry,
+        SpatialSketchGeometry::Point { position }
+            if *position == Point3::new(0.0, 15.0, 5.0)
+    ));
+    assert!(matches!(
+        &entities[1].geometry,
+        SpatialSketchGeometry::Point { position }
+            if *position == Point3::new(0.0, -15.0, 5.0)
+    ));
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::SpatialSketch { sketch: Some(sketch) }
+            if sketch.0 == "sldprt:model:spatial-sketch#spatial-indexed-profile"
+    ));
+}
+
+#[test]
 fn object_indexed_spatial_point_uses_compact_coordinates() {
     let offset = 4;
     let mut payload = vec![0; offset + 82];
