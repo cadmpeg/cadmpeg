@@ -70,6 +70,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             "design_remove_body",
             f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh()),
         ),
+        (
+            "design_surface_stitch",
+            f3d_with_smbh_and_protein_with_generated_surface_stitch(&synthetic_geometry_smbh()),
+        ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (
             "mesh_surface",

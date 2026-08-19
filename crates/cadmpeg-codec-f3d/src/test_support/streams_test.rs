@@ -99,12 +99,20 @@ pub(crate) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) ->
     )
 }
 
+pub(crate) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::SurfaceStitch,
+    )
+}
+
 #[derive(Clone, Copy)]
 enum GeneratedDesignMetastreamVariant {
     Base,
     SketchDimension,
     BaseFeature,
     RemoveBody,
+    SurfaceStitch,
 }
 
 fn generated_design_metastream_with_sketch_types(
@@ -117,9 +125,13 @@ fn generated_design_metastream_with_sketch_types(
         variant,
         GeneratedDesignMetastreamVariant::BaseFeature
             | GeneratedDesignMetastreamVariant::RemoveBody
+            | GeneratedDesignMetastreamVariant::SurfaceStitch
     );
-    let include_construction_types =
-        matches!(variant, GeneratedDesignMetastreamVariant::RemoveBody);
+    let include_construction_types = matches!(
+        variant,
+        GeneratedDesignMetastreamVariant::RemoveBody
+            | GeneratedDesignMetastreamVariant::SurfaceStitch
+    );
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     let point_entity_ids: &[u64] = if include_dimension_types {
         &[100, 200, 300, 400, 700, 1300, 1302]
@@ -146,13 +158,14 @@ fn generated_design_metastream_with_sketch_types(
     } else {
         &[]
     };
-    let feature_entity_ids: &[u64] = if include_construction_types {
-        &[1400, 1600]
-    } else if include_feature_types {
-        &[1400]
-    } else {
-        &[]
-    };
+    let feature_entity_ids: &[u64] =
+        if matches!(variant, GeneratedDesignMetastreamVariant::RemoveBody) {
+            &[1400, 1600]
+        } else if include_feature_types {
+            &[1400]
+        } else {
+            &[]
+        };
     let geometry_entity_ids: &[u64] = if include_construction_types {
         &[600, 1500]
     } else {
@@ -292,7 +305,7 @@ fn generated_design_metastream_with_sketch_types(
             feature_entity_ids,
         ));
     }
-    if include_construction_types {
+    if matches!(variant, GeneratedDesignMetastreamVariant::RemoveBody) {
         types.push((
             "00000000-0000-0000-0000-000000001401",
             base,
@@ -327,6 +340,28 @@ fn generated_design_metastream_with_sketch_types(
             1,
             crate::records::DESIGN_MODULE_FUSION,
             &[1604],
+        ));
+    } else if matches!(variant, GeneratedDesignMetastreamVariant::SurfaceStitch) {
+        types.push((
+            "00000000-0000-0000-0000-000000001401",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1600],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001402",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1700],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001403",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1701],
         ));
     }
     design_metastream_with_records(&types, records)
@@ -1072,6 +1107,159 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
             out.extend_from_slice(b"body_recipe_data");
         }
     }
+
+    (out, records)
+}
+
+/// Add a `SurfaceStitch` scope, one face-selection group, and its tolerance
+/// and settings records to the generated Design stream.
+pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn local_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let group_record = 1_500_u32;
+    let selection_record = 1_600_u32;
+    let tolerance_record = 1_700_u32;
+    let settings_record = 1_701_u32;
+
+    let scope_offset = u64::try_from(out.len()).expect("synthetic SurfaceStitch scope offset");
+    let mut scope = Vec::new();
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(b"268");
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    scope.extend_from_slice(&[0; 10]);
+    scope.extend_from_slice(&4_u32.to_le_bytes());
+    for reference in [
+        u64::from(group_record),
+        u64::from(selection_record),
+        u64::from(tolerance_record),
+        u64::from(settings_record),
+    ] {
+        local_reference(&mut scope, reference);
+    }
+    scope.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut scope, "SurfaceStitch");
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    scope.extend_from_slice(&[0; 78]);
+    assert_eq!(scope.len(), 185);
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(b"261");
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
+
+    let group_offset = u64::try_from(out.len()).expect("synthetic SurfaceStitch group offset");
+    let mut group = Vec::new();
+    group.extend_from_slice(&3_u32.to_le_bytes());
+    group.extend_from_slice(b"264");
+    group.extend_from_slice(&group_record.to_le_bytes());
+    group.extend_from_slice(&[0; 8]);
+    group.push(0);
+    group.push(1);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    let property_name = b"SurfaceStitchGapSettingX";
+    assert_eq!(property_name.len(), 24);
+    group.extend_from_slice(&(property_name.len() as u32).to_le_bytes());
+    group.extend_from_slice(property_name);
+    let property_type = b"IntrinsicMetaTypeuint64";
+    assert_eq!(property_type.len(), 23);
+    group.extend_from_slice(&(property_type.len() as u32).to_le_bytes());
+    group.extend_from_slice(property_type);
+    group.extend_from_slice(&[0; 8]);
+    assert_eq!(group.len(), 88);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&u64::from(selection_record).to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&0_u32.to_le_bytes());
+    group.extend_from_slice(&0x0000_0005_0000_0000_u64.to_le_bytes());
+    group.extend_from_slice(&[0; 10]);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.extend_from_slice(&1.0_f64.to_le_bytes());
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    local_reference(&mut group, u64::from(group_record + 1));
+    group.push(0);
+    local_reference(&mut group, u64::from(scope_record));
+    group.extend_from_slice(&3_u32.to_le_bytes());
+    group.extend_from_slice(b"259");
+    group.extend_from_slice(&group_record.to_le_bytes());
+    out.extend_from_slice(&group);
+    records.push((u64::from(group_record), group_offset));
+
+    let selection_offset = u64::try_from(out.len()).expect("synthetic selection operand offset");
+    let mut selection = Vec::new();
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"269");
+    selection.extend_from_slice(&selection_record.to_le_bytes());
+    selection.extend_from_slice(&[0; 10]);
+    selection.push(1);
+    selection.extend_from_slice(&(selection_record + 3).to_le_bytes());
+    selection.extend_from_slice(&[0; 6]);
+    selection.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(&mut selection, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut selection, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    selection.extend_from_slice(&2_u32.to_le_bytes());
+    selection.extend_from_slice(&[0; 4]);
+    selection.extend_from_slice(&[1, 0, 0]);
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"269");
+    selection.extend_from_slice(&selection_record.to_le_bytes());
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"270");
+    selection.extend_from_slice(&(selection_record + 1).to_le_bytes());
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"271");
+    selection.extend_from_slice(&(selection_record + 2).to_le_bytes());
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"272");
+    selection.extend_from_slice(&(selection_record + 3).to_le_bytes());
+    selection.extend_from_slice(&[0; 10]);
+    selection.extend_from_slice(&42_u64.to_le_bytes());
+    selection.extend_from_slice(&3_u32.to_le_bytes());
+    selection.extend_from_slice(b"273");
+    selection.extend_from_slice(&(selection_record + 4).to_le_bytes());
+    out.extend_from_slice(&selection);
+    records.push((u64::from(selection_record), selection_offset));
+
+    let tolerance_offset = u64::try_from(out.len()).expect("synthetic tolerance offset");
+    let mut tolerance = vec![0_u8; 100];
+    tolerance[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    tolerance[4..7].copy_from_slice(b"270");
+    tolerance[7..11].copy_from_slice(&tolerance_record.to_le_bytes());
+    tolerance[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    tolerance[24] = 1;
+    tolerance[25..29].copy_from_slice(&scope_record.to_le_bytes());
+    tolerance[40..48].copy_from_slice(&0.01_f64.to_le_bytes());
+    out.extend_from_slice(&tolerance);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"270");
+    out.extend_from_slice(&tolerance_record.to_le_bytes());
+    records.push((u64::from(tolerance_record), tolerance_offset));
+
+    let settings_offset = u64::try_from(out.len()).expect("synthetic settings offset");
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"271");
+    out.extend_from_slice(&settings_record.to_le_bytes());
+    out.extend_from_slice(&[0; 20]);
+    records.push((u64::from(settings_record), settings_offset));
 
     (out, records)
 }
