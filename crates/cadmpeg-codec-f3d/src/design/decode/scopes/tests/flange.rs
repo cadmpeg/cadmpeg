@@ -313,6 +313,10 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         operation.width_distance_owner_record_indices,
         [210, 222, 234, 237]
     );
+    assert_eq!(
+        operation.width_distance_owner_record_indices_by_edge,
+        [[210, 222], [234, 237]]
+    );
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
     assert_eq!(operation.settings_record_index, 240);

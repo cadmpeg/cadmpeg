@@ -9568,6 +9568,18 @@ fn legacy_edge_flange_operation_at(
         .checked_sub(layout.aggregate_operand_count)?;
     let aggregate_operand_record_indices = unclaimed.split_off(width_owner_start);
     let width_distance_owner_record_indices = unclaimed;
+    let width_distance_owner_record_indices_by_edge =
+        if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
+            if width_distance_owner_record_indices.len() != edge_count.checked_mul(2)? {
+                return None;
+            }
+            width_distance_owner_record_indices
+                .chunks_exact(2)
+                .map(|pair| [pair[0], pair[1]])
+                .collect()
+        } else {
+            Vec::new()
+        };
     Some(DesignEdgeFlangeOperation {
         edge_wrapper_record_indices,
         edge_group_record_indices,
@@ -9579,6 +9591,7 @@ fn legacy_edge_flange_operation_at(
         angle_owner_record_index,
         width_mode: Some(layout.width_mode),
         width_distance_owner_record_indices,
+        width_distance_owner_record_indices_by_edge,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -9693,6 +9706,7 @@ fn edge_flange_operation_at(
         angle_owner_record_index,
         width_mode: None,
         width_distance_owner_record_indices,
+        width_distance_owner_record_indices_by_edge: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -9858,6 +9872,7 @@ fn edge_flange_to_object_operation_at(
         angle_owner_record_index,
         width_mode: None,
         width_distance_owner_record_indices: Vec::new(),
+        width_distance_owner_record_indices_by_edge: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,

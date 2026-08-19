@@ -3171,6 +3171,15 @@ pub struct DesignEdgeFlangeOperation {
     pub width_mode: Option<DesignEdgeWidthMode>,
     /// Width-distance parameter-owner records the edge-width mode adds, in source order.
     pub width_distance_owner_record_indices: Vec<u32>,
+    /// Two-sided width-owner pairs parallel to the selected-edge wrappers.
+    ///
+    /// This is populated by the classed two-sided-per-edge layout. The flat
+    /// owner list above remains the source-order representation used by older
+    /// forms; this grouped view preserves the wrapper-local association needed
+    /// to normalize an edge orientation without assuming one operation-wide
+    /// width law.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub width_distance_owner_record_indices_by_edge: Vec<[u32; 2]>,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
