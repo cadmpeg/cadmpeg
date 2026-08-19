@@ -1981,6 +1981,172 @@ fn type130_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn analytic_surface_forms_follow_fixed_primary_boundaries() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (entity_type, form, primary, expected_start) in [
+        (190_i64, 0_i64, vec![190, 5, 7], 3_usize),
+        (190, 1, vec![190, 5, 7, 9], 4),
+        (192, 0, vec![192, 5, 7, 2], 4),
+        (192, 1, vec![192, 5, 7, 2, 9], 5),
+        (194, 0, vec![194, 5, 7, 2, 30], 5),
+        (194, 1, vec![194, 5, 7, 2, 30, 9], 6),
+        (196, 0, vec![196, 5, 2], 3),
+        (196, 1, vec![196, 5, 2, 7, 9], 5),
+        (198, 0, vec![198, 5, 7, 4, 1], 5),
+        (198, 1, vec![198, 5, 7, 4, 1, 9], 6),
+    ] {
+        let mut source = directory_target(7, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (7, &source)]);
+        let mut values = primary;
+        values.extend([1, 1, 1, 3]);
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        let groups = analysis.groups.expect("analytic surface table boundary");
+        assert_eq!(
+            groups.token_start, expected_start,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            groups.associations,
+            vec![1],
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(groups.properties, vec![3], "Type {entity_type} Form {form}");
+    }
+}
+
+#[test]
+fn analytic_surface_table_boundaries_precede_valid_generic_alternatives() {
+    let association_1 = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (entity_type, form, primary, expected_start) in [
+        (190_i64, 0_i64, vec![190, 5, 7], 3_usize),
+        (190, 1, vec![190, 5, 7, 9], 4),
+        (192, 0, vec![192, 5, 7, 2], 4),
+        (192, 1, vec![192, 5, 7, 2, 9], 5),
+        (194, 0, vec![194, 5, 7, 2, 30], 5),
+        (194, 1, vec![194, 5, 7, 2, 30, 9], 6),
+        (196, 0, vec![196, 5, 2], 3),
+        (196, 1, vec![196, 5, 2, 7, 9], 5),
+        (198, 0, vec![198, 5, 7, 4, 1], 5),
+        (198, 1, vec![198, 5, 7, 4, 1, 9], 6),
+    ] {
+        let mut source = directory_target(7, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association_1), (3, &property), (7, &source)]);
+        let mut values = primary;
+        values.extend([2, 1, 1, 1, 3]);
+        let record = integer_parameter_record(7, &values);
+        let valid_starts = structural_pointer_group_candidates(&record)
+            .into_iter()
+            .filter(|candidate| {
+                groups_for_candidate(&record, &directory, *candidate)
+                    .is_some_and(|groups| groups.fully_valid)
+            })
+            .map(|candidate| candidate.token_start)
+            .collect::<Vec<_>>();
+        assert_eq!(valid_starts, vec![expected_start, expected_start + 1]);
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        let groups = analysis.groups.expect("analytic surface table boundary");
+        assert_eq!(
+            groups.token_start, expected_start,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            groups.associations,
+            vec![1, 1],
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(groups.properties, vec![3], "Type {entity_type} Form {form}");
+    }
+}
+
+#[test]
+fn analytic_surface_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (entity_type, form, primary, expected_start) in [
+        (190_i64, 0_i64, vec![190, 5, 7], 3_usize),
+        (190, 1, vec![190, 5, 7, 9], 4),
+        (192, 0, vec![192, 5, 7, 2], 4),
+        (192, 1, vec![192, 5, 7, 2, 9], 5),
+        (194, 0, vec![194, 5, 7, 2, 30], 5),
+        (194, 1, vec![194, 5, 7, 2, 30, 9], 6),
+        (196, 0, vec![196, 5, 2], 3),
+        (196, 1, vec![196, 5, 2, 7, 9], 5),
+        (198, 0, vec![198, 5, 7, 4, 1], 5),
+        (198, 1, vec![198, 5, 7, 4, 1, 9], 6),
+    ] {
+        let mut source = directory_target(7, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (7, &source)]);
+
+        let mut wrong = primary
+            .iter()
+            .copied()
+            .map(TokenValue::from)
+            .collect::<Vec<_>>();
+        *wrong.last_mut().expect("primary field") = TokenValue::String(b"bad".to_vec());
+        wrong.extend([1.into(), 1.into(), 1.into(), 3.into()]);
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(7, wrong), &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis
+                .groups
+                .expect("analytic surface wrong-field boundary")
+                .token_start,
+            expected_start,
+            "Type {entity_type} Form {form}"
+        );
+
+        for values in [primary[..primary.len() - 1].to_vec(), {
+            let mut incomplete = primary;
+            incomplete.extend([1, 1, 1]);
+            incomplete
+        }] {
+            let analysis =
+                analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
+            assert_eq!(
+                analysis.candidate_count, 0,
+                "Type {entity_type} Form {form}"
+            );
+            assert_eq!(
+                analysis.valid_candidate_count, 0,
+                "Type {entity_type} Form {form}"
+            );
+            assert!(analysis.groups.is_none(), "Type {entity_type} Form {form}");
+        }
+    }
+}
+
+#[test]
 fn type304_forms_use_fixed_and_counted_boundaries() {
     let association = directory_target(1, 212);
     let property = directory_target(3, 406);
