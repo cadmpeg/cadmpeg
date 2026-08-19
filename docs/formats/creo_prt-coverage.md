@@ -168,7 +168,10 @@ fixtures, scores above L1 remain blocked.
   exposed as sections. Attribute declarations, locally resolved depth/value
   rows, and immediate `$` continuations are structurally enumerated. A unique
   legacy type-10 `principal_sys_units` scalar transfers the active length
-  system and its canonical millimeter scale. Complete finite type-2 scalars and
+  system and its canonical millimeter scale. The neutral unit boundary applies
+  that scale to model-space feature-motion distances and origins and to
+  explicit pattern-scale centers, while preserving directions, angles, and
+  scale factors. Complete finite type-2 scalars and
   dimensioned run-length arrays transfer as exact typed native records without
   expanding repeated elements. Complete type-1 signed-integer scalars and
   arrays transfer with the same scoped identity and retained run

@@ -771,8 +771,14 @@ fn scale_ruled_surface_mode(mode: &mut cadmpeg_ir::features::RuledSurfaceMode, s
 }
 
 fn scale_face_motion(motion: &mut cadmpeg_ir::features::FaceMotion, scale: f64) {
-    if let cadmpeg_ir::features::FaceMotion::Offset { distance } = motion {
-        scale_length(distance, scale);
+    match motion {
+        cadmpeg_ir::features::FaceMotion::Offset { distance }
+        | cadmpeg_ir::features::FaceMotion::Translate { distance, .. } => {
+            scale_length(distance, scale);
+        }
+        cadmpeg_ir::features::FaceMotion::Rotate { axis_origin, .. } => {
+            scale_point3(axis_origin, scale);
+        }
     }
 }
 
@@ -881,9 +887,12 @@ fn scale_pattern_kind(pattern: &mut cadmpeg_ir::features::PatternKind, scale: f6
                 scale_pattern_kind(&mut stage.pattern, scale);
             }
         }
-        PatternKind::Unresolved { .. }
-        | PatternKind::MirrorReference { .. }
-        | PatternKind::Scale { .. } => {}
+        PatternKind::Scale { center, .. } => {
+            if let cadmpeg_ir::features::PatternScaleCenter::Point(point) = center {
+                scale_point3(point, scale);
+            }
+        }
+        PatternKind::Unresolved { .. } | PatternKind::MirrorReference { .. } => {}
     }
 }
 
@@ -1389,8 +1398,8 @@ mod tests {
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
 
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, ProfileRef, Termination,
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
+        FeatureDefinition, PatternKind, PatternScaleCenter, ProfileRef, Termination,
     };
 
     #[test]
@@ -1460,6 +1469,66 @@ mod tests {
             panic!("test parameter changed family");
         };
         assert_close(length.0, 127.0);
+    }
+
+    #[test]
+    fn scales_face_motion_lengths_and_origins() {
+        let mut translate = FaceMotion::Translate {
+            direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            distance: Length(2.0),
+        };
+        scale_face_motion(&mut translate, 25.4);
+        let FaceMotion::Translate {
+            direction,
+            distance,
+        } = translate
+        else {
+            panic!("test motion changed family");
+        };
+        assert_eq!(direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+        assert_close(distance.0, 50.8);
+
+        let mut rotate = FaceMotion::Rotate {
+            axis_origin: Point3::new(1.0, 2.0, 3.0),
+            axis_dir: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            angle: cadmpeg_ir::features::Angle(0.5),
+        };
+        scale_face_motion(&mut rotate, 25.4);
+        let FaceMotion::Rotate {
+            axis_origin,
+            axis_dir,
+            angle,
+        } = rotate
+        else {
+            panic!("test motion changed family");
+        };
+        assert_point3(axis_origin, [25.4, 50.8, 76.2]);
+        assert_eq!(axis_dir, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+        assert_close(angle.0, 0.5);
+    }
+
+    #[test]
+    fn scales_explicit_pattern_scale_center() {
+        let mut pattern = PatternKind::Scale {
+            center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
+            final_factor: 2.0,
+            count: 3,
+        };
+        scale_pattern_kind(&mut pattern, 25.4);
+        let PatternKind::Scale {
+            center,
+            final_factor,
+            count,
+        } = pattern
+        else {
+            panic!("test pattern changed family");
+        };
+        let PatternScaleCenter::Point(point) = center else {
+            panic!("test pattern center changed family");
+        };
+        assert_point3(point, [25.4, 50.8, 76.2]);
+        assert_close(final_factor, 2.0);
+        assert_eq!(count, 3);
     }
 
     #[test]
