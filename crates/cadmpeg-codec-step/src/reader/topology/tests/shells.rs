@@ -343,7 +343,10 @@ fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
         )
         .expect_err("strict mode rejects a noncanonical oriented shell");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]
@@ -728,7 +731,10 @@ fn strict_decode_rejects_a_destroyed_solid() {
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
         .expect_err("strict mode rejects a destroyed solid");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]

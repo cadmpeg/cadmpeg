@@ -720,7 +720,10 @@ fn strict_decode_rejects_noncanonical_complex_partial_order() {
         .decode(&mut Cursor::new(bytes), &options)
         .expect_err("strict mode rejects noncanonical source order");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]
@@ -732,7 +735,10 @@ fn strict_decode_rejects_omitted_entity_name_recovery() {
         .decode(&mut Cursor::new(source), &options)
         .expect_err("strict mode rejects omitted-name recovery");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
     assert!(error.to_string().contains("parse.noncanonical-syntax"));
 }
 

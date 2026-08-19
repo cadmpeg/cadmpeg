@@ -612,7 +612,10 @@ fn strict_decode_rejects_a_substituted_length_uncertainty() {
         )
         .expect_err("strict mode rejects a substituted default tolerance");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]

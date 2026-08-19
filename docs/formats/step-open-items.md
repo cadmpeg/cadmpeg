@@ -148,36 +148,6 @@ and a ZIP root member that the limit refuses.
 
 ## 5. Topology and pcurve decisions
 
-### TP-13. Error class of a strict-mode refusal
-
-**Question.** Which error class must a strict-mode refusal use?
-
-**Known.** `crates/cadmpeg-ir/src/codec.rs:274-286` returns
-`CodecError::Malformed` for the first loss whose `strict_consequence` is
-`Reject`. That code is the generic `impl<C: CodecBackend + ?Sized> Codec for C`,
-so each codec gives the same class. `cadmpeg_core::CodecError`
-(`crates/cadmpeg-core/src/error.rs:12-48`) writes that variant as
-`malformed container: {0}` and holds no variant for a policy refusal.
-`crates/cadmpeg-codec-iges/src/reader.rs:212-222` holds a second strict gate
-with the same class and a wider predicate: it refuses every loss with
-`severity >= Severity::Warning`, which includes losses whose
-`strict_consequence` is `Tolerate`. These tests pin the variant with
-`matches!(error, CodecError::Malformed(_))`:
-`crates/cadmpeg-codec-step/src/reader/tests.rs:723` and `:735`,
-`crates/cadmpeg-codec-step/src/reader/topology/tests/shells.rs:346` and `:731`,
-and `strict_decode_rejects_a_substituted_length_uncertainty` in
-`crates/cadmpeg-codec-step/src/reader/geometry/tests/units.rs`.
-
-**Need.** A strict refusal reports a mode decision, not a defect in the bytes.
-The text `malformed container` tells a reader that the container is
-inconsistent, so a caller cannot separate a damaged file from a policy stop.
-The answer adds a `CodecError` variant in `cadmpeg-core` and changes each codec
-and test that pins `Malformed` for a strict refusal.
-
-**Note.** Do not give the IGES gate the new error class to close this item.
-That gate's predicate is out of doctrine, and separate IGES work deletes the
-gate so the generic gate runs.
-
 ### TP-14. Per-relation status of an admitted pcurve
 
 **Question.** Which channel gives the verification status of one admitted
