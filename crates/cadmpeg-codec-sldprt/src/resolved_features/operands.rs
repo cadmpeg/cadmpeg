@@ -82,6 +82,48 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
+    if kind == FeatureInputOperandKind::Native(0x810f) {
+        // An 810f cell belongs to the declared line-distance family. Its
+        // address is an object index when that index is present, or a local
+        // identifier otherwise. A coordinate-bearing point can share either
+        // address with a line handle, but it is not a line operand. Keep only
+        // line/arc markers, relation handles, and coordinate-less point
+        // proxies; reject every ambiguous candidate set.
+        let accepts = |entity: &SketchInputEntity| {
+            matches!(
+                entity.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Relation(_)
+            ) || (matches!(
+                entity.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) && entity.coordinates_m.is_none())
+        };
+        let indexed = entities
+            .iter()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| accepts(entity))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if entities
+            .iter()
+            .any(|entity| entity.object_index == Some(u32::from(address)) && accepts(entity))
+        {
+            return match indexed.as_slice() {
+                [entity] => Some(*entity),
+                _ => None,
+            };
+        }
+        let local = entities
+            .iter()
+            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| accepts(entity))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        return match local.as_slice() {
+            [entity] => Some(*entity),
+            _ => None,
+        };
+    }
     if kind == FeatureInputOperandKind::Native(0xbc7c) {
         let indexed = entities
             .iter()

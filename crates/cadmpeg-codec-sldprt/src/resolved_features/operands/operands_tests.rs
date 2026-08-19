@@ -560,6 +560,83 @@ fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
 }
 
 #[test]
+fn line_distance_810f_operand_uses_only_a_unique_line_handle() {
+    let marker = |id: &str, object_index, local_id, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let line = marker("line", Some(7), None, SketchInputKind::LineOrCircle, None);
+    let colliding_point = marker(
+        "point",
+        Some(7),
+        Some(7),
+        SketchInputKind::Point,
+        Some([1.0, 2.0]),
+    );
+    let relation = marker(
+        "relation",
+        Some(8),
+        None,
+        SketchInputKind::Relation(SketchRelationKind::Vertical),
+        None,
+    );
+    let proxy = marker("proxy", None, Some(9), SketchInputKind::Point, None);
+    let markers = [&line, &colliding_point, &relation, &proxy];
+
+    assert_eq!(
+        resolve_operand_marker(
+            markers.iter().copied(),
+            FeatureInputOperandKind::Native(0x810f),
+            7,
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("line")
+    );
+    assert_eq!(
+        resolve_operand_marker(
+            markers.iter().copied(),
+            FeatureInputOperandKind::Native(0x810f),
+            8,
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("relation")
+    );
+    assert_eq!(
+        resolve_operand_marker(
+            markers.iter().copied(),
+            FeatureInputOperandKind::Native(0x810f),
+            9,
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("proxy")
+    );
+
+    let second_line = marker(
+        "second-line",
+        Some(7),
+        None,
+        SketchInputKind::LineOrCircle,
+        None,
+    );
+    assert!(resolve_operand_marker(
+        [&line, &second_line],
+        FeatureInputOperandKind::Native(0x810f),
+        7,
+    )
+    .is_none());
+}
+
+#[test]
 fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
     let endpoint = |id: &str, offset, coordinates_m| SketchInputEntity {
         id: id.into(),
