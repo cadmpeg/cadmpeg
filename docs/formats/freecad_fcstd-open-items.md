@@ -17,24 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-12. Sketch placement zero-axis fallback
-
-**Question.** Is a zero-length axis-angle axis a valid sketch placement when its angle is zero?
-
-**Known.** The specification rejects an invalid axis-angle rotation as a sketch frame. In
-`design.rs:1511-1573`, `placement_frame` converts an `A` carrier with a zero axis and zero angle
-to the identity quaternion; `validate_sketch_placement` at `design.rs:1575-1595` accepts the
-result because the frame is present.
-
-**Need.** Reject a zero-length axis for every axis-angle sketch placement, including zero angle,
-or retain the affected sketch or datum operation as native with an attributable loss.
-
-**Conflict.** A `Placement` or `AttachmentOffset` with finite position, `A=0`, and
-`Ox=Oy=Oz=0` becomes an identity sketch frame instead of remaining invalid. The neutral frame
-therefore changes without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ### DP-13. ExternalGeo cached-carrier prefix admission
 
 **Question.** Which leading `ExternalGeo` records are reserved, and how must the cached-carrier
@@ -105,24 +87,26 @@ carrier: the settled placement rule, or a stricter sketch-only rule?
 **Known.** The specification gives one placement rotation rule for every carrier. `A` is the
 representation discriminator, a finite zero-length axis is valid and rotates about the positive Z
 axis, and every nonzero finite axis is normalized. `product.rs:999-1096` applies that rule;
-`attachment.rs` and `joint.rs` call the same function. `design.rs:1511-1573` keeps a second rotation
-decode for sketch `Placement` and `AttachmentOffset`. It gives no frame when the axis norm is not
-larger than machine epsilon and the angle is larger than machine epsilon, and
-`validate_sketch_placement` at `design.rs:1575-1603` turns that result into a malformed-document
+`attachment.rs` and `joint.rs` call the same function. `design.rs:1588-1653` keeps a second
+rotation decode for sketch `Placement` and `AttachmentOffset`; it now uses the positive Z fallback
+for a zero axis and normalizes every nonzero finite axis. `validate_sketch_placement` at
+`design.rs:1655-1683` still turns incomplete or invalid components into a malformed-document
 refusal. FreeCAD `Base::Rotation::setValue` keeps the positive Z axis for a null axis, and
-`Base::Vector3::Normalize` divides by every length that is not zero.
+`Base::Vector3::Normalize` divides by every length that is not zero. FreeCAD's quaternion
+constructor normalizes its four components at `freecad/src/Base/Rotation.cpp:73-77,200-207,314-325`.
 
 **Need.** Use one rotation admission rule for every placement carrier, or state the sketch rule and
 its producer source in the specification. Show which documents each rule accepts and refuses.
 
-**Conflict.** A sketch `Placement` with `A=1.5707963`, `Ox=0`, `Oy=0`, and `Oz=0` is a quarter turn
-about the positive Z axis for the producer and for `product.rs`. `design.rs` refuses the whole
-document instead. An axis such as `Ox=1e-20` gets the same refusal, although the producer and
-`product.rs` both normalize it. `design.rs:282-290` discards the error from the same function, so
-an object that is not transferred as a sketch loses an extrusion profile normal in silence.
+**Conflict.** A sketch `Placement` with `A=1.5707963`, `Ox=0`, `Oy=0`, and `Oz=0` is now admitted
+as a quarter turn about the positive Z axis, as the producer and `product.rs` require. An axis such
+as `Ox=1e-20` is also normalized by the producer and the decoder. A sketch quaternion with finite
+components but non-unit norm is normalized by FreeCAD and `product.rs`, while `design.rs` still
+applies the raw components. `design.rs:282-290` discards the error from the same function, so an
+object that is not transferred as a sketch can lose an extrusion profile normal in silence.
 
-**Note.** New hostile-sweep finding. `DP-12` records the opposite direction for the zero-angle case,
-and its Known still says the specification rejects an invalid axis-angle rotation as a sketch frame.
+**Note.** Partly settled by the DP-12 zero-axis closure. The remaining quaternion normalization
+and non-sketch caller behavior require a separate proof and design decision.
 
 ### DP-17. Design enumeration label selection
 

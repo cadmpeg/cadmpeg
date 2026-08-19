@@ -1609,22 +1609,25 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
             .map(|component| component * component)
             .sum::<f64>()
             .sqrt();
-        if axis_norm <= f64::EPSILON {
-            if angle.abs() <= f64::EPSILON {
-                [0.0, 0.0, 0.0, 1.0]
-            } else {
-                return None;
-            }
+        let (axis_x, axis_y, axis_z) = if axis_norm.is_finite() && axis_norm > 0.0 {
+            (
+                axis[0] / axis_norm,
+                axis[1] / axis_norm,
+                axis[2] / axis_norm,
+            )
+        } else if axis_norm == 0.0 {
+            (0.0, 0.0, 1.0)
         } else {
-            let half_angle = angle / 2.0;
-            let scale = half_angle.sin() / axis_norm;
-            [
-                axis[0] * scale,
-                axis[1] * scale,
-                axis[2] * scale,
-                half_angle.cos(),
-            ]
-        }
+            return None;
+        };
+        let half_angle = angle / 2.0;
+        let scale = half_angle.sin();
+        [
+            axis_x * scale,
+            axis_y * scale,
+            axis_z * scale,
+            half_angle.cos(),
+        ]
     } else {
         [
             component("Q0")?,

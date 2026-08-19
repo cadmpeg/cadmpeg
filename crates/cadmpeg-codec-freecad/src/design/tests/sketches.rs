@@ -206,6 +206,57 @@ fn rejects_incomplete_present_sketch_placement() {
 }
 
 #[test]
+fn follows_freecad_null_axis_fallback_for_sketch_placements() {
+    for (angle, axis, expected_normal, expected_x_axis) in [
+        (
+            0.0,
+            "Ox=\"0\" Oy=\"0\" Oz=\"0\"",
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        ),
+        (
+            std::f64::consts::FRAC_PI_2,
+            "Ox=\"0\" Oy=\"0\" Oz=\"0\"",
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        ),
+        (
+            std::f64::consts::FRAC_PI_2,
+            "Ox=\"1e-20\" Oy=\"0\" Oz=\"0\"",
+            cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="1" Q2="0" Q3="0" A="{angle}" {axis}/></Property>
+</Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("null-axis sketch placement");
+        let (origin, normal, x_axis) = result.ir().model.sketches[0]
+            .resolved_placement()
+            .expect("resolved sketch placement");
+        assert_eq!(origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+        assert!((normal.x - expected_normal.x).abs() < f64::EPSILON * 16.0);
+        assert!((normal.y - expected_normal.y).abs() < f64::EPSILON * 16.0);
+        assert!((normal.z - expected_normal.z).abs() < f64::EPSILON * 16.0);
+        assert!((x_axis.x - expected_x_axis.x).abs() < f64::EPSILON * 16.0);
+        assert!((x_axis.y - expected_x_axis.y).abs() < f64::EPSILON * 16.0);
+        assert!((x_axis.z - expected_x_axis.z).abs() < f64::EPSILON * 16.0);
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
 fn rejects_malformed_constraint_operand_lists() {
     for document in [
         r#"<Document SchemaVersion="4" FileVersion="1">
