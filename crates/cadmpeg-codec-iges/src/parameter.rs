@@ -429,6 +429,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// view/segment block, so its groups start at token `2 + 6*N`.
 /// Type 202 Form 0 stores eight fixed primary fields, so its groups start at
 /// token nine.
+/// Type 204 Form 0 stores seven fixed primary fields, so its groups start at
+/// token eight.
 /// Type 104 Forms 0 through 3 store eleven fixed primary fields, so their
 /// groups start at token twelve.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
@@ -558,6 +560,7 @@ pub(crate) fn entity_primary_end(
         (228, 0) => Some(general_symbol_primary_end(record)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
+        (204, 0) => Some(fixed_primary_end(record, 8)),
         (104, 0..=3) => Some(fixed_primary_end(record, 12)),
         (108, -1..=1) => Some(fixed_primary_end(record, 10)),
         (150, 0) => Some(fixed_primary_end(record, 13)),
