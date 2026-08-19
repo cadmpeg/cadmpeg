@@ -325,6 +325,79 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
 }
 
 #[test]
+fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 913,
+        header: [0, 0],
+        root_schema_class: Some(913),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 7,
+            type_byte: 0x24,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 7,
+        },
+        crate::surface::SurfaceRow {
+            id: 8,
+            type_byte: 0x24,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 8,
+        },
+    ]);
+    let parameter = |surface_id, radius| crate::surface::SurfaceParameterRecord {
+        surface_id,
+        body: Vec::new(),
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius,
+            length: Some(2.0),
+        }),
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: surface_id as usize,
+        body_offset: surface_id as usize,
+    };
+    scan.surfaces
+        .parameters
+        .extend([parameter(7, 1.0), parameter(8, 2.0)]);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_positional_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+    assert!(ir.model.surfaces.is_empty());
+}
+
+#[test]
 fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_are_absent() {
     let mut scan = slot_fillet_scan();
     scan.planes.positional_frames.clear();

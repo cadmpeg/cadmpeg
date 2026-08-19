@@ -16,7 +16,7 @@ use super::super::analytic::{
 };
 use super::super::feature_history::{
     agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
-    section_sweep_allows_linear_extrusion, slot_fillet_cylinder,
+    round_constant_radius, section_sweep_allows_linear_extrusion, slot_fillet_cylinder,
 };
 use super::super::holes::{
     circular_sweep_geometry, counterbore_patch_geometries,
@@ -401,6 +401,17 @@ pub(in super::super) fn transfer_positional_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let constant_round_feature_ids = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        .map(|row| row.feature_id)
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|feature_id| round_constant_radius(scan, ir, *feature_id).is_some())
+        .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
@@ -413,11 +424,18 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
+        let feature_class = feature_schema_class(scan, row.feature_id);
         // Section-cut rows can use the same type-24 selector and scalar-frame
         // shape as a repeated-diameter round. The row body alone does not
         // establish a cylinder carrier in that feature context; section
         // geometry transfer owns the interpretation.
-        if row.type_byte == 0x24 && feature_schema_class(scan, row.feature_id) == Some(916) {
+        // The same type-24 shape is only a neutral cylinder for class 913
+        // when its complete generated set proves one constant radius.
+        if row.type_byte == 0x24
+            && (matches!(feature_class, Some(916))
+                || matches!(feature_class, Some(913))
+                    && !constant_round_feature_ids.contains(&row.feature_id))
+        {
             continue;
         }
         let reference_bound_frame = || {
