@@ -99,3 +99,44 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     assert!(pcurve_present(&validated_id));
     assert!(!pcurve_present(&unvalidated_id));
 }
+
+#[test]
+fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let procedural = &result.ir().model.procedural_curves[0];
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        panic!("typed intersection");
+    };
+    let side = context
+        .sides
+        .iter()
+        .enumerate()
+        .find(|(_, side)| side.surface.is_some() && side.pcurve.is_some())
+        .map(|(side, side_data)| (side, side_data.surface.clone().unwrap()))
+        .expect("charted support lane");
+    let points = vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
+    let parameters = context.parameter_range.to_vec();
+    let pending = vec![(
+        procedural.id.clone(),
+        points.clone(),
+        parameters,
+        0.01,
+        [None, None],
+    )];
+    let validated_lanes = BTreeSet::from([(procedural.id.clone(), side.0)]);
+
+    let witnesses = crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
+        result.ir(),
+        &pending,
+        &validated_lanes,
+    );
+
+    assert_eq!(
+        witnesses.get(&(procedural.curve.clone(), side.1)),
+        Some(&[points[0], points[1]])
+    );
+}

@@ -23,7 +23,7 @@ use super::support_uv::{
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
     complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_validated_lanes,
     linear_knots, support_uv_budget_exhausted, support_uv_completion_budget_limit,
-    validate_serialized_support_uv_with_index,
+    validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
@@ -943,6 +943,11 @@ pub(crate) fn try_decode_geometry(
             &coupled_support_uv_geometry_budget,
         );
         completion_geometry_budget.clear_blend_frame_cache();
+        let validated_endpoint_witnesses = validated_support_uv_endpoint_witnesses(
+            &ir,
+            &pending_ext11_support_uv,
+            &validated_support_uv_lanes,
+        );
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
@@ -951,6 +956,7 @@ pub(crate) fn try_decode_geometry(
             intersection_starts.procedural_curves,
             source_stream,
             &mut annotations,
+            &validated_endpoint_witnesses,
             &completion_geometry_budget,
         );
         // Preserve the whole inflated stream verbatim so nothing is dropped.

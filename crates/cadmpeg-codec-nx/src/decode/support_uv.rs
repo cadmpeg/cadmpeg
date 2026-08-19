@@ -299,6 +299,57 @@ pub(crate) type PendingExt11SupportUv = (
     [Option<Vec<[f64; 2]>>; 2],
 );
 
+/// Return endpoint witnesses already certified by serialized support-UV lanes.
+/// The lane samples and the intersection parameter range use the same ordered
+/// parameter domain, so its first and last model-space samples are the
+/// pcurve's endpoint witnesses.
+pub(crate) fn validated_support_uv_endpoint_witnesses(
+    ir: &CadIr,
+    pending: &[PendingExt11SupportUv],
+    validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
+) -> BTreeMap<(CurveId, SurfaceId), [Point3; 2]> {
+    let procedural_by_id = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|procedural| (&procedural.id, procedural))
+        .collect::<BTreeMap<_, _>>();
+    let mut witnesses = BTreeMap::new();
+    for (procedural_id, points, parameters, _, _) in pending {
+        if points.len() < 2 || points.len() != parameters.len() {
+            continue;
+        }
+        let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            continue;
+        };
+        let expected_range = [
+            parameters[0],
+            *parameters.last().expect("at least two points"),
+        ];
+        if context.parameter_range != expected_range {
+            continue;
+        }
+        for (side, support) in context.sides.iter().enumerate() {
+            if !validated_lanes.contains(&(procedural_id.clone(), side))
+                || pcurve_requires_completion(support.pcurve.as_ref())
+            {
+                continue;
+            }
+            let Some(surface) = support.surface.clone() else {
+                continue;
+            };
+            witnesses.insert(
+                (procedural.curve.clone(), surface),
+                [points[0], *points.last().expect("at least two points")],
+            );
+        }
+    }
+    witnesses
+}
+
 pub(crate) fn missing_support_parameter(value: f64) -> bool {
     value.to_bits() == MISSING_TOLERANCE.to_bits()
 }
@@ -1431,6 +1482,7 @@ pub(crate) fn attach_completed_intersection_pcurves_with_budget(
         0,
         source_stream,
         annotations,
+        &BTreeMap::new(),
         geometry_budget,
     );
 }
@@ -1445,6 +1497,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     procedural_start: usize,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
+    validated_endpoint_witnesses: &BTreeMap<(CurveId, SurfaceId), [Point3; 2]>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let loop_faces = ir
@@ -1537,8 +1590,8 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
             })
             .collect::<BTreeMap<_, _>>();
         // A chart carrier's serialized endpoint witnesses are a necessary
-        // edge-incidence condition. Keep full face-surface evaluation for
-        // every surviving key.
+        // edge-incidence condition. Reuse a prior sample-wise proof; evaluate
+        // the face surface only for keys without that proof.
         let endpoint_admissible_keys = coedge_candidates
             .iter()
             .filter_map(|(_, edge_id, curve, surface, edge_tolerance)| {
@@ -1572,13 +1625,15 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
                 };
                 Some((
                     key.clone(),
-                    pcurve_surface_endpoints_with_index_and_budget(
-                        &model_index,
-                        &key.1,
-                        &candidate.0,
-                        None,
-                        geometry_budget,
-                    ),
+                    validated_endpoint_witnesses.get(key).copied().or_else(|| {
+                        pcurve_surface_endpoints_with_index_and_budget(
+                            &model_index,
+                            &key.1,
+                            &candidate.0,
+                            None,
+                            geometry_budget,
+                        )
+                    }),
                 ))
             })
             .collect::<BTreeMap<_, _>>();
