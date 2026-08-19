@@ -6633,6 +6633,73 @@ where
     false
 }
 
+/// Collect one face's endpoint relation choices. A missing configuration list
+/// is an unknown result from bounded enumeration, not an empty domain.
+fn collect_endpoint_relation_face_choices(
+    face_assignments: &[MeshFaceBoundaryAssignment],
+    face_configurations: &[Option<MeshFaceEndpointConfigurations>],
+    covered: &mut [bool],
+) -> Option<Vec<MeshEndpointRelationChoice>> {
+    let mut choices_by_configuration = HashMap::<MeshFaceEndpointConfiguration, Vec<usize>>::new();
+    let mut unknown = false;
+    for (assignment, configurations) in face_configurations.iter().enumerate() {
+        let Some(configurations) = configurations else {
+            unknown = true;
+            continue;
+        };
+        for configuration in configurations {
+            for &(edge, _) in configuration {
+                *covered.get_mut(edge)? = true;
+            }
+            if endpoint_configuration_cycles_viable(
+                face_assignments.get(assignment)?,
+                configuration,
+            ) != Some(true)
+            {
+                continue;
+            }
+            let mut relation_configuration = configuration.clone();
+            for (_, pair) in &mut relation_configuration {
+                pair.sort_unstable();
+            }
+            relation_configuration.sort_unstable();
+            choices_by_configuration
+                .entry(relation_configuration)
+                .or_default()
+                .push(assignment);
+        }
+    }
+    let mut choices = choices_by_configuration
+        .into_iter()
+        .map(|(edge_pairs, mut assignments)| {
+            assignments.sort_unstable();
+            assignments.dedup();
+            MeshEndpointRelationChoice {
+                id: 0,
+                assignments,
+                edge_pairs,
+            }
+        })
+        .collect::<Vec<_>>();
+    choices.sort_unstable_by(|left, right| {
+        (&left.edge_pairs, &left.assignments).cmp(&(&right.edge_pairs, &right.assignments))
+    });
+    if unknown {
+        // A stopped enumeration is not evidence that the assignment has no
+        // configuration. The wildcard lets the relation walker defer that
+        // assignment to the complete endpoint search.
+        choices.push(MeshEndpointRelationChoice {
+            id: 0,
+            assignments: vec![usize::MAX],
+            edge_pairs: Vec::new(),
+        });
+    }
+    for (id, choice) in choices.iter_mut().enumerate() {
+        choice.id = id;
+    }
+    Some(choices)
+}
+
 /// Solve the unordered endpoint-configuration relation before selecting
 /// intrinsic cycle orientations. A configuration records one candidate pair
 /// for every edge in a face. Shared edges must agree on that pair, but their
@@ -6670,63 +6737,13 @@ fn resolve_endpoint_configuration_relation_streaming(
         if face_assignments.len() != face_configurations.len() {
             return None;
         }
-        let mut choices_by_configuration =
-            HashMap::<MeshFaceEndpointConfiguration, Vec<usize>>::new();
-        let mut unknown = false;
-        for (assignment, configurations) in face_configurations.iter().enumerate() {
-            let Some(configurations) = configurations else {
-                unknown = true;
-                continue;
-            };
-            for configuration in configurations {
-                for &(edge, _) in configuration {
-                    *covered.get_mut(edge)? = true;
-                }
-                if endpoint_configuration_cycles_viable(
-                    face_assignments.get(assignment)?,
-                    configuration,
-                ) != Some(true)
-                {
-                    continue;
-                }
-                let mut relation_configuration = configuration.clone();
-                for (_, pair) in &mut relation_configuration {
-                    pair.sort_unstable();
-                }
-                relation_configuration.sort_unstable();
-                choices_by_configuration
-                    .entry(relation_configuration)
-                    .or_default()
-                    .push(assignment);
-            }
-        }
-        let mut choices = choices_by_configuration
-            .into_iter()
-            .map(|(edge_pairs, mut assignments)| {
-                assignments.sort_unstable();
-                assignments.dedup();
-                MeshEndpointRelationChoice {
-                    id: 0,
-                    assignments,
-                    edge_pairs,
-                }
-            })
-            .collect::<Vec<_>>();
-        choices.sort_unstable_by(|left, right| {
-            (&left.edge_pairs, &left.assignments).cmp(&(&right.edge_pairs, &right.assignments))
-        });
+        let choices = collect_endpoint_relation_face_choices(
+            face_assignments,
+            face_configurations,
+            &mut covered,
+        )?;
         if choices.is_empty() {
-            if !unknown {
-                return Some(MeshEndpointResolve::Rejected);
-            }
-            choices.push(MeshEndpointRelationChoice {
-                id: 0,
-                assignments: vec![usize::MAX],
-                edge_pairs: Vec::new(),
-            });
-        }
-        for (id, choice) in choices.iter_mut().enumerate() {
-            choice.id = id;
+            return Some(MeshEndpointResolve::Rejected);
         }
         if !budget.charge_by(choices.len()) {
             return Some(MeshEndpointResolve::Exhausted);
@@ -9642,6 +9659,36 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
 
     assert_eq!(topology.faces.len(), 1);
     assert_eq!(point_assignment, vec![0, 1, 2]);
+}
+
+#[test]
+fn endpoint_relation_keeps_stopped_face_assignments() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let face_assignments = vec![assignment.clone(), assignment];
+    let face_configurations = vec![Some(vec![vec![(0, [0, 0])]]), None];
+    let mut covered = vec![false];
+
+    let choices = collect_endpoint_relation_face_choices(
+        &face_assignments,
+        &face_configurations,
+        &mut covered,
+    )
+    .expect("well-formed endpoint relation choices");
+
+    assert!(covered[0]);
+    assert!(choices
+        .iter()
+        .any(|choice| { choice.assignments == [usize::MAX] && choice.edge_pairs.is_empty() }));
+    assert!(choices
+        .iter()
+        .any(|choice| choice.assignments == [0] && choice.edge_pairs == [(0, [0, 0])]));
 }
 
 #[test]

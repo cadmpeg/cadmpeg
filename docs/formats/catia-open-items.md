@@ -492,14 +492,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-catia/src/loss.rs` gives `TopologyE5GaugeSubstituted`, `TopologyB5GaugeSubstituted`, and `TopologyZeroEntityGaugeSubstituted`. The E5, B5, and zero-entity routes charge one of these codes when a topology gauge replaces an unresolved source field. The standard route has no equivalent code, and `crates/cadmpeg-codec-catia/src/solve/` emits no loss code. A standard topology that rests on the automorphism quotient is thus not distinguishable in the report from a fully determined decode.
 
-### SN-31. Face assignments removed by a stopped enumeration
-
-**Question.** Which relation selects one face boundary assignment when the endpoint-configuration enumeration of another assignment of the same face does not finish?
-
-**Known.** `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9054-9081` enumerates the endpoint configurations of each face assignment under a local work slice and one shared budget. It gives no configuration list when either budget stops the enumeration, which is the same result as an assignment that has no configuration. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:6676-6728` keeps the unknown state only when no other assignment of the same face made a configuration; in every other case the stopped assignment leaves the face domain. `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:6838-6851` then tests uniqueness on the remaining assignments, and `crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs:9096-9098` returns that result before the complete selection search runs. No loss code records the removal.
-
-**Need.** We must keep every unenumerated assignment or refuse the file, because a stopped enumeration is not a proof that the assignment has no configuration, and the decoder asserts one unique topology from the assignments that remain.
-
 ### SN-32. Derived analytic carrier arc without a witness
 
 **Question.** Which arc of a derived analytic carrier is the edge when no branch witness and no native parameter incidence is available?
