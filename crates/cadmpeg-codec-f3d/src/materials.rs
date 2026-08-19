@@ -597,6 +597,7 @@ pub fn decode_with_body_bindings<'a>(
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: object_types.get(&over.entity_suffix).cloned(),
+            visible: None,
             channels: act_channels
                 .get(&over.entity_suffix)
                 .cloned()
@@ -1384,6 +1385,7 @@ fn bind_bodies(
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.clone()),
             object_type: object_types.get(&assignment.entity_suffix).cloned(),
+            visible: None,
             channels: act_channels
                 .get(&assignment.entity_suffix)
                 .cloned()

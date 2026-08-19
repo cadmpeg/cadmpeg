@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::annotated_entity_json;
 use crate::annotations::{ExactnessNote, StreamProvenance};
-use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
 use crate::provenance::Exactness;
 use crate::report::Check;
-use crate::unknown::UnknownRecord;
 use crate::validate::validate_neutral;
-use crate::{examples::unit_cube, CadIr, NativeNamespace, NativeRecord};
+use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 

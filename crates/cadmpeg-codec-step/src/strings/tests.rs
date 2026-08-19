@@ -96,7 +96,38 @@ fn edition_three_direct_utf8_text_uses_the_file_description_level() {
 }
 
 #[test]
-fn legacy_direct_single_byte_text_keeps_iso_8859_1_mapping() {
+fn edition_three_utf8_and_legacy_escape_fixtures_keep_the_same_text() {
+    let mut edition_three = Cursor::new(&include_bytes!("tests/data/el01_edition3_utf8.p21")[..]);
+    let decoded_edition_three = StepCodec::default()
+        .decode(&mut edition_three, &DecodeOptions::default())
+        .expect("decode edition-three UTF-8 fixture");
+    let product = decoded_edition_three
+        .ir()
+        .model
+        .product_definitions
+        .first()
+        .expect("edition-three product");
+    assert_eq!(product.part_number.as_deref(), Some("Pé"));
+    assert_eq!(product.source_name.as_deref(), Some("Nø"));
+
+    let mut legacy = Cursor::new(&include_bytes!("tests/data/el01_legacy_escaped.p21")[..]);
+    let decoded_legacy = StepCodec::default()
+        .decode(&mut legacy, &DecodeOptions::default())
+        .expect("decode legacy escaped fixture");
+    let product = decoded_legacy
+        .ir()
+        .model
+        .product_definitions
+        .first()
+        .expect("legacy product");
+    assert_eq!(product.part_number.as_deref(), Some("Pé"));
+    assert_eq!(product.source_name.as_deref(), Some("Nø"));
+}
+
+#[test]
+fn legacy_direct_single_byte_text_uses_cadir_iso_8859_1_salvage() {
+    // `0xE9` is outside the legacy direct repertoire; this pins the documented
+    // recovery path for malformed historical input.
     let mut source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'3;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=PRODUCT('P\xE9','N','',());\nENDSEC;\nEND-ISO-10303-21;\n".to_vec();
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(&mut source), &DecodeOptions::default())

@@ -2597,6 +2597,7 @@ fn build_geometry_ir(
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
+                    visible: None,
                     channels: BTreeMap::new(),
                 });
             }
@@ -2697,6 +2698,7 @@ fn build_geometry_ir(
                         display_face.table_index
                     )),
                     object_type: Some("DisplayFace".into()),
+                    visible: None,
                     channels: BTreeMap::new(),
                 });
             }

@@ -7,8 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
-    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, LimitsAndFits,
+    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -19,6 +19,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::geometry::GeometryData;
+use super::topology::TopologyData;
 use super::StageOutcome;
 
 struct MeasureContext<'a> {
@@ -31,6 +32,7 @@ struct MeasureContext<'a> {
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
+    topology: &TopologyData,
     ir: &mut CadIr,
     ctx: Option<&DecodeContext<'_>>,
 ) -> StageOutcome<()> {
@@ -43,15 +45,19 @@ pub(super) fn decode(
             notes: Vec::new(),
         };
     }
-    let aspects = exchange
+    let base_aspects = exchange
         .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
-        .filter(|(_, record)| is_shape_aspect(record))
         .map(|(id, _)| id)
+        .collect::<BTreeSet<_>>();
+    let shape_aspects = exchange
+        .matching_entity_ids(is_shape_aspect_name)
+        .into_iter()
         .collect::<BTreeSet<_>>();
     let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
+    let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -84,7 +90,61 @@ pub(super) fn decode(
                 )
             }),
             targets([id]),
+            None,
             PmiDefinition::Datum { identification },
+        );
+        typed.insert(id);
+    }
+
+    for id in exchange.matching_entity_ids(is_datum_target_name) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let form = shape_aspect_parameter(record, 1)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target form",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .unwrap_or_default();
+        let identification = datum_target_identification_parameter(record)
+            .and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target identification",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .unwrap_or_else(|| format!("#{id}"));
+        push_annotation(
+            ir,
+            &mut annotations,
+            id,
+            shape_aspect_parameter(record, 0).and_then(|value| {
+                decode_text(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "datum target name",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            }),
+            targets([id]),
+            None,
+            PmiDefinition::DatumTarget {
+                form: datum_target_form(&form),
+                identification,
+                basis: Vec::new(),
+            },
         );
         typed.insert(id);
     }
@@ -133,8 +193,9 @@ pub(super) fn decode(
                     .parameters()
                     .iter()
                     .flat_map(references)
-                    .filter(|id| aspects.contains(id)),
+                    .filter(|id| base_aspects.contains(id)),
             ),
+            None,
             PmiDefinition::DatumSystem {
                 references: datum_references,
             },
@@ -197,13 +258,14 @@ pub(super) fn decode(
             .iter()
             .flat_map(|partial| &partial.parameters)
             .flat_map(references)
-            .filter(|reference| aspects.contains(reference));
+            .filter(|reference| shape_aspects.contains(reference));
         push_annotation(
             ir,
             &mut annotations,
             id,
             name,
             targets(aspect_ids),
+            None,
             PmiDefinition::Dimension {
                 dimension: kind,
                 nominal,
@@ -446,7 +508,8 @@ pub(super) fn decode(
                         StepLossCode::MetadataStringInvalid,
                     )
                 }),
-            targets(refs.iter().copied().filter(|id| aspects.contains(id))),
+            targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
+            None,
             PmiDefinition::GeometricTolerance {
                 tolerance,
                 magnitude,
@@ -516,12 +579,32 @@ pub(super) fn decode(
             0,
         );
         let parameters = all_parameters(record).collect::<Vec<_>>();
-        let placement = parameters
-            .iter()
-            .flat_map(|value| references(value))
-            .find_map(|reference| {
-                find_placement(reference, exchange, geometry, &mut BTreeSet::new(), 0)
-            });
+        // Placement identity is the carrier key; the transform value cannot
+        // make two source carriers one semantic carrier.
+        let mut placement_candidates = BTreeMap::new();
+        let mut placement_visited = BTreeMap::new();
+        for reference in parameters.iter().flat_map(|value| references(value)) {
+            collect_placement_candidates(
+                reference,
+                exchange,
+                geometry,
+                &mut placement_visited,
+                &mut placement_candidates,
+                0,
+            );
+        }
+        let placement = match placement_candidates.len() {
+            0 => None,
+            1 => placement_candidates.values().next().copied(),
+            count => {
+                losses.push(StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
+                    format!(
+                        "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
+                    ),
+                ));
+                None
+            }
+        };
         let mut semantics = parameters
             .iter()
             .flat_map(|value| references(value))
@@ -554,6 +637,9 @@ pub(super) fn decode(
                     )
                 }),
             Vec::new(),
+            hidden_presentation_annotations
+                .contains(&id)
+                .then_some(false),
             PmiDefinition::Presentation {
                 text,
                 placement,
@@ -569,6 +655,23 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
+    let points_by_source = point_sources(ir);
+    let curves_by_source = curve_sources(ir);
+    let geometry_sources = GeometrySources {
+        points: &points_by_source,
+        curves: &curves_by_source,
+    };
+    resolve_geometric_item_usages(
+        exchange,
+        topology,
+        geometry_sources,
+        &shape_aspects,
+        &annotations,
+        ir,
+        &mut typed,
+    );
+
     let targeted_aspects = ir
         .model
         .pmi
@@ -579,7 +682,7 @@ pub(super) fn decode(
             _ => None,
         })
         .collect::<BTreeSet<u64>>();
-    typed.extend(aspects.intersection(&targeted_aspects).copied());
+    typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
     StageOutcome {
         value: (),
@@ -639,6 +742,234 @@ fn mark_characteristic_representations(
             );
         }
     }
+}
+
+fn resolve_feature_for_datum_target_relationships(
+    exchange: &Exchange,
+    annotations: &BTreeMap<u64, usize>,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+) {
+    for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
+        let Some((relating, related)) = relationship_endpoints(record) else {
+            continue;
+        };
+        let Some(&annotation_index) = annotations.get(&related) else {
+            continue;
+        };
+        let Some(annotation) = ir.model.pmi.get_mut(annotation_index) else {
+            continue;
+        };
+        let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
+            continue;
+        };
+        push_target(
+            basis,
+            PmiTarget::ShapeAspect {
+                source_id: format!("#{relating}"),
+            },
+        );
+        typed.extend([id, relating]);
+    }
+}
+
+fn resolve_geometric_item_usages(
+    exchange: &Exchange,
+    topology: &TopologyData,
+    geometry_sources: GeometrySources<'_>,
+    shape_aspects: &BTreeSet<u64>,
+    annotations: &BTreeMap<u64, usize>,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+) {
+    let mut aspect_annotations = BTreeMap::<u64, BTreeSet<usize>>::new();
+    for (&annotation_id, &annotation_index) in annotations {
+        if shape_aspects.contains(&annotation_id) {
+            aspect_annotations
+                .entry(annotation_id)
+                .or_default()
+                .insert(annotation_index);
+        }
+        let Some(record) = exchange.records.get(&annotation_id) else {
+            continue;
+        };
+        for reference in all_parameters(record).flat_map(references) {
+            if shape_aspects.contains(&reference) {
+                aspect_annotations
+                    .entry(reference)
+                    .or_default()
+                    .insert(annotation_index);
+            }
+        }
+    }
+
+    let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records.values() {
+        let Some((relating, related)) = relationship_endpoints(record) else {
+            continue;
+        };
+        relationship_aspects
+            .entry(relating)
+            .or_default()
+            .insert(related);
+        relationship_aspects
+            .entry(related)
+            .or_default()
+            .insert(relating);
+    }
+
+    for record in exchange.records.values() {
+        let Some(partial) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE")
+        else {
+            continue;
+        };
+        let Some(definition) = partial.parameters.get(2).and_then(first_reference) else {
+            continue;
+        };
+        let Some(identified_item) = partial.parameters.get(4).and_then(first_reference) else {
+            continue;
+        };
+        let mut annotation_indices = aspect_annotations
+            .get(&definition)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(aspects) = relationship_aspects.get(&definition) {
+            for aspect in aspects {
+                annotation_indices.extend(
+                    aspect_annotations
+                        .get(aspect)
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            }
+        }
+        if annotation_indices.is_empty() {
+            continue;
+        }
+        let targets = topology_targets(identified_item, topology, geometry_sources);
+        if targets.is_empty() {
+            continue;
+        }
+        for annotation_index in annotation_indices {
+            let annotation = &mut ir.model.pmi[annotation_index];
+            for target in &targets {
+                if !annotation.targets.contains(target) {
+                    annotation.targets.push(target.clone());
+                }
+            }
+        }
+        typed.insert(record.id);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct GeometrySources<'a> {
+    points: &'a BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>,
+    curves: &'a BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>,
+}
+
+fn topology_targets(
+    id: u64,
+    topology: &TopologyData,
+    geometry_sources: GeometrySources<'_>,
+) -> Vec<PmiTarget> {
+    let mut targets = Vec::new();
+    for body in topology.body_by_root.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Body { body: body.clone() });
+    }
+    for face in topology.faces_by_source.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Face { face: face.clone() });
+    }
+    for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
+        push_target(&mut targets, PmiTarget::Edge { edge: edge.clone() });
+    }
+    for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Vertex {
+                vertex: vertex.clone(),
+            },
+        );
+    }
+    for point in geometry_sources.points.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Point {
+                point: point.clone(),
+            },
+        );
+    }
+    for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
+        push_target(
+            &mut targets,
+            PmiTarget::Curve {
+                curve: curve.clone(),
+            },
+        );
+    }
+    targets
+}
+
+fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
+    if !targets.contains(&target) {
+        targets.push(target);
+    }
+}
+
+fn first_reference(value: &Value) -> Option<u64> {
+    references(value).into_iter().next()
+}
+
+fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
+    let parameters = record.partials.iter().find_map(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SHAPE_ASPECT_RELATIONSHIP" | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+        )
+        .then_some(partial.parameters.as_slice())
+    })?;
+    Some((
+        parameters.get(2).and_then(first_reference)?,
+        parameters.get(3).and_then(first_reference)?,
+    ))
+}
+
+fn point_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>> {
+    let mut points = BTreeMap::new();
+    for point in &ir.model.points {
+        let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
+            continue;
+        };
+        points
+            .entry(source)
+            .or_insert_with(Vec::new)
+            .push(point.id.clone());
+    }
+    points
+}
+
+fn curve_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>> {
+    let mut curves = BTreeMap::new();
+    for curve in &ir.model.curves {
+        let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
+            continue;
+        };
+        curves
+            .entry(source)
+            .or_insert_with(Vec::new)
+            .push(curve.id.clone());
+    }
+    curves
+}
+
+fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
+    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
+    let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
+    suffix.split('-').next()?.parse().ok()
 }
 
 fn datum_references(
@@ -791,7 +1122,8 @@ fn modifier_text(
 }
 
 pub(super) fn is_presentation_annotation(name: &str) -> bool {
-    name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
+    name.starts_with("ANNOTATION_")
+        && (name.ends_with("_OCCURRENCE") || name.ends_with("_OCCURRENCE_WITH_LEADER_LINE"))
         || matches!(
             name,
             "TESSELLATED_ANNOTATION_OCCURRENCE"
@@ -807,11 +1139,74 @@ fn presentation_annotation_name(record: &RawRecord) -> Option<&str> {
     })
 }
 
+pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
+    presentation_annotation_name(record).is_some()
+}
+
+fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut hidden = BTreeSet::new();
+    for record in exchange.records.values() {
+        let Some(items) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "INVISIBILITY")
+            .and_then(|partial| partial.parameters.first())
+        else {
+            continue;
+        };
+        for target in references(items) {
+            if exchange
+                .records
+                .get(&target)
+                .is_some_and(is_supported_invisibility_target)
+            {
+                hidden.insert(target);
+            }
+        }
+    }
+    hidden
+}
+
 fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
     record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
+}
+
+fn collect_typed_placement_candidates(
+    record: &RawRecord,
+    geometry: &GeometryData,
+    candidates: &mut BTreeMap<u64, Transform>,
+) {
+    let has_annotation_text = record.partials.iter().any(|partial| {
+        partial.name == "ANNOTATION_TEXT"
+            || partial.name == "ANNOTATION_TEXT_CHARACTER"
+            || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
+    });
+    for partial in &record.partials {
+        let is_carrier = match partial.name.as_str() {
+            "DEFINED_CHARACTER_GLYPH"
+            | "SYMBOL_TARGET"
+            | "TEXT_LITERAL"
+            | "DRAUGHTING_TEXT_LITERAL_WITH_DELINEATION" => true,
+            name if name.starts_with("TEXT_LITERAL_WITH_") => true,
+            "MAPPED_ITEM" | "ANNOTATION_TEXT" | "ANNOTATION_TEXT_CHARACTER" => has_annotation_text,
+            name if has_annotation_text && name.starts_with("ANNOTATION_TEXT_WITH_") => true,
+            _ => false,
+        };
+        if !is_carrier {
+            continue;
+        }
+        for reference in partial.parameters.iter().flat_map(references) {
+            if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&reference) {
+                candidates.insert(
+                    reference,
+                    super::geometry::placement_transform((origin, z_axis, x_axis)),
+                );
+            }
+        }
+    }
 }
 
 fn find_annotation_text(
@@ -876,37 +1271,40 @@ fn collect_annotation_text(
     }
 }
 
-fn find_placement(
+fn collect_placement_candidates(
     id: u64,
     exchange: &Exchange,
     geometry: &GeometryData,
-    visited: &mut BTreeSet<u64>,
+    visited: &mut BTreeMap<u64, usize>,
+    candidates: &mut BTreeMap<u64, Transform>,
     depth: usize,
-) -> Option<Transform> {
-    if depth >= 256 {
-        return None;
+) {
+    // Retain the shortest depth so the bounded traversal is independent of
+    // aggregate member order when a graph has alternate paths.
+    if depth >= 256
+        || visited
+            .get(&id)
+            .is_some_and(|visited_depth| *visited_depth <= depth)
+    {
+        return;
     }
-    if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&id) {
-        let y_axis = cadmpeg_ir::math::Vector3::new(
-            z_axis.y * x_axis.z - z_axis.z * x_axis.y,
-            z_axis.z * x_axis.x - z_axis.x * x_axis.z,
-            z_axis.x * x_axis.y - z_axis.y * x_axis.x,
+    visited.insert(id, depth);
+    if let Some(record) = exchange.records.get(&id) {
+        collect_typed_placement_candidates(record, geometry, candidates);
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        return;
+    };
+    for reference in all_parameters(record).flat_map(references) {
+        collect_placement_candidates(
+            reference,
+            exchange,
+            geometry,
+            visited,
+            candidates,
+            depth + 1,
         );
-        return Some(Transform {
-            rows: [
-                [x_axis.x, y_axis.x, z_axis.x, origin.x],
-                [x_axis.y, y_axis.y, z_axis.y, origin.y],
-                [x_axis.z, y_axis.z, z_axis.z, origin.z],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        });
     }
-    if !visited.insert(id) {
-        return None;
-    }
-    all_parameters(exchange.records.get(&id)?)
-        .flat_map(references)
-        .find_map(|reference| find_placement(reference, exchange, geometry, visited, depth + 1))
 }
 
 fn push_annotation(
@@ -915,12 +1313,14 @@ fn push_annotation(
     id: u64,
     name: Option<String>,
     targets: Vec<PmiTarget>,
+    visible: Option<bool>,
     definition: PmiDefinition,
 ) {
     annotations.insert(id, ir.model.pmi.len());
     ir.model.pmi.push(PmiAnnotation {
         id: pmi_id(id),
         name: name.filter(|value| !value.is_empty()),
+        visible,
         targets,
         definition,
     });
@@ -940,6 +1340,30 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId(StepIdentity::presentation("pmi", id))
 }
 
+fn datum_target_form(value: &str) -> DatumTargetForm {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "point" => DatumTargetForm::Point,
+        "line" => DatumTargetForm::Line,
+        "rectangle" => DatumTargetForm::Rectangle,
+        "circle" => DatumTargetForm::Circle,
+        "circular curve" => DatumTargetForm::CircularCurve,
+        _ => DatumTargetForm::Other(value.to_owned()),
+    }
+}
+
+fn datum_target_identification_parameter(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "DATUM_TARGET")
+        .and_then(|partial| partial.parameters.last())
+        .or_else(|| record.parameter(4))
+}
+
+fn is_datum_target_name(name: &str) -> bool {
+    matches!(name, "DATUM_TARGET" | "PLACED_DATUM_TARGET_FEATURE")
+}
+
 fn is_pmi_entity_name(name: &str) -> bool {
     matches!(
         name,
@@ -953,18 +1377,124 @@ fn is_pmi_entity_name(name: &str) -> bool {
             | "DRAUGHTING_MODEL"
             | "ANNOTATION_PLANE"
             | "DRAUGHTING_CALLOUT"
+            | "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"
+            | "GEOMETRIC_ITEM_SPECIFIC_USAGE"
     ) || dimension_kind(Some(name)).is_some()
         || tolerance_kind(Some(name)).is_some()
+        || is_datum_target_name(name)
         || is_presentation_annotation(name)
 }
 
-fn is_shape_aspect(record: &RawRecord) -> bool {
-    record.partials.iter().any(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM"
-        )
-    })
+// Simple STEP instances contain only their most-derived entity name. The
+// parser does not load an EXPRESS inheritance graph, so keep the supported
+// shape_aspect lineage here for leaf names that do not identify that lineage
+// by the `_SHAPE_ASPECT` suffix.
+const SHAPE_ASPECT_SUBTYPE_NAMES: &[&str] = &[
+    "APEX",
+    "APPLIED_AREA",
+    "ASSEMBLY_BOND_DEFINITION",
+    "ASSEMBLY_JOINT",
+    "ASSEMBLY_SHAPE_CONSTRAINT",
+    "ASSEMBLY_SHAPE_JOINT",
+    "BASIC_ROUND_HOLE_OCCURRENCE",
+    "BASIC_ROUND_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "BEAD_END",
+    "BOSS_TOP",
+    "CENTRE_OF_SYMMETRY",
+    "CHAMFER",
+    "CHAMFER_OFFSET",
+    "CIRCULAR_CLOSED_PROFILE",
+    "CLOSED_PATH_PROFILE",
+    "COMMON_DATUM",
+    "COMPONENT_FEATURE",
+    "COMPONENT_FEATURE_JOINT",
+    "COMPONENT_MATING_CONSTRAINT_CONDITION",
+    "COMPONENT_TERMINAL",
+    "CONNECTION_ZONE_BASED_ASSEMBLY_JOINT",
+    "CONNECTION_ZONE_INTERFACE_PLANE_RELATIONSHIP",
+    "CONNECTIVITY_DEFINITION",
+    "CONTACTING_FEATURE",
+    "CONTACT_FEATURE",
+    "COUNTERBORE_HOLE_OCCURRENCE",
+    "COUNTERBORE_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "COUNTERDRILL_HOLE_OCCURRENCE",
+    "COUNTERDRILL_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "COUNTERSINK_HOLE_OCCURRENCE",
+    "COUNTERSINK_HOLE_OCCURRENCE_IN_ASSEMBLY",
+    "CROSS_SECTIONAL_ALTERNATIVE_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT_WITH_LACING",
+    "CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT_WITH_TUBULAR_COVER",
+    "CROSS_SECTIONAL_OCCURRENCE_SHAPE_ELEMENT",
+    "CROSS_SECTIONAL_PART_SHAPE_ELEMENT",
+    "DATUM",
+    "DATUM_FEATURE",
+    "DATUM_REFERENCE_COMPARTMENT",
+    "DATUM_REFERENCE_ELEMENT",
+    "DATUM_SYSTEM",
+    "DATUM_SYSTEM_FOR_COMPOSITE_GROUP_ELEMENT",
+    "DATUM_TARGET",
+    "DEFAULT_MODEL_GEOMETRIC_VIEW",
+    "DIMENSIONAL_LOCATION_WITH_DATUM_FEATURE",
+    "DIMENSIONAL_SIZE_WITH_DATUM_FEATURE",
+    "DIRECTED_ANGLE",
+    "DIRECTED_TOLERANCE_ZONE",
+    "DIRECTION_FEATURE_TOLERANCE_ZONE",
+    "EDGE_ROUND",
+    "EXTENSION",
+    "FILLET",
+    "GENERAL_DATUM_REFERENCE",
+    "GEOMETRIC_ALIGNMENT",
+    "GEOMETRIC_CONTACT",
+    "GEOMETRIC_INTERSECTION",
+    "HARNESS_NODE",
+    "HARNESS_SEGMENT",
+    "HOLE_BOTTOM",
+    "INSTANCED_FEATURE",
+    "JOGGLE_TERMINATION",
+    "LINEAR_PROFILE",
+    "MATED_PART_RELATIONSHIP",
+    "MODIFIED_PATTERN",
+    "NGON_CLOSED_PROFILE",
+    "OPEN_PATH_PROFILE",
+    "ORIENTED_TOLERANCE_ZONE",
+    "PARALLEL_OFFSET",
+    "PARTIAL_CIRCULAR_PROFILE",
+    "PATH_FEATURE_COMPONENT",
+    "PERPENDICULAR_TO",
+    "PHYSICAL_COMPONENT_FEATURE",
+    "PHYSICAL_COMPONENT_INTERFACE_TERMINAL",
+    "PHYSICAL_COMPONENT_TERMINAL",
+    "PLACED_DATUM_TARGET_FEATURE",
+    "PLACED_FEATURE",
+    "POCKET_BOTTOM",
+    "PROFILE_FLOOR",
+    "RECTANGULAR_CLOSED_PROFILE",
+    "RIB_TOP_FLOOR",
+    "ROUNDED_U_PROFILE",
+    "SHAPE_ASPECT_OCCURRENCE",
+    "SLOT_END",
+    "SPOTFACE_OCCURRENCE",
+    "SPOTFACE_OCCURRENCE_IN_ASSEMBLY",
+    "SQUARE_U_PROFILE",
+    "TANGENT",
+    "TAPER",
+    "TEE_PROFILE",
+    "TERMINAL_FEATURE",
+    "TERMINAL_LOCATION_GROUP",
+    "THREAD_RUNOUT",
+    "TOLERANCE_ZONE",
+    "TOLERANCE_ZONE_WITH_DATUM",
+    "TRANSITION_FEATURE",
+    "TRANSPORT_FEATURE",
+    "TWISTED_CROSS_SECTIONAL_GROUP_SHAPE_ELEMENT",
+    "VEE_PROFILE",
+];
+
+fn is_shape_aspect_name(name: &str) -> bool {
+    name == "SHAPE_ASPECT"
+        || name.ends_with("_SHAPE_ASPECT")
+        || SHAPE_ASPECT_SUBTYPE_NAMES.contains(&name)
 }
 
 fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
@@ -1043,7 +1573,6 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "SYMMETRY_TOLERANCE" => Kind::Symmetry,
         "CIRCULAR_RUNOUT_TOLERANCE" => Kind::CircularRunout,
         "TOTAL_RUNOUT_TOLERANCE" => Kind::TotalRunout,
-        "GEOMETRIC_TOLERANCE" => Kind::Other("geometric_tolerance".into()),
         _ => return None,
     })
 }

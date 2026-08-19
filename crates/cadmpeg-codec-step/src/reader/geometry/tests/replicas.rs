@@ -3,36 +3,25 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::{model_curve_point_by_id, model_surface_point_by_id};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
 use crate::export::is_rigid_transform;
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::{write_step, StepCodec, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {
@@ -155,6 +144,67 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     assert!(dot.abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc06_placement_reference.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode placement reference witness");
+
+    let expected = [
+        ("#6", (0.8, -0.6, 0.0)),
+        ("#9", (0.0, 1.0, 0.0)),
+        ("#12", (0.0, 1.0, 0.0)),
+    ];
+    for (source_id, (x, y, z)) in expected {
+        let curve = decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("step:data:curve{source_id}"))
+            .expect("witness circle");
+        let CurveGeometry::Circle { ref_direction, .. } = curve.geometry else {
+            panic!("witness carrier is not a circle");
+        };
+        assert!((ref_direction.x - x).abs() < 1.0e-12);
+        assert!((ref_direction.y - y).abs() < 1.0e-12);
+        assert!((ref_direction.z - z).abs() < 1.0e-12);
+    }
+
+    let near_axis = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#15")
+        .expect("near-axis witness circle");
+    let CurveGeometry::Circle { ref_direction, .. } = near_axis.geometry else {
+        panic!("near-axis witness carrier is not a circle");
+    };
+    assert!(ref_direction.y > 0.999_999_999);
+
+    let parallel_reference = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#18")
+        .expect("parallel-reference witness circle");
+    let CurveGeometry::Circle { ref_direction, .. } = parallel_reference.geometry else {
+        panic!("parallel-reference witness carrier is not a circle");
+    };
+    assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
+    assert!(ref_direction.y.abs() < 1.0e-12);
+    assert!(ref_direction.z.abs() < 1.0e-12);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PlacementReferenceInferred.kind()
+            && loss.message.contains("AXIS2_PLACEMENT_3D #17")
+    }));
 }
 
 #[test]
@@ -557,6 +607,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .replace(
             "#4=CARTESIAN_POINT('',(10.,0.,0.));",
             "#4=CARTESIAN_POINT('',(0.7071067811865476,0.7071067811865476,0.));",
+        )
+        .replace(
+            "#16=LINE('',#3,#13);",
+            "#74=DIRECTION('',(0.7071067811865476,0.7071067811865476,0.));\n#75=VECTOR('',#74,1.);\n#16=LINE('',#3,#75);",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

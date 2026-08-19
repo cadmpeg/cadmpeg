@@ -3,36 +3,18 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
 use crate::export::Builder;
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::export;
+use crate::{StepCodec, StepSchema};
 
 #[test]
 fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
@@ -94,6 +76,71 @@ fn disconnected_brep_outer_shell_is_rejected_without_role_corruption() {
         loss.message
             .contains("STEP topology root #31 rejected: connected outer shell #30")
     }));
+}
+
+#[test]
+fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
+    let source = include_bytes!("data/br02_outer_void_roles.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode outer and void shell witness");
+
+    let region = &decoded.ir().model.regions[0];
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(region.shells.len(), 3);
+    assert_eq!(region.shells[0].as_str(), "step:data:shell#30");
+    assert_eq!(
+        region.shells[1..]
+            .iter()
+            .map(cadmpeg_ir::ids::ShellId::as_str)
+            .collect::<Vec<_>>(),
+        ["step:data:shell#31", "step:data:shell#32"]
+    );
+    let face_sense = |document: &CadIr, shell_id: &cadmpeg_ir::ids::ShellId| {
+        let shell = document
+            .model
+            .shells
+            .iter()
+            .find(|shell| &shell.id == shell_id)
+            .expect("shell carrier");
+        let face_id = shell.faces.first().expect("shell face");
+        document
+            .model
+            .faces
+            .iter()
+            .find(|face| &face.id == face_id)
+            .expect("face carrier")
+            .sense
+    };
+    assert_eq!(
+        face_sense(decoded.ir(), &region.shells[0]),
+        cadmpeg_ir::topology::Sense::Forward
+    );
+    for shell_id in region.shells.iter().skip(1) {
+        assert_eq!(
+            face_sense(decoded.ir(), shell_id),
+            cadmpeg_ir::topology::Sense::Reversed
+        );
+    }
+
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#50=BREP_WITH_VOIDS('outer and voids',#30,(#34,#33));",
+            "#50=BREP_WITH_VOIDS('outer and voids',#30,(#33,#34));",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered outer and void shell witness");
+    assert_eq!(reordered.ir().model.regions[0].shells, region.shells);
+
+    for document in [decoded.ir(), reordered.ir()] {
+        let validation = cadmpeg_ir::validate_neutral(document, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
@@ -278,7 +325,10 @@ fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
         )
         .expect_err("strict mode rejects a noncanonical oriented shell");
 
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]
@@ -357,6 +407,126 @@ fn aliased_topology_root_reuses_the_committed_body_identity() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.0 == "step:data:shell_based_surface_model#70"));
+}
+
+#[test]
+fn topology_root_identity_uses_kind_shell_and_orientation_not_record_order() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = include_bytes!("data/br01_topology_root_identity.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode topology root identity witness");
+
+    let bodies = &decoded.ir().model.bodies;
+    assert_eq!(bodies.len(), 3, "{:#?}", decoded.report().losses);
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#32" && body.kind == BodyKind::Sheet }));
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#34" && body.kind == BodyKind::Solid }));
+    assert!(bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#35" && body.kind == BodyKind::Sheet }));
+
+    let source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#35=SHELL_BASED_SURFACE_MODEL('reversed physical order',(#31));\n#33=SHELL_BASED_SURFACE_MODEL('alias',(#30));\n#34=MANIFOLD_SOLID_BREP('different root kind',#30);\n#32=SHELL_BASED_SURFACE_MODEL('first root',(#30));",
+            "#32=SHELL_BASED_SURFACE_MODEL('first root',(#30));\n#34=MANIFOLD_SOLID_BREP('different root kind',#30);\n#33=SHELL_BASED_SURFACE_MODEL('alias',(#30));\n#35=SHELL_BASED_SURFACE_MODEL('reversed physical order',(#31));",
+        );
+    let reordered = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode physically reordered topology roots");
+
+    let reordered_bodies = &reordered.ir().model.bodies;
+    assert_eq!(
+        reordered_bodies.len(),
+        3,
+        "{:#?}",
+        reordered.report().losses
+    );
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#32" && body.kind == BodyKind::Sheet }));
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#34" && body.kind == BodyKind::Solid }));
+    assert!(reordered_bodies
+        .iter()
+        .any(|body| { body.id.as_str() == "step:data:body#35" && body.kind == BodyKind::Sheet }));
+}
+
+#[test]
+fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
+    let source = include_bytes!("data/tp01_shared_edge_ownership.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode shared edge ownership witness");
+
+    let body_ids = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        body_ids,
+        ["step:data:body#32", "step:data:body#33"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+    let edge_ids = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(edge_ids.contains("step:data:edge#19-root-32-shell-31"));
+    assert!(edge_ids.contains("step:data:edge#19-root-33-shell-30"));
+    assert_eq!(
+        edge_ids
+            .iter()
+            .filter(|id| id.contains("root-32") || id.contains("root-33"))
+            .count(),
+        6
+    );
+    let vertex_ids = decoded
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(vertex_ids.contains("step:data:vertex#6-root-32-shell-31"));
+    assert!(vertex_ids.contains("step:data:vertex#6-root-33-shell-30"));
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#32=SHELL_BASED_SURFACE_MODEL('second physical root',(#31));\n#33=SHELL_BASED_SURFACE_MODEL('first physical root',(#30));",
+            "#33=SHELL_BASED_SURFACE_MODEL('first physical root',(#30));\n#32=SHELL_BASED_SURFACE_MODEL('second physical root',(#31));",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode physically reordered shared edge witness");
+    assert_eq!(reordered.ir().model.bodies.len(), 2);
+    let reordered_edge_ids = reordered
+        .ir()
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(edge_ids, reordered_edge_ids);
 }
 
 #[test]
@@ -476,6 +646,43 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
 }
 
 #[test]
+fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
+    let source = include_bytes!("data/tp05_missing_vertex_carrier.p21");
+    let sheet = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode partial sheet witness");
+    assert_eq!(sheet.ir().model.bodies.len(), 1);
+    assert_eq!(sheet.ir().model.faces.len(), 1);
+    assert_eq!(sheet.ir().model.vertices.len(), 3);
+    assert!(sheet
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .all(|vertex| !vertex.id.as_str().contains("#6")));
+    assert!(sheet.report().losses.iter().any(|loss| loss
+        .message
+        .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
+    assert!(cadmpeg_ir::validate_neutral(sheet.ir(), sheet.report().losses.clone()).is_ok());
+
+    let solid_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#100=SHELL_BASED_SURFACE_MODEL('partial sheet salvage',(#30,#97));",
+            "#100=MANIFOLD_SOLID_BREP('partial solid refusal',#30);",
+        );
+    let solid = StepCodec::default()
+        .decode(&mut Cursor::new(solid_source), &DecodeOptions::default())
+        .expect("decode partial solid witness");
+    assert!(solid.ir().model.bodies.is_empty());
+    assert!(solid.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyRootRejected.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
+    assert!(cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone()).is_ok());
+}
+
+#[test]
 fn rejected_solid_root_reports_an_error_severity_loss() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
@@ -506,7 +713,10 @@ fn strict_decode_rejects_a_destroyed_solid() {
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
         .expect_err("strict mode rejects a destroyed solid");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
 }
 
 #[test]

@@ -3446,6 +3446,7 @@ mod nurbs_write_tests {
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
             name: Some("datum A".into()),
+            visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
                 source_id: "F1".into(),
             }],

@@ -305,6 +305,7 @@ fn insert_binding_record(
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: Some("CATIA V5 display property".into()),
+        visible: None,
         channels: BTreeMap::new(),
     });
 }

@@ -4,12 +4,12 @@
 const CMS_SIGNED_DATA_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02];
 
 #[derive(Debug)]
-struct Der<'a> {
+struct Ber<'a> {
     input: &'a [u8],
     at: usize,
 }
 
-impl<'a> Der<'a> {
+impl<'a> Ber<'a> {
     fn new(input: &'a [u8]) -> Self {
         Self { input, at: 0 }
     }
@@ -19,41 +19,88 @@ impl<'a> Der<'a> {
     }
 
     fn take(&mut self) -> Result<(u8, &'a [u8]), &'static str> {
-        let tag = *self.input.get(self.at).ok_or("missing DER tag")?;
+        let tag = self.take_tag_octet()?;
+        let first_length = *self.input.get(self.at).ok_or("missing BER length")?;
         self.at += 1;
-        let first_length = *self.input.get(self.at).ok_or("missing DER length")?;
-        self.at += 1;
+        if first_length == 0x80 {
+            if tag & 0x20 == 0 {
+                return Err("indefinite length on primitive CMS value");
+            }
+            let value_start = self.at;
+            let value_end = self.indefinite_end(value_start)?;
+            self.at = value_end
+                .checked_add(2)
+                .ok_or("BER end-of-contents overflow")?;
+            return Ok((tag, &self.input[value_start..value_end]));
+        }
         let length = if first_length & 0x80 == 0 {
             usize::from(first_length)
         } else {
             let octets = usize::from(first_length & 0x7f);
             if octets == 0 || octets > std::mem::size_of::<usize>() {
-                return Err("unsupported DER length");
+                return Err("unsupported BER length");
             }
-            let end = self.at.checked_add(octets).ok_or("DER length overflow")?;
-            let bytes = self.input.get(self.at..end).ok_or("truncated DER length")?;
-            if bytes.first() == Some(&0) {
-                return Err("non-minimal DER length");
-            }
+            let end = self.at.checked_add(octets).ok_or("BER length overflow")?;
+            let bytes = self.input.get(self.at..end).ok_or("truncated BER length")?;
             self.at = end;
             bytes.iter().try_fold(0usize, |value, byte| {
                 value
                     .checked_shl(8)
                     .and_then(|value| value.checked_add(usize::from(*byte)))
-                    .ok_or("DER length overflow")
+                    .ok_or("BER length overflow")
             })?
         };
-        let end = self.at.checked_add(length).ok_or("DER value overflow")?;
-        let value = self.input.get(self.at..end).ok_or("truncated DER value")?;
+        let end = self.at.checked_add(length).ok_or("BER value overflow")?;
+        let value = self.input.get(self.at..end).ok_or("truncated BER value")?;
         self.at = end;
         Ok((tag, value))
+    }
+
+    fn take_tag_octet(&mut self) -> Result<u8, &'static str> {
+        let tag = *self.input.get(self.at).ok_or("missing BER tag")?;
+        self.at += 1;
+        if tag & 0x1f == 0x1f {
+            let mut octets = 0;
+            loop {
+                let byte = *self.input.get(self.at).ok_or("truncated BER tag")?;
+                self.at += 1;
+                octets += 1;
+                if octets > std::mem::size_of::<usize>() * 8 {
+                    return Err("BER tag is too long");
+                }
+                if byte & 0x80 == 0 {
+                    break;
+                }
+            }
+        }
+        Ok(tag)
+    }
+
+    fn indefinite_end(&self, start: usize) -> Result<usize, &'static str> {
+        let mut contents = Self {
+            input: self.input,
+            at: start,
+        };
+        loop {
+            if contents
+                .input
+                .get(contents.at..)
+                .is_some_and(|remaining| remaining.starts_with(&[0, 0]))
+            {
+                return Ok(contents.at);
+            }
+            if contents.at >= contents.input.len() {
+                return Err("unterminated BER indefinite value");
+            }
+            contents.take()?;
+        }
     }
 
     fn take_tag(&mut self, expected: u8) -> Result<&'a [u8], &'static str> {
         let (tag, value) = self.take()?;
         (tag == expected)
             .then_some(value)
-            .ok_or("unexpected DER tag")
+            .ok_or("unexpected BER tag")
     }
 }
 
@@ -70,7 +117,7 @@ fn validate_integer(value: &[u8]) -> Result<(), &'static str> {
 }
 
 fn validate_algorithm_identifier(value: &[u8]) -> Result<(), &'static str> {
-    let mut algorithm = Der::new(value);
+    let mut algorithm = Ber::new(value);
     if algorithm.take_tag(0x06)?.is_empty() {
         return Err("empty CMS algorithm OID");
     }
@@ -83,8 +130,38 @@ fn validate_algorithm_identifier(value: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
+fn validate_octet_string(tag: u8, value: &[u8]) -> Result<(), &'static str> {
+    match tag {
+        0x04 => Ok(()),
+        0x24 => {
+            let mut chunks = Ber::new(value);
+            while chunks.remaining() > 0 {
+                let (chunk_tag, chunk_value) = chunks.take()?;
+                validate_octet_string(chunk_tag, chunk_value)?;
+            }
+            Ok(())
+        }
+        _ => Err("invalid CMS OCTET STRING"),
+    }
+}
+
+fn validate_subject_key_identifier(tag: u8, value: &[u8]) -> Result<(), &'static str> {
+    match tag {
+        0x80 => Ok(()),
+        0xa0 => {
+            let mut chunks = Ber::new(value);
+            while chunks.remaining() > 0 {
+                let (chunk_tag, chunk_value) = chunks.take()?;
+                validate_octet_string(chunk_tag, chunk_value)?;
+            }
+            Ok(())
+        }
+        _ => Err("invalid CMS subject key identifier"),
+    }
+}
+
 fn validate_digest_algorithms(value: &[u8]) -> Result<(), &'static str> {
-    let mut algorithms = Der::new(value);
+    let mut algorithms = Ber::new(value);
     if algorithms.remaining() == 0 {
         return Err("CMS SignedData has no digest algorithm");
     }
@@ -98,22 +175,22 @@ fn validate_digest_algorithms(value: &[u8]) -> Result<(), &'static str> {
 fn validate_signer_identifier(tag: u8, value: &[u8]) -> Result<(), &'static str> {
     match tag {
         0x30 => {
-            let mut issuer_and_serial = Der::new(value);
+            let mut issuer_and_serial = Ber::new(value);
             let issuer = issuer_and_serial.take_tag(0x30)?;
-            let mut issuer = Der::new(issuer);
+            let mut issuer = Ber::new(issuer);
             while issuer.remaining() > 0 {
                 issuer.take()?;
             }
             validate_integer(issuer_and_serial.take_tag(0x02)?)?;
             require_empty(&issuer_and_serial)
         }
-        0xa0 => Ok(()),
+        0x80 | 0xa0 => validate_subject_key_identifier(tag, value),
         _ => Err("invalid CMS signer identifier"),
     }
 }
 
 fn validate_signer_info(value: &[u8]) -> Result<(), &'static str> {
-    let mut signer = Der::new(value);
+    let mut signer = Ber::new(value);
     validate_integer(signer.take_tag(0x02)?)?;
     let (signer_identifier_tag, signer_identifier) = signer.take()?;
     validate_signer_identifier(signer_identifier_tag, signer_identifier)?;
@@ -122,7 +199,8 @@ fn validate_signer_info(value: &[u8]) -> Result<(), &'static str> {
         signer.take()?;
     }
     validate_algorithm_identifier(signer.take_tag(0x30)?)?;
-    signer.take_tag(0x04)?;
+    let (signature_tag, signature_value) = signer.take()?;
+    validate_octet_string(signature_tag, signature_value)?;
     if signer.input.get(signer.at).copied() == Some(0xa1) {
         signer.take()?;
     }
@@ -130,7 +208,7 @@ fn validate_signer_info(value: &[u8]) -> Result<(), &'static str> {
 }
 
 fn validate_signer_infos(value: &[u8]) -> Result<(), &'static str> {
-    let mut signers = Der::new(value);
+    let mut signers = Ber::new(value);
     if signers.remaining() == 0 {
         return Err("CMS SignedData has no signer");
     }
@@ -140,19 +218,22 @@ fn validate_signer_infos(value: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn require_empty(der: &Der<'_>) -> Result<(), &'static str> {
-    (der.remaining() == 0)
+fn require_empty(ber: &Ber<'_>) -> Result<(), &'static str> {
+    (ber.remaining() == 0)
         .then_some(())
-        .ok_or("trailing DER value")
+        .ok_or("trailing BER value")
 }
 
 /// Checks the Part 21 CMS envelope and the detached-content invariant.
+///
+/// This admits structure only. It does not compute a content digest, verify a
+/// signature value, select a public key, or apply a caller trust policy.
 pub(crate) fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
-    let mut content_info = Der::new(input);
+    let mut content_info = Ber::new(input);
     let content_info_value = content_info.take_tag(0x30)?;
     require_empty(&content_info)?;
 
-    let mut content_info = Der::new(content_info_value);
+    let mut content_info = Ber::new(content_info_value);
     let content_type = content_info.take_tag(0x06)?;
     if content_type != CMS_SIGNED_DATA_OID {
         return Err("CMS content type is not signedData");
@@ -160,15 +241,15 @@ pub(crate) fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
     let signed_data_wrapper = content_info.take_tag(0xa0)?;
     require_empty(&content_info)?;
 
-    let mut wrapper = Der::new(signed_data_wrapper);
+    let mut wrapper = Ber::new(signed_data_wrapper);
     let signed_data_value = wrapper.take_tag(0x30)?;
     require_empty(&wrapper)?;
 
-    let mut signed_data = Der::new(signed_data_value);
+    let mut signed_data = Ber::new(signed_data_value);
     validate_integer(signed_data.take_tag(0x02)?)?;
     validate_digest_algorithms(signed_data.take_tag(0x31)?)?;
     let encap_content_info = signed_data.take_tag(0x30)?;
-    let mut encap_content_info = Der::new(encap_content_info);
+    let mut encap_content_info = Ber::new(encap_content_info);
     encap_content_info.take_tag(0x06)?;
     if encap_content_info.remaining() != 0 {
         return Err("CMS SignedData is not detached");
@@ -184,7 +265,7 @@ pub(crate) fn validate_detached_cms(input: &[u8]) -> Result<(), &'static str> {
                     return Err("CMS optional fields are out of order");
                 }
                 optional_stage = stage;
-                let mut optional = Der::new(value);
+                let mut optional = Ber::new(value);
                 while optional.remaining() > 0 {
                     optional.take()?;
                 }

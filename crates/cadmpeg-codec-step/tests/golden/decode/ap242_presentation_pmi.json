@@ -28,6 +28,14 @@
             "items": [
               {
                 "target": "step:presentation:pmi#8"
+              },
+              {
+                "target": "step:data:annotation_plane#9"
+              }
+            ],
+            "presentation_context": [
+              {
+                "target": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2"
               }
             ]
           },
@@ -101,6 +109,18 @@
     "native": {
       "step": {
         "arenas": {
+          "drawing_targets": [
+            {
+              "id": "step:data:annotation_plane#9",
+              "source_id": "#9",
+              "source_type": "ANNOTATION_PLANE"
+            },
+            {
+              "id": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2",
+              "source_id": "#2",
+              "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
+            }
+          ],
           "unknowns": []
         },
         "version": 1
@@ -139,24 +159,6 @@
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "drawing.relationship-untyped-target",
-          "kind": "metadata_not_transferred",
-          "namespace": "step"
-        },
-        "message": "STEP drawing #10 DRAUGHTING_MODEL relationship items references source-typed record #9 without a neutral identity; the raw source parameter is retained",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "drawing.relationship-untyped-target",
-          "kind": "metadata_not_transferred",
-          "namespace": "step"
-        },
-        "message": "STEP drawing #10 DRAUGHTING_MODEL relationship presentation_context references source-typed record #2 without a neutral identity; the raw source parameter is retained",
-        "severity": "warning"
       }
     ],
     "notes": [

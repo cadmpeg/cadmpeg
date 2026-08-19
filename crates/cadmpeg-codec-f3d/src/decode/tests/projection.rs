@@ -1745,6 +1745,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         appearance: AppearanceId("f3d:appearance#material".into()),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: Default::default(),
     };
     ir.model.appearance_bindings = vec![

@@ -3,35 +3,16 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn product_descriptions_transfer_from_product_and_definition() {
@@ -219,7 +200,50 @@ fn occurrence_transform_direction_follows_relationship_endpoints() {
 }
 
 #[test]
-fn occurrence_transform_resolves_through_placed_shape_representation() {
+fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-02 fixture")
+    };
+
+    let child_to_parent = decode_fixture(include_bytes!(
+        "tests/data/ps02_child_to_parent_transform.p21"
+    ));
+    let child = child_to_parent
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("child-to-parent occurrence");
+    assert_eq!(child.transform.rows[0][3], 25.0);
+    assert!(!child_to_parent
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+
+    let parent_to_child = decode_fixture(include_bytes!(
+        "tests/data/ps02_parent_to_child_transform.p21"
+    ));
+    let child = parent_to_child
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("parent-to-child occurrence");
+    assert_eq!(child.transform.rows[0][3], -25.0);
+    assert!(!parent_to_child
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+}
+
+#[test]
+fn occurrence_transform_requires_direct_definition_representation_endpoints() {
     let source = String::from_utf8(include_bytes!(
         "../../../tests/fixtures/ap242_assembly.p21"
     )
@@ -235,7 +259,7 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode placed shape representation");
+        .expect("decode bridge-only shape representation");
 
     let child = result
         .ir()
@@ -243,13 +267,13 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
         .occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
-        .expect("placed child occurrence");
-    assert_eq!(child.transform.rows[0][3], 25.0);
-    assert!(!result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+        .expect("unresolved child occurrence remains represented");
+    assert_eq!(child.transform, Transform::identity());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::NauoPlacementUnresolved.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("NAUO #12")
+    }));
 }
 
 #[test]
@@ -307,6 +331,133 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
             && loss.severity == cadmpeg_ir::Severity::Error
             && loss.message.contains("NAUO #10")
     }));
+}
+
+#[test]
+fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
+    for input in [
+        include_bytes!("tests/data/ps07_duplicate_context_placement_first.p21").as_slice(),
+        include_bytes!("tests/data/ps07_duplicate_context_placement_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-07 fixture");
+        let occurrence = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#12"));
+        assert!(
+            occurrence.is_none(),
+            "ambiguous occurrence must not be admitted"
+        );
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("NAUO #12")
+                && loss.message.contains("#38")
+                && loss.message.contains("#43")
+                && loss.message.contains("no neutral occurrence was admitted")
+                && loss.message.contains("remain opaque")
+        }));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let unknowns = result.ir().native_unknowns("step").unwrap();
+        let unknown_ids = unknowns
+            .iter()
+            .map(|record| record.id.0.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            unknown_ids,
+            std::collections::BTreeSet::from([
+                "step:data:context_dependent_shape_representation#38",
+                "step:data:context_dependent_shape_representation#43",
+                "step:data:next_assembly_usage_occurrence#12",
+            ])
+        );
+        for id in &unknown_ids {
+            let retained = result
+                .source_fidelity()
+                .retained_record(id)
+                .expect("ambiguous placement source record is retained");
+            assert_eq!(
+                retained.data.as_deref(),
+                Some(
+                    &input
+                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                )
+            );
+        }
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
+    for input in [
+        include_bytes!("tests/data/ps08_mixed_placement_mechanisms_first.p21").as_slice(),
+        include_bytes!("tests/data/ps08_mixed_placement_mechanisms_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-08 fixture");
+        assert!(result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .all(|occurrence| !occurrence.id.0.contains("#12")));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("NAUO #12")
+                && loss
+                    .message
+                    .contains("resolved context-dependent and occurrence-owned mapped placements")
+                && loss.message.contains("#43")
+                && loss.message.contains("#54")
+                && loss.message.contains("no neutral occurrence was admitted")
+                && loss.message.contains("remain opaque")
+        }));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let unknowns = result.ir().native_unknowns("step").unwrap();
+        let unknown_ids = unknowns
+            .iter()
+            .map(|record| record.id.0.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            unknown_ids,
+            std::collections::BTreeSet::from([
+                "step:data:context_dependent_shape_representation#54",
+                "step:data:next_assembly_usage_occurrence#12",
+                "step:data:shape_definition_representation#43",
+            ])
+        );
+        for id in &unknown_ids {
+            let retained = result
+                .source_fidelity()
+                .retained_record(id)
+                .expect("competing placement source record is retained");
+            assert_eq!(
+                retained.data.as_deref(),
+                Some(
+                    &input
+                        [retained.offset as usize..(retained.offset + retained.byte_len) as usize]
+                )
+            );
+        }
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 #[test]
@@ -397,6 +548,91 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
                 .contains("conflicting standalone MAPPED_ITEM placements")
             && loss.message.contains("#75")
             && loss.message.contains("#76")
+    }));
+}
+
+#[test]
+fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-03 fixture")
+    };
+
+    let same_transform = decode_fixture(include_bytes!(
+        "tests/data/ps03_repeated_mapped_placements_same_transform.p21"
+    ));
+    assert_eq!(same_transform.ir().model.bodies.len(), 1);
+    assert_eq!(
+        same_transform.ir().model.bodies[0]
+            .transform
+            .expect("one shared body transform")
+            .rows[0][3],
+        20.0
+    );
+    assert!(!same_transform
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::BodyConflictingMappedPlacements.kind() }));
+
+    for bytes in [
+        include_bytes!("tests/data/ps03_repeated_mapped_placements.p21").as_slice(),
+        include_bytes!("tests/data/ps03_repeated_mapped_placements_reordered.p21").as_slice(),
+    ] {
+        let conflicting = decode_fixture(bytes);
+        assert_eq!(conflicting.ir().model.bodies.len(), 1);
+        assert!(conflicting.ir().model.bodies[0].transform.is_none());
+        assert!(conflicting.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains("#39")
+                && loss.message.contains("#40")
+        }));
+    }
+}
+
+#[test]
+fn drawing_mapped_items_do_not_place_exact_bodies() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#20=ITEM('camera mapping');\n#21=REPRESENTATION_MAP(#20,#19);\n#22=MAPPED_ITEM('',#21,#6);\n#23=DRAUGHTING_MODEL('Drawing',(#22),#2);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode drawing mapped item");
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("MAPPED_ITEM #22 has no resolved body placement")
+    }));
+}
+
+#[test]
+fn nested_drawing_mapped_items_do_not_place_exact_bodies() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#20=ITEM('camera mapping');\n#21=REPRESENTATION_MAP(#20,#19);\n#22=MAPPED_ITEM('',#21,#6);\n#23=GEOMETRIC_SET('Drawing items',(#22));\n#24=DRAUGHTING_MODEL('Drawing',(#23),#2);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nested drawing mapped item");
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("MAPPED_ITEM #22 has no resolved body placement")
     }));
 }
 
@@ -548,7 +784,7 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
 #17=NEXT_ASSEMBLY_USAGE_OCCURRENCE('two','Second child','',#6,#14,$);
 #20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
 #21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('model','3D'));
-#22=SHAPE_REPRESENTATION('root',(#39,#41),#21);
+#22=(CHARACTERIZED_REPRESENTATION() REPRESENTATION('root',(#39,#41),#21) SHAPE_REPRESENTATION());
 #23=SHAPE_REPRESENTATION('first',(),#21);
 #24=SHAPE_REPRESENTATION('second',(),#21);
 #25=SHAPE_DEFINITION_REPRESENTATION(#7,#22);
@@ -590,36 +826,52 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
 }
 
 #[test]
+fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
+    for input in [
+        include_bytes!("tests/data/ps09_unique_parent_items_first.p21").as_slice(),
+        include_bytes!("tests/data/ps09_unique_parent_items_reordered.p21").as_slice(),
+    ] {
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-09 fixture");
+        let first = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#16"))
+            .expect("first child occurrence");
+        assert_eq!(first.transform.rows[0][3], 25.0);
+        assert_eq!(first.transform.rows[1][3], 0.0);
+        let second = result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.0.contains("#17"))
+            .expect("second child occurrence");
+        assert_eq!(second.transform.rows[0][3], -10.0);
+        assert_eq!(second.transform.rows[1][3], 4.0);
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn unrelated_representation_mapping_does_not_place_an_occurrence() {
-    let result = decode_inline(
-        "#1=APPLICATION_CONTEXT('mechanical design');
-#2=PRODUCT_CONTEXT('',#1,'mechanical');
-#3=PRODUCT('ROOT','Root assembly','',(#2));
-#4=PRODUCT_DEFINITION_FORMATION('','',#3);
-#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
-#6=PRODUCT_DEFINITION('root definition','',#4,#5);
-#7=PRODUCT_DEFINITION_SHAPE('','',#6);
-#8=PRODUCT('CHILD','Child','',(#2));
-#9=PRODUCT_DEFINITION_FORMATION('','',#8);
-#10=PRODUCT_DEFINITION('child definition','',#9,#5);
-#11=PRODUCT_DEFINITION_SHAPE('','',#10);
-#16=NEXT_ASSEMBLY_USAGE_OCCURRENCE('one','First child','',#6,#10,$);
-#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
-#21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('model','3D'));
-#22=SHAPE_REPRESENTATION('root',(),#21);
-#23=SHAPE_REPRESENTATION('child',(),#21);
-#25=SHAPE_DEFINITION_REPRESENTATION(#7,#22);
-#26=SHAPE_DEFINITION_REPRESENTATION(#11,#23);
-#30=CARTESIAN_POINT('',(0.,0.,0.));
-#31=CARTESIAN_POINT('',(25.,0.,0.));
-#33=DIRECTION('',(0.,0.,1.));
-#34=DIRECTION('',(1.,0.,0.));
-#35=AXIS2_PLACEMENT_3D('',#30,#33,#34);
-#36=AXIS2_PLACEMENT_3D('',#31,#33,#34);
-#38=REPRESENTATION_MAP(#35,#23);
-#39=MAPPED_ITEM('unrelated',#38,#36);
-#50=SHAPE_REPRESENTATION('unrelated',(#39),#21);",
-    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ps05_unrelated_mapped_representation.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode PS-05 fixture");
 
     let occurrence = result
         .ir()
@@ -693,6 +945,158 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
                 && loss.message.contains(&format!("NAUO #{usage_id}"))
         }));
     }
+}
+
+#[test]
+fn ps01_repeated_child_binding_requires_occurrence_identity() {
+    let decode_fixture = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode PS-01 fixture")
+    };
+
+    let single = decode_fixture(include_bytes!(
+        "tests/data/ps01_single_child_parent_mapping.p21"
+    ));
+    let single_child = single
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .expect("single child occurrence");
+    assert_eq!(single_child.transform.rows[0][3], 25.0);
+    assert_eq!(single_child.transform.rows[1][3], 0.0);
+    assert!(!single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+
+    for bytes in [
+        &include_bytes!("tests/data/ps01_repeated_child_parent_mapping.p21")[..],
+        &include_bytes!("tests/data/ps01_repeated_child_parent_mapping_reordered.p21")[..],
+    ] {
+        let repeated = decode_fixture(bytes);
+        let children = repeated
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+            .collect::<Vec<_>>();
+        assert_eq!(children.len(), 2);
+        assert!(children
+            .iter()
+            .all(|occurrence| occurrence.transform == Transform::identity()));
+        for usage_id in [12, 13] {
+            assert!(repeated.report().losses.iter().any(|loss| {
+                loss.code == StepLossCode::NauoPlacementUnresolved.kind()
+                    && loss.message.contains(&format!("NAUO #{usage_id}"))
+            }));
+        }
+    }
+
+    let occurrence_owned = decode_fixture(include_bytes!(
+        "tests/data/ps01_repeated_child_occurrence_mapping.p21"
+    ));
+    let mut children = occurrence_owned
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+        .collect::<Vec<_>>();
+    children.sort_by_key(|occurrence| occurrence.id.clone());
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].transform.rows[0][3], 25.0);
+    assert_eq!(children[0].transform.rows[1][3], 0.0);
+    assert_eq!(children[1].transform.rows[0][3], -10.0);
+    assert_eq!(children[1].transform.rows[1][3], 4.0);
+    assert!(!occurrence_owned
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+}
+
+#[test]
+fn mapped_child_unique_per_parent_uses_parent_local_uniqueness() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root definition','',#4,#5);
+#7=PRODUCT_DEFINITION_SHAPE('','',#6);
+#8=PRODUCT('PARENT-A','Parent A','',(#2));
+#9=PRODUCT_DEFINITION_FORMATION('','',#8);
+#10=PRODUCT_DEFINITION('parent A definition','',#9,#5);
+#11=PRODUCT_DEFINITION_SHAPE('','',#10);
+#12=PRODUCT('PARENT-B','Parent B','',(#2));
+#13=PRODUCT_DEFINITION_FORMATION('','',#12);
+#14=PRODUCT_DEFINITION('parent B definition','',#13,#5);
+#15=PRODUCT_DEFINITION_SHAPE('','',#14);
+#16=PRODUCT('CHILD','Child','',(#2));
+#17=PRODUCT_DEFINITION_FORMATION('','',#16);
+#18=PRODUCT_DEFINITION('child definition','',#17,#5);
+#19=PRODUCT_DEFINITION_SHAPE('','',#18);
+#20=NEXT_ASSEMBLY_USAGE_OCCURRENCE('a','Child A','',#10,#18,$);
+#21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('b','Child B','',#14,#18,$);
+#22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('pa','Parent A','',#6,#10,$);
+#23=NEXT_ASSEMBLY_USAGE_OCCURRENCE('pb','Parent B','',#6,#14,$);
+#30=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#31=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#30)) REPRESENTATION_CONTEXT('model','3D'));
+#32=SHAPE_REPRESENTATION('root',(#53,#55),#31);
+#33=SHAPE_REPRESENTATION('parent A',(#57),#31);
+#34=SHAPE_REPRESENTATION('parent B',(#59),#31);
+#35=SHAPE_REPRESENTATION('child',(),#31);
+#36=SHAPE_DEFINITION_REPRESENTATION(#7,#32);
+#37=SHAPE_DEFINITION_REPRESENTATION(#11,#33);
+#38=SHAPE_DEFINITION_REPRESENTATION(#15,#34);
+#39=SHAPE_DEFINITION_REPRESENTATION(#19,#35);
+#40=CARTESIAN_POINT('',(0.,0.,0.));
+#41=CARTESIAN_POINT('',(100.,0.,0.));
+#42=CARTESIAN_POINT('',(200.,0.,0.));
+#43=CARTESIAN_POINT('',(10.,0.,0.));
+#44=CARTESIAN_POINT('',(20.,0.,0.));
+#45=DIRECTION('',(0.,0.,1.));
+#46=DIRECTION('',(1.,0.,0.));
+#47=AXIS2_PLACEMENT_3D('',#40,#45,#46);
+#48=AXIS2_PLACEMENT_3D('',#41,#45,#46);
+#49=AXIS2_PLACEMENT_3D('',#42,#45,#46);
+#50=AXIS2_PLACEMENT_3D('',#43,#45,#46);
+#51=AXIS2_PLACEMENT_3D('',#44,#45,#46);
+#52=REPRESENTATION_MAP(#47,#33);
+#53=MAPPED_ITEM('Parent A',#52,#48);
+#54=REPRESENTATION_MAP(#47,#34);
+#55=MAPPED_ITEM('Parent B',#54,#49);
+#56=REPRESENTATION_MAP(#47,#35);
+#57=MAPPED_ITEM('Child A',#56,#50);
+#58=REPRESENTATION_MAP(#47,#35);
+#59=MAPPED_ITEM('Child B',#58,#51);",
+    );
+
+    let children = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), 4);
+    assert!(children.iter().any(|occurrence| {
+        occurrence.name.as_deref() == Some("Child A") && occurrence.transform.rows[0][3] == 10.0
+    }));
+    assert!(children.iter().any(|occurrence| {
+        occurrence.name.as_deref() == Some("Child B") && occurrence.transform.rows[0][3] == 20.0
+    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 }
 
 #[test]

@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::parameter_in_domain;
 use crate::examples::unit_cube;
-use crate::geometry::{Curve, CurveGeometry, ProceduralSurface, SurfaceGeometry};
-use crate::ids::{CurveId, ProceduralSurfaceId, UnknownId};
+use crate::geometry::{CurveGeometry, SurfaceGeometry};
+use crate::ids::{CurveId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::report::Check;
 use crate::unknown::NativeUnknownRecord;
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 #[test]
 fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {

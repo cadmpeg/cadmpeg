@@ -250,6 +250,7 @@ fn project_default_bindings(
                 style.segment_token, style.record_ordinal
             )),
             object_type: Some("Body".into()),
+            visible: None,
             channels: BTreeMap::default(),
         })
         .collect();
@@ -374,6 +375,7 @@ fn project_face_bindings(
                 graphics_face.segment_token, graphics_face.record_ordinal
             )),
             object_type: Some("Face".into()),
+            visible: None,
             channels: BTreeMap::from([("precedence".into(), "face_over_body".into())]),
         });
     }

@@ -3082,14 +3082,31 @@ pub fn model_curve_parameter_near_point_in_index(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
-    model_curve_parameter_near_point_with_tolerance(
+    model_curve_parameter_near_point_in_index_with_tolerance(
         index,
         curve_id,
         point,
         seed,
         index.ir().tolerances.linear,
-        0,
     )
+}
+
+/// Invert a model curve using a caller-owned lookup index and tolerance.
+///
+/// The tolerance controls the forward validation of every candidate returned
+/// by the inversion. Callers that admit an evaluated geometric residual above
+/// the document default must pass that same admission bound here.
+pub fn model_curve_parameter_near_point_in_index_with_tolerance(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return None;
+    }
+    model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance, 0)
 }
 
 fn model_curve_parameter_near_point_with_tolerance(

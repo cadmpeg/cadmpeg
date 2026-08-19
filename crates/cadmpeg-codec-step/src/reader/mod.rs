@@ -25,6 +25,7 @@ mod index;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
+mod representation;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
 mod validation;
@@ -103,21 +104,24 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 .collect(),
         };
         report.losses.extend(diagnostics.iter().map(|diagnostic| {
-            StepLossCode::ParseNoncanonicalSyntax
-                .note(diagnostic.message.clone())
+            let (code, tag) = match diagnostic.kind {
+                crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
+                    (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
+                }
+                crate::parse::ParseDiagnosticKind::OmittedEntityName => {
+                    (StepLossCode::ParseNoncanonicalSyntax, "entity_name")
+                }
+                crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange => (
+                    StepLossCode::SchemaObjectIdentifierOutOfRange,
+                    "schema_identifier",
+                ),
+            };
+            code.note(diagnostic.message.clone())
                 .with_provenance(cadmpeg_ir::SourceProvenance {
                     format: "step".into(),
                     stream: String::new(),
                     offset: diagnostic.offset as u64,
-                    tag: Some(
-                        match diagnostic.kind {
-                            crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
-                                "complex_entity"
-                            }
-                            crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
-                        }
-                        .into(),
-                    ),
+                    tag: Some(tag.into()),
                 })
         }));
 
@@ -305,7 +309,13 @@ fn decode_exchange_mode(
     let mut tessellation =
         tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir);
     session.charge_stage("step_pmi_decode")?;
-    let mut pmi = pmi::decode(exchange, &geometry.value, &mut session.ir, session.ctx);
+    let mut pmi = pmi::decode(
+        exchange,
+        &geometry.value,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+    );
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,
@@ -341,7 +351,12 @@ fn decode_exchange_mode(
     session.absorb(&mut validation);
 
     session.charge_stage("step_drawing_decode")?;
-    let mut drawing = drawing::decode(exchange, &mut session.ir, &session.typed_records);
+    let mut drawing = drawing::decode(
+        exchange,
+        &mut session.ir,
+        &session.typed_records,
+        &product.value.product_definition_ids_by_shape,
+    );
     session.absorb(&mut drawing);
     let mut post_decode_warnings = Vec::new();
     session.charge_stage("step_carrier_retention")?;

@@ -18,341 +18,223 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. External resources
 
-### ER-01. URI resolution
+### ER-05. Local form of a resource token in a value position
 
-**Question.** Which base URI and normalization rules apply to each relative URI in a REFERENCE section or a document-reference entity?
+**Question.** Which spelling of a resource token in a value position binds to the
+ANCHOR table of the same exchange?
 
-**Known.** A Part 21 resource is an IETF URI. A fragment-only URI whose
-fragment is not a UUID selects the same-named local ANCHOR. A URI with a
-resource path is relative to the resource that contains the reference; in a
-ZIP archive, Annex A.4 makes that the directory of the referencing member and
-forbids traversal above the archive root. A standalone file's transport base
-URI is not encoded in Part 21. Application document-reference attributes do
-not define a Part 21 base URI.
+**Known.** `step.md` §7 "the process working directory. A fragment-only non-UUID
+is resolved against" gives two rules: a fragment-only non-UUID resolves against
+the ANCHOR table of the current exchange, and a URI with a nonempty path, query,
+or scheme stays the exact external dependency. The lexer removes the `<` and `>`
+delimiters, so `<#name>` gives the resource text `#name` and `<name>` gives the
+resource text `name`.
+`crates/cadmpeg-codec-step/src/parse.rs:862-865` keys the anchor map by the
+anchor name, which holds no `#`.
+`crates/cadmpeg-codec-step/src/parse.rs:2253` matches a resource against that map
+by its full text. The text `#name` matches no key, so a fragment-only resource
+stays unresolved. The text `name` matches the key `name`, so a relative-path
+resource takes the value of the anchor.
+`crates/cadmpeg-codec-step/src/parse.rs:870-888` applies this to each anchor
+value, each anchor tag value, and each parameter of each DATA record. Two other
+functions use the opposite rule:
+`crates/cadmpeg-codec-step/src/parse.rs:2431-2440` needs an empty path and then
+finds the anchor by the fragment, and
+`crates/cadmpeg-codec-step/src/archive.rs:158-171` removes the `#` prefix and
+then finds the anchor by that name. The codec holds no external-resource loss
+code, so neither result is reported.
 
-**Note.** Local fragment resolution is implemented. The base URI for a
-standalone input, URI normalization supplied by its transport, and the
-interpretation of application document-reference paths remain caller policy.
+**Conflict.** The specification and two of the three resolvers make the
+fragment-only form local and the relative-path form external. The third resolver
+makes the relative-path form local and the fragment-only form external.
 
-**Need.** We must know the rules to identify the external resource that a relative URI selects.
-
-### ER-02. Resource access
-
-**Question.** Which retrieval and authentication procedure applies to each external resource URI?
-
-**Known.** Part 21 defines the required result of a resource resolution, but
-it does not define a transport, authentication mechanism, authorization scope,
-redirect policy, certificate policy, or registry protocol. A fragment-only
-UUID may require a registry service.
-
-**Note.** Resource retrieval and authentication are outside the codec contract.
-
-**Need.** We must know the procedure to obtain the selected external resource.
-
-### ER-03. Resource composition
-
-**Question.** How does each external resource combine with the local instance graph?
-
-**Known.** Part 21 resolves a resource fragment to an entity or value ANCHOR,
-follows forwarded URI anchors, and returns `$` on a failed or cyclic
-resolution. It does not define a merge of two independent numeric DATA
-namespaces. The neutral IR currently has one document-wide identity universe.
-
-**Note.** A resource-qualified graph import needs an explicit identity,
-schema, unit, and trust policy. The reader retains unresolved external
-occurrences and does not invent a cross-resource merge.
-
-**Need.** We must know the composition rule to resolve cross-resource identities and build one product graph.
-
-### ER-04. Resource cache identity
-
-**Question.** Which URI components and resource metadata determine whether two external resource references identify the same cached resource?
-
-**Known.** Each REFERENCE entry contains a URI. Part 21 does not define cache
-keys, freshness, validators, content negotiation, or equivalence of two
-representations returned for one URI.
-
-**Note.** Cache identity is a transport and resource-policy decision. The
-codec does not cache or combine retrieved resources.
-
-**Need.** We must know the identity rule to reuse a retrieved resource without combining different resources.
-
-## 2. AP242 BO-Model sidecars
-
-### BM-01. Sidecar envelope
-
-**Question.** What XML grammar and file relationship identify an AP242 BO-Model sidecar?
-
-**Known.** AP242 BO-Model XML is a separate AP242 encoding with its own XML
-schema and edition-specific document envelope. Part 21 has no required
-sidecar filename, XML root, content identifier, or association record that
-binds such a document to one Part 21 exchange.
-
-**Note.** Detecting an XML root string cannot establish the AP242 edition or
-the relationship to a Part 21 file. A schema and application-level
-association contract are required.
-
-**Need.** We must know the envelope to detect, parse, and associate the sidecar with its Part 21 exchange structure.
-
-### BM-02. Sidecar composition
-
-**Question.** How do AP242 BO-Model XML identities and values combine with the Part 21 instance graph?
-
-**Known.** The BO-Model XML schema and Part 21 encode related product data in
-different representation systems. Part 21 identity numbers are local to its
-DATA graph. No Part 21 rule maps an XML object identity or XML value to a
-numeric Part 21 instance.
-
-**Note.** Sidecar composition needs a declared AP242 XML edition, identity
-linkage, precedence rule, and conflict policy. The STEP codec has no such
-contract.
-
-**Need.** We must know the composition rule to build one product graph from the Part 21 exchange structure and its sidecar.
+**Need.** The two forms have opposite meanings, so one spelling always gives the
+wrong result. A relative-path resource that takes an anchor value replaces an
+external dependency with local data. A fragment-only resource that stays
+unresolved keeps a local binding as an external dependency. The answer gives the
+one rule that the three resolvers share. Add a witness with an anchor named
+`part`, one parameter `<#part>`, and one parameter `<part>`, and show which
+parameter takes the anchor value.
 
 ## 3. Containers and other encodings
 
-### CE-02. ZIP resource composition
+### CE-10. Repeated forwarding of a root ANCHOR resource
 
-**Question.** How do references between exchange resources in an edition-3 ZIP container resolve?
+**Question.** How many times must a root `ANCHOR` forward a URI-valued binding
+before the archive member check?
 
-**Known.** Annex A.4 defines the container rule: a relative URI is resolved
-against the directory of the referencing member, `..` cannot escape the
-archive, and only `ISO-10303.p21` can be referenced from outside. Dot segments
-are removed. The root reader applies this rule to its REFERENCE entries and
-checks each resolved internal member. A root ANCHOR forwards a reference to an
-entity or value in a subsidiary member. The rule does not define how a
-subsidiary exchange graph is merged into the root graph.
+**Known.** `step.md` §7 "item is the referenced entity or value, and a
+URI-valued anchor forwards the" gives that a URI-valued anchor forwards the
+resolution again, and `step.md` §7 "central directory. Root ANCHOR forwarding is
+resolved before this member" puts the forwarding before the member check.
+`crates/cadmpeg-codec-step/src/archive.rs:158-171` removes one `#` prefix, finds
+that anchor one time, and gives the `Resource` value of the anchor. It does not
+repeat the step, and it gives the source URI back when the anchor value is not a
+resource. `crates/cadmpeg-codec-step/src/archive.rs:139-146` then resolves the
+result and refuses the exchange when the archive holds no such member.
+`crates/cadmpeg-codec-step/src/archive.rs:90-95` gives an internal target in the
+root member when the path is empty. For the bindings `<a>` to `<#b>` and `<b>` to
+`<parts/child.p21#target>`, one step gives `#b`. That result has an empty path,
+so it names the root member, the archive holds the root member, and the check
+passes. The absent member `parts/child.p21` does not stop the decode, and the
+note names the root member.
 
-**Note.** The reader implements path resolution and root-member checks. It
-does not import subsidiary DATA graphs because the neutral IR has no
-resource-qualified identity universe or cross-file schema/unit merge policy.
+**Conflict.** The specification repeats the forwarding. The decoder forwards one
+step only, so a chain of two or more anchors defeats the member check that the
+specification puts after the forwarding.
 
-**Need.** We must know the resolution rule to combine the contained resources into one product graph.
+**Need.** A missing subsidiary member must refuse the exchange, because the
+decode cannot give the target. The answer repeats the forwarding with a limit on
+the number of steps and a guard against a cycle, or gives the rule that one step
+is the complete forwarding. Add a witness with a chain of two anchors whose last
+URI names a member that the archive does not hold.
 
-### CE-03. Part 28 XML grammar
+### CE-11. Decode limits on the ZIP root member parse
 
-**Question.** What XML grammar represents an AP203, AP214, or AP242 exchange structure in Part 28?
+**Question.** Which decode limits apply to the parse of the ZIP root member?
 
-**Known.** ISO 10303-28 defines an EXPRESS-to-XML mapping and supplies the
-generic XML mapping rules. AP203, AP214, and AP242 still require the matching
-edition's EXPRESS schema and generated XML schema components. Part 21 syntax
-does not identify those XML namespaces or schema resources.
+**Known.** `crates/cadmpeg-codec-step/src/archive.rs:130` parses the root member
+with `crate::parse::parse`, which takes no decode context.
+`crates/cadmpeg-codec-step/src/codec.rs:85` parses with
+`parse::parse_with_context` and gives it the context. Without a context the
+parser charges no work and no retained storage, and it counts no nested step, so
+the `max_recursion_depth` limit of the caller has no effect. The parser then
+uses its own limits only. `crates/cadmpeg-codec-step/src/archive.rs:126-155`
+uses this parse for the resource notes, and the reader parses the same member a
+second time with a context.
 
-**Note.** A generic XML parser cannot establish the AP schema, select the
-edition, or decode schema-specific XML constructs without those inputs.
-
-**Need.** We must know the grammar to parse record boundaries, values, and references from Part 28 XML.
-
-### CE-04. Part 28 graph mapping
-
-**Question.** How does each Part 28 XML construct map to the entity graph and invariants in `step.md`?
-
-**Known.** ISO 10303-28 defines the mapping from EXPRESS entities and values
-to XML elements, attributes, namespaces, and references. The mapping is
-schema-driven; it is not a second universal Part 21 record grammar.
-
-**Note.** Applying the mapping needs the exact AP schema, XML schema version,
-and a mapping implementation for every supported construct. No such Part 28
-input or IR adapter exists in this codec.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 28 exchange structure.
-
-### CE-05. Part 26 binary grammar
-
-**Question.** What HDF5 layout represents an AP203, AP214, or AP242 exchange structure in Part 26?
-
-**Known.** ISO/TS 10303-26 defines an EXPRESS-driven HDF5 mapping. The HDF5
-layout is schema- and mapping-version dependent; the HDF5 signature alone
-does not identify AP203, AP214, or AP242.
-
-**Note.** The codec has no Part 26 mapping tables or HDF5 reader.
-
-**Need.** We must know the layout to parse record boundaries, values, and references from Part 26 data.
-
-### CE-06. Part 26 graph mapping
-
-**Question.** How does each Part 26 HDF5 construct map to the entity graph and invariants in `step.md`?
-
-**Known.** Part 26 defines the schema-driven mapping from EXPRESS values and
-entity identity to HDF5 datasets, datatypes, and links. It does not make every
-HDF5 dataset self-describing as an AP203, AP214, or AP242 instance graph.
-
-**Note.** Applying the mapping needs the exact Part 26 mapping version and AP
-schema. No such Part 26 input or IR adapter exists in this codec.
-
-**Need.** We must know the mapping to apply schema decoding to a Part 26 exchange structure.
+**Need.** A caller that lowers its limits must get the same protection from each
+route into the parser. The ZIP route parses the complete root member one time
+outside the limits, so a root member that the limits refuse is fully parsed
+first. The answer gives the context to this parse, or gives the reason that the
+resource-note parse needs no limit. Add a witness with a lowered recursion limit
+and a ZIP root member that the limit refuses.
 
 ## 4. Signatures
 
-### SG-04. Signature verification result
-
-**Question.** Which validation conditions make each signature valid, invalid, or indeterminate?
-
-**Known.** Part 21 requires a detached CMS `SignedData` object and defines
-the exact external content and alphabet projection. RFC 5652 supplies the
-message-digest, signed-attribute, signature, certificate, and algorithm
-processing rules. A valid result also needs a certificate-chain, key-usage,
-revocation, time, and trust-anchor policy. An invalid result covers malformed
-CMS, a digest mismatch, a signature mismatch, or a failed required policy;
-indeterminate covers unavailable content, keys, certificates, or policy
-evidence.
-
-**Note.** Part 21 does not prescribe a trust store, revocation protocol,
-clock policy, or caller authorization policy. Verification therefore needs a
-caller-supplied CMS and trust-policy contract; structural CMS parsing alone
-cannot produce a valid/invalid result.
-
-**Need.** We must know the conditions to report a signature verification result.
-
 ## 5. Topology and pcurve decisions
 
-### TP-03. Non-planar pcurve units
+### TP-14. Per-relation status of an admitted pcurve
 
-**Question.** Which scale does each pcurve axis use for elementary and swept
-support surfaces, including the directrix and extrusion-vector cases?
+**Question.** Which channel gives the verification status of one admitted
+pcurve relation?
 
-**Known.** ISO 10303-42 defines a pcurve in its support surface's `(u,v)`
-parameter space. The analytic surface equations identify plane axes from the
-representation length context, cylinder and cone axes as `(plane angle,
-length)`, and sphere and torus axes as `(plane angle, plane angle)`. A linear
-extrusion is `lambda(u) + v V`; the referenced curve defines `u` and the
-extrusion vector magnitude defines the parameterization for `v`. A revolution
-uses plane angle for `u` and the referenced curve's parameter for `v`.
+**Known.** `crates/cadmpeg-codec-step/src/reader/topology.rs:1580` collects the
+admitted relations of each committed body,
+`crates/cadmpeg-codec-step/src/reader/topology/admissions.rs:27-52` formats the
+one document warning that names the first 8, and
+`crates/cadmpeg-codec-step/src/reader/topology.rs:499` reports it. The document holds no other record of an admitted
+relation. The exactness map (`crates/cadmpeg-ir/src/annotations.rs:13-28`) is
+the per-entity trust channel, and it uses a globally unique entity identity as
+its key. A pcurve relation is a `PcurveUse` field of a `Coedge`
+(`crates/cadmpeg-ir/src/topology.rs:196-205`), not an entity with an identity,
+so the map holds no key for one relation. `Exactness`
+(`crates/cadmpeg-ir/src/provenance.rs:68-78`) holds `ByteExact`, `Derived`,
+`Inferred`, and `Unknown`. An admitted relation transfers the source value
+without transformation and its global invariant is unproved, which no value
+gives. `ModelDraft::exactness` (`crates/cadmpeg-ir/src/draft.rs:262-275`)
+writes an entity value only. The STEP reader writes no exactness entry:
+`crates/cadmpeg-codec-step/src/reader/mod.rs:386` builds
+`SourceFidelity::default()`.
 
-**Note.** Commit `f41f2898c` promoted a scale table into `docs/formats/step.md`
-and removed this item. The implementation and `reader/geometry.rs` tests use
-synthetic IR variants. They do not establish the directrix unit mapping for
-every curve kind. In particular, the decoder scales the extrusion vector to
-document units and also applies a document length scale to the pcurve's
-second axis. The source equation does not by itself justify treating that
-axis as an independent length coordinate. This item is reopened.
-
-**Need.** We need a parameter-scale table that preserves the source
-parameterization and vector magnitudes for every supported directrix and
-surface wrapper, derived from the ISO 10303-42 equations and checked against
-exporter-authored witness files, before this rule is settled.
-
-### TP-09. Pcurve endpoint and tied-locus verification
-
-**Question.** What evidence proves that a non-seam pcurve candidate is the
-correct edge carrier, and that tied candidates have the same model-space
-locus?
-
-**Known.** `select_associated_pcurve` scores candidate endpoint fits and
-accepts the lowest finite score within tolerance
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3623-3747`). A tie is
-declared from a relative score threshold, and `pcurve_loci_equivalent`
-compares 33 samples in each direction before the first tied candidate is
-selected. The search uses a finite seed set and a bounded iterative closest
-point calculation.
-
-**Note.** TP-02 records the semantic selection rule, but this implementation
-does not prove a global minimum or a global locus equivalence. A pcurve with
-an unsampled endpoint minimum, or two distinct curves that meet at the sample
-points and diverge between them, can pass the acceptance checks. The first
-tied candidate then depends on candidate order. This item records the
-verification gap rather than treating the numerical heuristic as STEP
-semantics.
-
-**Need.** We need multi-pcurve witness files, authored with an available
-exporter or taken from a public corpus, and an exact inverse or
-interval/adaptive proof for endpoint fit and locus equivalence, including
-reordered, near-tied, and crossing candidates.
-
-### TP-10. Malformed duplicate outer-bound fallback
-
-**Question.** When malformed input gives one face more than one
-`FACE_OUTER_BOUND`, which loop role and implicit face carrier should the
-decoder retain?
-
-**Known.** ISO 10303-42 permits at most one `FACE_OUTER_BOUND` for a face.
-For malformed input, the decoder marks the first outer bound in source order
-as outer, marks later outer declarations unspecified, and uses the first outer
-bound when it derives an implicit face plane
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:2671-2700,3126-3138`).
-
-**Note.** This is a salvage policy, not a STEP rule. A face with two
-valid-looking loops can therefore change its retained outer role and derived
-carrier when the loop order changes. TP-04 was closed because conforming STEP
-prohibits multiple outer bounds; that closure does not establish this
-malformed-input fallback.
-
-**Need.** We need an explicit conservative salvage policy, recorded as a
-CADIR decision, or evidence that first-role retention is required, with
-reordered duplicate-outer fixtures and validation results.
+**Need.** A consumer that repairs or reviews one coedge must know whether its
+pcurve relation holds an unproved invariant. The document warning gives a count
+and 8 examples, so a relation outside those 8 has no query. The answer adds a
+key for one pcurve use and a status value that means transferred and unproved.
+Both changes are in `cadmpeg-ir` and reach each codec that writes exactness.
 
 ## 6. Units and measures
 
-### UM-04. Document fallback unit identity
+### UM-06. Unresolved uncertainty measure with a transferred projection
 
-**Question.** Which unit context and unit occurrence supply the document
-fallback when a representation has no usable `GLOBAL_UNIT_ASSIGNED_CONTEXT`?
+**Question.** Which channel reports a linear uncertainty measure that does not
+resolve, when the document projection transfers a value?
 
-**Known.** Representation-local unit scopes are resolved from their reachable
-representation closure. The document fallback in
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:2791-2844` scans the record
-map for the first global unit context, then the first matching length or
-plane-angle unit. The record map is ordered by numeric instance ID. Conflicting
-fallback contexts do not produce an ambiguity loss.
+**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3333-3387` counts
+each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` measure that does not resolve. A
+measure does not resolve when its record is absent, when it holds no number,
+when it holds no unit reference, when its unit is not a length unit and not a
+plane-angle unit, or when its scaled value is not finite or is not more than
+zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:3400-3427` adds these
+counts across all contexts and gives `LinearUncertainty::Value`, `Empty`, or
+`Ambiguous`. Only `Empty` and `Ambiguous` keep the count.
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:333-354` reports
+`geometry.uncertainty-length-unresolved` for `Empty`, and names the count in the
+`geometry.uncertainty-length-ambiguous` note for `Ambiguous`. The `Value` arm
+writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
+`Tolerances.linear` is the document projection of the" gives the same rule: it
+asks for a note only when no candidate resolves.
 
-**Note.** UM-01 settles scoped representation units but does not settle this
-fallback identity. If an exchange has multiple global unit contexts and a
-consumer is unscoped, the selected scale can change when instance numbers or
-context order change. This is source-order/record-order selection, not
-evidence of the document unit.
-
-**Need.** We need the STEP document-level unit ownership rule and witness
-files with multiple global contexts, including conflicting and equivalent
-contexts, before selecting a fallback scale.
+**Need.** A measure that does not resolve is a candidate that cannot compete.
+One distinct resolved value therefore does not show that the contexts agree. A
+document that declares one value in one context, and a measure that does not
+resolve in a second context, transfers the first value and keeps no record of
+the second measure. `step.md` §8 "Geometric-consistency checks use the selected
+document tolerance as their" makes `Tolerances.linear` the baseline of the
+consistency checks, so a caller that repairs or examines the document must know
+that a declared measure was dropped. The answer gives the count of measures that
+do not resolve to the transferred-value result, or gives the reason that a
+dropped measure needs no record.
 
 ## 7. Annotation, presentation, and tessellation
 
-### AP-08. Context-dependent style selection
+### AP-14. Override precedence for a complex styled item
 
-**Question.** How does a `STYLED_ITEM` select among valid
-`PRESENTATION_STYLE_BY_CONTEXT` assignments, and what neutral appearance is
-retained when the requested presentation context is unavailable?
+**Question.** How must the reader find the attributes of an
+`OVER_RIDING_STYLED_ITEM` that is a complex instance?
 
-**Known.** ISO 10303-46 permits a `STYLED_ITEM` to carry multiple styles when
-the styles are presentation-style-by-context assignments. The decoder
-flattens the style references in
-`crates/cadmpeg-codec-step/src/reader/presentation.rs:191-240` and
-`find_color` recursively keeps the first candidate at the highest surface-side
-rank (`presentation.rs:819-987`). It does not evaluate a presentation
-context. Thus two valid context-dependent colors are reduced by reference
-order, even when both are otherwise valid.
+**Known.** `step.md` §8 "`OVER_RIDING_STYLED_ITEM` is the explicit precedence
+relation: its style takes" gives the override precedence. In a complex instance,
+each simple record holds the attributes of its own entity type only.
+`OVER_RIDING_STYLED_ITEM` gives one attribute of its own, so its partial holds
+one parameter. `crates/cadmpeg-codec-step/src/reader/presentation.rs:916-931`
+reads the target from position `len - 2` and the style set from position
+`len - 3` of that partial. Both positions are absent when the partial holds one
+parameter, and the `?` operator then gives `None` for the full function, so the
+`STYLED_ITEM` branch at
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:932-943` does not run.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:237-254` collects only the
+records that give parts, and then makes the set of overridden records from that
+collection. A complex `OVER_RIDING_STYLED_ITEM` is therefore absent from both
+sets: its style does not apply, its `over_ridden_style` is not marked, and the
+overridden style applies. No loss records this. The test
+`complex_styled_item_decodes_color_and_owns_its_curve` in
+`crates/cadmpeg-codec-step/src/reader/presentation/tests.rs` writes the
+`OVER_RIDING_STYLED_ITEM` partial with three parameters, so it holds the
+inherited attributes and does not exercise the one-parameter form.
 
-**Note.** A `STYLED_ITEM` with one context style for a shaded representation
-and another for a wireframe representation can transfer the first color to
-both consumers. AP-05 and AP-06 settle independent styled-item conflicts and
-surface-side precedence; they do not settle context-dependent styles. This
-item records the missing context identity and neutral-IR policy.
+**Conflict.** The specification gives precedence to the overriding style. For a
+complex instance in the form that Part 21 gives, the decoder applies the
+overridden style instead, and reports nothing.
 
-**Need.** We need the context matching and precedence rule, a policy for
-preserving separate context bindings or reporting ambiguity, and a witness
-file with two valid context styles consumed by different presentation
-contexts.
+**Need.** A color that a file overrides is a visible result. The answer reads
+the `STYLED_ITEM` partial for the inherited style set and target, and reads the
+`OVER_RIDING_STYLED_ITEM` partial for `over_ridden_style`. Add a witness that
+writes each partial with its own attributes only, and that shows the overriding
+color in the output.
 
-### DR-01. Drawing target identity selection
+### AP-15. Transparency value outside its permitted range
 
-**Question.** Which neutral identity represents a drawing reference when one
-STEP source record maps to more than one neutral model identity?
+**Question.** What must the reader do with a `SURFACE_STYLE_TRANSPARENT` value
+that is finite and outside `0..=1`?
 
-**Known.** `record_targets` collects every neutral identity derived from a
-source record into a `BTreeSet`
-(`crates/cadmpeg-codec-step/src/reader/mod.rs:1038-1051`). The drawing target
-resolver returns `identities.iter().next()` and does not retain the remaining
-identities (`crates/cadmpeg-codec-step/src/reader/drawing.rs:406-444`). A
-source record with multiple product-definition views can therefore receive
-the lexicographically first identity.
+**Known.** `step.md` §8 "CADIR decision: if a malformed rendering record contains
+multiple finite" makes more than one finite value a conflict that omits
+transparency and records `presentation.surface-transparency-conflict`.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1278-1283` keeps a finite
+value, and then removes each value outside `0..=1` before the count.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1284-1298` counts what
+remains. A record with two finite values, of which one is outside the range,
+therefore keeps one candidate and applies it, and no conflict loss is reported. A
+record with one finite value outside the range keeps no candidate, so the
+rendering becomes opaque, and no loss is reported. The specification gives no
+range rule for this value.
 
-**Note.** This is an ownership inference from neutral identity ordering. If a
-drawing annotation or presentation reference targets a source record with two
-valid product-definition identities, changing identity spelling or insertion
-order can retarget the drawing without changing the STEP reference. The
-presentation layer expands all applicable product views, but the drawing
-target path does not. No existing STEP item settles this projection.
+**Need.** A dropped transparency gives an appearance that a consumer cannot
+separate from a file that declares no transparency. The two rules also disagree:
+the specification counts finite values, and the decoder counts values inside the
+range. Give the range rule and its loss, or count each finite value as the
+specification gives. Add a witness with one out-of-range value, and a witness
+with one value inside the range and one value outside it.
 
-**Need.** We need the drawing-reference target entity and product-definition
-scope rule, plus an independent multi-view file that shows whether all views
-are targets, one view is authoritative, or the reference is ambiguous.
+## 8. Product structure and placement

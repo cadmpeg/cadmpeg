@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
 use crate::features::{Angle, ExtrudeDirection, Length};
 use crate::math::{Point2, Point3, Vector3};
-use crate::report::{Check, Severity};
+use crate::report::Check;
 use crate::sketches::SketchGeometry;
 use crate::validate::validate_neutral;
 use crate::CadIr;

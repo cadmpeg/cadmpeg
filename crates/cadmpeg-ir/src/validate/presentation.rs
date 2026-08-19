@@ -87,13 +87,6 @@ pub(super) fn check_presentation(
     let pmi = ids(&ir.model.pmi, |item| item.id.as_str());
     let tessellations = ids(&ir.model.tessellations, |item| item.id.as_str());
     for layer in &ir.model.presentation_layers {
-        if layer.name.is_empty() {
-            invalid_layer(
-                findings,
-                layer.id.as_str(),
-                "presentation layer has no name",
-            );
-        }
         for item in &layer.items {
             let resolved = match item {
                 PresentationItem::Body { body } => bodies.contains(body.as_str()),

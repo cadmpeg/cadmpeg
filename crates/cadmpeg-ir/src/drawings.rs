@@ -80,6 +80,9 @@ pub struct Drawing {
     pub runtime_type: String,
     /// Source order among drawing entities.
     pub order: u32,
+    /// Whether the source explicitly displays this drawing entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub relationships: BTreeMap<String, Vec<DrawingTarget>>,

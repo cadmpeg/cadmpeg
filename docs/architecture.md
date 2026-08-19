@@ -78,3 +78,5 @@ Each input codec implements `Codec`:
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, CodecError>` produces `CadIr`, `DecodeReport`, and source fidelity.
 
 `--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
+
+Strict decode refuses at the `Codec::decode` wrapper, which returns `CodecError::StrictRefusal` for the first reported loss whose strict consequence is `Reject`. The refusal carries that loss code and that loss message. It is not `CodecError::Malformed`: a strict refusal reports a mode decision, not a defect in the bytes, so a caller separates a damaged file from a policy stop by the error class alone. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.

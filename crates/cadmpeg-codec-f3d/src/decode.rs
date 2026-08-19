@@ -4641,6 +4641,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 appearance: appearance.clone(),
                 source_entity_id: None,
                 object_type: None,
+                visible: None,
                 channels: std::collections::BTreeMap::new(),
             });
         }

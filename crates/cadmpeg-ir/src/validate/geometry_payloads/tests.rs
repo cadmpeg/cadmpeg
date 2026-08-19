@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::{
     nurbs_weights_valid, pcurve_basis_is_valid, support_context_is_finite, valid_surface_basis,
@@ -8,14 +7,13 @@ use super::{
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, SurfaceGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
 use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
     IntcurveSupportContext {

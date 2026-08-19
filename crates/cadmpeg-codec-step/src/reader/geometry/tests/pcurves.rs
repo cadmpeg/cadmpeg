@@ -3,35 +3,17 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::math::Point2;
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::StepCodec;
 
 #[test]
 fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
@@ -53,6 +35,52 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
             && loss.message.contains("one optional pcurve")
             && loss.message.contains("not continuous")
     }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
+    let source = include_bytes!("data/tp07_pcurve_recursion.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pcurve recursion witness");
+
+    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#31")
+        .expect("valid pcurve");
+    assert_eq!(
+        pcurve.geometry,
+        PcurveGeometry::Line {
+            origin: Point2::new(2.0, 3.0),
+            direction: Point2::new(2.0, 0.0),
+        }
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("CURVE_REPLICA #34 has invalid or unresolved parent/operator")
+    }));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("PCURVE #36 has no decoded surface or 2D curve")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#33"));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#36"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -299,6 +327,70 @@ fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
 }
 
 #[test]
+fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));",
+                "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.));",
+            )
+            .replace(
+                "#28=PLANE('',#27);",
+                "#28=SURFACE_OF_LINEAR_EXTRUSION('',#16,#70);",
+            )
+            .replace(
+                "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+                "#4=CARTESIAN_POINT('',(10.,0.,2.));",
+            )
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=SURFACE_CURVE('',#72,(#56),.PCURVE_S1.);",
+            )
+            .replace(
+                "#52=DIRECTION('',(1.,0.));",
+                "#52=DIRECTION('',(1.,1.));",
+            )
+            .replace(
+                "#53=VECTOR('',#52,1.);",
+                "#53=VECTOR('',#52,1.4142135623730951);",
+            )
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                "#70=VECTOR('',#71,2.);\n#71=DIRECTION('',(0.,0.,1.));\n#72=LINE('',#3,#73);\n#73=VECTOR('',#74,10.198039027185569);\n#74=DIRECTION('',(5.,0.,1.));\nENDSEC;\nEND-ISO-10303-21;",
+            );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode linear extrusion pcurve");
+    let pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("linear extrusion pcurve");
+    assert_eq!(
+        pcurve.geometry,
+        PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(10_000.0, 1.0),
+        }
+    );
+    assert!(decoded
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| {
+            surface.surface.as_str() == "step:data:surface#28"
+                && matches!(
+                    surface.definition,
+                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { .. }
+                )
+        }));
+}
+
+#[test]
 fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
     use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
@@ -313,6 +405,10 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
             .replace(
                 "#4=CARTESIAN_POINT('',(10.,0.,0.));",
                 "#4=CARTESIAN_POINT('',(3.,2.,0.));",
+            )
+            .replace(
+                "#16=LINE('',#3,#13);",
+                "#70=CARTESIAN_POINT('',(1.,2.,0.));\n#16=B_SPLINE_CURVE_WITH_KNOTS('',1,(#3,#70,#4),.UNSPECIFIED.,.F.,.F.,(2,1,2),(0.,1.,2.),.PIECEWISE_BEZIER_KNOTS.);",
             )
             .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
             .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
@@ -408,6 +504,45 @@ fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
 }
 
 #[test]
+fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
+    let source = include_bytes!("data/pc01_surface_parameter.p21");
+    let valid = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pi-valued cylindrical pcurve");
+    let pcurve = valid
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
+        .expect("surface-chart pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
+            if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
+                && origin.v.abs() < 1.0e-12
+                && direction.u.abs() < 1.0e-12
+                && (direction.v - 10.0).abs() < 1.0e-12
+    ));
+
+    let invalid_source = String::from_utf8(source.to_vec())
+        .expect("fixture is UTF-8")
+        .replace("3.141592653589793", "180.");
+    let invalid = StepCodec::default()
+        .decode(
+            &mut Cursor::new(invalid_source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode degree-looking cylindrical pcurve");
+    assert!(invalid.ir().model.pcurves.is_empty());
+    assert!(invalid.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
+            && loss.message.contains("curve #33")
+            && loss.message.contains("pcurve is omitted")
+    }));
+}
+
+#[test]
 fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
@@ -482,7 +617,7 @@ fn seam_source_with_one_endpoint_continuous_candidate() -> String {
 }
 
 #[test]
-fn equivalent_seam_pcurve_candidates_select_one_carrier() {
+fn equivalent_same_surface_pcurve_candidates_remain_detached() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(equivalent_seam_source()),
@@ -490,21 +625,117 @@ fn equivalent_seam_pcurve_candidates_select_one_carrier() {
         )
         .expect("decode equivalent seam pcurves");
 
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn seam_edge_uses_its_explicit_pcurve_reference() {
+    let source = include_bytes!("data/tp02_seam_edge_selection.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode seam edge selection witness");
     let coedge = decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("equivalent seam coedge");
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("SEAM_EDGE coedge");
     assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#69");
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind() }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let reordered_source = String::from_utf8(source.to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#69,#56),.PCURVE_S1.);",
+        );
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(reordered_source),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered seam edge selection witness");
+    let reordered_coedge = reordered
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("reordered SEAM_EDGE coedge");
+    assert_eq!(
+        reordered_coedge.pcurves[0].pcurve.as_str(),
+        "step:data:pcurve#69"
+    );
+}
+
+#[test]
+fn invalid_seam_edge_reference_does_not_fall_back_to_another_pcurve() {
+    let source = String::from_utf8(include_bytes!("data/tp02_seam_edge_selection.p21").to_vec())
+        .expect("witness is UTF-8")
+        .replace(
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#69);",
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#70);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=PCURVE('',#28,#55);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode invalid seam edge reference witness");
+    let coedge = decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.as_str().contains("#22"))
+        .expect("invalid SEAM_EDGE coedge");
+    assert!(coedge.pcurves.is_empty());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()));
+}
+
+#[test]
+fn reordered_same_surface_pcurve_candidates_remain_detached() {
+    let source = equivalent_seam_source().replace(
+        "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+        "#57=SEAM_CURVE('',#16,(#69,#56),.PCURVE_S1.);",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode reordered equivalent seam pcurves");
+
+    assert!(decoded
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
 }
 
 #[test]
@@ -537,12 +768,12 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     assert_eq!(
         losses[0].message,
-        "curve #57 associates 2 pcurves with surface #28; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+        "curve #57 associates 2 pcurves with surface #28; Part 42 provides no non-seam selector, so the coedge has no pcurve"
     );
 }
 
 #[test]
-fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
+fn endpoint_continuity_does_not_break_a_multiple_candidate_tie() {
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(seam_source_with_one_endpoint_continuous_candidate()),
@@ -550,18 +781,16 @@ fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
         )
         .expect("decode endpoint-continuous seam pcurve");
 
-    let coedge = decoded
+    assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| !coedge.pcurves.is_empty())
-        .expect("seam coedge");
-    assert_eq!(coedge.pcurves.len(), 1);
-    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
-    assert!(decoded.report().losses.iter().all(|loss| !loss
-        .message
-        .contains("no unique endpoint-continuous pcurve selects one")));
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
+            && loss.message.contains("2 pcurves")
+    }));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

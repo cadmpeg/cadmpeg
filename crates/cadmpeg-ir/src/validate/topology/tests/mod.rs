@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-pub(crate) use super::*;
+use super::*;
 
 mod feature_operations;
 mod features;
