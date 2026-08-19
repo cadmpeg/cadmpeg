@@ -294,17 +294,29 @@ checks of the default, selected, and absent witnesses report zero losses and zer
 absent, and retains malformed operations natively. The owner test
 `distinguishes_absent_and_malformed_helix_carriers` covers all settled selectors and carriers.
 
+ShapeBinder and SubShapeBinder carrier semantics are settled. `ShapeBinder.h:46-122` declares
+the support, boolean, enumeration, and float carriers; `ShapeBinder.cpp:64-75,346-428` registers
+their defaults and enumeration labels; `:870-958,1011-1025` consumes them in transform, fuse,
+face, offset, refine, and lifecycle branches. `PropertyContainer.cpp:343-378` restores only
+persisted properties. The producer witness `dp15_shapebinder_carrier_witness.py`, its extracted
+default and selected `Document.xml` files, and `dp15_shapebinder_restore_probe.py` establish the
+direct carrier types, selected values, and absent defaults. Rebuilt CLI checks of the default,
+selected, and absent witnesses report zero losses and zero findings. `design.rs` now requires the
+exact present carriers and supplies defaults only when absent; the owner test
+`distinguishes_absent_and_malformed_shape_binder_carriers` covers every projected flag and
+malformed runtime, root, value, and enumeration case.
+
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
 absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale,
-`CosmeticThread` boolean flags, and helix carriers are settled above. ShapeBinder and the remaining
-pattern flags still need their own writer and restore evidence.
+`CosmeticThread` boolean flags, helix carriers, and ShapeBinder carriers are settled above. The
+remaining pattern flags still need their own writer and restore evidence.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. ShapeBinder and the remaining pattern flags
-still require their own writer and restore evidence before the generic fallback sites can change.
+neutral semantics or discard a valid legacy default. The remaining pattern flags still require
+their own writer and restore evidence before the generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
@@ -314,8 +326,9 @@ and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the spec
 exact-carrier decoder rule. Revolution and Groove boolean flags, loft and sweep boolean flags,
 dress-up `UseAllEdges` and
 `FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
-modes, Hole boolean flags, `BaseProfileType`, the versioned `CosmeticThread` carrier, and Part and
-PartDesign helix carriers are covered; ShapeBinder and the remaining pattern flags stay open.
+modes, Hole boolean flags, `BaseProfileType`, the versioned `CosmeticThread` carrier, Part and
+PartDesign helix carriers, and ShapeBinder carriers are covered; the remaining pattern flags stay
+open.
 
 ### DP-16. Sketch placement rotation admission
 

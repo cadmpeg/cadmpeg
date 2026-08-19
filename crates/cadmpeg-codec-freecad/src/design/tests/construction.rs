@@ -11,6 +11,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod binders;
+
 #[test]
 fn transfers_partdesign_refine_and_fuzzy_post_processing() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">

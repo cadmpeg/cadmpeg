@@ -1446,6 +1446,21 @@ runtime type, multiple link targets, or a subelement selector is malformed for t
 admissible carrier with an unresolved target leaves the binder attributable and native; the
 decoder does not select a target by source order.
 
+ShapeBinder `TraceSupport` is an exact `App::PropertyBool` carrier with absent value `false`.
+SubShapeBinder `Fuse`, `MakeFace`, `OffsetFill`, `OffsetOpenResult`, `OffsetIntersection`,
+`ClaimChildren`, `Relative`, `PartialLoad`, and `Refine` are exact `App::PropertyBool` carriers
+with absent values `false`, `true`, `false`, `false`, `false`, `false`, `true`, `false`, and `true`.
+`BindMode`, `BindCopyOnChange`, and `OffsetJoinType` are exact `App::PropertyEnumeration` carriers
+with one direct `Integer`. `BindMode` indices `0`, `1`, and `2` mean synchronized, frozen, and
+detached; `BindCopyOnChange` indices `0`, `1`, and `2` mean disabled, enabled, and mutated; and
+`OffsetJoinType` indices `0`, `1`, and `2` mean arcs, tangent, and intersection. Their absent
+index is `0`. `Offset` is an exact `App::PropertyFloat` carrier with one direct `Float` and absent
+value `0`; a signed nonzero value creates the planar offset and activates its join, fill, open
+result, and intersection controls. A zero value omits the offset construction. A present carrier
+with another runtime type, without exactly one direct value, with an invalid boolean, an invalid or
+non-finite offset, or an unsupported enumeration index leaves the binder attributable and native.
+The offset controls are retained even when no offset is active.
+
 Part scale operations retain their source-shape selection and model-origin scale center. Uniform
 mode carries one factor; anisotropic mode carries independent x, y, and z factors. Finite nonzero
 negative factors remain valid reflections. Missing sources, zero factors, and non-finite factors

@@ -1938,6 +1938,20 @@ fn bool_selector(properties: &[&PropertyRecord], name: &str, absent_default: boo
     direct_bool_value(property)
 }
 
+fn float_selector(properties: &[&PropertyRecord], name: &str, absent_default: f64) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyFloat" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
 fn float_constraint_selector(
     properties: &[&PropertyRecord],
     name: &str,
@@ -5141,27 +5155,28 @@ fn binder_definition(
         .collect::<Option<Vec<_>>>()?;
     let construction = if kind == "PartDesign::ShapeBinder" {
         BinderConstruction::Shape {
-            trace_support: bool_property(properties, "TraceSupport").unwrap_or(false),
+            trace_support: bool_selector(properties, "TraceSupport", false)?,
         }
     } else {
-        let distance = scalar_named(properties, "Offset").unwrap_or(0.0);
-        if !distance.is_finite() {
-            return None;
-        }
+        let distance = float_selector(properties, "Offset", 0.0)?;
+        let offset_join = enumeration_selector(properties, "OffsetJoinType", 0)?;
+        let offset_fill = bool_selector(properties, "OffsetFill", false)?;
+        let offset_open_result = bool_selector(properties, "OffsetOpenResult", false)?;
+        let offset_intersection = bool_selector(properties, "OffsetIntersection", false)?;
         let offset = if distance == 0.0 {
             None
         } else {
             Some(BinderOffset {
                 distance: Length(distance),
-                join: match integer_property(properties, "OffsetJoinType").unwrap_or(0) {
+                join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,
                     2 => BinderOffsetJoin::Intersection,
                     _ => return None,
                 },
-                fill: bool_property(properties, "OffsetFill").unwrap_or(false),
-                open_result: bool_property(properties, "OffsetOpenResult").unwrap_or(false),
-                intersection: bool_property(properties, "OffsetIntersection").unwrap_or(false),
+                fill: offset_fill,
+                open_result: offset_open_result,
+                intersection: offset_intersection,
             })
         };
         let context_properties = properties
@@ -5189,28 +5204,28 @@ fn binder_definition(
             _ => return None,
         };
         BinderConstruction::SubShape {
-            lifecycle: match integer_property(properties, "BindMode").unwrap_or(0) {
+            lifecycle: match enumeration_selector(properties, "BindMode", 0)? {
                 0 => BinderLifecycle::Synchronized,
                 1 => BinderLifecycle::Frozen,
                 2 => BinderLifecycle::Detached,
                 _ => return None,
             },
-            placement: if bool_property(properties, "Relative").unwrap_or(true) {
+            placement: if bool_selector(properties, "Relative", true)? {
                 BinderPlacement::Relative
             } else {
                 BinderPlacement::Global
             },
-            copy_on_change: match integer_property(properties, "BindCopyOnChange").unwrap_or(0) {
+            copy_on_change: match enumeration_selector(properties, "BindCopyOnChange", 0)? {
                 0 => BinderCopyOnChange::Disabled,
                 1 => BinderCopyOnChange::Enabled,
                 2 => BinderCopyOnChange::Mutated,
                 _ => return None,
             },
-            claim_children: bool_property(properties, "ClaimChildren").unwrap_or(false),
-            fuse: bool_property(properties, "Fuse").unwrap_or(false),
-            make_face: bool_property(properties, "MakeFace").unwrap_or(true),
-            partial_load: bool_property(properties, "PartialLoad").unwrap_or(false),
-            refine: bool_property(properties, "Refine").unwrap_or(true),
+            claim_children: bool_selector(properties, "ClaimChildren", false)?,
+            fuse: bool_selector(properties, "Fuse", false)?,
+            make_face: bool_selector(properties, "MakeFace", true)?,
+            partial_load: bool_selector(properties, "PartialLoad", false)?,
+            refine: bool_selector(properties, "Refine", true)?,
             offset,
             context,
         }
