@@ -468,6 +468,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
 /// Type 213 Form 0 puts the positive string count `NS` at index 12 and stores
 /// twenty tokens per text string, so its groups start at token `33 + 20*NS`.
+/// Type 228 Form 0 puts the positive geometry count `N` at index 2 and the
+/// nonnegative leader count `L` after the geometry pointers, so its groups
+/// start at token `4 + N + L`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -552,6 +555,7 @@ pub(crate) fn entity_primary_end(
         (406, 27) => Some(generic_data_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
+        (228, 0) => Some(general_symbol_primary_end(record)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
         (104, 0..=3) => Some(fixed_primary_end(record, 12)),
@@ -1079,6 +1083,30 @@ fn sectioned_area_primary_end(record: &ParameterRecord) -> usize {
         .integer(8)
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(9))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn general_symbol_primary_end(record: &ParameterRecord) -> usize {
+    let Some(geometry_count) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(leader_count_index) = geometry_count.checked_add(3) else {
+        return record.tokens.len();
+    };
+    let Some(leader_count) = record
+        .integer(leader_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    leader_count_index
+        .checked_add(1)
+        .and_then(|start| start.checked_add(leader_count))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

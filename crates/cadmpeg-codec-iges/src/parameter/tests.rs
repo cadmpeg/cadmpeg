@@ -12776,6 +12776,170 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
+fn type228_form0_entity_table_boundary_follows_geometry_and_leader_lists() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(17, 228);
+    let directory = BTreeMap::from([(1, &association), (5, &property), (17, &source)]);
+
+    for (values, expected_start) in [
+        (vec![228, 9, 1, 7, 0, 1, 1, 1, 5], 5_usize),
+        (vec![228, 9, 2, 7, 13, 1, 11, 1, 1, 1, 5], 7),
+        (vec![228, 9, 1, 7, 2, 11, 15, 1, 1, 1, 5], 7),
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(17, &values), &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 228 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.properties, vec![5]);
+    }
+}
+
+#[test]
+fn type228_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(17, 228);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (17, &source),
+    ]);
+    let record = integer_parameter_record(17, &[228, 9, 1, 7, 2, 11, 2, 1, 3, 1, 5]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![6, 7]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 228 table boundary");
+    assert_eq!(groups.token_start, 7);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type228_malformed_counts_or_spans_do_not_enable_generic_recovery() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(17, 228);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (17, &source),
+    ]);
+    let malformed: Vec<Vec<TokenValue>> = vec![
+        vec![
+            228.into(),
+            9.into(),
+            0.into(),
+            1.into(),
+            11.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            TokenValue::Integer(-1),
+            1.into(),
+            11.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            TokenValue::Real(1.5),
+            7.into(),
+            0.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            i64::MAX.into(),
+            1.into(),
+            11.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![228.into(), 9.into(), 2.into(), 7.into()],
+        vec![
+            228.into(),
+            9.into(),
+            1.into(),
+            7.into(),
+            TokenValue::Real(1.5),
+            11.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            1.into(),
+            7.into(),
+            TokenValue::Integer(-1),
+            11.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            1.into(),
+            7.into(),
+            2.into(),
+            11.into(),
+        ],
+        vec![
+            228.into(),
+            9.into(),
+            1.into(),
+            7.into(),
+            0.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+        ],
+    ];
+
+    for values in malformed {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(17, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type410_entity_table_boundaries_follow_view_fields() {
     let cases = [
         (0_i64, vec![410, 1, 1, 0, 0, 0, 0, 0, 0, 1, 3, 0], 9_usize),
