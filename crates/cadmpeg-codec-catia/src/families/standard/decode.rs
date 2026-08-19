@@ -3311,7 +3311,7 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     if let Some(options) = &mut endpoint_options {
-        let mut allowed_faces = supports
+        let allowed_faces = supports
             .iter()
             .enumerate()
             .map(|(edge, support)| {
@@ -3340,34 +3340,18 @@ fn attach_standard_topology(
                     .collect()
             })
             .collect::<Vec<_>>();
-        let mut closure_incomplete = false;
-        'edges: for edge in 0..allowed_faces.len() {
-            allowed_faces[edge].retain(|face| {
-                let mut trial = edge_faces.clone();
-                trial[edge][1] = *face;
-                let closure = missing_edge::face_endpoint_candidates_close(&trial, options, *face);
-                match closure {
-                    missing_edge::FaceEndpointClosureOutcome::Closed => true,
-                    missing_edge::FaceEndpointClosureOutcome::Rejected => false,
-                    // This local search is a bounded necessary-condition
-                    // check. Exhaustion proves neither rejection nor closure;
-                    // retain the face domain for the mesh-aware solver, which
-                    // owns the complete joint endpoint constraints.
-                    missing_edge::FaceEndpointClosureOutcome::Exhausted => {
-                        closure_incomplete = true;
-                        true
-                    }
-                }
-            });
-            if closure_incomplete {
-                // Do not spend the same local bound on later alternatives. All
-                // unvisited alternatives remain in `allowed_faces` and are
-                // checked by the complete joint search below.
-                break 'edges;
-            }
-        }
-        let completed =
-            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces);
+        // A non-empty alternate domain remains a wildcard until the joint mesh
+        // quotient evaluates it. Face-local endpoint closure is incomplete:
+        // an unmatched row can occupy a face boundary only in that quotient.
+        let completed = (!allowed_faces.iter().any(|faces| !faces.is_empty()))
+            .then(|| {
+                missing_edge::resolve_standard_duplicate_edge_faces(
+                    spine,
+                    &edge_faces,
+                    &allowed_faces,
+                )
+            })
+            .flatten();
         if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {

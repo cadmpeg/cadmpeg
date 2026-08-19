@@ -40,12 +40,11 @@ pub(super) use crate::solve::mesh_quotient::{
 };
 pub(super) use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
-    face_endpoint_candidates_close, motif_port_points, propagate_edge_port_points,
-    propagate_edge_port_points_with_ordered_seeds,
+    motif_port_points, propagate_edge_port_points, propagate_edge_port_points_with_ordered_seeds,
     propagate_partial_edge_port_points_with_ordered_seeds, resolve_edge_faces_from_runs,
     same_unordered_pair, unique_duplicate_face_assignment, visit_duplicate_face_assignments,
-    DuplicateFaceAssignmentVisit, FaceEndpointClosureOutcome, MeshBoundaryEdgeCandidate,
-    MeshEdgeRun, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    DuplicateFaceAssignmentVisit, MeshBoundaryEdgeCandidate, MeshEdgeRun,
+    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 pub(super) use crate::solve::UnionFind;
 pub(super) use cadmpeg_core::decode::WorkBudget;

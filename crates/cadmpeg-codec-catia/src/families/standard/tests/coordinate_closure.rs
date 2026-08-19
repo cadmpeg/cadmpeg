@@ -1367,47 +1367,6 @@ fn duplicate_face_slots_do_not_budget_forced_assignments() {
 }
 
 #[test]
-fn face_endpoint_candidates_require_one_closed_local_cycle() {
-    let faces = [[0, 1], [0, 2], [0, 3]];
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]], 0,),
-        FaceEndpointClosureOutcome::Closed
-    );
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]], 0,),
-        FaceEndpointClosureOutcome::Rejected
-    );
-}
-
-#[test]
-fn face_endpoint_candidates_do_not_budget_fixed_cycle_size() {
-    const EDGE_COUNT: usize = 65_537;
-    let faces = vec![[0, 0]; EDGE_COUNT];
-    let candidates = (0..EDGE_COUNT)
-        .map(|edge| vec![[edge, (edge + 1) % EDGE_COUNT]])
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &candidates, 0),
-        FaceEndpointClosureOutcome::Closed
-    );
-}
-
-#[test]
-fn face_endpoint_candidates_report_an_incomplete_search() {
-    const EDGE_COUNT: usize = 17;
-    let faces = vec![[0, 0]; EDGE_COUNT];
-    let candidates = (0..EDGE_COUNT)
-        .map(|edge| vec![[edge * 2, edge * 2 + 1], [100 + edge * 2, 101 + edge * 2]])
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &candidates, 0),
-        FaceEndpointClosureOutcome::Exhausted
-    );
-}
-
-#[test]
 fn counted_edge_arities_are_bounded_by_remaining_bytes() {
     let oversized_row = [0x01, 0x01, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff];
     assert!(parse_edge_tables_scoped_at(&oversized_row, 0).is_none());

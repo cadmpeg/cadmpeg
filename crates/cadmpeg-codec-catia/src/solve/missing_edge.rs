@@ -7,11 +7,9 @@ use crate::families::standard::fbb::{
     parse_standard_edge_tables_scoped, parse_standard_edge_tables_with_width, parse_trim_chain,
     parse_vertex_table, selected_standard_run,
 };
-use crate::families::standard::topology::{
-    incidence_cycles, EdgeBoundaryLayout, EdgeRow, TrimRecord,
-};
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
+use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
@@ -563,125 +561,6 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
             },
         )
     })
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FaceEndpointClosureOutcome {
-    Closed,
-    Rejected,
-    Exhausted,
-}
-
-/// Test whether one face can select endpoint pairs that form closed cycles.
-/// The search is bounded independently of the global incidence solver.
-pub(crate) fn face_endpoint_candidates_close(
-    edge_faces: &[[usize; 2]],
-    candidates: &[Vec<[usize; 2]>],
-    face: usize,
-) -> FaceEndpointClosureOutcome {
-    const MAX_STATES: usize = 65_536;
-
-    fn pair_fits(degrees: &HashMap<usize, u8>, pair: [usize; 2]) -> bool {
-        let left = usize::from(degrees.get(&pair[0]).copied().unwrap_or(0));
-        let right = usize::from(degrees.get(&pair[1]).copied().unwrap_or(0));
-        if pair[0] == pair[1] {
-            left + 2 <= 2
-        } else {
-            left < 2 && right < 2
-        }
-    }
-
-    pub(crate) fn adjust(degrees: &mut HashMap<usize, u8>, pair: [usize; 2], increase: bool) {
-        for point in pair {
-            if increase {
-                *degrees.entry(point).or_default() += 1;
-            } else {
-                let remove = if let Some(degree) = degrees.get_mut(&point) {
-                    *degree -= 1;
-                    *degree == 0
-                } else {
-                    false
-                };
-                if remove {
-                    degrees.remove(&point);
-                }
-            }
-        }
-    }
-
-    pub(crate) fn search(
-        all_edges: &[usize],
-        branches: &[(usize, Vec<[usize; 2]>)],
-        at: usize,
-        selected: &mut [[usize; 2]],
-        degrees: &mut HashMap<usize, u8>,
-        states: &mut usize,
-    ) -> Option<bool> {
-        if at == branches.len() {
-            return Some(incidence_cycles(all_edges, selected).is_some());
-        }
-        let (edge, candidates) = &branches[at];
-        let viable = candidates
-            .iter()
-            .copied()
-            .filter(|pair| pair_fits(degrees, *pair))
-            .collect::<Vec<_>>();
-        if viable.len() > 1 {
-            if *states >= MAX_STATES {
-                return None;
-            }
-            *states += 1;
-        }
-        for pair in viable {
-            adjust(degrees, pair, true);
-            selected[*edge] = pair;
-            if search(all_edges, branches, at + 1, selected, degrees, states)? {
-                return Some(true);
-            }
-            adjust(degrees, pair, false);
-        }
-        Some(false)
-    }
-
-    if edge_faces.len() != candidates.len() {
-        return FaceEndpointClosureOutcome::Rejected;
-    }
-    let edges = edge_faces
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, faces)| faces.contains(&face).then_some(edge))
-        .collect::<Vec<_>>();
-    if edges.is_empty() {
-        return FaceEndpointClosureOutcome::Rejected;
-    }
-    let mut selected = vec![[0; 2]; candidates.len()];
-    let mut degrees = HashMap::new();
-    let mut branches = Vec::new();
-    for &edge in &edges {
-        let mut options = candidates[edge].clone();
-        for pair in &mut options {
-            pair.sort_unstable();
-        }
-        options.sort_unstable();
-        options.dedup();
-        match options.as_slice() {
-            [] => return FaceEndpointClosureOutcome::Rejected,
-            [pair] => {
-                if !pair_fits(&degrees, *pair) {
-                    return FaceEndpointClosureOutcome::Rejected;
-                }
-                selected[edge] = *pair;
-                adjust(&mut degrees, *pair, true);
-            }
-            _ => branches.push((edge, options)),
-        }
-    }
-    branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
-    match search(&edges, &branches, 0, &mut selected, &mut degrees, &mut 0) {
-        Some(true) => FaceEndpointClosureOutcome::Closed,
-        Some(false) => FaceEndpointClosureOutcome::Rejected,
-        None => FaceEndpointClosureOutcome::Exhausted,
-    }
 }
 
 pub(crate) fn resolve_edge_faces_from_runs(
