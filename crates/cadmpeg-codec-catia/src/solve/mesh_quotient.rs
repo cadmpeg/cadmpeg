@@ -4462,7 +4462,6 @@ fn propagate_common_full_quotients(
     }
     quotient.edge_domains_viable(edge_candidates).then_some(())
 }
-
 pub(crate) fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -4472,7 +4471,6 @@ pub(crate) fn propagate_common_ordered_face_quotients(
     const MAX_FACE_OPTIONS: usize = 4_096;
     const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
     const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
-
     let mut face_order = (0..domains.len()).collect::<Vec<_>>();
     face_order.sort_unstable_by_key(|face| match &domains[*face] {
         MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
@@ -4503,8 +4501,10 @@ pub(crate) fn propagate_common_ordered_face_quotients(
                         if capacity != 0 {
                             continue;
                         }
-                        let left_reversed = left.reversed?;
-                        let right_reversed = right.reversed?;
+                        if left.reversed.is_none() || right.reversed.is_none() {
+                            continue;
+                        }
+                        let (left_reversed, right_reversed) = (left.reversed?, right.reversed?);
                         let left_node = left
                             .edge
                             .checked_mul(2)?

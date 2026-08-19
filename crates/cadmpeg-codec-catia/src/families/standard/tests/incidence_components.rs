@@ -447,6 +447,40 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
 }
 
 #[test]
+fn deferred_quotient_retains_unknown_exact_run_direction() {
+    let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+        edge,
+        start,
+        end: (start + 1) % 2,
+        reversed: None,
+    };
+    let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+        crate::solve::missing_edge::MeshDeferredFaceBoundary {
+            cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(use_(0, 0), 1), (use_(1, 1), 1)],
+            }],
+            missing_edges: Vec::new(),
+        },
+    )];
+    let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
+            .expect("initial quotient");
+    let budget = WorkBudget::new(100);
+
+    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &domains,
+        &candidates,
+        &mut quotient,
+        &budget,
+    )
+    .expect("unknown exact direction is deferred");
+
+    assert_ne!(quotient.union.find(0), quotient.union.find(3));
+}
+
+#[test]
 fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     let use_ = |edge, start| MeshBoundaryEdgeCandidate {
         edge,
