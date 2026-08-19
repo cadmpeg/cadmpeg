@@ -62,6 +62,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             transform: Some(transform),
         }],
         placement_failures: Vec::new(),
+        placement_overrides: Vec::new(),
     };
 
     let occurrences = super::project_occurrences(&table);
@@ -677,8 +678,16 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     };
 
     assert_eq!(
-        super::occurrence_transforms_with_precedence(vec![direct], &[structured], "role"),
+        super::occurrence_transforms_with_precedence(vec![direct], &[structured.clone()], "role"),
         vec![Some(direct)]
+    );
+    assert_eq!(
+        super::superseded_placement_count(
+            std::slice::from_ref(&direct),
+            std::slice::from_ref(&structured),
+            "role"
+        ),
+        1
     );
 }
 

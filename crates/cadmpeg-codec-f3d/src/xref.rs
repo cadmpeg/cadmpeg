@@ -50,6 +50,9 @@ pub struct XrefTable {
     /// admitted by the type table but did not close under the generation's
     /// placement grammar and had no other valid placement carrier.
     pub(crate) placement_failures: Vec<u32>,
+    /// `(XREF ordinal, placement-record count)` pairs whose structured
+    /// placements were superseded by scope-bound Component Insert carriers.
+    pub(crate) placement_overrides: Vec<(u32, usize)>,
 }
 
 /// The `docstruct` document-type declaration of a JSON `Properties.dat`.
@@ -220,6 +223,7 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
         designs,
         references,
         placement_failures: Vec::new(),
+        placement_overrides: Vec::new(),
     })
 }
 
@@ -389,6 +393,7 @@ fn bind_occurrences(
     }
     let mut expanded = Vec::new();
     let mut placement_failures = Vec::new();
+    let mut placement_overrides = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
         for (placements, _, stream) in &streams {
@@ -401,6 +406,11 @@ fn bind_occurrences(
                 stream,
                 &reference.neutron_role,
             );
+            let structured_count =
+                superseded_placement_count(&direct, placements, &reference.neutron_role);
+            if !direct.is_empty() && structured_count != 0 {
+                placement_overrides.push((reference.ordinal, structured_count));
+            }
             occurrences.extend(occurrence_transforms_with_precedence(
                 direct,
                 placements,
@@ -444,6 +454,7 @@ fn bind_occurrences(
     }
     table.references = expanded;
     table.placement_failures = placement_failures;
+    table.placement_overrides = placement_overrides;
     Ok(())
 }
 
@@ -479,6 +490,20 @@ fn occurrence_transforms_with_precedence(
         occurrence_transforms(placements, role)
     } else {
         direct.into_iter().map(Some).collect()
+    }
+}
+
+/// Count structured placements that are discarded when a scope-bound carrier
+/// supplies at least one transform for the same role.
+fn superseded_placement_count(
+    direct: &[[[f64; 4]; 4]],
+    placements: &[OccurrencePlacement],
+    role: &str,
+) -> usize {
+    if direct.is_empty() {
+        0
+    } else {
+        occurrence_transforms(placements, role).len()
     }
 }
 

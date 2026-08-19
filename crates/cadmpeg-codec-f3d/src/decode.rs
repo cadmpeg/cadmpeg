@@ -2736,6 +2736,7 @@ impl<'a> F3dDecodeSession<'a> {
             match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
                 Ok(Some(table)) => {
                     report_xref_placement_failures(&mut self.report, &table);
+                    report_xref_placement_overrides(&mut self.report, &table);
                     self.ir.model.occurrences = crate::xref::project_occurrences(&table);
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
@@ -2758,6 +2759,7 @@ impl<'a> F3dDecodeSession<'a> {
                 crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
             if let Ok(Some(table)) = &xref_table {
                 report_xref_placement_failures(&mut self.report, table);
+                report_xref_placement_overrides(&mut self.report, table);
                 self.ir.model.occurrences = crate::xref::project_occurrences(table);
                 crate::xref::bind_component_insert_features(
                     &mut self.ir.model.features,
@@ -3462,6 +3464,26 @@ fn report_xref_placement_failures(report: &mut DecodeReport, table: &crate::xref
             .push(F3dLossCode::XrefPlacementUndecoded.note(format!(
                 "external occurrence {} for role {} has a typed placement record that did not \
                  decode under its generation grammar; no valid placement carrier was available",
+                reference.relative_path, reference.neutron_role
+            )));
+    }
+}
+
+/// Report structured placements that were ignored because a scope-bound
+/// Component Insert carrier supplied the occurrence transform for the role.
+fn report_xref_placement_overrides(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+    for (ordinal, count) in &table.placement_overrides {
+        let Some(reference) = table
+            .references
+            .iter()
+            .find(|reference| reference.ordinal == *ordinal)
+        else {
+            continue;
+        };
+        report
+            .losses
+            .push(F3dLossCode::XrefPlacementSuperseded.note(format!(
+                "{count} structured placement record(s) for external occurrence {} and role {} were superseded by scope-bound Component Insert carrier(s)",
                 reference.relative_path, reference.neutron_role
             )));
     }

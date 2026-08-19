@@ -112,6 +112,8 @@ pub enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement named a role but failed its payload grammar.
     XrefPlacementUndecoded,
+    /// Structured placement records were superseded by scope-bound carriers.
+    XrefPlacementSuperseded,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
@@ -209,6 +211,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementSuperseded,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
@@ -289,6 +292,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
@@ -358,7 +362,8 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefUnitsMismatch
-            | Self::XrefPlacementUndecoded => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
@@ -503,6 +508,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.placement-superseded",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "assembly.components-external",
