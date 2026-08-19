@@ -456,6 +456,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
 /// segment after the first breakpoint, so its groups start at token
 /// `18 + 13*N`.
+/// Type 130 Form 0 has fourteen fixed primary fields, so its groups start at
+/// token 15.
 /// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
 /// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
@@ -536,6 +538,7 @@ pub(crate) fn entity_primary_end(
         (123, 0) => Some(4),
         (126, 0..=5) => Some(rational_bspline_curve_primary_end(record)),
         (128, 0..=9) => Some(rational_bspline_surface_primary_end(record)),
+        (130, 0) => Some(fixed_primary_end(record, 15)),
         (180, 0 | 1) => Some(boolean_tree_primary_end(record)),
         (141, 0) => Some(boundary_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
