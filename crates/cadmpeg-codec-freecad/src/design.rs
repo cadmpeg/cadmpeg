@@ -4001,18 +4001,20 @@ fn part_fillet_edge_values(
     view.is_empty().then_some(values)
 }
 
-fn shell_mode(properties: &[&PropertyRecord]) -> Option<ShellMode> {
-    match integer_property(properties, "Mode").unwrap_or(0) {
+fn shell_mode(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellMode> {
+    let absent_default = u64::from(kind == "Part::Offset2D");
+    match enumeration_selector(properties, "Mode", absent_default)? {
         0 => Some(ShellMode::Skin),
         1 => Some(ShellMode::Pipe),
-        2 => Some(ShellMode::BothSides),
+        2 if kind != "Part::Offset2D" => Some(ShellMode::BothSides),
         _ => None,
     }
 }
 
-fn shell_join(properties: &[&PropertyRecord]) -> Option<ShellJoin> {
-    match integer_property(properties, "Join").unwrap_or(0) {
+fn shell_join(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellJoin> {
+    match enumeration_selector(properties, "Join", 0)? {
         0 => Some(ShellJoin::Arc),
+        1 if kind == "PartDesign::Thickness" => Some(ShellJoin::Intersection),
         1 => Some(ShellJoin::Tangent),
         2 => Some(ShellJoin::Intersection),
         _ => None,
@@ -4042,8 +4044,8 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         } else {
             !bool_property(properties, "Reversed").unwrap_or(false)
         }),
-        mode: Some(shell_mode(properties)?),
-        join: Some(shell_join(properties)?),
+        mode: Some(shell_mode(kind, properties)?),
+        join: Some(shell_join(kind, properties)?),
         resolve_intersections: Some(bool_property(properties, "Intersection").unwrap_or(false)),
         allow_self_intersections: Some(
             bool_property(properties, "SelfIntersection").unwrap_or(false),
@@ -4058,7 +4060,7 @@ fn offset_shape_definition(
     let source = singular_operand(properties, "Source")?;
     let distance = scalar_named(properties, "Value")
         .filter(|distance| distance.is_finite() && *distance != 0.0)?;
-    let mode = shell_mode(properties)?;
+    let mode = shell_mode(kind, properties)?;
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
         return None;
     }
@@ -4066,7 +4068,7 @@ fn offset_shape_definition(
         source: BodySelection::Native(source.id.clone()),
         distance: Length(distance),
         mode,
-        join: shell_join(properties)?,
+        join: shell_join(kind, properties)?,
         resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
         allow_self_intersections: bool_property(properties, "SelfIntersection").unwrap_or(false),
         fill: bool_property(properties, "Fill").unwrap_or(false),
@@ -4168,7 +4170,7 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
     if support.links.len() != 1 {
         return None;
     }
-    let mode = match integer_property(properties, "Mode").unwrap_or(0) {
+    let mode = match enumeration_selector(properties, "Mode", 0)? {
         0 => SurfaceProjectionMode::All,
         1 => SurfaceProjectionMode::Faces,
         2 => SurfaceProjectionMode::Edges,

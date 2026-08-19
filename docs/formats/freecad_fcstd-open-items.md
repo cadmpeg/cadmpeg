@@ -49,10 +49,27 @@ base-shape normal respectively. A present selected carrier requires one direct `
 a non-integer, negative, unknown, nested, duplicate, or wrong-runtime carrier leaves the
 extrusion native. An absent `DirMode` selects Custom.
 
+Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
+Skin, Pipe, and RectoVerso/BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use
+indices `0`, `1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` has only
+`Join` indices `0` and `1`, for Arc and Intersection; its source maps index `1` to the kernel's
+intersection join because it does not offer tangent joining. `Part::Offset2D` inherits the mode and
+join carriers but its constructor changes the absent `Mode` default to index `1` (Pipe), and its
+executor rejects index `2` (RectoVerso). `FeatureOffset.cpp:36-51,120-175`,
+`PartFeatures.cpp:362-376,423-450`, and `FeatureThickness.cpp:40-60,121-136` establish these
+carriers, defaults, labels, and execution paths. `FeatureProjectOnSurface.cpp:53-70,151-186`
+establishes `ProjectOnSurface.Mode` indices `0`, `1`, and `2` as All, Faces, and Edges, with
+constructor default `0`.
+
+`design.rs:1910-1927` now supplies those defaults only for absent properties and requires an exact
+`App::PropertyEnumeration` with one direct `Integer` for a selected carrier. The owner test
+`distinguishes_absent_and_malformed_shell_and_surface_selectors` and the producer witness
+`dp15_shell_surface_witness.py` cover absent defaults, each selected mode, the PartDesign join
+mapping, the Offset2D unsupported mode, and selected malformed carriers.
+
 **Need.** Apply the same absence-versus-present validation to the remaining operation selectors:
-shell and surface modes, pattern modes, hole modes and flags, and the remaining design operation
-flags. Trace each producer carrier and preserve its constructor default only when the property is
-absent.
+pattern modes, hole modes and flags, and the remaining design operation flags. Trace each producer
+carrier and preserve its constructor default only when the property is absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
@@ -60,8 +77,9 @@ salvage rules may differ by operation family; changing them without tracing the 
 neutral semantics or discard a valid legacy default.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
-`SideType`/`Type`/`Type2`, and Part `DirMode` are covered by the specification and exact-carrier
-decoder rule. The remaining selectors stay open.
+`SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, and
+`ProjectOnSurface.Mode` are covered by the specification and exact-carrier decoder rule. Pattern
+modes, hole modes and flags, and the remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

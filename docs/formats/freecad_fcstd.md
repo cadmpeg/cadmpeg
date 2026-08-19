@@ -672,6 +672,20 @@ Custom, Edge, and Normal. Custom uses `Dir`, Edge uses `DirLink`, and Normal use
 normal. An absent `DirMode` means Custom. A selected present `DirMode` carrier with another
 runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
 nested, or unsupported index does not select a neutral extrusion; the operation remains native.
+Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
+Skin, Pipe, and BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use indices `0`,
+`1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` uses the same `Mode`
+indices, but its `Join` carrier has only indices `0` and `1` for Arc and Intersection. An absent
+`Mode` or `Join` uses index `0` for these operations. `Part::Offset2D` uses the inherited `Join`
+carrier and labels, but its absent `Mode` uses index `1` (Pipe); selected index `2` (BothSides) is
+unsupported and remains native. A selected present `Mode` or `Join` carrier with another runtime
+type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate, nested, or
+unsupported index does not select a neutral thickness or offset operation; the operation remains
+native.
+Part `ProjectOnSurface` `Mode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2`
+mean All, Faces, and Edges. An absent `Mode` means All. A selected present carrier with another
+runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
+nested, or unsupported index does not select a neutral projection; the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

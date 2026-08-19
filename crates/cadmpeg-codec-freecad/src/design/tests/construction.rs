@@ -1160,7 +1160,7 @@ fn transfers_complete_thickness_construction_controls() {
             thickness: Some(cadmpeg_ir::features::Length(2.5)),
             outward: Some(false),
             mode: Some(cadmpeg_ir::features::ShellMode::BothSides),
-            join: Some(cadmpeg_ir::features::ShellJoin::Tangent),
+            join: Some(cadmpeg_ir::features::ShellJoin::Intersection),
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
@@ -1263,6 +1263,207 @@ fn transfers_part_thickness_and_shape_offset_construction() {
             ..
         }
     ));
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
+    fn feature_definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
+        assert!(matches!(
+            feature_definition(result, "Target"),
+            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    }
+
+    let shell_document = |kind: &str, mode: &str, join: &str| {
+        let (base_properties, base_count) = match kind {
+            "PartDesign::Thickness" => (
+                r#"<Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            "Part::Thickness" => (
+                r#"<Property name="Faces" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="SelfIntersection" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            "Part::Offset" => (
+                r#"<Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="SelfIntersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fill" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                5,
+            ),
+            "Part::Offset2D" => (
+                r#"<Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fill" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            _ => panic!("unexpected shell kind {kind}"),
+        };
+        let count = base_count + usize::from(!mode.is_empty()) + usize::from(!join.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Box" name="Base" id="1"/><Object type="{kind}" name="Target" id="2"/></Objects>
+<ObjectData Count="2">
+ <Object name="Base"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property><Property name="Height" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
+ <Object name="Target"><Properties Count="{count}">{base_properties}{mode}{join}</Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+    let decode_shell = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("shell selector document")
+    };
+
+    for kind in [
+        "PartDesign::Thickness",
+        "Part::Thickness",
+        "Part::Offset",
+        "Part::Offset2D",
+    ] {
+        let result = decode_shell(&shell_document(kind, "", ""));
+        let expected_mode = if kind == "Part::Offset2D" {
+            ShellMode::Pipe
+        } else {
+            ShellMode::Skin
+        };
+        assert!(
+            matches!(
+                feature_definition(&result, "Target"),
+                FeatureDefinition::Shell {
+                    mode: Some(mode),
+                    join: Some(ShellJoin::Arc),
+                    ..
+                } if *mode == expected_mode
+            ) || matches!(
+                feature_definition(&result, "Target"),
+                FeatureDefinition::OffsetShape {
+                    mode,
+                    join: ShellJoin::Arc,
+                    ..
+                } if *mode == expected_mode
+            )
+        );
+        assert!(result.report().losses.is_empty());
+
+        let malformed_values = [
+            "<Integer value=\"bad\"/>",
+            "<String value=\"0\"/>",
+            "<Wrapper><Integer value=\"0\"/></Wrapper>",
+            "<Integer value=\"0\"/><Integer value=\"1\"/>",
+            "<Integer value=\"-1\"/>",
+            "<Integer value=\"99\"/>",
+        ];
+        for selector in ["Mode", "Join"] {
+            for value in malformed_values {
+                let property = if value.starts_with("<String") {
+                    format!(
+                        r#"<Property name="{selector}" type="App::PropertyString">{value}</Property>"#
+                    )
+                } else {
+                    format!(
+                        r#"<Property name="{selector}" type="App::PropertyEnumeration">{value}</Property>"#
+                    )
+                };
+                let mode = if selector == "Mode" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                };
+                let join = if selector == "Join" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Join" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                };
+                let result = decode_shell(&shell_document(kind, mode, join));
+                assert_native(&result, kind);
+            }
+        }
+    }
+
+    let offset_2d_unsupported = decode_shell(&shell_document(
+        "Part::Offset2D",
+        r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>"#,
+        r#"<Property name="Join" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#,
+    ));
+    assert_native(&offset_2d_unsupported, "Part::Offset2D");
+
+    let surface_document = |mode: &str| {
+        let count = 5 + usize::from(!mode.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Box" name="Source" id="1"/><Object type="Part::Box" name="Support" id="2"/><Object type="Part::ProjectOnSurface" name="Target" id="3"/></Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Support"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="Target"><Properties Count="{count}"><Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property><Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="4"/></Property><Property name="Offset" type="App::PropertyDistance"><Float value="-0.5"/></Property>{mode}</Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+    let decode_surface = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("surface selector document")
+    };
+    for (mode, expected) in [
+        ("", cadmpeg_ir::features::SurfaceProjectionMode::All),
+        (
+            r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+            cadmpeg_ir::features::SurfaceProjectionMode::Faces,
+        ),
+        (
+            r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>"#,
+            cadmpeg_ir::features::SurfaceProjectionMode::Edges,
+        ),
+    ] {
+        let result = decode_surface(&surface_document(mode));
+        assert!(matches!(
+            feature_definition(&result, "Target"),
+            FeatureDefinition::ProjectOnSurface { mode: actual, .. } if *actual == expected
+        ));
+        assert!(result.report().losses.is_empty());
+    }
+    for value in [
+        "<Integer value=\"bad\"/>",
+        "<String value=\"0\"/>",
+        "<Wrapper><Integer value=\"0\"/></Wrapper>",
+        "<Integer value=\"0\"/><Integer value=\"1\"/>",
+        "<Integer value=\"-1\"/>",
+        "<Integer value=\"99\"/>",
+    ] {
+        let mode = if value.starts_with("<String") {
+            format!(r#"<Property name="Mode" type="App::PropertyString">{value}</Property>"#)
+        } else {
+            format!(r#"<Property name="Mode" type="App::PropertyEnumeration">{value}</Property>"#)
+        };
+        let result = decode_surface(&surface_document(&mode));
+        assert!(matches!(
+            feature_definition(&result, "Target"),
+            FeatureDefinition::Native { kind, .. } if kind == "Part::ProjectOnSurface"
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+    }
 }
 
 #[test]
