@@ -128,6 +128,162 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_part_extrusion_flags() {
+    fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Extrusion"))
+            .expect("extrusion feature")
+            .definition
+    }
+
+    let base_properties = [
+        (
+            "Solid",
+            r#"<Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "Reversed",
+            r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "Symmetric",
+            r#"<Property name="Symmetric" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+    ];
+    let document = |target: &str, replacement: Option<&str>| {
+        let mut properties = String::from(
+            r#"<Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property><Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="8"/></Property><Property name="DirMode" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="LengthFwd" type="App::PropertyDistance"><Float value="6"/></Property><Property name="LengthRev" type="App::PropertyDistance"><Float value="2"/></Property><Property name="TaperAngle" type="App::PropertyAngle"><Float value="0"/></Property><Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="0"/></Property>"#,
+        );
+        for (name, property) in base_properties {
+            if name != target {
+                properties.push_str(property);
+            }
+        }
+        if let Some(replacement) = replacement {
+            properties.push_str(replacement);
+        }
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Part::Feature" name="Profile" id="1"/><Object type="Part::Extrusion" name="Extrusion" id="2"/></Objects><ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object><Object name="Extrusion"><Properties Count="{count}">{properties}</Properties></Object></ObjectData></Document>"#,
+            count = properties.matches("<Property ").count(),
+        )
+    };
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("extrusion flag document")
+    };
+    let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
+        assert!(matches!(
+            definition(result),
+            FeatureDefinition::Native { kind, .. } if kind == "Part::Extrusion"
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    };
+
+    for target in ["Solid", "Reversed", "Symmetric"] {
+        let result = decode(&document(target, None));
+        assert!(result.report().losses.is_empty(), "{target}");
+        let FeatureDefinition::Extrude {
+            direction,
+            extent,
+            solid,
+            ..
+        } = definition(&result)
+        else {
+            panic!("{target} absent carrier");
+        };
+        match target {
+            "Solid" => assert_eq!(*solid, Some(false)),
+            "Reversed" => assert!(matches!(
+                direction,
+                cadmpeg_ir::features::ExtrudeDirection::Explicit(vector)
+                    if vector.z == 1.0
+            )),
+            "Symmetric" => assert!(matches!(
+                extent,
+                cadmpeg_ir::features::ExtrudeExtent::TwoSided { .. }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let valid = [
+        (
+            "Solid",
+            r#"<Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "Reversed",
+            r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "Symmetric",
+            r#"<Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+    ];
+    for (target, replacement) in valid {
+        let result = decode(&document(target, Some(replacement)));
+        assert!(result.report().losses.is_empty(), "{target}");
+        let FeatureDefinition::Extrude {
+            direction,
+            extent,
+            solid,
+            ..
+        } = definition(&result)
+        else {
+            panic!("{target} valid carrier");
+        };
+        match target {
+            "Solid" => assert_eq!(*solid, Some(true)),
+            "Reversed" => assert!(matches!(
+                direction,
+                cadmpeg_ir::features::ExtrudeDirection::Explicit(vector)
+                    if vector.z == -1.0
+            )),
+            "Symmetric" => assert!(matches!(
+                extent,
+                cadmpeg_ir::features::ExtrudeExtent::Symmetric { .. }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let malformed_values = [
+        ("App::PropertyString", r#"<String value="false"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="0"/>"#),
+        ("App::PropertyBool", r#"<Bool value="bad"/>"#),
+        (
+            "App::PropertyBool",
+            r#"<Wrapper><Bool value="false"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyBool",
+            r#"<Bool value="false"/><Bool value="true"/>"#,
+        ),
+        ("App::PropertyBool", r#"<Bool value="2"/>"#),
+    ];
+    for target in ["Solid", "Reversed", "Symmetric"] {
+        for (type_name, value) in malformed_values {
+            let replacement =
+                format!(r#"<Property name="{target}" type="{type_name}">{value}</Property>"#);
+            assert_native(&decode(&document(target, Some(&replacement))));
+        }
+    }
+}
+
+#[test]
 fn transfers_non_default_revolution_branches() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="7">

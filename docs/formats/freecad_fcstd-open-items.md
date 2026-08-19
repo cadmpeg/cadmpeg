@@ -49,6 +49,15 @@ base-shape normal respectively. A present selected carrier requires one direct `
 a non-integer, negative, unknown, nested, duplicate, or wrong-runtime carrier leaves the
 extrusion native. An absent `DirMode` selects Custom.
 
+`FeatureExtrusion.cpp:131-151,215-278` registers `Solid`, `Reversed`, and `Symmetric` with
+constructor defaults false and applies them to the solid result, direction, and symmetric length
+calculation. `PropertyStandard.cpp:2258-2277` writes and restores each Bool carrier. The producer
+witness `dp15_extrusion_flags_witness.py` saves false/false/false and true/true/true objects with
+non-null shapes; `dp15_extrusion_flags_restore_probe.py` restores false for all three after their
+removal. Rebuilt CLI source and absent checks report zero losses. The hostile batch reports one
+blocking native loss for every wrong-runtime, integer-runtime, malformed, nested, duplicate, and
+unknown carrier for each flag.
+
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
 Skin, Pipe, and RectoVerso/BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use
 indices `0`, `1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` has only
@@ -123,10 +132,14 @@ salvage rules may differ by operation family; changing them without tracing the 
 neutral semantics or discard a valid legacy default. The source constructor declares
 `CosmeticThread` with default `true` at `FeatureHole.cpp:557-561`, but the current producer witness
 contains no `CosmeticThread` property and restores it as absent. The producer/source version
-boundary must be identified before choosing its absence rule.
+boundary must be identified before choosing its absence rule. `/snap/bin/freecad.cmd --version`
+reports FreeCAD 1.1.1 Revision 44227, and a new-object property inventory confirms that this
+producer's `PartDesign::Hole.PropertiesList` excludes `CosmeticThread`; the source snapshot's
+`version.json` identifies a separate 26.3 development version.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
-`SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, `ProjectOnSurface.Mode`,
+`SideType`/`Type`/`Type2`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
+`Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
 exact-carrier decoder rule. Hole enumeration modes, boolean flags, and `BaseProfileType` are
 covered; `CosmeticThread` and the remaining design operation flags stay open.

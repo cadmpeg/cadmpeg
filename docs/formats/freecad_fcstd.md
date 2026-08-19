@@ -672,6 +672,11 @@ Custom, Edge, and Normal. Custom uses `Dir`, Edge uses `DirLink`, and Normal use
 normal. An absent `DirMode` means Custom. A selected present `DirMode` carrier with another
 runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
 nested, or unsupported index does not select a neutral extrusion; the operation remains native.
+Part `Extrusion` boolean carriers `Solid`, `Reversed`, and `Symmetric` are `App::PropertyBool`
+values with absent defaults `false`. `Solid` selects solid construction, `Reversed` reverses the
+resolved direction, and `Symmetric` uses `LengthFwd` as the total mirrored extent and ignores
+`LengthRev`. A present carrier with another runtime type, without exactly one direct `Bool`, or
+with any other value does not select a neutral extrusion; the operation remains native.
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
 Skin, Pipe, and BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use indices `0`,
 `1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` uses the same `Mode`

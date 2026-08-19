@@ -3571,7 +3571,7 @@ fn extrusion_definition(
         if forward == 0.0 && reverse == 0.0 {
             forward = direction_magnitude.filter(|value| value.is_finite() && *value > 0.0)?;
         }
-        let symmetric = bool_property(properties, "Symmetric").unwrap_or(false);
+        let symmetric = bool_selector(properties, "Symmetric", false)?;
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
         if !forward_draft.is_finite() || !reverse_draft.is_finite() {
@@ -3660,7 +3660,7 @@ fn extrusion_definition(
                 (None, None) => return None,
             }
         };
-        if reverse_direction ^ bool_property(properties, "Reversed").unwrap_or(false) {
+        if reverse_direction ^ bool_selector(properties, "Reversed", false)? {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
         let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
@@ -3692,7 +3692,7 @@ fn extrusion_definition(
             extent,
             op: BooleanOp::NewBody,
             direction_source: Some(direction_source),
-            solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
+            solid: Some(bool_selector(properties, "Solid", false)?),
             face_maker,
             inner_wire_taper,
             length_along_profile_normal: None,
