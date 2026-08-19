@@ -101,20 +101,35 @@ status ok with zero losses. The selected malformed-carrier batch reports status 
 blocking native loss for every wrong-runtime, integer-runtime, malformed, nested, duplicate,
 negative, and unknown variant of every six carrier.
 
-**Need.** Apply the same absence-versus-present validation to Hole boolean flags and
-`BaseProfileType`, then to the remaining design operation flags. Trace each producer carrier and
-preserve its constructor default only when the property is absent.
+`FeatureHole.h:53-90`, `FeatureHole.cpp:551-655,1604-1618,2226-2261`,
+`FeatureSketchBased.cpp:98-126`, `TaskHoleParameters.cpp:194-196,446-450,990-995,1172-1174,1242-1244`,
+and `PropertyStandard.cpp:116-124,2258-2277` establish the Hole boolean carriers, constructor and
+setup defaults, bit assignments, execution tests, UI-produced bitmask values, and direct Bool and
+Integer serialization. The producer witnesses `dp15_hole_flags_witness.py` and
+`dp15_hole_base_values_witness.py` save the selected booleans, absent-property source mutation,
+and BaseProfileType values 0 through 9 and 99. `dp15_hole_flags_restore_probe.py` restores false for
+absent boolean carriers and `6` for absent BaseProfileType. The rebuilt CLI source and absent
+checks report zero losses. The hostile boolean and integer-carrier batch reports one blocking
+native loss for every malformed present carrier; BaseProfileType values with known bits retain
+their bit-selected profile, while zero and values with no known bit remain native.
+
+**Need.** Resolve the `CosmeticThread` carrier discrepancy, then apply the same
+absence-versus-present validation to the remaining design operation flags. Trace each producer
+carrier and preserve its constructor default only when the property is absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default.
+neutral semantics or discard a valid legacy default. The source constructor declares
+`CosmeticThread` with default `true` at `FeatureHole.cpp:557-561`, but the current producer witness
+contains no `CosmeticThread` property and restores it as absent. The producer/source version
+boundary must be identified before choosing its absence rule.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
-exact-carrier decoder rule. Hole enumeration modes are covered; Hole boolean flags,
-`BaseProfileType`, and the remaining design operation flags stay open.
+exact-carrier decoder rule. Hole enumeration modes, boolean flags, and `BaseProfileType` are
+covered; `CosmeticThread` and the remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

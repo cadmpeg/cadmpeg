@@ -246,6 +246,327 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_hole_flags() {
+    fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Hole"))
+            .expect("hole feature")
+            .definition
+    }
+
+    let base_properties = [
+        (
+            "BaseProfileType",
+            r#"<Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="7"/></Property>"#,
+        ),
+        (
+            "Threaded",
+            r#"<Property name="Threaded" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "ModelThread",
+            r#"<Property name="ModelThread" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "DrillForDepth",
+            r#"<Property name="DrillForDepth" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "Tapered",
+            r#"<Property name="Tapered" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "UseCustomThreadClearance",
+            r#"<Property name="UseCustomThreadClearance" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "AllowMultiFace",
+            r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "ThreadType",
+            r#"<Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+        ),
+        (
+            "ThreadDirection",
+            r#"<Property name="ThreadDirection" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#,
+        ),
+        (
+            "ThreadDepthType",
+            r#"<Property name="ThreadDepthType" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#,
+        ),
+    ];
+    let hole_document = |target: &str, replacement: Option<&str>| {
+        let mut properties = String::from(
+            r#"<Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property><Property name="Diameter" type="App::PropertyLength"><Float value="6"/></Property><Property name="Depth" type="App::PropertyLength"><Float value="25"/></Property><Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property><Property name="TaperedAngle" type="App::PropertyAngle"><Float value="60"/></Property><Property name="CustomThreadClearance" type="App::PropertyLength"><Float value="0.2"/></Property>"#,
+        );
+        for (name, property) in base_properties {
+            if name != target {
+                properties.push_str(property);
+            }
+        }
+        if let Some(replacement) = replacement {
+            properties.push_str(replacement);
+        }
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations" id="1"/><Object type="PartDesign::Hole" name="Hole" id="2"/></Objects><ObjectData Count="2"><Object name="Locations"><Properties Count="0"/></Object><Object name="Hole"><Properties Count="{count}">{properties}</Properties></Object></ObjectData></Document>"#,
+            count = properties.matches("<Property ").count(),
+        )
+    };
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("hole flag document")
+    };
+    let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
+        assert!(matches!(
+            definition(result),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Hole"
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    };
+
+    let targets = [
+        "Threaded",
+        "ModelThread",
+        "DrillForDepth",
+        "Tapered",
+        "UseCustomThreadClearance",
+        "AllowMultiFace",
+        "BaseProfileType",
+    ];
+    for target in targets {
+        let result = decode(&hole_document(target, None));
+        assert!(result.report().losses.is_empty(), "{target}");
+        let FeatureDefinition::Hole {
+            profile_filter,
+            bottom,
+            taper_angle,
+            specification,
+            allow_multi_profile_faces,
+            ..
+        } = definition(&result)
+        else {
+            panic!("{target} absent carrier");
+        };
+        match target {
+            "Threaded" => assert!(
+                !specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .threaded
+            ),
+            "ModelThread" => assert!(
+                !specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .modeled
+            ),
+            "DrillForDepth" => assert!(matches!(
+                bottom,
+                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                    depth_to_tip: false,
+                    ..
+                })
+            )),
+            "Tapered" => assert!(taper_angle.is_none()),
+            "UseCustomThreadClearance" => assert!(specification
+                .as_deref()
+                .expect("thread specification")
+                .clearance
+                .is_none()),
+            "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
+            "BaseProfileType" => assert_eq!(
+                *profile_filter,
+                Some(cadmpeg_ir::features::HoleProfileFilter {
+                    points: false,
+                    circles: true,
+                    arcs: true,
+                })
+            ),
+            _ => unreachable!(),
+        }
+    }
+
+    let valid = [
+        (
+            "Threaded",
+            r#"<Property name="Threaded" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "ModelThread",
+            r#"<Property name="ModelThread" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "DrillForDepth",
+            r#"<Property name="DrillForDepth" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "Tapered",
+            r#"<Property name="Tapered" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "UseCustomThreadClearance",
+            r#"<Property name="UseCustomThreadClearance" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "AllowMultiFace",
+            r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "BaseProfileType",
+            r#"<Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        ),
+    ];
+    for (target, replacement) in valid {
+        let result = decode(&hole_document(target, Some(replacement)));
+        assert!(result.report().losses.is_empty(), "{target}");
+        let FeatureDefinition::Hole {
+            profile_filter,
+            bottom,
+            taper_angle,
+            specification,
+            allow_multi_profile_faces,
+            ..
+        } = definition(&result)
+        else {
+            panic!("{target} valid carrier");
+        };
+        match target {
+            "Threaded" => assert!(
+                specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .threaded
+            ),
+            "ModelThread" => assert!(
+                specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .modeled
+            ),
+            "DrillForDepth" => assert!(matches!(
+                bottom,
+                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                    depth_to_tip: true,
+                    ..
+                })
+            )),
+            "Tapered" => assert!(taper_angle.is_some()),
+            "UseCustomThreadClearance" => assert_eq!(
+                specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .clearance,
+                Some(Length(0.2))
+            ),
+            "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
+            "BaseProfileType" => assert_eq!(
+                *profile_filter,
+                Some(cadmpeg_ir::features::HoleProfileFilter {
+                    points: true,
+                    circles: false,
+                    arcs: false,
+                })
+            ),
+            _ => unreachable!(),
+        }
+    }
+
+    let malformed_bool_values = [
+        ("App::PropertyString", r#"<String value="false"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="0"/>"#),
+        ("App::PropertyBool", r#"<Bool value="bad"/>"#),
+        (
+            "App::PropertyBool",
+            r#"<Wrapper><Bool value="false"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyBool",
+            r#"<Bool value="false"/><Bool value="true"/>"#,
+        ),
+        ("App::PropertyBool", r#"<Bool value="2"/>"#),
+    ];
+    for target in [
+        "Threaded",
+        "ModelThread",
+        "DrillForDepth",
+        "Tapered",
+        "UseCustomThreadClearance",
+        "AllowMultiFace",
+    ] {
+        for (type_name, value) in malformed_bool_values {
+            let replacement =
+                format!(r#"<Property name="{target}" type="{type_name}">{value}</Property>"#);
+            assert_native(&decode(&hole_document(target, Some(&replacement))));
+        }
+    }
+
+    let malformed_integer_values = [
+        ("App::PropertyString", r#"<String value="1"/>"#),
+        ("App::PropertyEnumeration", r#"<Integer value="1"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="bad"/>"#),
+        (
+            "App::PropertyInteger",
+            r#"<Wrapper><Integer value="1"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyInteger",
+            r#"<Integer value="1"/><Integer value="7"/>"#,
+        ),
+        ("App::PropertyInteger", r#"<Integer value="-1"/>"#),
+    ];
+    for (type_name, value) in malformed_integer_values {
+        let replacement =
+            format!(r#"<Property name="BaseProfileType" type="{type_name}">{value}</Property>"#);
+        assert_native(&decode(&hole_document(
+            "BaseProfileType",
+            Some(&replacement),
+        )));
+    }
+    for value in ["0", "8"] {
+        let replacement = format!(
+            r#"<Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="{value}"/></Property>"#
+        );
+        assert_native(&decode(&hole_document(
+            "BaseProfileType",
+            Some(&replacement),
+        )));
+    }
+
+    let high_bits = decode(&hole_document(
+        "BaseProfileType",
+        Some(
+            r#"<Property name="BaseProfileType" type="App::PropertyInteger"><Integer value="99"/></Property>"#,
+        ),
+    ));
+    assert!(high_bits.report().losses.is_empty());
+    assert!(matches!(
+        definition(&high_bits),
+        FeatureDefinition::Hole {
+            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
+                points: true,
+                circles: true,
+                arcs: false,
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn resolves_deprecated_fcstd_hole_cut_indices() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1" ProgramVersion="0.18R4">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations"/><Object type="PartDesign::Hole" name="Hole"/></Objects>

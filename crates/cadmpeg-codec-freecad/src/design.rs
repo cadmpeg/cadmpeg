@@ -1926,6 +1926,16 @@ fn enumeration_selector(
     u64::try_from(value).ok()
 }
 
+/// Read a persisted boolean while keeping absence distinct from malformed persistence.
+/// `FreeCAD` constructors provide the legacy default for an absent property; a present property
+/// must use the exact boolean carrier before its value can select neutral semantics.
+fn bool_selector(properties: &[&PropertyRecord], name: &str, absent_default: bool) -> Option<bool> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    direct_bool_value(property)
+}
+
 fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
     if property.type_name != "App::PropertyBool" {
         return None;
@@ -4804,7 +4814,7 @@ fn hole_definition(
     if matches!(profile, ProfileRef::Unresolved(_)) {
         return None;
     }
-    let filter_bits = integer_property(properties, "BaseProfileType").unwrap_or(6);
+    let filter_bits = integer_selector(properties, "BaseProfileType", 6)?;
     let profile_filter = HoleProfileFilter {
         points: filter_bits & 1 != 0,
         circles: filter_bits & 2 != 0,
@@ -4860,11 +4870,11 @@ fn hole_definition(
         0 => HoleBottom::Flat,
         1 => HoleBottom::Angled {
             included_angle: cadmpeg_ir::features::Angle(positive("DrillPointAngle")?.to_radians()),
-            depth_to_tip: bool_property(properties, "DrillForDepth").unwrap_or(false),
+            depth_to_tip: bool_selector(properties, "DrillForDepth", false)?,
         },
         _ => return None,
     };
-    let tapered = bool_property(properties, "Tapered").unwrap_or(false);
+    let tapered = bool_selector(properties, "Tapered", false)?;
     let taper_angle = tapered
         .then(|| {
             positive("TaperedAngle")
@@ -4879,7 +4889,7 @@ fn hole_definition(
     let specification = if thread_type == 0 {
         None
     } else {
-        let threaded = bool_property(properties, "Threaded").unwrap_or(false);
+        let threaded = bool_selector(properties, "Threaded", false)?;
         Some(Box::new(HoleSpecification {
             standard: thread_standard(thread_type)?.into(),
             designation: enumeration_label(properties, "ThreadSize"),
@@ -4894,9 +4904,11 @@ fn hole_definition(
                 enumeration_label(properties, "ThreadFit")
             },
             threaded,
-            modeled: bool_property(properties, "ModelThread")
-                .or_else(|| bool_property(properties, "ModelActualThread"))
-                .unwrap_or(false),
+            modeled: if property(properties, "ModelThread").is_some() {
+                bool_selector(properties, "ModelThread", false)?
+            } else {
+                bool_selector(properties, "ModelActualThread", false)?
+            },
             cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
             pitch: positive("ThreadPitch").map(Length),
             major_diameter: positive("ThreadDiameter").map(Length),
@@ -4913,7 +4925,7 @@ fn hole_definition(
                 2 => HoleThreadDepth::TappedStandard,
                 _ => return None,
             },
-            clearance: if bool_property(properties, "UseCustomThreadClearance").unwrap_or(false) {
+            clearance: if bool_selector(properties, "UseCustomThreadClearance", false)? {
                 Some(Length(scalar_named(properties, "CustomThreadClearance")?))
             } else {
                 None
@@ -4936,11 +4948,7 @@ fn hole_definition(
         bottom: Some(bottom),
         taper_angle,
         specification,
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
-        } else {
-            None
-        },
+        allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     })
 }
 
@@ -5680,6 +5688,24 @@ fn string_property_value(property: &PropertyRecord) -> Option<String> {
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     let value = scalar_named(properties, name)?;
     (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
+}
+
+fn integer_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyInteger" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Integer")?
+        .get("value")?
+        .parse::<i64>()
+        .ok()?;
+    u64::try_from(value).ok()
 }
 
 fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<f64>> {

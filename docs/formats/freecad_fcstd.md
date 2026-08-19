@@ -706,6 +706,19 @@ DepthType 0, DrillPoint 1, ThreadDepthType 0, and ThreadDirection 0. CADIR decis
 selected carrier with another runtime type, without exactly one direct `Integer`, or with a
 non-integer, negative, duplicate, nested, or unsupported index does not select neutral hole
 semantics; the operation remains native.
+PartDesign `Hole` boolean carriers `Threaded`, `ModelThread`, `DrillForDepth`, `Tapered`,
+`UseCustomThreadClearance`, and `AllowMultiFace` are `App::PropertyBool` values. Their direct
+`Bool` values are `false` and `true`; an absent carrier means `false`. `Threaded` selects threaded
+versus clearance-hole thread fields, `ModelThread` selects modeled thread geometry,
+`DrillForDepth` includes the angled drill tip in a blind depth, `Tapered` enables `TaperedAngle`,
+`UseCustomThreadClearance` enables `CustomThreadClearance`, and `AllowMultiFace` permits multiple
+profile faces. A present carrier with another runtime type, without exactly one direct `Bool`, or
+with any other value does not select a neutral hole; the operation remains native.
+`BaseProfileType` is an `App::PropertyInteger` bitmask. Bit `1` selects points, bit `2` selects
+circles, and bit `4` selects arcs. An absent carrier means `6` (circles and arcs). Only these three
+bits affect profile selection; higher bits are ignored. A present carrier with another runtime
+type, without exactly one direct `Integer`, or with a non-integer or negative value does not select
+a neutral hole. If no profile-selection bit is set, the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a
