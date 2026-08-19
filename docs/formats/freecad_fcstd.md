@@ -255,23 +255,22 @@ references. The final node owns the shape. Group order and name position establi
 reserved; the transient element with one-based index N uses name position N. Each placed root
 repeats the same one-based position sequence. For each topology kind, the producer assigns
 one-based positions from a `TopTools::IndexedMapOfShape` populated by `TopExp::MapShapes`.
-For each non-root topology kind, `MapShapes` visits matching subshapes in pre-order depth-first
-order through direct `TopoDS_Iterator` children, and the indexed map assigns the next position at
-first encounter. Traversal continues after a matching node, so a nested same-kind node is visited
-before a later sibling. Its `TopTools_ShapeMapHasher` key uses `TopoDS_Shape::IsSame`: equal `TShape` and
+`MapShapes` considers the supplied root before its children. A root or descendant whose kind is the
+requested kind occupies the next position and is terminal for that map; its direct children are not
+examined for that requested kind. A non-matching node is traversed in pre-order depth-first order
+through direct `TopoDS_Iterator` children, and the indexed map assigns the next position at first
+encounter. Its `TopTools_ShapeMapHasher` key uses `TopoDS_Shape::IsSame`: equal `TShape` and
 composed location share one position regardless of orientation; a copied `TShape` or a different
-location receives a new position. Root-shape positions use the direct `TopoDS_Iterator` child
-order. Element-map names bind to these producer positions. The decoder carries that source
-position with each transferred neutral occurrence. It does not derive the position from neutral
-arena order. These transient positions are connected to persistent names and to placed neutral occurrences;
-they are never exposed as persistent identity by themselves. Counts, indices, dictionary
-references, string references, property ownership, and neutral topology links are validated
-without synthesizing missing names.
+location receives a new position. Element-map names bind to these producer positions. The decoder
+carries that source position with each transferred neutral occurrence. It does not derive the
+position from neutral arena order. These transient positions are connected to persistent names and
+to placed neutral occurrences; they are never exposed as persistent identity by themselves. Counts,
+indices, dictionary references, string references, property ownership, and neutral topology links
+are validated without synthesizing missing names.
 A repeated use of one OCCT shape identity at one composed location, including a reversed use,
 occupies the first indexed position. A distinct copied shape at that location and a shape at a
-different location occupy separate indexed positions.
-For a nested compound root, the indexed map visits direct compound children in persisted order and
-traverses a compound child before a later outer child.
+different location occupy separate indexed positions. A nested compound root therefore occupies
+one `Compound` position; its nested and later sibling compounds are not visited for that map.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

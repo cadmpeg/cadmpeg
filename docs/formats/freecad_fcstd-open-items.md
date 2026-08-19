@@ -13,36 +13,6 @@ Each item has an identifier and these fields:
 
 ## 3. Persistent topology identity
 
-### PT-04. Source topology index provenance
-
-**Question.** What OCCT identity and traversal rules determine whether repeated placed roots or
-equal shape-plus-location occurrences receive one shared or multiple indexed-map positions?
-
-**Known.** FreeCAD assigns non-root positions through `TopExp::MapShapes` and uses direct
-`TopoDS_Iterator` order for root-shape positions. `TopExp::MapShapes` fills the indexed map from a
-`TopExp_Explorer`, and that explorer does not examine the children of a node that matches the
-requested kind. A compound that contains a nested compound and a later sibling compound therefore
-has one `Compound` position, not three. `TopoShape::countSubShapes`, `TopoShape::getSubShapes` and
-the shape ancestry cache that supplies the `Compounds` property all read that same map.
-`topology_transfer.rs:1540-1582` assigns positions by a decoder-owned walk keyed by shape and
-composed transform. The walk at `topology_transfer.rs:1560-1578` indexes a matching node and then
-continues into its children when the node kind is not finer than the target kind.
-
-**Need.** Match the producer traversal and identity rules for every topology kind, including nested
-same-kind compounds, or carry an independently established source position through transfer.
-
-**Conflict.** The specification states that traversal continues after a matching node, so that a
-nested same-kind node receives a position before a later sibling. The producer does the opposite: a
-compound that holds a nested compound reports one compound. Every `Compound` position after the
-first is therefore decoder-invented, and element-map `Compound` names bind to shifted neutral
-occurrences with no refusal or loss. The unit test
-`source_indices_visit_nested_same_kind_shapes` asserts the invented sequence, so the gate cannot
-detect the divergence.
-
-**Note.** Reopened. The closure replaced the producer traversal with a traversal the producer does
-not use and wrote that traversal into the specification. The earlier walk, which stopped at a
-matching node, gave the producer's single `Compound` position for this document.
-
 ### PT-06. Element-map compatibility-marker admission
 
 **Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker

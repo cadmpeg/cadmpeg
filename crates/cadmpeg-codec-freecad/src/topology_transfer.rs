@@ -1565,8 +1565,9 @@ fn source_topology_indices(
                         entry.insert(next_index);
                         next_index += 1;
                     }
+                    continue;
                 }
-                if topology_rank(shape.kind) <= topology_rank(target) {
+                if topology_rank(shape.kind) < topology_rank(target) {
                     stack.extend(
                         shape
                             .children

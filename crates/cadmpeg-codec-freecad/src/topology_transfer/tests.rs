@@ -171,7 +171,7 @@ fn source_indices_follow_depth_first_topology_order() {
 }
 
 #[test]
-fn source_indices_visit_nested_same_kind_shapes() {
+fn source_indices_stop_at_nested_same_kind_shapes() {
     let use_shape = |shape: usize| TextShapeUse {
         shape,
         orientation: TextOrientation::Forward,
@@ -217,14 +217,21 @@ fn source_indices_visit_nested_same_kind_shapes() {
             TextShapeKind::Compound,
             SourceOccurrenceKey::new(2, Transform::identity()),
         )),
-        Some(&2)
+        None
     );
     assert_eq!(
         indices.get(&(
             TextShapeKind::Compound,
             SourceOccurrenceKey::new(4, Transform::identity()),
         )),
-        Some(&3)
+        None
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Solid,
+            SourceOccurrenceKey::new(3, Transform::identity()),
+        )),
+        Some(&1)
     );
 }
 
