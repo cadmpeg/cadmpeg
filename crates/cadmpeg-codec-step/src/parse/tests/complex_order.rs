@@ -8,7 +8,7 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::eval::{
     model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
@@ -27,7 +27,6 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
-use crate::loss::StepLossCode;
 use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
@@ -74,48 +73,6 @@ fn parser_reports_recoverable_noncanonical_complex_partial_order() {
             .collect::<Vec<_>>(),
         ["NAMED_UNIT", "SOLID_ANGLE_UNIT", "SI_UNIT"]
     );
-}
-
-#[test]
-fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
-    let bytes = include_bytes!("../../../tests/fixtures/noncanonical_solid_angle.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("salvage mode accepts recoverable source order");
-    let losses = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind())
-        .collect::<Vec<_>>();
-
-    assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
-    let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(provenance.format, "step");
-    assert_eq!(provenance.stream, "");
-    assert_eq!(
-        provenance.offset,
-        bytes.windows(2).position(|window| window == b"#1").unwrap() as u64
-    );
-    assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
-    assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["bytes_named_opaque"],
-        "0"
-    );
-}
-
-#[test]
-fn strict_decode_rejects_noncanonical_complex_partial_order() {
-    let bytes = include_bytes!("../../../tests/fixtures/noncanonical_solid_angle.p21");
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("strict mode rejects noncanonical source order");
-
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]

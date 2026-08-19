@@ -163,8 +163,7 @@ with the same class and a wider predicate: it refuses every loss with
 `severity >= Severity::Warning`, which includes losses whose
 `strict_consequence` is `Tolerate`. These tests pin the variant with
 `matches!(error, CodecError::Malformed(_))`:
-`crates/cadmpeg-codec-step/src/parse/tests/complex_order.rs:118`,
-`crates/cadmpeg-codec-step/src/parse/tests/omitted.rs:147`,
+`crates/cadmpeg-codec-step/src/reader/tests.rs:723` and `:735`,
 `crates/cadmpeg-codec-step/src/reader/topology/tests/shells.rs:346` and `:731`,
 and `strict_decode_rejects_a_substituted_length_uncertainty` in
 `crates/cadmpeg-codec-step/src/reader/geometry/tests/units.rs`.
