@@ -16,6 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FRAME_UNIT: f64 = 1.0e-9;
 const EPS_FRAME_ORTHOGONAL: f64 = 1.0e-9;
+const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
+const EPS_CYLINDER_GEOMETRY_MIN: f64 = 1.0e-12;
 
 fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
     let norm = |vector: [f64; 3]| {
@@ -4454,23 +4456,34 @@ fn decode_signed_radial_envelope_cylinder_frame(
     (leading.is_finite() && body.get(cursor) == Some(&0x13)).then_some(())?;
     cursor += 1;
     let mut values = [0.0; 7];
-    for value in &mut values {
+    let mut terminal_zero = false;
+    for (index, value) in values.iter_mut().enumerate() {
+        if index == 6 && body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
+            *value = 0.0;
+            cursor += 1;
+            terminal_zero = true;
+            continue;
+        }
         let (decoded, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
         decoded.is_finite().then_some(())?;
         *value = decoded;
         cursor = next;
     }
-    let reversed = if cursor == body.len() {
+    let reversed_trailer = if cursor == body.len() {
         false
     } else if body.get(cursor..) == Some(&[0xf7, 0x19]) {
         true
     } else {
         return None;
     };
-    let (signed_length, auxiliary) = if reversed {
-        (leading, values[0])
+    let terminal_zero_negative_form = terminal_zero
+        && !reversed_trailer
+        && leading.is_sign_negative()
+        && values[0].abs() < leading.abs();
+    let (signed_length, auxiliary, reversed) = if reversed_trailer || terminal_zero_negative_form {
+        (leading, values[0], true)
     } else {
-        (values[0], leading)
+        (values[0], leading, false)
     };
     (signed_length.is_finite()
         && signed_length != 0.0
@@ -4487,7 +4500,8 @@ fn decode_signed_radial_envelope_cylinder_frame(
         .chain([leading, signed_length].iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
     let (diameter_index, radius_index) = match (
         close(radial_spans[0], 2.0 * radial_spans[1]),
         close(radial_spans[1], 2.0 * radial_spans[0]),
@@ -4497,12 +4511,13 @@ fn decode_signed_radial_envelope_cylinder_frame(
         _ => return None,
     };
     let radius = radial_spans[radius_index];
-    (radius > 1e-12 * scale).then_some(())?;
+    (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
 
     let axial_end = values[6];
     let axial_start = axial_end - signed_length.abs();
     let axial_sample = values[3];
-    (axial_sample >= axial_start - 1e-9 * scale && axial_sample <= axial_end + 1e-9 * scale)
+    (axial_sample >= axial_start - EPS_CYLINDER_GEOMETRY_RELATIVE * scale
+        && axial_sample <= axial_end + EPS_CYLINDER_GEOMETRY_RELATIVE * scale)
         .then_some(())?;
     let mut origin = [0.0; 3];
     origin[diameter_index] =

@@ -285,6 +285,9 @@ fixtures, scores above L1 remain blocked.
 - A complete tagged type-26 radius trailer on the first prototype-associated
   row overrides the prototype radii while retaining the prototype local-system
   placement; an overridden zero major radius transfers as a sphere.
+- Signed radial-envelope cylinders accept the terminal-zero axial endpoint
+  form when its negative signed length, auxiliary bound, radial spans, and
+  axial sample satisfy the same carrier invariants as the trailer form.
 - Positional `gsec3d_ptr` reference rows retain all six row fields, and the
   geometrically selected orientation plane supplies its own `ref_type`,
   `seg_id`, and `flip_flag`.

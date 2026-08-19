@@ -473,6 +473,20 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
         })
     );
 
+    let terminal_zero_negative = [
+        17, 72, 89, 0, 19, 24, 72, 117, 104, 72, 104, 16, 72, 89, 0, 72, 115, 56, 72, 101, 224, 24,
+    ];
+    assert_eq!(
+        decode_positional_cylinder_frame(&terminal_zero_negative, &cache),
+        Some(PositionalCylinderFrame {
+            origin: [-325.0, -175.0, 0.0],
+            axis: [0.0, 0.0, -1.0],
+            ref_direction: [-1.0, 0.0, 0.0],
+            radius: 17.5,
+            length: Some(100.0),
+        })
+    );
+
     assert!(
         decode_positional_cylinder_frame(&outer_left[..outer_left.len() - 2], &cache).is_none()
     );

@@ -669,6 +669,14 @@ than the axial length. The negative form originates at `z1` and points toward
 `z1 - abs(length)`; the positive form originates at that lower endpoint and
 points toward `z1`. The diameter direction follows the axis sign.
 
+A terminal-zero signed radial-envelope form stores a negative signed axial
+length before `13`, an auxiliary scalar, five surface-row coordinates, and a
+terminal bare `18` for `z1 = 0`. The auxiliary magnitude is smaller than the
+length. The five preceding coordinates are `x0, y0, z_sample, x1, y1`; the
+same radial-span and axial-sample invariants apply. The carrier originates at
+`z1`, points in negative model Z, and uses the diameter direction selected by
+that axis sense.
+
 A precise center-to-edge positional cylinder begins with `18`, one opaque byte,
 and one finite seven-byte body-local control scalar. A nonzero signed axial
 extent and two XYZ samples follow in the surface-row scalar lane, then the
