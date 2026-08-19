@@ -646,6 +646,23 @@ one-angle or two-angle extent, and additive or subtractive effect. Fillet operat
 constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
 Dress-up dispatch recognizes exactly `Part::Fillet`, `PartDesign::Fillet`, `Part::Chamfer`, and
 `PartDesign::Chamfer`. Other runtime names remain native operations.
+PartDesign `Fillet` and `Chamfer` carry `UseAllEdges` as an `App::PropertyBool` with absent
+value `false`. A direct `Bool=true` selects every edge of the base shape and overrides the
+edge selection in `Base`; `false` uses the edge selection in `Base`. PartDesign `Chamfer` also
+carries `FlipDirection` as an `App::PropertyBool` with absent value `false`; a direct `Bool=true`
+reverses the chamfer direction. Part `Fillet` and `Chamfer` do not use these PartDesign carriers;
+their `Base` and `Edges` properties provide the source edge selection and dimensions.
+For a PartDesign chamfer with `ChamferType` index `1` or `2`, a `ProgramVersion` attribute whose
+value begins with `0` inverts the stored `FlipDirection` during restore. The stored value is
+used directly for index `0`, for `ProgramVersion` values beginning with `1`, and when the
+attribute is absent.
+Part `Scale` carries `Uniform` as an `App::PropertyBool` with absent value `true`. A direct
+`Bool=true` selects `UniformScale`; `false` selects `XScale`, `YScale`, and `ZScale`.
+CADIR decision: a present `UseAllEdges`, `FlipDirection`, or `Uniform` carrier with another
+runtime type, without exactly one direct `Bool`, or with another value does not select the
+affected neutral operation. A dress-up with a cached `Shape` retains that geometry as
+`StoredGeometry`; without a cached shape it remains native. A malformed `Uniform` carrier
+retains `Part::Scale` natively.
 PartDesign Boolean `Type` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean
 Fuse, Cut, and Common; these select neutral Join, Cut, and Intersect operations. PartDesign
 Revolution `Type` is an `App::PropertyEnumeration` whose indices `0` through `4` mean Angle,

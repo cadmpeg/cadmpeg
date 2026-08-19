@@ -384,7 +384,7 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 })
         } else if is_chamfer(&object.type_name) {
-            chamfer_definition(&object.type_name, &owned, entries)
+            chamfer_definition(&object.type_name, &owned, entries, program_version)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
@@ -3880,12 +3880,18 @@ fn extrusion_definition(
     })
 }
 
-fn dress_up_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
-    if bool_property(properties, "UseAllEdges").unwrap_or(false) {
-        return EdgeSelection::All;
-    }
-    property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
-        EdgeSelection::Native(property.id.clone())
+fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option<EdgeSelection> {
+    let use_all_edges = if matches!(kind, "PartDesign::Fillet" | "PartDesign::Chamfer") {
+        bool_selector(properties, "UseAllEdges", false)?
+    } else {
+        false
+    };
+    Some(if use_all_edges {
+        EdgeSelection::All
+    } else {
+        property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
+            EdgeSelection::Native(property.id.clone())
+        })
     })
 }
 
@@ -3893,7 +3899,7 @@ fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition>
     let base = singular_operand(properties, "Base")?;
     let factor =
         |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
-    let factors = if bool_property(properties, "Uniform").unwrap_or(true) {
+    let factors = if bool_selector(properties, "Uniform", true)? {
         ScaleFactors {
             uniform: Some(factor("UniformScale")?),
             x: None,
@@ -3920,7 +3926,7 @@ fn fillet_definition(
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(properties);
+    let edges = dress_up_edge_selection(kind, properties)?;
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
@@ -3951,8 +3957,9 @@ fn chamfer_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(properties);
+    let edges = dress_up_edge_selection(kind, properties)?;
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
@@ -3980,9 +3987,23 @@ fn chamfer_definition(
     } else {
         chamfer_spec(properties)?
     };
+    let flip_direction = if kind == "PartDesign::Chamfer" {
+        bool_selector(properties, "FlipDirection", false)?
+    } else {
+        false
+    };
+    let legacy_flip = kind == "PartDesign::Chamfer"
+        && program_version.is_some_and(|version| version.starts_with('0'))
+        && property(properties, "ChamferType")
+            .and_then(scalar_value)
+            .is_some_and(|value| value == 1.0 || value == 2.0);
     Some(FeatureDefinition::Chamfer {
         groups: vec![cadmpeg_ir::features::ChamferGroup { edges, spec }],
-        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
+        flip_direction: if legacy_flip {
+            !flip_direction
+        } else {
+            flip_direction
+        },
     })
 }
 

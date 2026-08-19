@@ -128,6 +128,212 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_dress_up_flags() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn document(target: &str, replacement: Option<&str>) -> String {
+        let property = |name: &str, value: &str, include: bool| {
+            if !include {
+                String::new()
+            } else if target == name {
+                replacement.unwrap_or_default().to_owned()
+            } else {
+                format!(
+                    r#"<Property name="{name}" type="App::PropertyBool"><Bool value="{value}"/></Property>"#
+                )
+            }
+        };
+        let fillet_properties = format!(
+            r#"<Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Edge1"/></LinkSub></Property>
+<Property name="Radius" type="App::PropertyLength"><Float value="2"/></Property>
+{use_all_edges}"#,
+            use_all_edges = property("UseAllEdges", "true", true),
+        );
+        let chamfer_properties = format!(
+            r#"<Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Edge1"/></LinkSub></Property>
+<Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+<Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
+<Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
+{use_all_edges}
+{flip_direction}"#,
+            use_all_edges = property("UseAllEdges", "true", true),
+            flip_direction = property("FlipDirection", "false", true),
+        );
+        let fillet_count = fillet_properties.matches("<Property ").count();
+        let chamfer_count = chamfer_properties.matches("<Property ").count();
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Base"/><Object type="PartDesign::Fillet" name="Fillet"/><Object type="PartDesign::Chamfer" name="Chamfer"/></Objects>
+<ObjectData Count="3"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Fillet"><Properties Count="{fillet_count}">{fillet_properties}</Properties></Object>
+<Object name="Chamfer"><Properties Count="{chamfer_count}">{chamfer_properties}</Properties></Object></ObjectData></Document>"#
+        )
+    }
+
+    fn assert_fillet(definition: &FeatureDefinition, all_edges: bool) {
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup { edges, .. }]
+                    if matches!((all_edges, edges),
+                        (true, cadmpeg_ir::features::EdgeSelection::All)
+                            | (false, cadmpeg_ir::features::EdgeSelection::Native(_))))
+        ));
+    }
+
+    fn assert_chamfer(definition: &FeatureDefinition, all_edges: bool, flip_direction: bool) {
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Chamfer {
+                groups,
+                flip_direction: actual_flip,
+            } if *actual_flip == flip_direction
+                && matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup { edges, .. }]
+                    if matches!((all_edges, edges),
+                        (true, cadmpeg_ir::features::EdgeSelection::All)
+                            | (false, cadmpeg_ir::features::EdgeSelection::Native(_))))
+        ));
+    }
+
+    let malformed_values = [
+        r#"<Property name="TARGET" type="App::PropertyString"><String value="true"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="1"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Wrapper><Bool value="true"/></Wrapper></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>"#,
+    ];
+    for target in ["UseAllEdges", "FlipDirection"] {
+        let absent = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document(target, None))),
+                &DecodeOptions::default(),
+            )
+            .expect("absent dress-up flag");
+        assert_fillet(definition(&absent, "Fillet"), target != "UseAllEdges");
+        assert_chamfer(
+            definition(&absent, "Chamfer"),
+            target != "UseAllEdges",
+            false,
+        );
+        assert_valid_document(absent.ir());
+
+        let valid_property = format!(
+            r#"<Property name="{target}" type="App::PropertyBool"><Bool value="true"/></Property>"#
+        );
+        let valid = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document(target, Some(&valid_property)))),
+                &DecodeOptions::default(),
+            )
+            .expect("valid dress-up flag");
+        assert_fillet(definition(&valid, "Fillet"), true);
+        assert_chamfer(
+            definition(&valid, "Chamfer"),
+            true,
+            target == "FlipDirection",
+        );
+        assert_valid_document(valid.ir());
+
+        for malformed in malformed_values {
+            let replacement = malformed.replace("TARGET", target);
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document(target, Some(&replacement)))),
+                    &DecodeOptions::default(),
+                )
+                .expect("malformed dress-up flag");
+            if target == "UseAllEdges" {
+                assert!(matches!(
+                    definition(&result, "Fillet"),
+                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Fillet"
+                ));
+                assert!(matches!(
+                    definition(&result, "Chamfer"),
+                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Chamfer"
+                ));
+                assert_eq!(result.report().losses.len(), 2);
+            } else {
+                assert_fillet(definition(&result, "Fillet"), true);
+                assert!(matches!(
+                    definition(&result, "Chamfer"),
+                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Chamfer"
+                ));
+                assert_eq!(result.report().losses.len(), 1);
+            }
+            assert_valid_document(result.ir());
+        }
+    }
+}
+
+#[test]
+fn applies_legacy_partdesign_chamfer_flip_migration() {
+    fn document(program_version: Option<&str>, chamfer_type: u32) -> String {
+        let program_version = program_version.map_or(String::new(), |version| {
+            format!(r#" ProgramVersion="{version}""#)
+        });
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"{program_version}>
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="PartDesign::Chamfer" name="Chamfer"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Chamfer"><Properties Count="7">
+<Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Edge1"/></LinkSub></Property>
+<Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="{chamfer_type}"/></Property>
+<Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
+<Property name="Size2" type="App::PropertyLength"><Float value="2"/></Property>
+<Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
+<Property name="UseAllEdges" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="FlipDirection" type="App::PropertyBool"><Bool value="true"/></Property>
+</Properties></Object></ObjectData></Document>"#
+        )
+    }
+
+    fn flip_direction(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
+        let definition = &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Chamfer"))
+            .expect("chamfer")
+            .definition;
+        match definition {
+            FeatureDefinition::Chamfer { flip_direction, .. } => *flip_direction,
+            definition => panic!("unexpected chamfer definition: {definition:?}"),
+        }
+    }
+
+    for (program_version, chamfer_type, expected) in [
+        (Some("0.21R1234"), 1, false),
+        (Some("0.21R1234"), 2, false),
+        (Some("0.21R1234"), 0, true),
+        (Some("1.0R1234"), 1, true),
+        (None, 1, true),
+    ] {
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document(program_version, chamfer_type))),
+                &DecodeOptions::default(),
+            )
+            .expect("versioned chamfer");
+        assert_eq!(flip_direction(&result), expected);
+        assert_valid_document(result.ir());
+        assert!(result.report().losses.is_empty());
+    }
+}
+
+#[test]
 fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
         &result

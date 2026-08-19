@@ -76,6 +76,45 @@ projects `AlongSketchNormal` and `AllowMultiFace` as explicit neutral booleans. 
 absent and valid default, and wrong-runtime, integer-runtime, invalid-value, nested, and duplicate
 carriers.
 
+PartDesign `Fillet` declares `UseAllEdges` with a false constructor default at
+`FeatureFillet.cpp:53-67` and uses true for every base edge and false for the `Base` edge selection
+at `FeatureFillet.cpp:83-98`. PartDesign `Chamfer` declares false-default `FlipDirection` and
+`UseAllEdges` at `FeatureChamfer.cpp:68-95`; its executor uses `UseAllEdges` for the edge set and
+`FlipDirection` for the chamfer direction at `FeatureChamfer.cpp:128-172`. The Part fillet and
+chamfer implementations inherit `Base`, `Edges`, and `EdgeLinks` from `Part::FilletBase` at
+`PartFeature.cpp:1978-2037` and do not declare either PartDesign flag. `Part::Scale` declares
+`Uniform=true`, `UniformScale=1`, and `XScale`/`YScale`/`ZScale=1` at `FeatureScale.cpp:45-74`;
+`computeFinalParameters()` and `scaleShape()` select the uniform or three-axis factors at
+`FeatureScale.cpp:85-106`. `PropertyStandard.cpp:2258-2277` writes and restores direct Bool
+values, and `PropertyContainer.cpp:324-404` leaves an omitted property at its restore-time
+constructor value.
+
+The producer witness `dp15_dress_scale_flag_witness.py` saves default and selected Fillet,
+Chamfer, and Scale objects. Extracted `dp15-dress-scale-flags-default.Document.xml` and
+`dp15-dress-scale-flags-selected.Document.xml` contain direct Bool values; the selected file has
+`UseAllEdges=true`, `FlipDirection=true`, and `Uniform=false` with scale factors `2`, `3`, and
+`4`. `dp15_dress_scale_flag_restore_probe.py` and `dp15-dress-scale-flag-restore.log` show that
+each omitted carrier restores as false for both dress-up flags and true for `Uniform`. The five
+wrong-runtime, integer-runtime, invalid-value, nested, and duplicate mutations for each carrier
+are produced by `dp15_dress_scale_flag_hostile_mutations.py`.
+
+`FeatureChamfer.cpp:236-256` adds a version rule: when `ProgramVersion` begins with `0` and
+`ChamferType` is `1` or `2`, restore inverts `FlipDirection`; it does not invert index `0`, a
+version beginning with `1`, or an absent ProgramVersion. `dp15_chamfer_version_mutations.py`
+and `dp15-chamfer-version-restore.log` prove the old two-distance and distance-angle cases,
+the equal-distance case, the 1.0 case, and the absent-version case. The rebuilt CLI query of
+those files reports the same effective values and zero losses.
+
+The rebuilt CLI dump/check batch in `dp15-dress-scale-cli/` reports zero decode losses for the
+default, selected, and every absent-carrier witness. A malformed dress-up carrier falls through
+to cached `StoredGeometry` when the producer file has a cached Shape; a malformed Scale carrier
+retains `Part::Scale` natively with one blocking loss. The owner tests
+`distinguishes_absent_and_malformed_dress_up_flags`,
+`distinguishes_absent_and_malformed_part_scale_uniform_flag`, and
+`applies_legacy_partdesign_chamfer_flip_migration` cover direct, absent, malformed, and versioned
+cases. `design.rs:3883-4008` now scopes these carriers to their producer kinds, applies the
+restore defaults only when absent, and applies the old-version chamfer inversion.
+
 Part::Extrusion `DirMode` is an `App::PropertyEnumeration` with constructor default `0`.
 Indices `0`, `1`, and `2` mean Custom, Edge, and Normal; they select `Dir`, `DirLink`, and the
 base-shape normal respectively. A present selected carrier requires one direct `Integer` value;
@@ -195,23 +234,25 @@ integer-runtime, invalid-value, nested, and duplicate carriers.
 
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
-absent. Pad, Pocket, Revolution, Groove, and `CosmeticThread` boolean flags are settled above.
+absent. Pad, Pocket, Revolution, Groove, dress-up, Scale, and `CosmeticThread` boolean flags are
+settled above.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. Remaining dress-up, scale, chamfer, loft,
-sweep, helix, ShapeBinder, and pattern flags still require their own writer and restore evidence
-before the generic fallback sites can change.
+neutral semantics or discard a valid legacy default. Remaining loft, sweep, helix, ShapeBinder,
+and pattern flags still require their own writer and restore evidence before the generic fallback
+sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
 `AllowMultiFace`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
 `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
-exact-carrier decoder rule. Revolution and Groove boolean flags, Hole enumeration modes, Hole
-boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are covered; the
-remaining design operation flags stay open.
+exact-carrier decoder rule. Revolution and Groove boolean flags, dress-up `UseAllEdges` and
+`FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
+modes, Hole boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are
+covered; the remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 
