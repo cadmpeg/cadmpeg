@@ -358,7 +358,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     .is_err());
 
     let (mut sketches, mut entities) =
-        project_sketch_design(&placements, &points, &[], &[], 1.0e-6);
+        project_sketch_design(&placements, &points, &[], &[], &[], 1.0e-6);
     let mut constraints =
         project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
     assert_eq!(sketches.len(), 2);

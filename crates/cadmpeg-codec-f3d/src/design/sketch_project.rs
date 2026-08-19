@@ -42,11 +42,71 @@ fn sketch_text_vertical_alignment(
     })
 }
 
+fn text_frame_curve_records(
+    relations: &[SketchRelation],
+    curves: &[SketchCurveIdentity],
+    texts: &[SketchText],
+) -> HashSet<(String, u32)> {
+    let curve_owners = curves
+        .iter()
+        .filter_map(|curve| {
+            Some((
+                (native_stream(&curve.id)?.to_owned(), curve.record_index),
+                curve.owner_reference?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let text_owners = texts
+        .iter()
+        .filter_map(|text| {
+            Some((
+                (native_stream(&text.id)?.to_owned(), text.record_index),
+                text.owner_reference,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    relations
+        .iter()
+        .filter_map(|relation| {
+            let crate::records::SketchPatternDefinition::TextFrame { text_reference } =
+                relation.pattern.as_ref()?
+            else {
+                return None;
+            };
+            let scope = native_stream(&relation.id)?.to_owned();
+            if relation.unknown_constraint_bits != 0
+                || relation.constraint_kinds != [SketchConstraintKind::TextFrame]
+                || relation.members.first() != Some(text_reference)
+                || relation.auxiliary_references != [*text_reference]
+                || relation.members.len() < 2
+                || relation.return_members != relation.members[1..]
+                || text_owners.get(&(scope.clone(), *text_reference))
+                    != Some(&relation.owner_reference)
+            {
+                return None;
+            }
+            if !relation.return_members.iter().all(|record_index| {
+                curve_owners.get(&(scope.clone(), *record_index)) == Some(&relation.owner_reference)
+            }) {
+                return None;
+            }
+            Some(
+                relation
+                    .return_members
+                    .iter()
+                    .map(move |record_index| (scope.clone(), *record_index)),
+            )
+        })
+        .flatten()
+        .collect()
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    relations: &[SketchRelation],
     texts: &[SketchText],
     linear_tolerance: f64,
 ) -> (
@@ -56,6 +116,7 @@ pub fn project_sketch_design(
     use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 
+    let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let placements_by_suffix = placements
         .iter()
         .filter_map(|placement| {
@@ -215,7 +276,7 @@ pub fn project_sketch_design(
         Some(SketchEntity {
             id: neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
             sketch,
-            construction: false,
+            construction: text_frame_curves.contains(&(scope.to_owned(), curve.record_index)),
             native_ref: Some(curve.id.clone()),
             geometry_ref: None,
             endpoint_refs: Vec::new(),

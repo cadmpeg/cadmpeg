@@ -2504,6 +2504,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.design_sketch_placements,
                 &self.native.sketch_points,
                 &self.native.sketch_curve_identities,
+                &self.native.sketch_relations,
                 &self.native.sketch_texts,
                 self.ir.tolerances.linear,
             );

@@ -8,7 +8,7 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchRelationOperand,
+    SketchRelation, SketchRelationOperand, SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -84,10 +84,130 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
         member_run_head: true,
     };
 
-    let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], 1.0e-6);
+    let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6);
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
+}
+
+#[test]
+fn text_frame_curves_are_construction_geometry_not_profiles() {
+    let placement = DesignSketchPlacement {
+        id: "f3d:BulkStream.dat:placement#0".into(),
+        scope_record_index: None,
+        entity_id: "Sketch_42".into(),
+        entity_suffix: 42,
+        visibility: None,
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        frame_length: 0,
+        transform: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        transform_offset: None,
+        paired_class_tag: "257".into(),
+        paired_byte_offset: 0,
+        member_run_head: false,
+    };
+    let curve =
+        |record_index, primary_id, start: (f64, f64), end: (f64, f64)| SketchCurveIdentity {
+            id: format!("f3d:BulkStream.dat:curve#{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            class_tag: "375".into(),
+            byte_offset: record_index as u64,
+            geometry_offset: 0,
+            entity_genesis: Some(0),
+            primary_id,
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::Line {
+                start: Point3::new(start.0, start.1, 0.0),
+                end: Point3::new(end.0, end.1, 0.0),
+                direction: Vector3::new(end.0 - start.0, end.1 - start.1, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }),
+        };
+    let curves = vec![
+        curve(10, 10, (0.0, 0.0), (10.0, 0.0)),
+        curve(11, 11, (10.0, 0.0), (10.0, 10.0)),
+        curve(12, 12, (10.0, 10.0), (0.0, 10.0)),
+        curve(13, 13, (0.0, 10.0), (0.0, 0.0)),
+    ];
+    let text = SketchText {
+        id: "f3d:BulkStream.dat:text#20".into(),
+        record_index: 20,
+        owner_reference: 42,
+        class_tag: "376".into(),
+        class_version: 0,
+        byte_offset: 20,
+        entity_genesis: Some(0),
+        persistent_id: Some(20),
+        base_id: None,
+        text: "A".into(),
+        font_family: "Arial".into(),
+        font_weight: 400,
+        height: 10.0,
+        width_factor: Some(1.0),
+        color: cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        },
+        anchor: Some(Point2::new(0.0, 0.0)),
+        rotation: Some(0.0),
+        horizontal_alignment: Some(1),
+        vertical_alignment: Some(1),
+        first_reference: None,
+        second_reference: None,
+        raw_bytes: Vec::new(),
+    };
+    let relation = SketchRelation {
+        id: "f3d:BulkStream.dat:relation#30".into(),
+        record_index: 30,
+        class_tag: "377".into(),
+        byte_offset: 30,
+        state_offset: 0,
+        owner_reference: 42,
+        owner_entity_id: "Sketch_42".into(),
+        auxiliary_references: vec![20],
+        auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
+        members: vec![20, 10, 11, 12, 13],
+        resolved_members: Vec::new(),
+        member_offsets: Vec::new(),
+        owner_reference_offset: 0,
+        state: 0x100_0000_0000,
+        constraint_kinds: vec![SketchConstraintKind::TextFrame],
+        unknown_constraint_bits: 0,
+        member_relation_ordinals: Vec::new(),
+        entity_genesis: Some(0),
+        pattern: Some(crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 }),
+        return_members: vec![10, 11, 12, 13],
+        resolved_return_members: Vec::new(),
+        return_member_offsets: Vec::new(),
+        raw_bytes: Vec::new(),
+    };
+
+    let (sketches, entities) =
+        project_sketch_design(&[placement], &[], &curves, &[relation], &[text], 1.0e-6);
+    assert_eq!(sketches.len(), 1);
+    assert!(sketches[0].profiles.is_empty());
+    assert_eq!(entities.len(), 5);
+    assert!(entities
+        .iter()
+        .filter(|entity| entity
+            .native_ref
+            .as_deref()
+            .is_some_and(|id| id.contains(":curve#")))
+        .all(|entity| entity.construction));
+    assert!(entities.iter().any(
+        |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
+    ));
 }
 
 #[test]
@@ -197,7 +317,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placements = vec![placement];
     let points = vec![point];
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
-    let (sketches, entities) = project_sketch_design(&placements, &points, &curves, &[], 1.0e-6);
+    let (sketches, entities) =
+        project_sketch_design(&placements, &points, &curves, &[], &[], 1.0e-6);
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0].resolved_placement(),
@@ -652,7 +773,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         point_on_surface_relation,
     ];
     let (planar_sketches, planar_entities) =
-        project_sketch_design(&[placement.clone()], &points, &curves, &[], 1.0e-6);
+        project_sketch_design(&[placement.clone()], &points, &curves, &[], &[], 1.0e-6);
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
