@@ -12,9 +12,64 @@
 //! source states which components it asserts, and the classifier reports the
 //! range defect. Text that does not parse into components is invalid: the
 //! source states no components to report.
+//!
+//! This module owns the one schema-name and object-identifier split.
+//! `split_schema_identifier` serves the admission here, the DATA section and
+//! `FILE_POPULATION` schema-name match, and the AP242 edition report.
+
+/// One `FILE_SCHEMA` identifier that the header admits.
+///
+/// The header classifies each identifier once and keeps the result. The
+/// decoded text is owned: it comes from a string decode that has no home in the
+/// header record, so a borrow would have nothing to point at.
+pub(super) enum AdmittedSchemaIdentifier {
+    /// The schema name and the optional object identifier are both valid.
+    Valid {
+        /// The decoded identifier text, as the source states it.
+        text: String,
+    },
+    /// The object identifier parses, and one component number is outside the
+    /// range that its position permits.
+    ObjectIdentifierOutOfRange {
+        /// The decoded identifier text, as the source states it.
+        text: String,
+        /// The schema name, without the object identifier.
+        name: String,
+        /// The first component in source order whose number is out of range.
+        component: String,
+    },
+}
+
+impl AdmittedSchemaIdentifier {
+    /// Admit one decoded identifier, or reject it.
+    pub(super) fn admit(identifier: String) -> Option<Self> {
+        let out_of_range = match schema_identifier_form(&identifier) {
+            SchemaIdentifierForm::Valid => None,
+            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => {
+                Some((name.to_owned(), component.to_owned()))
+            }
+            SchemaIdentifierForm::Invalid => return None,
+        };
+        Some(match out_of_range {
+            None => Self::Valid { text: identifier },
+            Some((name, component)) => Self::ObjectIdentifierOutOfRange {
+                text: identifier,
+                name,
+                component,
+            },
+        })
+    }
+
+    /// The decoded identifier text, as the source states it.
+    pub(super) fn text(&self) -> &str {
+        match self {
+            Self::Valid { text } | Self::ObjectIdentifierOutOfRange { text, .. } => text,
+        }
+    }
+}
 
 /// The admission form of one schema identifier.
-pub(super) enum SchemaIdentifierForm<'a> {
+enum SchemaIdentifierForm<'a> {
     /// The schema name and the optional object identifier are both valid.
     Valid,
     /// The object identifier parses, and one component number is outside the
@@ -29,19 +84,13 @@ pub(super) enum SchemaIdentifierForm<'a> {
     Invalid,
 }
 
-pub(super) fn schema_identifier_form(identifier: &str) -> SchemaIdentifierForm<'_> {
+fn schema_identifier_form(identifier: &str) -> SchemaIdentifierForm<'_> {
     let identifier = identifier.trim();
     if identifier.is_empty() || identifier.chars().count() > 1024 {
         return SchemaIdentifierForm::Invalid;
     }
-    let (name, object_identifier) = match identifier.split_once('{') {
-        Some((name, object_identifier)) => {
-            let Some(object_identifier) = object_identifier.strip_suffix('}') else {
-                return SchemaIdentifierForm::Invalid;
-            };
-            (name.trim_end(), Some(object_identifier))
-        }
-        None => (identifier, None),
+    let Some((name, object_identifier)) = split_schema_identifier(identifier) else {
+        return SchemaIdentifierForm::Invalid;
     };
     if !valid_schema_name(name) {
         return SchemaIdentifierForm::Invalid;
@@ -56,6 +105,22 @@ pub(super) fn schema_identifier_form(identifier: &str) -> SchemaIdentifierForm<'
         }
         ObjectIdentifierForm::Invalid => SchemaIdentifierForm::Invalid,
     }
+}
+
+/// Split one schema identifier into its schema name and the text between the
+/// object identifier braces.
+///
+/// Leading and trailing whitespace around the identifier and around the schema
+/// name is ignored. An identifier with no brace is a schema name alone. An
+/// identifier that opens an object identifier and does not close it at the end
+/// of the identifier has no schema name and no object identifier.
+pub(crate) fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<&str>)> {
+    let identifier = identifier.trim();
+    let Some((name, object_identifier)) = identifier.split_once('{') else {
+        return Some((identifier, None));
+    };
+    let object_identifier = object_identifier.strip_suffix('}')?;
+    Some((name.trim_end(), Some(object_identifier)))
 }
 
 pub(super) fn valid_schema_identifier(identifier: &str) -> bool {
@@ -231,3 +296,6 @@ fn schema_oid_named_root_value(component: &str) -> Option<u8> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -31,14 +31,14 @@ delimiters, so `<#name>` gives the resource text `#name` and `<name>` gives the
 resource text `name`.
 `crates/cadmpeg-codec-step/src/parse.rs:862-865` keys the anchor map by the
 anchor name, which holds no `#`.
-`crates/cadmpeg-codec-step/src/parse.rs:2294` matches a resource against that map
+`crates/cadmpeg-codec-step/src/parse.rs:2253` matches a resource against that map
 by its full text. The text `#name` matches no key, so a fragment-only resource
 stays unresolved. The text `name` matches the key `name`, so a relative-path
 resource takes the value of the anchor.
 `crates/cadmpeg-codec-step/src/parse.rs:870-888` applies this to each anchor
 value, each anchor tag value, and each parameter of each DATA record. Two other
 functions use the opposite rule:
-`crates/cadmpeg-codec-step/src/parse.rs:2472-2481` needs an empty path and then
+`crates/cadmpeg-codec-step/src/parse.rs:2431-2440` needs an empty path and then
 finds the anchor by the fragment, and
 `crates/cadmpeg-codec-step/src/archive.rs:158-171` removes the `#` prefix and
 then finds the anchor by that name. The codec holds no external-resource loss
@@ -71,12 +71,12 @@ root component number that is not `0`, `1`, or `2` a recoverable defect: the
 decode charges `metadata.schema-object-identifier-out-of-range`, and the
 identifier stays invalid for a DATA section schema name and for a
 `FILE_POPULATION` governing schema.
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:226-233` gives the
+`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:291-298` gives the
 number of each of the five names, and gives no number to each other name.
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:100-117` tests the
+`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:165-182` tests the
 range of a component that holds a number only. A root component that is an
 ASN.1 identifier has the `Unnumbered` form, so no rule tests it, and
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:169-175` gives the
+`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:234-240` gives the
 second component no rule because the root number is absent. The identifier
 `{ foo 40 }` is therefore valid, and the identifier `{ 3 40 }` is a charged
 defect.

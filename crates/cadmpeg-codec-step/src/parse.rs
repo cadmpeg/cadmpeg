@@ -17,10 +17,10 @@ use cadmpeg_core::CodecError;
 
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 use crate::parse::schema_identifier::{
-    schema_identifier_form, valid_schema_identifier, SchemaIdentifierForm,
+    split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
 
-mod schema_identifier;
+pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
@@ -611,16 +611,16 @@ impl Parser<'_, '_, '_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let implementation_level = match validate_header(&header) {
-            Ok(level) => level,
+        let (implementation_level, admitted_schema_identifiers) = match validate_header(&header) {
+            Ok(admitted) => admitted,
             Err(message) => return self.err(message),
         };
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
-                &header[2],
-                implementation_level,
+                &admitted_schema_identifiers,
+                header[2].offset,
             ));
-        let schema_identifiers = schema_identifiers(&header, implementation_level);
+        let schema_identifiers = schema_identifiers(&admitted_schema_identifiers);
         if let Err(message) =
             validate_header_sections(implementation_level, &header, &schema_identifiers)
         {
@@ -790,7 +790,7 @@ impl Parser<'_, '_, '_> {
         if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
-            && schema_identifier_count(&header) != 1
+            && schema_identifiers.len() != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -1378,8 +1378,11 @@ fn value_storage_bytes(value: &Value) -> u64 {
     })
 }
 
-/// Validate the three required header records.
-fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'static str> {
+/// Validate the three required header records, and admit the `FILE_SCHEMA`
+/// identifier list.
+fn validate_header(
+    header: &[HeaderRecord],
+) -> Result<(ImplementationLevel, Vec<AdmittedSchemaIdentifier>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1514,72 +1517,50 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     let Some(Value::List(identifiers)) = schema.first() else {
         return Err("FILE_SCHEMA must contain one schema identifier list");
     };
-    if schema.len() != 1
-        || identifiers.is_empty()
-        || !identifiers
-            .iter()
-            .all(|value| matches!(value, Value::String(_)))
-    {
+    if schema.len() != 1 || identifiers.is_empty() {
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
+    let mut admitted = Vec::with_capacity(identifiers.len());
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
         let Value::String(bytes) = value else {
-            unreachable!("FILE_SCHEMA identifiers were checked as strings");
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         let Ok(identifier) = decode_string(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        match schema_identifier_form(&identifier) {
-            SchemaIdentifierForm::Valid
-            | SchemaIdentifierForm::ObjectIdentifierOutOfRange { .. } => {}
-            SchemaIdentifierForm::Invalid => {
-                return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-            }
-        }
         if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
+        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        admitted.push(identifier);
     }
-    Ok(implementation_level)
+    Ok((implementation_level, admitted))
 }
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
 /// under its schema name alone.
-///
-/// `validate_header` admitted the record, so every shape this reads is settled.
 fn schema_object_identifier_diagnostics(
-    schema: &HeaderRecord,
-    implementation_level: ImplementationLevel,
+    admitted: &[AdmittedSchemaIdentifier],
+    offset: usize,
 ) -> Vec<ParseDiagnostic> {
-    let Some(Value::List(identifiers)) = schema.parameters.first() else {
-        unreachable!("FILE_SCHEMA was checked as one schema identifier list");
-    };
-    let mut diagnostics = Vec::new();
-    for value in identifiers {
-        let Value::String(bytes) = value else {
-            unreachable!("FILE_SCHEMA identifiers were checked as strings");
-        };
-        let Ok(identifier) = decode_string(bytes, implementation_level) else {
-            unreachable!("FILE_SCHEMA identifiers were checked as decodable");
-        };
-        match schema_identifier_form(&identifier) {
-            SchemaIdentifierForm::Valid => {}
-            SchemaIdentifierForm::ObjectIdentifierOutOfRange { name, component } => {
-                diagnostics.push(ParseDiagnostic {
-                    offset: schema.offset,
-                    kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
-                    message: format!(
-                        "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
-                    ),
-                });
-            }
-            SchemaIdentifierForm::Invalid => {
-                unreachable!("FILE_SCHEMA identifiers were checked as admissible");
-            }
-        }
-    }
-    diagnostics
+    admitted
+        .iter()
+        .filter_map(|identifier| match identifier {
+            AdmittedSchemaIdentifier::Valid { .. } => None,
+            AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
+                name, component, ..
+            } => Some(ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                message: format!(
+                    "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
+                ),
+            }),
+        })
+        .collect()
 }
 
 fn validate_header_sections(
@@ -2010,7 +1991,8 @@ fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -
     let schema_name = schema_name.trim().to_ascii_uppercase();
     schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
-        identifier == schema_name || schema_name_without_oid(identifier) == schema_name
+        identifier == schema_name
+            || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
     })
 }
 
@@ -2069,13 +2051,6 @@ fn validate_header_section_name(
     Ok(())
 }
 
-fn schema_identifier_count(header: &[HeaderRecord]) -> usize {
-    match header[2].parameters.first() {
-        Some(Value::List(identifiers)) => identifiers.len(),
-        _ => 0,
-    }
-}
-
 fn valid_data_parameters(
     parameters: &[Value],
     schema_identifiers: &[String],
@@ -2103,27 +2078,11 @@ fn valid_data_parameters(
     Ok(())
 }
 
-fn schema_name_without_oid(identifier: &str) -> &str {
-    identifier
-        .trim()
-        .split_once('{')
-        .map_or_else(|| identifier.trim(), |(name, _)| name.trim())
-}
-
-fn schema_identifiers(
-    header: &[HeaderRecord],
-    implementation_level: ImplementationLevel,
-) -> Vec<String> {
-    let Some(Value::List(identifiers)) = header[2].parameters.first() else {
-        return Vec::new();
-    };
-    identifiers
+/// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
+fn schema_identifiers(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
+    admitted
         .iter()
-        .filter_map(|value| match value {
-            Value::String(bytes) => decode_string(bytes, implementation_level).ok(),
-            _ => None,
-        })
-        .map(|identifier| identifier.to_ascii_uppercase())
+        .map(|identifier| identifier.text().to_ascii_uppercase())
         .collect()
 }
 
