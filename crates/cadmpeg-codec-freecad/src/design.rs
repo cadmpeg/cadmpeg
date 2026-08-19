@@ -5344,7 +5344,7 @@ fn pattern_kind(
         return None;
     }
     let count = count as u32;
-    let mode = integer_property(properties, "Mode").unwrap_or(0);
+    let mode = enumeration_selector(properties, "Mode", 0)?;
 
     if kind.ends_with("Scaled") {
         let final_factor = scalar_named(properties, "Factor")?;
@@ -5372,7 +5372,7 @@ fn pattern_kind(
             return None;
         }
         if count2 > 1 {
-            let mode2 = integer_property(properties, "Mode2").unwrap_or(0);
+            let mode2 = enumeration_selector(properties, "Mode2", 0)?;
             let second = linear_pattern_axis(
                 properties,
                 "2",

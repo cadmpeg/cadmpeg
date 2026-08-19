@@ -686,6 +686,16 @@ Part `ProjectOnSurface` `Mode` is an `App::PropertyEnumeration` whose indices `0
 mean All, Faces, and Edges. An absent `Mode` means All. A selected present carrier with another
 runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
 nested, or unsupported index does not select a neutral projection; the operation remains native.
+PartDesign `LinearPattern` and `PolarPattern` `Mode` carriers are `App::PropertyEnumeration`
+values whose indices `0` and `1` mean Extent and Spacing. LinearPattern `Mode2` uses the same
+indices for its second direction. Extent divides the total `Length` or `Angle` across the gaps;
+Spacing uses each explicit per-gap value, then a repeating multi-value `SpacingPattern`, then
+the `Offset` fallback. The suffixed properties provide the same rules for the second linear
+direction. An absent `Mode` means Extent. An absent `Mode2` means Extent when `Occurrences2` is
+greater than one; a persisted Mode2 has no effect when that occurrence count is one. CADIR
+decision: a present selected `Mode` or active `Mode2` with another runtime type, without exactly
+one direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index
+does not select a neutral pattern; the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

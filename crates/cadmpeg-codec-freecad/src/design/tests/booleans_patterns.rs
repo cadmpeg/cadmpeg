@@ -8,6 +8,8 @@ use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+const EPS_PATTERN_ANGLE: f64 = 1e-12;
+
 #[test]
 fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -404,6 +406,152 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             .contains("design census does not match projected feature semantics")),
         "{corrupted_findings:?}"
     );
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_pattern_modes() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let pattern_document = |linear_mode: &str, polar_mode: &str, mode2: &str| {
+        let linear_count = 5 + usize::from(!linear_mode.is_empty());
+        let polar_count = 5 + usize::from(!polar_mode.is_empty());
+        let two_axis_count = 8 + usize::from(!mode2.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="PartDesign::Feature" name="Seed" id="1"/><Object type="PartDesign::LinearPattern" name="Linear" id="2"/><Object type="PartDesign::PolarPattern" name="Polar" id="3"/><Object type="PartDesign::LinearPattern" name="TwoAxis" id="4"/></Objects>
+<ObjectData Count="4">
+ <Object name="Seed"><Properties Count="0"/></Object>
+ <Object name="Linear"><Properties Count="{linear_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="8"/></Property><Property name="Offset" type="App::PropertyLength"><Float value="3"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>{linear_mode}</Properties></Object>
+ <Object name="Polar"><Properties Count="{polar_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property><Property name="Offset" type="App::PropertyAngle"><Float value="45"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>{polar_mode}</Properties></Object>
+ <Object name="TwoAxis"><Properties Count="{two_axis_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property><Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="8"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property><Property name="Direction2" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property><Property name="Length2" type="App::PropertyLength"><Float value="6"/></Property><Property name="Occurrences2" type="App::PropertyInteger"><Integer value="2"/></Property>{mode2}</Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("pattern selector document")
+    };
+
+    let absent = decode(&pattern_document("", "", ""));
+    assert!(matches!(
+        definition(&absent, "Linear"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear {
+                spacing: Length(4.0),
+                count: 3,
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&absent, "Polar"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Circular {
+                angle: Angle(angle),
+                count: 3,
+                ..
+            },
+            ..
+        } if (*angle - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
+    ));
+    let FeatureDefinition::Pattern {
+        pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
+        ..
+    } = definition(&absent, "TwoAxis")
+    else {
+        panic!("two-axis absent modes");
+    };
+    assert!(matches!(
+        &*stages[0].pattern,
+        cadmpeg_ir::features::PatternKind::Linear {
+            spacing: Length(4.0),
+            count: 3,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &*stages[1].pattern,
+        cadmpeg_ir::features::PatternKind::Linear {
+            spacing: Length(6.0),
+            count: 2,
+            ..
+        }
+    ));
+    assert!(absent.report().losses.is_empty());
+
+    let malformed_values = [
+        ("App::PropertyEnumeration", "<Integer value=\"bad\"/>"),
+        ("App::PropertyString", "<String value=\"0\"/>"),
+        ("App::PropertyInteger", "<Integer value=\"0\"/>"),
+        (
+            "App::PropertyEnumeration",
+            "<Wrapper><Integer value=\"0\"/></Wrapper>",
+        ),
+        (
+            "App::PropertyEnumeration",
+            "<Integer value=\"0\"/><Integer value=\"1\"/>",
+        ),
+        ("App::PropertyEnumeration", "<Integer value=\"-1\"/>"),
+        ("App::PropertyEnumeration", "<Integer value=\"99\"/>"),
+    ];
+    for target in ["Linear", "Polar", "TwoAxis"] {
+        for (type_name, value) in malformed_values {
+            let property_name = if target == "TwoAxis" { "Mode2" } else { "Mode" };
+            let property = format!(
+                r#"<Property name="{property_name}" type="{type_name}">{value}</Property>"#
+            );
+            let valid_mode = r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#;
+            let valid_mode2 = r#"<Property name="Mode2" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#;
+            let linear_mode = if target == "Linear" {
+                property.as_str()
+            } else {
+                valid_mode
+            };
+            let polar_mode = if target == "Polar" {
+                property.as_str()
+            } else {
+                valid_mode
+            };
+            let mode2 = if target == "TwoAxis" {
+                property.as_str()
+            } else {
+                valid_mode2
+            };
+            let result = decode(&pattern_document(linear_mode, polar_mode, mode2));
+            let kind = if target == "Polar" {
+                "PartDesign::PolarPattern"
+            } else {
+                "PartDesign::LinearPattern"
+            };
+            assert!(matches!(
+                definition(&result, target),
+                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            ));
+            assert_eq!(result.report().losses.len(), 1);
+            assert!(result.report().losses.iter().all(|loss| {
+                loss.code.namespace == "fcstd"
+                    && loss.code.code == "feature.native-kind-retained"
+                    && loss.severity == cadmpeg_ir::Severity::Blocking
+            }));
+        }
+    }
 }
 
 #[test]

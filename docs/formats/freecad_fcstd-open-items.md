@@ -67,9 +67,23 @@ constructor default `0`.
 `dp15_shell_surface_witness.py` cover absent defaults, each selected mode, the PartDesign join
 mapping, the Offset2D unsupported mode, and selected malformed carriers.
 
-**Need.** Apply the same absence-versus-present validation to the remaining operation selectors:
-pattern modes, hole modes and flags, and the remaining design operation flags. Trace each producer
-carrier and preserve its constructor default only when the property is absent.
+PartDesign `LinearPatternExtension` registers `Mode` and `Mode2` as enumeration properties with
+the direct labels Extent and Spacing and constructor index `0`; its spacing executor uses total
+extent for index `0` and explicit, repeating, then offset spacing for index `1`. `PolarPattern`
+registers the same `Mode` sequence and default. `LinearPatternExtension.h:60-76`,
+`LinearPatternExtension.cpp:47-124,127-192,299-349`, `PolarPatternExtension.h:54-61`, and
+`PolarPatternExtension.cpp:48-125` establish the carriers, labels, defaults, and calculations.
+The PartDesign linear and polar initializers use those shared extensions. `design.rs:5347` and
+`design.rs:5375` now require the exact enumeration carrier for Mode and an active second-direction
+Mode2. `dp15_pattern_mode_witness.py` writes both linear modes, both polar modes, and a two-axis
+linear pattern; its extracted Document.xml has the corresponding direct indices. The producer
+restore probe gives Extent for every absent Mode and active Mode2. The source and absent files
+check with zero decode losses. The selected malformed-carrier batches, including the active
+two-axis Mode2 batch, retain the pattern as native with one blocking loss per file.
+
+**Need.** Apply the same absence-versus-present validation to hole modes and flags and the
+remaining design operation flags. Trace each producer carrier and preserve its constructor default
+only when the property is absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
@@ -77,9 +91,10 @@ salvage rules may differ by operation family; changing them without tracing the 
 neutral semantics or discard a valid legacy default.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
-`SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, and
-`ProjectOnSurface.Mode` are covered by the specification and exact-carrier decoder rule. Pattern
-modes, hole modes and flags, and the remaining design operation flags stay open.
+`SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, `ProjectOnSurface.Mode`,
+and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
+exact-carrier decoder rule. Hole modes and flags and the remaining design operation flags stay
+open.
 
 ### DP-16. Sketch placement rotation admission
 
