@@ -31,8 +31,8 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
  <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Revolution"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+ <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+ <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
  </Properties></Object>
@@ -54,8 +54,8 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
  </Properties></Object>
  <Object name="Profileless"><Properties Count="4">
   <Property name="Sketch" type="App::PropertyLink"><Link value=""/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -143,29 +143,29 @@ fn transfers_non_default_revolution_branches() {
  <Object name="Sketch"><Properties Count="0"/></Object>
  <Object name="ToFirst"><Properties Count="4">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="2" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="2"/></Property>
  </Properties></Object>
  <Object name="ToFace"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
   <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="Standalone" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="TwoAngles"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="120"/></Property>
   <Property name="Angle2" type="App::PropertyAngle"><Float value="30"/></Property>
  </Properties></Object>
  <Object name="Midplane"><Properties Count="10">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="3" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
   <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
@@ -176,14 +176,14 @@ fn transfers_non_default_revolution_branches() {
  </Properties></Object>
  <Object name="ThroughAll"><Properties Count="4">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
  <Object name="Standalone"><Properties Count="8">
   <Property name="Source" type="App::PropertyLink"><Link value="Sketch"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="4"/></Property>
   <Property name="Angle" type="App::PropertyFloatConstraint"><Float value="45"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
@@ -460,8 +460,8 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
  <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Spring"><Properties Count="14">
   <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Pitch" type="App::PropertyLength"><Float value="4"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
@@ -571,4 +571,43 @@ fn transfers_remaining_partdesign_analytic_primitives() {
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Wedge { xmin, ymax, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if xmin.0 == -2.0 && ymax.0 == 6.0)
     );
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Box" name="Box" id="1"/>
+ <Object type="Part::Revolution" name="Revolution" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Box"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Wrapper><Float value="99"/></Wrapper><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/><Float value="3"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="4"/></Property>
+ </Properties></Object>
+ <Object name="Revolution"><Properties Count="2">
+  <Property name="Axis" type="App::PropertyVector"><Wrapper><PropertyVector valueX="0" valueY="9" valueZ="0"/></Wrapper><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native fallback for misframed design values");
+    for name in ["Box", "Revolution"] {
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature");
+        assert!(matches!(
+            feature.definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
 }

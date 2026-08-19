@@ -87,14 +87,25 @@ pub(crate) fn transfers_part_construction_geometry_features() {
  <Object name="Line"><Properties Count="6"><Property name="X1" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Y1" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z1" type="App::PropertyDistance"><Float value="2"/></Property><Property name="X2" type="App::PropertyDistance"><Float value="3"/></Property><Property name="Y2" type="App::PropertyDistance"><Float value="4"/></Property><Property name="Z2" type="App::PropertyDistance"><Float value="5"/></Property></Properties></Object>
  <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle0" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
  <Object name="Ellipse"><Properties Count="4"><Property name="MajorRadius" type="App::PropertyLength"><Float value="6"/></Property><Property name="MinorRadius" type="App::PropertyLength"><Float value="2"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="15"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="270"/></Property></Properties></Object>
- <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList count="3"><Vector x="0" y="0" z="0"/><Vector x="2" y="0" z="0"/><Vector x="1" y="1" z="0"/></VectorList></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList file="Nodes"/></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="Regular"><Properties Count="2"><Property name="Polygon" type="App::PropertyInteger"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="8"/></Property></Properties></Object>
  <Object name="Plane"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="9"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
  <Object name="Face"><Properties Count="2"><Property name="Sources" type="App::PropertyLinkList"><LinkList count="2"><Link value="Line"/><Link value="Circle"/></LinkList></Property><Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property></Properties></Object>
 </ObjectData></Document>"#;
+    let mut nodes = Vec::new();
+    nodes.extend_from_slice(&3_u32.to_le_bytes());
+    let points: &[(f64, f64, f64)] = &[(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (1.0, 1.0, 0.0)];
+    for (x, y, z) in points {
+        nodes.extend_from_slice(&x.to_le_bytes());
+        nodes.extend_from_slice(&y.to_le_bytes());
+        nodes.extend_from_slice(&z.to_le_bytes());
+    }
     let result = FcstdCodec
         .decode(
-            &mut Cursor::new(archive(document)),
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Nodes", &nodes),
+            ])),
             &DecodeOptions::default(),
         )
         .expect("Part construction geometry");
@@ -153,6 +164,118 @@ pub(crate) fn transfers_part_construction_geometry_features() {
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn rejects_nested_polygon_vector_list_root() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Polygon" name="Polygon" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Polygon"><Properties Count="2">
+<Property name="Nodes" type="App::PropertyVectorList"><Wrapper><VectorList file="Nodes"/></Wrapper></Property>
+<Property name="Close" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let mut nodes = Vec::new();
+    nodes.extend_from_slice(&2_u32.to_le_bytes());
+    let points: &[(f64, f64, f64)] = &[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)];
+    for (x, y, z) in points {
+        nodes.extend_from_slice(&x.to_le_bytes());
+        nodes.extend_from_slice(&y.to_le_bytes());
+        nodes.extend_from_slice(&z.to_le_bytes());
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Nodes", &nodes),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("native fallback for nested vector list");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Polygon"))
+        .expect("polygon feature");
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Native { .. }
+    ));
+}
+
+#[test]
+fn rejects_malformed_polygon_vector_list_side_streams() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Polygon" name="Polygon" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Polygon"><Properties Count="2">
+<Property name="Nodes" type="App::PropertyVectorList"><VectorList file="Nodes"/></Property>
+<Property name="Close" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let encode = |points: &[(f64, f64, f64)]| {
+        let mut bytes = Vec::with_capacity(4 + points.len() * 24);
+        bytes.extend_from_slice(&(points.len() as u32).to_le_bytes());
+        for (x, y, z) in points {
+            bytes.extend_from_slice(&x.to_le_bytes());
+            bytes.extend_from_slice(&y.to_le_bytes());
+            bytes.extend_from_slice(&z.to_le_bytes());
+        }
+        bytes
+    };
+    let mut trailing = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    trailing.push(0xaa);
+    let mut non_finite = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    non_finite[4 + 24..4 + 32].copy_from_slice(&f64::NAN.to_le_bytes());
+
+    for nodes in [trailing, non_finite] {
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("Nodes", &nodes),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("native fallback for malformed vector side stream");
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Polygon"))
+            .expect("polygon feature");
+        assert!(matches!(
+            feature.definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
+
+    let document_with_unowned_entry = document.replace(
+        "<VectorList file=\"Nodes\"/>",
+        "<VectorList file=\"Nodes\"/><Extra file=\"Other\"/>",
+    );
+    let nodes = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document_with_unowned_entry.as_bytes()),
+                ("Nodes", &nodes),
+                ("Other", &[]),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("native fallback for unowned vector side stream");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Polygon"))
+        .expect("polygon feature");
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Native { .. }
+    ));
 }
 
 #[test]
@@ -357,8 +480,8 @@ fn transfers_standalone_part_mirror_plane_semantics() {
  <Object name="PlaneCarrier"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="4"/></Property><Property name="Width" type="App::PropertyLength"><Float value="5"/></Property><Property name="Height" type="App::PropertyLength"><Float value="6"/></Property></Properties></Object>
  <Object name="Mirror"><Properties Count="4">
   <Property name="Source" type="App::PropertyLink"><Link value="Source"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
-  <Property name="Normal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+ <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+ <Property name="Normal" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="4"/></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="PlaneCarrier" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -404,7 +527,7 @@ fn transfers_part_projection_on_surface_construction() {
  <Object name="Projection"><Properties Count="6">
   <Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="First" sub="Wire1"/><Link obj="Second" sub="Face2"/></LinkSubList></Property>
   <Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="0" z="5"/></Property>
+ <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="5"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="-1.5"/></Property>
@@ -605,7 +728,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
   <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
-  <Property name="Binormal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+ <Property name="Binormal" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="4"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>

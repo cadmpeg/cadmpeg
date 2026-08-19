@@ -30,7 +30,7 @@ use cadmpeg_ir::spreadsheets::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{EntryRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 
@@ -165,13 +165,12 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            part_construction_geometry_definition(&object.type_name, &owned, entries)
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -242,6 +241,7 @@ pub(crate) fn transfer(
                 &feature_ids,
                 objects,
                 &properties_by_owner,
+                entries,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -1208,15 +1208,17 @@ fn parse_sketch(
     let id = SketchId(format!("fcstd:design:sketch#{}", object.name));
     let mut entities = Vec::new();
     if let Some(geometry) = property(properties, "Geometry") {
+        if geometry.type_name != "Part::PropertyGeometryList" {
+            return Err(CodecError::Malformed(format!(
+                "{} has runtime type {}, expected Part::PropertyGeometryList",
+                geometry.id, geometry.type_name
+            )));
+        }
         let xml = roxmltree::Document::parse(&geometry.raw_xml).map_err(|error| {
             CodecError::Malformed(format!("invalid sketch geometry {}: {error}", geometry.id))
         })?;
-        validate_declared_count(&xml, "GeometryList", "Geometry", &geometry.id)?;
-        for (index, node) in xml
-            .descendants()
-            .filter(|node| node.has_tag_name("Geometry"))
-            .enumerate()
-        {
+        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        for (index, node) in records.into_iter().enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
                 validate_sketch_carrier(kind, carrier, index + 1)?;
@@ -1254,20 +1256,22 @@ fn parse_sketch(
         }
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
+        if external_geometry.type_name != "Part::PropertyGeometryList" {
+            return Err(CodecError::Malformed(format!(
+                "{} has runtime type {}, expected Part::PropertyGeometryList",
+                external_geometry.id, external_geometry.type_name
+            )));
+        }
         let xml = roxmltree::Document::parse(&external_geometry.raw_xml).map_err(|error| {
             CodecError::Malformed(format!(
                 "invalid external sketch geometry {}: {error}",
                 external_geometry.id
             ))
         })?;
-        validate_declared_count(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+        let records =
+            direct_counted_records(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
         let references = property(properties, "ExternalGeometry");
-        for (external_index, node) in xml
-            .descendants()
-            .filter(|node| node.has_tag_name("Geometry"))
-            .skip(2)
-            .enumerate()
-        {
+        for (external_index, node) in records.into_iter().skip(2).enumerate() {
             let carrier = sketch_carrier(node);
             if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
                 validate_sketch_carrier(kind, carrier, external_index + 1)?;
@@ -1710,20 +1714,22 @@ fn parse_constraints(
     let Some(property) = property(properties, "Constraints") else {
         return Ok((Vec::new(), Vec::new()));
     };
+    if property.type_name != "Sketcher::PropertyConstraintList" {
+        return Err(CodecError::Malformed(format!(
+            "{} has runtime type {}, expected Sketcher::PropertyConstraintList",
+            property.id, property.type_name
+        )));
+    }
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::Malformed(format!(
             "invalid sketch constraints {}: {error}",
             property.id
         ))
     })?;
-    validate_declared_count(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
-    for (index, node) in xml
-        .descendants()
-        .filter(|node| node.has_tag_name("Constrain"))
-        .enumerate()
-    {
+    for (index, node) in records.into_iter().enumerate() {
         let type_code = int_attr(node, "Type").unwrap_or(0);
         let operands = constraint_operands(node).map_err(|message| {
             CodecError::Malformed(format!(
@@ -2298,20 +2304,29 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
     Ok(operands)
 }
 
-fn validate_declared_count(
-    xml: &roxmltree::Document<'_>,
+fn direct_counted_records<'a, 'input>(
+    xml: &'a roxmltree::Document<'input>,
     container_tag: &str,
     record_tag: &str,
     owner: &str,
-) -> Result<(), CodecError> {
-    let Some(container) = xml
-        .descendants()
-        .find(|node| node.has_tag_name(container_tag))
-    else {
+) -> Result<Vec<roxmltree::Node<'a, 'input>>, CodecError> {
+    let containers = xml
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name(container_tag))
+        .collect::<Vec<_>>();
+    if containers.len() != 1
+        || xml
+            .descendants()
+            .filter(|node| node.has_tag_name(container_tag))
+            .count()
+            != 1
+    {
         return Err(CodecError::Malformed(format!(
-            "{owner} has no {container_tag} value"
+            "{owner} must contain exactly one direct {container_tag} value"
         )));
-    };
+    }
+    let container = containers[0];
     let declared = container
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -2321,16 +2336,32 @@ fn validate_declared_count(
             "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
         )));
     }
-    let actual = container
+    let records = container
         .children()
-        .filter(|node| node.has_tag_name(record_tag))
-        .count();
-    if declared != actual {
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.iter().any(|node| !node.has_tag_name(record_tag)) {
         return Err(CodecError::Malformed(format!(
-            "{owner} declares {declared} records but contains {actual}"
+            "{owner} has a non-{record_tag} direct child"
         )));
     }
-    Ok(())
+    if xml
+        .descendants()
+        .filter(|node| node.has_tag_name(record_tag))
+        .count()
+        != records.len()
+    {
+        return Err(CodecError::Malformed(format!(
+            "{owner} has nested {record_tag} records"
+        )));
+    }
+    if declared != records.len() {
+        return Err(CodecError::Malformed(format!(
+            "{owner} declares {declared} records but contains {}",
+            records.len()
+        )));
+    }
+    Ok(records)
 }
 
 fn split_ints(value: &str) -> Result<Vec<i64>, &'static str> {
@@ -2963,7 +2994,10 @@ fn revolution_definition(
     };
     let face_maker_class =
         if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
-            Some(string_property_value(property(properties, "FaceMakerClass")?)?.to_owned())
+            Some(string_property_value(property(
+                properties,
+                "FaceMakerClass",
+            )?)?)
         } else {
             None
         };
@@ -3011,55 +3045,69 @@ fn revolution_definition(
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {
-    let value = property(properties, name)?.values.iter().find(|value| {
-        value.attributes.contains_key("x")
-            || value.attributes.contains_key("X")
-            || value.attributes.contains_key("valueX")
-    })?;
-    let component = |lower: &str, upper: &str, property_name: &str| {
-        value
-            .attributes
-            .get(lower)
-            .or_else(|| value.attributes.get(upper))
-            .or_else(|| value.attributes.get(property_name))?
-            .parse::<f64>()
-            .ok()
+    let property = property(properties, name)?;
+    if !is_vector_property_type(&property.type_name) {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, "PropertyVector")?;
+    let component = |name: &str| {
+        attributes
+            .get(name)
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
     };
     Some(Vector3::new(
-        component("x", "X", "valueX")?,
-        component("y", "Y", "valueY")?,
-        component("z", "Z", "valueZ")?,
+        component("valueX")?,
+        component("valueY")?,
+        component("valueZ")?,
     ))
 }
 
-fn vector_list_property(properties: &[&PropertyRecord], name: &str) -> Option<Vec<Point3>> {
+fn vector_list_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+    entries: &[EntryRecord],
+) -> Option<Vec<Point3>> {
     let property = property(properties, name)?;
-    property
-        .values
+    if property.type_name != "App::PropertyVectorList" {
+        return None;
+    }
+    let file = direct_root_attributes(property, "VectorList")?
+        .get("file")
+        .cloned()?;
+    if file.is_empty() {
+        return property.side_entries.is_empty().then(Vec::new);
+    }
+    if property.side_entries.as_slice() != [file.as_str()] {
+        return None;
+    }
+    let data = entries
         .iter()
-        .filter(|value| value.attributes.contains_key("x") || value.attributes.contains_key("X"))
-        .map(|value| {
-            let component = |lower: &str, upper: &str| {
-                value
-                    .attributes
-                    .get(lower)
-                    .or_else(|| value.attributes.get(upper))?
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|component| component.is_finite())
-            };
-            Some(Point3::new(
-                component("x", "X")?,
-                component("y", "Y")?,
-                component("z", "Z")?,
-            ))
-        })
-        .collect()
+        .find(|entry| entry.name == file)?
+        .data
+        .as_slice();
+    let mut view = View::over_retained(data);
+    let count = view.u32_le()? as usize;
+    if count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    let values = view.read_counted(count as u64, 24, |view| {
+        Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
+    })?;
+    if !view.is_empty()
+        || values
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    {
+        return None;
+    }
+    Some(values)
 }
 
 fn part_construction_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
+    entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let point = |x: &str, y: &str, z: &str| {
         Some(Point3::new(
@@ -3106,7 +3154,7 @@ fn part_construction_geometry_definition(
             })
         }
         "Part::Polygon" => {
-            let points = vector_list_property(properties, "Nodes")?;
+            let points = vector_list_property(properties, "Nodes", entries)?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
             if points.len() < 2 || (closed && points.len() < 3) {
                 return None;
@@ -3132,8 +3180,7 @@ fn part_construction_geometry_definition(
             }
             Some(FeatureDefinition::FaceFromShapes {
                 sources: BodySelection::Native(sources.id.clone()),
-                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?
-                    .to_owned(),
+                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?,
             })
         }
         _ => None,
@@ -3349,7 +3396,7 @@ fn extrusion_definition(
                 None
             };
             Some(ExtrusionFaceMaker {
-                class: string_property_value(class_property)?.to_owned(),
+                class: string_property_value(class_property)?,
                 mode,
             })
         } else {
@@ -3978,27 +4025,145 @@ fn singular_operand<'a>(
         .map(|_| property)
 }
 
+fn direct_root_attributes(
+    property: &PropertyRecord,
+    expected_tag: &str,
+) -> Option<BTreeMap<String, String>> {
+    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let roots = document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
+        .collect::<Vec<_>>();
+    if roots.len() != 1
+        || document
+            .descendants()
+            .filter(|node| node.has_tag_name(expected_tag))
+            .count()
+            != 1
+    {
+        return None;
+    }
+    Some(
+        roots[0]
+            .attributes()
+            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+            .collect(),
+    )
+}
+
+fn is_vector_property_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyVector"
+            | "App::PropertyVectorDistance"
+            | "App::PropertyPosition"
+            | "App::PropertyDirection"
+    )
+}
+
+fn scalar_value_tag(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "App::PropertyBool" => Some("Bool"),
+        "App::PropertyEnumeration"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => Some("Integer"),
+        "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyPrecision"
+        | "App::PropertyAcceleration"
+        | "App::PropertyAmountOfSubstance"
+        | "App::PropertyAngle"
+        | "App::PropertyArea"
+        | "App::PropertyCompressiveStrength"
+        | "App::PropertyCurrentDensity"
+        | "App::PropertyDensity"
+        | "App::PropertyDissipationRate"
+        | "App::PropertyDistance"
+        | "App::PropertyDynamicViscosity"
+        | "App::PropertyElectricalCapacitance"
+        | "App::PropertyElectricalConductance"
+        | "App::PropertyElectricalConductivity"
+        | "App::PropertyElectricalInductance"
+        | "App::PropertyElectricalResistance"
+        | "App::PropertyElectricCharge"
+        | "App::PropertySurfaceChargeDensity"
+        | "App::PropertyVolumeChargeDensity"
+        | "App::PropertyElectricCurrent"
+        | "App::PropertyElectricPotential"
+        | "App::PropertyElectromagneticPotential"
+        | "App::PropertyFrequency"
+        | "App::PropertyForce"
+        | "App::PropertyHeatFlux"
+        | "App::PropertyInverseArea"
+        | "App::PropertyInverseLength"
+        | "App::PropertyInverseVolume"
+        | "App::PropertyKinematicViscosity"
+        | "App::PropertyLength"
+        | "App::PropertyLuminousIntensity"
+        | "App::PropertyMagneticFieldStrength"
+        | "App::PropertyMagneticFlux"
+        | "App::PropertyMagneticFluxDensity"
+        | "App::PropertyMagnetization"
+        | "App::PropertyMass"
+        | "App::PropertyMoment"
+        | "App::PropertyPressure"
+        | "App::PropertyPower"
+        | "App::PropertyQuantity"
+        | "App::PropertyQuantityConstraint"
+        | "App::PropertyShearModulus"
+        | "App::PropertySpecificEnergy"
+        | "App::PropertySpecificHeat"
+        | "App::PropertySpeed"
+        | "App::PropertyStiffness"
+        | "App::PropertyStiffnessDensity"
+        | "App::PropertyStress"
+        | "App::PropertyTemperature"
+        | "App::PropertyThermalConductivity"
+        | "App::PropertyThermalExpansionCoefficient"
+        | "App::PropertyThermalTransferCoefficient"
+        | "App::PropertyTime"
+        | "App::PropertyUltimateTensileStrength"
+        | "App::PropertyVacuumPermittivity"
+        | "App::PropertyVelocity"
+        | "App::PropertyVolume"
+        | "App::PropertyVolumeFlowRate"
+        | "App::PropertyVolumetricThermalExpansionCoefficient"
+        | "App::PropertyWork"
+        | "App::PropertyYieldStrength"
+        | "App::PropertyYoungsModulus" => Some("Float"),
+        _ => None,
+    }
+}
+
+fn text_value_tag(type_name: &str) -> Option<&'static str> {
+    scalar_value_tag(type_name).or(match type_name {
+        "App::PropertyBoolList" => Some("BoolList"),
+        "App::PropertyFile"
+        | "App::PropertyFont"
+        | "App::PropertyPersistentObject"
+        | "App::PropertyString" => Some("String"),
+        "App::PropertyFileIncluded" => Some("FileIncluded"),
+        "App::PropertyPath" => Some("Path"),
+        "App::PropertyUUID" => Some("Uuid"),
+        _ => None,
+    })
+}
+
 fn scalar_value(property: &PropertyRecord) -> Option<f64> {
-    property
-        .values
-        .iter()
-        .find_map(|value| value_attribute(value).and_then(|value| value.parse().ok()))
+    let tag = scalar_value_tag(&property.type_name)?;
+    if tag == "Bool" {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, tag)?;
+    let value = attributes.get("value")?.parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 fn scalar_text(property: &PropertyRecord) -> Option<String> {
-    property
-        .values
-        .iter()
-        .find_map(value_attribute)
-        .map(str::to_owned)
-}
-
-fn value_attribute(value: &ValueRecord) -> Option<&str> {
-    value
-        .attributes
-        .get("value")
-        .or_else(|| value.attributes.get("Value"))
-        .map(String::as_str)
+    let tag = text_value_tag(&property.type_name)?;
+    direct_root_attributes(property, tag)?.remove("value")
 }
 
 fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
@@ -4736,6 +4901,7 @@ fn pattern_definition(
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let originals = property(properties, "Originals")
         .filter(|property| !property.links.is_empty())
@@ -4801,7 +4967,13 @@ fn pattern_definition(
                 let target = link.object.as_deref()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                let pattern = pattern_kind(&object.type_name, owned, objects, properties_by_owner)?;
+                let pattern = pattern_kind(
+                    &object.type_name,
+                    owned,
+                    objects,
+                    properties_by_owner,
+                    entries,
+                )?;
                 let combination = if index == 0 {
                     PatternStageCombination::Initialize
                 } else if matches!(pattern, PatternKind::Scale { .. }) {
@@ -4817,7 +4989,7 @@ fn pattern_definition(
             .collect::<Option<Vec<_>>>()?;
         PatternKind::Composite { stages }
     } else {
-        pattern_kind(kind, properties, objects, properties_by_owner)?
+        pattern_kind(kind, properties, objects, properties_by_owner, entries)?
     };
     Some(FeatureDefinition::Pattern {
         seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
@@ -4878,6 +5050,7 @@ fn pattern_kind(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<PatternKind> {
     if kind.ends_with("Mirrored") {
         return Some(
@@ -4917,7 +5090,15 @@ fn pattern_kind(
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
-        let first = linear_pattern_axis(properties, "", count, mode, objects, properties_by_owner)?;
+        let first = linear_pattern_axis(
+            properties,
+            "",
+            count,
+            mode,
+            objects,
+            properties_by_owner,
+            entries,
+        )?;
         let count2 = integer_property(properties, "Occurrences2").unwrap_or(1);
         if count2 > MAX_SKETCH_RECORDS as u64 {
             return None;
@@ -4931,6 +5112,7 @@ fn pattern_kind(
                 mode2,
                 objects,
                 properties_by_owner,
+                entries,
             )?;
             PatternKind::Composite {
                 stages: vec![
@@ -4953,7 +5135,7 @@ fn pattern_kind(
         if bool_property(properties, "Reversed").unwrap_or(false) {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
-        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset")?;
+        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
             PatternKind::Circular {
                 axis_origin,
@@ -4984,6 +5166,7 @@ fn linear_pattern_axis(
     mode: u64,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<PatternKind> {
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
@@ -4993,7 +5176,7 @@ fn linear_pattern_axis(
         direction =
             direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
     }
-    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset")?;
+    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
     if let Some(spacing) = uniform_step(&offsets) {
         Some(PatternKind::Linear {
             direction,
@@ -5016,6 +5199,7 @@ fn pattern_locations(
     mode: u64,
     extent_base: &str,
     offset_base: &str,
+    entries: &[EntryRecord],
 ) -> Option<Vec<f64>> {
     if count == 0 {
         return None;
@@ -5031,10 +5215,14 @@ fn pattern_locations(
         }
         1 => {
             let fallback = scalar_named(properties, &name(offset_base))?;
-            let spacings = property(properties, &name("Spacings"))
-                .map_or_else(|| Some(Vec::new()), numeric_list)?;
-            let pattern = property(properties, &name("SpacingPattern"))
-                .map_or_else(|| Some(Vec::new()), numeric_list)?;
+            let spacings = property(properties, &name("Spacings")).map_or_else(
+                || Some(Vec::new()),
+                |property| numeric_list(property, entries),
+            )?;
+            let pattern = property(properties, &name("SpacingPattern")).map_or_else(
+                || Some(Vec::new()),
+                |property| numeric_list(property, entries),
+            )?;
             if !spacings.is_empty() && spacings.len() != count as usize - 1 {
                 return None;
             }
@@ -5216,13 +5404,9 @@ fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
     property(properties, name).and_then(scalar_value)
 }
 
-fn string_property_value(property: &PropertyRecord) -> Option<&str> {
-    let value = property.values.first()?;
-    value
-        .attributes
-        .get("value")
-        .map(String::as_str)
-        .or(value.text.as_deref())
+fn string_property_value(property: &PropertyRecord) -> Option<String> {
+    (property.type_name == "App::PropertyString").then_some(())?;
+    direct_root_attributes(property, "String")?.remove("value")
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
@@ -5230,14 +5414,34 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
 }
 
-fn numeric_list(property: &PropertyRecord) -> Option<Vec<f64>> {
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
-    document
-        .descendants()
-        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()
+fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<f64>> {
+    if property.type_name != "App::PropertyFloatList" {
+        return None;
+    }
+    let file = direct_root_attributes(property, "FloatList")?
+        .get("file")
+        .cloned()?;
+    if file.is_empty() {
+        return property.side_entries.is_empty().then(Vec::new);
+    }
+    if property.side_entries.len() != 1 || property.side_entries[0] != file {
+        return None;
+    }
+    let data = entries
+        .iter()
+        .find(|entry| entry.name == file)?
+        .data
+        .as_slice();
+    let mut view = View::over_retained(data);
+    let count = view.u32_le()? as usize;
+    if count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    let values = view.read_counted(count as u64, 8, View::f64_le)?;
+    if !view.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(values)
 }
 
 fn operation_boolean(kind: &str) -> BooleanOp {
@@ -5279,9 +5483,7 @@ fn imported_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
-    let path = property(properties, "FileName")
-        .and_then(|property| string_property_value(property))?
-        .to_owned();
+    let path = property(properties, "FileName").and_then(string_property_value)?;
     if path.is_empty() {
         return None;
     }

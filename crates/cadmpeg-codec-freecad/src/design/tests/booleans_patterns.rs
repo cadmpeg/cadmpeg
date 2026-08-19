@@ -144,7 +144,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
  <Object name="Seed"><Properties Count="0"/></Object>
  <Object name="Uniform"><Properties Count="7">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="-1" z="0"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="-1" valueZ="0"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
@@ -153,33 +153,33 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
  </Properties></Object>
  <Object name="Custom"><Properties Count="6">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset" type="App::PropertyLength"><Float value="5"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
-  <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="2"><Float value="2"/><Float value="7"/></FloatList></Property>
+  <Property name="Spacings" type="App::PropertyFloatList"><FloatList file="CustomSpacings"/></Property>
  </Properties></Object>
  <Object name="TwoAxis"><Properties Count="11">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="4"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
-  <Property name="Direction2" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Direction2" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>
   <Property name="Reversed2" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode2" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset2" type="App::PropertyLength"><Float value="3"/></Property>
   <Property name="Occurrences2" type="App::PropertyInteger"><Integer value="3"/></Property>
-  <Property name="SpacingPattern2" type="App::PropertyFloatList"><FloatList count="2"><Float value="1"/><Float value="4"/></FloatList></Property>
+  <Property name="SpacingPattern2" type="App::PropertyFloatList"><FloatList file="TwoAxisSpacingPattern2"/></Property>
  </Properties></Object>
  <Object name="PolarCustom"><Properties Count="7">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset" type="App::PropertyAngle"><Float value="30"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
-  <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="3"><Float value="-1"/><Float value="-1"/><Float value="-1"/></FloatList></Property>
-  <Property name="SpacingPattern" type="App::PropertyFloatList"><FloatList count="2"><Float value="10"/><Float value="20"/></FloatList></Property>
+  <Property name="Spacings" type="App::PropertyFloatList"><FloatList file="PolarSpacings"/></Property>
+  <Property name="SpacingPattern" type="App::PropertyFloatList"><FloatList file="PolarSpacingPattern"/></Property>
  </Properties></Object>
  <Object name="NativeDirection"><Properties Count="4">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
@@ -188,9 +188,27 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
+    let float_list = |values: &[f64]| {
+        let mut bytes = Vec::with_capacity(4 + values.len() * 8);
+        bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    };
+    let custom_spacings = float_list(&[2.0, 7.0]);
+    let two_axis_spacing_pattern = float_list(&[1.0, 4.0]);
+    let polar_spacings = float_list(&[-1.0, -1.0, -1.0]);
+    let polar_spacing_pattern = float_list(&[10.0, 20.0]);
     let result = FcstdCodec
         .decode(
-            &mut Cursor::new(archive(document)),
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("CustomSpacings", &custom_spacings),
+                ("TwoAxisSpacingPattern2", &two_axis_spacing_pattern),
+                ("PolarSpacings", &polar_spacings),
+                ("PolarSpacingPattern", &polar_spacing_pattern),
+            ])),
             &DecodeOptions::default(),
         )
         .expect("linear patterns");
@@ -489,7 +507,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
  <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Linear"><Properties Count="5">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="0"/></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>

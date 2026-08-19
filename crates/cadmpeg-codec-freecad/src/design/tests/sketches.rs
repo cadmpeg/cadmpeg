@@ -94,9 +94,39 @@ fn rejects_malformed_sketch_record_counts() {
             &DecodeOptions::default(),
         )
         .expect_err("count mismatch");
-    assert!(error
-        .to_string()
-        .contains("declares 2 records but contains 1"));
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_nested_and_duplicate_sketch_value_roots() {
+    for (property_name, type_name, root) in [
+        ("Geometry", "Part::PropertyGeometryList", "GeometryList"),
+        (
+            "Constraints",
+            "Sketcher::PropertyConstraintList",
+            "ConstraintList",
+        ),
+    ] {
+        for value in [
+            format!("<Wrapper><{root} count=\"0\"/></Wrapper>"),
+            format!("<{root} count=\"0\"/><{root} count=\"0\"/>"),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="{property_name}" type="{type_name}">{value}</Property>
+</Properties></Object></ObjectData></Document>"#
+            );
+            let error = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect_err("misframed sketch value root");
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        }
+    }
 }
 
 #[test]

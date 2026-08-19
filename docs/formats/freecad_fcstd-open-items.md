@@ -17,28 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-10. Design value-root framing
-
-**Question.** Which direct value root and cardinality supply named design scalar, vector, and list
-properties when nested candidates are present?
-
-**Known.** FreeCAD standard scalar writers emit one direct `Float`, `Integer`, or `Bool` root, and
-the sketch geometry and constraint writers emit direct `GeometryList` and `ConstraintList` roots.
-Persistence retains every descendant value. `design.rs:3898-3903` and `design.rs:5132-5157` select
-the first descendant value with a parseable attribute, while `design.rs:2224-2256` finds the first
-descendant list container and later loops over all descendant records.
-
-**Need.** Establish each design property's exact runtime type, direct root tag, cardinality, and
-record ownership. Reject or retain nested and duplicate value carriers before neutral feature,
-parameter, or sketch transfer.
-
-**Conflict.** A named scalar property with a nested parseable `Float` before its direct `Float`
-root is projected from the nested value instead of being rejected. A nested `GeometryList` or
-`ConstraintList` with a valid local count is also accepted. Nesting or reordering parseable values
-can therefore change a neutral design value without a loss.
-
-**Note.** New hostile-sweep finding.
-
 ### DP-11. Post-processing control fallback
 
 **Question.** What admission rule applies when a design operation carries a malformed `Refine` or

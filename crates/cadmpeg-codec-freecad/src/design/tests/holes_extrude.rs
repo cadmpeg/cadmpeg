@@ -231,7 +231,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
   </Properties></Object>
   <Object name="PartExtrusion"><Properties Count="12">
     <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
-    <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
+ <Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="2" valueZ="0"/></Property>
     <Property name="LengthFwd" type="App::PropertyLength"><Float value="7"/></Property>
     <Property name="LengthRev" type="App::PropertyLength"><Float value="3"/></Property>
     <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
@@ -435,7 +435,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
  <Object name="Profile"><Properties Count="0"/></Object>
  <Object name="Extrusion"><Properties Count="6">
   <Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
-  <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="0" z="12"/></Property>
+ <Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="12"/></Property>
   <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
@@ -572,7 +572,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
   <Property name="Length" type="App::PropertyLength"><Float value="-5"/></Property>
   <Property name="Type2" type="App::PropertyEnumeration"><Integer value="5"/></Property>
   <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Target" sub="Face2"/></LinkSubList></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
+ <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="3" valueZ="0"/></Property>
   <Property name="UseCustomVector" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>

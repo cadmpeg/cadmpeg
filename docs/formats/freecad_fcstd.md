@@ -1238,6 +1238,26 @@ Design dispatch uses exact runtime names. `PartDesign::Pad`, `PartDesign::Pocket
 `Spreadsheet::Sheet` is a spreadsheet. Substrings and vendor-qualified variants do not select
 these families.
 
+Named design values use the exact runtime type and one direct value root owned by the property.
+`App::PropertyBool` uses `Bool`; `App::PropertyEnumeration`, `App::PropertyInteger`,
+`App::PropertyIntegerConstraint`, and `App::PropertyPercent` use `Integer`; `App::PropertyFloat`,
+`App::PropertyFloatConstraint`, `App::PropertyPrecision`, and registered floating quantity types
+use `Float`; and `App::PropertyVector`, `App::PropertyVectorDistance`,
+`App::PropertyPosition`, and `App::PropertyDirection` use `PropertyVector` with finite
+`valueX`, `valueY`, and `valueZ`. `App::PropertyFloatList` and `App::PropertyVectorList` use one
+direct `FloatList` or `VectorList` root. A non-empty `file` names exactly one side entry; an empty
+`file` names an empty list and no side entry. A named side entry begins with a little-endian `u32`
+count followed by that many `f64` values or XYZ triples and has no trailing bytes.
+`Part::PropertyGeometryList` and
+`Sketcher::PropertyConstraintList` use one direct `GeometryList` or `ConstraintList` root; its
+`count` equals the number of direct `Geometry` or `Constrain` records, and no nested or other
+element records occur in the root. A nested root, duplicate root, wrong runtime type, wrong
+record tag, count mismatch, unowned side entry, non-finite number, or trailing side-entry byte is
+malformed for neutral design admission. A malformed scalar, vector, or side-entry carrier is not
+selected; when that carrier is required, the affected operation remains native. Selector defaults
+and post-processing controls have their own admission rules. Malformed sketch list framing refuses
+the document.
+
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path
 property, including its ordered subelement selectors. Standalone sweeps distinguish surface from
