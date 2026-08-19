@@ -1329,6 +1329,247 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
+    fn feature_definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn flag_document(target: &str, replacement: Option<&str>) -> String {
+        let property = |name: &str, value: &str| {
+            if target == name {
+                replacement.unwrap_or_default().to_owned()
+            } else {
+                format!(
+                    r#"<Property name="{name}" type="App::PropertyBool"><Bool value="{value}"/></Property>"#
+                )
+            }
+        };
+        let side_properties = format!(
+            r#"<Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+<Property name="SideType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+<Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+<Property name="Length" type="App::PropertyLength"><Float value="6"/></Property>
+<Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
+{use_custom}
+{along_normal}
+{reversed}
+{allow_multi_face}
+{midplane}"#,
+            use_custom = property("UseCustomVector", "true"),
+            along_normal = property("AlongSketchNormal", "false"),
+            reversed = property("Reversed", "false"),
+            allow_multi_face = property("AllowMultiFace", "true"),
+            midplane = property("Midplane", "false"),
+        );
+        let count = side_properties.matches("<Property ").count();
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="PartDesign::Pad" name="Pad"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="3"><Object name="Sketch"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+<Object name="Pad"><Properties Count="{count}">{side_properties}</Properties></Object>
+<Object name="Pocket"><Properties Count="{count}">{side_properties}</Properties></Object></ObjectData></Document>"#
+        )
+    }
+
+    fn assert_typed(result: &cadmpeg_ir::codec::DecodeResult, name: &str) {
+        assert!(matches!(
+            feature_definition(result, name),
+            FeatureDefinition::Extrude { .. }
+        ));
+        assert_valid_document(result.ir());
+    }
+
+    let malformed_values = [
+        r#"<Property name="TARGET" type="App::PropertyString"><String value="true"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="1"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Wrapper><Bool value="true"/></Wrapper></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>"#,
+    ];
+    for target in [
+        "Midplane",
+        "UseCustomVector",
+        "AlongSketchNormal",
+        "Reversed",
+        "AllowMultiFace",
+    ] {
+        let absent = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&flag_document(target, None))),
+                &DecodeOptions::default(),
+            )
+            .expect("absent extrusion flag");
+        for name in ["Pad", "Pocket"] {
+            assert_typed(&absent, name);
+        }
+        match target {
+            "Midplane" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&absent, name),
+                        FeatureDefinition::Extrude {
+                            extent: ExtrudeExtent::OneSided { .. },
+                            ..
+                        }
+                    ));
+                }
+            }
+            "AlongSketchNormal" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&absent, name),
+                        FeatureDefinition::Extrude {
+                            length_along_profile_normal: Some(true),
+                            ..
+                        }
+                    ));
+                }
+            }
+            "AllowMultiFace" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&absent, name),
+                        FeatureDefinition::Extrude {
+                            allow_multi_profile_faces: Some(false),
+                            ..
+                        }
+                    ));
+                }
+            }
+            "Reversed" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&absent, name),
+                        FeatureDefinition::Extrude {
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            ..
+                        } if direction.x == 1.0
+                    ));
+                }
+            }
+            "UseCustomVector" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&absent, name),
+                        FeatureDefinition::Extrude {
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            ..
+                        } if direction.z == 1.0
+                    ));
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        let valid_value = if target == "Midplane" {
+            "true"
+        } else if target == "AlongSketchNormal" {
+            "false"
+        } else {
+            "true"
+        };
+        let valid_property = format!(
+            r#"<Property name="{target}" type="App::PropertyBool"><Bool value="{valid_value}"/></Property>"#
+        );
+        let valid = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&flag_document(target, Some(&valid_property)))),
+                &DecodeOptions::default(),
+            )
+            .expect("valid extrusion flag");
+        for name in ["Pad", "Pocket"] {
+            assert_typed(&valid, name);
+        }
+        match target {
+            "Midplane" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&valid, name),
+                        FeatureDefinition::Extrude {
+                            extent: ExtrudeExtent::Symmetric { .. },
+                            ..
+                        }
+                    ));
+                }
+            }
+            "AlongSketchNormal" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&valid, name),
+                        FeatureDefinition::Extrude {
+                            length_along_profile_normal: Some(false),
+                            ..
+                        }
+                    ));
+                }
+            }
+            "AllowMultiFace" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&valid, name),
+                        FeatureDefinition::Extrude {
+                            allow_multi_profile_faces: Some(true),
+                            ..
+                        }
+                    ));
+                }
+            }
+            "Reversed" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&valid, name),
+                        FeatureDefinition::Extrude {
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            ..
+                        } if direction.x == -1.0
+                    ));
+                }
+            }
+            "UseCustomVector" => {
+                for name in ["Pad", "Pocket"] {
+                    assert!(matches!(
+                        feature_definition(&valid, name),
+                        FeatureDefinition::Extrude {
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            ..
+                        } if direction.x == 1.0
+                    ));
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        for malformed in malformed_values {
+            let replacement = malformed.replace("TARGET", target);
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&flag_document(target, Some(&replacement)))),
+                    &DecodeOptions::default(),
+                )
+                .expect("malformed extrusion flag");
+            for name in ["Pad", "Pocket"] {
+                assert!(matches!(
+                    feature_definition(&result, name),
+                    FeatureDefinition::Native { kind, .. } if kind == &format!("PartDesign::{name}")
+                ));
+            }
+            assert_eq!(result.report().losses.len(), 2);
+            assert_valid_document(result.ir());
+        }
+    }
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4" Dependencies="1">

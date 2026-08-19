@@ -43,6 +43,39 @@ two-sided blind form; the `Type=4` form takes precedence over `Midplane=true`. I
 `Length` and `Length2` are the two blind extents. A present `Type=4` is not a current termination
 family.
 
+Pad and Pocket also persist `Midplane`, `UseCustomVector`, `AlongSketchNormal`, `Reversed`, and
+`AllowMultiFace` as `App::PropertyBool` values. `FeaturePad.cpp:45-76` and
+`FeaturePocket.cpp:46-84` register the shared carriers and establish `UseCustomVector=false` and
+`AlongSketchNormal=true`. `FeatureSketchBased.cpp:72-126` establishes `Midplane=false`,
+`Reversed=false`, and `AllowMultiFace=false`; its `setupObject()` changes the last value to true
+for a newly created object. `FeatureExtrude.cpp:75-125,435-475` uses `UseCustomVector` to choose
+between `Direction`, `ReferenceAxis`, and the profile normal, applies `AlongSketchNormal` to blind
+length correction, and applies `Reversed` to the resolved sweep direction. Its
+`onDocumentRestored()` at `:963-1013` gives deprecated `Type=?TwoLengths` precedence over
+`Midplane`, then maps `Midplane=true` to `SideType=Symmetric`. `FeatureSketchBased.cpp:220-225,310-315`
+uses `AllowMultiFace` for profile face admission. `PropertyStandard.cpp:2258-2277` writes and
+restores direct Bool values, while `PropertyContainer.cpp:324-404` leaves an omitted property at
+the restore-time object value.
+
+The producer witness `dp15_pad_flag_witness.py` saves default and selected Pad/Pocket pairs.
+Their extracted `dp15-pad-flags-default.Document.xml` and
+`dp15-pad-flags-selected.Document.xml` contain direct false/true values. The
+`dp15_pad_flag_mutations.py` absent variants and `dp15_pad_flag_restore_probe.py` show that an
+absent Midplane, UseCustomVector, AlongSketchNormal, Reversed, and AllowMultiFace restores as
+false, false, true, false, and false for both feature types. `dp15_pad_midplane_conflict.py` and
+`dp15-pad-flag-restore-conflict.log` show that a present true Midplane changes an explicit
+SideType to Symmetric; the deprecated Type=4 witness retains two-sided precedence. The hostile
+batch from `dp15_pad_flag_hostile_mutations.py` has one wrong-runtime, integer-runtime,
+invalid-value, nested, and duplicate variant for each flag and retains both Pad and Pocket
+natively with two blocking losses per file. Source and absent witnesses have zero decode losses.
+
+`design.rs:3740-3888` now requires an exact direct Bool for every one of these carriers, uses the
+restore-time defaults only when a carrier is absent, gives Midplane its traced precedence, and
+projects `AlongSketchNormal` and `AllowMultiFace` as explicit neutral booleans. The owner test
+`distinguishes_absent_and_malformed_partdesign_extrusion_flags` covers Pad and Pocket, every
+absent and valid default, and wrong-runtime, integer-runtime, invalid-value, nested, and duplicate
+carriers.
+
 Part::Extrusion `DirMode` is an `App::PropertyEnumeration` with constructor default `0`.
 Indices `0`, `1`, and `2` mean Custom, Edge, and Normal; they select `Dir`, `DirLink`, and the
 base-shape normal respectively. A present selected carrier requires one direct `Integer` value;
@@ -161,17 +194,19 @@ Hole natively. `design.rs:4913` now uses the exact Bool selector, and the owner 
 integer-runtime, invalid-value, nested, and duplicate carriers.
 
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
-flags. Trace each producer carrier and preserve its constructor default only when the property is
-absent. Revolution, Groove, and `CosmeticThread` boolean flags are settled above.
+flags. Trace each producer carrier and preserve its restore-time default only when the property is
+absent. Pad, Pocket, Revolution, Groove, and `CosmeticThread` boolean flags are settled above.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. Remaining flags still require their own
-writer and restore evidence before the generic fallback sites can change.
+neutral semantics or discard a valid legacy default. Remaining dress-up, scale, chamfer, loft,
+sweep, helix, ShapeBinder, and pattern flags still require their own writer and restore evidence
+before the generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
-`SideType`/`Type`/`Type2`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
+`SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
+`AllowMultiFace`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
 `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
 exact-carrier decoder rule. Revolution and Groove boolean flags, Hole enumeration modes, Hole

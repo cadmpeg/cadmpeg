@@ -3736,12 +3736,12 @@ fn extrusion_definition(
             _ => None,
         }
     };
-    let side_type = if property(properties, "SideType").is_some() {
-        enumeration_selector(properties, "SideType", 0)?
-    } else if legacy_two_lengths {
+    let side_type = if legacy_two_lengths {
         1
-    } else if bool_property(properties, "Midplane").unwrap_or(false) {
+    } else if bool_selector(properties, "Midplane", false)? {
         2
+    } else if property(properties, "SideType").is_some() {
+        enumeration_selector(properties, "SideType", 0)?
     } else {
         0
     };
@@ -3793,7 +3793,7 @@ fn extrusion_definition(
         },
         _ => return None,
     };
-    let use_custom = bool_property(properties, "UseCustomVector").unwrap_or(false);
+    let use_custom = bool_selector(properties, "UseCustomVector", false)?;
     let is_nonempty_link = |link: &crate::native::LinkTarget| {
         link.document.is_some()
             || link
@@ -3851,7 +3851,7 @@ fn extrusion_definition(
         };
         (direction, ExtrusionDirectionSource::ProfileNormal)
     };
-    if bool_property(properties, "Reversed").unwrap_or(false) {
+    if bool_selector(properties, "Reversed", false)? {
         let cadmpeg_ir::features::ExtrudeDirection::Explicit(vector) = direction else {
             return None;
         };
@@ -3859,16 +3859,8 @@ fn extrusion_definition(
             -vector.x, -vector.y, -vector.z,
         ));
     }
-    let length_along_profile_normal = if property(properties, "AlongSketchNormal").is_some() {
-        Some(bool_property(properties, "AlongSketchNormal")?)
-    } else {
-        None
-    };
-    let allow_multi_profile_faces = if property(properties, "AllowMultiFace").is_some() {
-        Some(bool_property(properties, "AllowMultiFace")?)
-    } else {
-        None
-    };
+    let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
+    let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
     Some(FeatureDefinition::Extrude {
         profile,
         direction,

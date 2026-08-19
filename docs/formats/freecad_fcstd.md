@@ -667,6 +667,16 @@ Index `4` is the deprecated two-length marker and is not a current termination f
 `SideType` is present. A selected present carrier with another runtime type, without exactly one
 direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index does
 not select a neutral operation; the affected operation remains native.
+Pad and Pocket also persist the boolean carriers `Midplane`, `UseCustomVector`, `AlongSketchNormal`, `Reversed`, and
+`AllowMultiFace`. Their direct values are `Bool` `false` and `true`, and their absent defaults are respectively
+`false`, `false`, `true`, `false`, and `false`. `Midplane=true` selects a symmetric extent and takes precedence over
+`SideType`; the absent-`SideType` `Type=4` migration remains higher precedence and selects the two-sided blind form.
+`Midplane=false` leaves the `SideType` value in force. `UseCustomVector=true` selects `Direction` for the sweep axis;
+false selects the reference axis or profile normal. For a blind `Length` termination, `AlongSketchNormal=true` measures
+the stored length along the profile normal and false measures it along the sweep axis. `Reversed=true` reverses the
+resolved sweep direction. `AllowMultiFace=true` permits a profile with multiple faces. A present carrier with another
+runtime type, without exactly one direct `Bool`, or with any other value does not select a neutral Pad or Pocket; the
+operation remains native.
 Part `Extrusion` `DirMode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean
 Custom, Edge, and Normal. Custom uses `Dir`, Edge uses `DirLink`, and Normal uses the base-shape
 normal. An absent `DirMode` means Custom. A selected present `DirMode` carrier with another
