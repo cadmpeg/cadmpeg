@@ -17,27 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-11. Post-processing control fallback
-
-**Question.** What admission rule applies when a design operation carries a malformed `Refine` or
-`FuzzyTolerance` control?
-
-**Known.** `design.rs:699-745` returns the underlying operation when
-`post_process_controls` cannot resolve both controls. The helper uses generic descendant scalar
-and boolean extraction, and returns `None` for malformed or non-finite fuzzy tolerance values.
-The specification says post-processing controls are retained compositionally around the neutral
-operation.
-
-**Need.** Distinguish an absent control from a malformed present control. Enforce each control's
-runtime type, direct value root, cardinality, and finite value before wrapping the operation, or
-retain an attributable native operation with a loss.
-
-**Conflict.** A malformed or non-finite `FuzzyTolerance`, or a wrong-carrier `Refine`, silently
-drops the post-processing wrapper while the underlying operation remains neutral. Changing the
-nested control or its spelling therefore changes neutral state without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ### DP-12. Sketch placement zero-axis fallback
 
 **Question.** Is a zero-length axis-angle axis a valid sketch placement when its angle is zero?

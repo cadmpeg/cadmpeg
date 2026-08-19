@@ -24,14 +24,14 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
   <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
   <Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="-0.5"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="-0.5"/></Property>
  </Properties></Object>
  <Object name="Explicit"><Properties Count="5">
   <Property name="Length" type="App::PropertyLength"><Float value="4"/></Property>
   <Property name="Width" type="App::PropertyLength"><Float value="5"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="6"/></Property>
   <Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0.01"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -67,6 +67,125 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
         } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
     ));
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn retains_native_for_malformed_post_process_controls() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="PartDesign::AdditiveBox" name="Absent" id="1"/>
+ <Object type="PartDesign::AdditiveBox" name="FuzzyOnly" id="2"/>
+ <Object type="PartDesign::AdditiveBox" name="RefineOnly" id="3"/>
+ <Object type="PartDesign::AdditiveBox" name="WrongRefine" id="4"/>
+ <Object type="PartDesign::AdditiveBox" name="WrongFuzzy" id="5"/>
+ <Object type="PartDesign::AdditiveBox" name="NestedFuzzy" id="6"/>
+ <Object type="PartDesign::AdditiveBox" name="DuplicateFuzzy" id="7"/>
+ <Object type="PartDesign::AdditiveBox" name="NonFiniteFuzzy" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="Absent"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+ </Properties></Object>
+ <Object name="FuzzyOnly"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/></Property>
+ </Properties></Object>
+ <Object name="RefineOnly"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="WrongRefine"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Refine" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="WrongFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0.01"/></Property>
+ </Properties></Object>
+ <Object name="NestedFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Wrapper><Float value="0.01"/></Wrapper></Property>
+ </Properties></Object>
+ <Object name="DuplicateFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/><Float value="0.02"/></Property>
+ </Properties></Object>
+ <Object name="NonFiniteFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="NaN"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("post-processing control admission");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Absent"),
+        FeatureDefinition::Primitive { .. }
+    ));
+    assert!(matches!(
+        definition("FuzzyOnly"),
+        FeatureDefinition::PostProcess {
+            operation,
+            refine: false,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(value),
+        } if (*value - 0.01).abs() < f64::EPSILON
+            && matches!(operation.as_ref(), FeatureDefinition::Primitive { .. })
+    ));
+    assert!(matches!(
+        definition("RefineOnly"),
+        FeatureDefinition::PostProcess {
+            operation,
+            refine: true,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
+        } if matches!(operation.as_ref(), FeatureDefinition::Primitive { .. })
+    ));
+    for name in [
+        "WrongRefine",
+        "WrongFuzzy",
+        "NestedFuzzy",
+        "DuplicateFuzzy",
+        "NonFiniteFuzzy",
+    ] {
+        assert!(matches!(
+            definition(name),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::AdditiveBox"
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 5);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
 }
 
 #[test]

@@ -1258,6 +1258,18 @@ selected; when that carrier is required, the affected operation remains native. 
 and post-processing controls have their own admission rules. Malformed sketch list framing refuses
 the document.
 
+PartDesign topology post-processing controls are optional and independent. `Refine` is one
+`App::PropertyBool` property with one direct `Bool` root; an absent property means false.
+`FuzzyTolerance` is one `App::PropertyFloatConstraint` property with one direct `Float` root; an
+absent property means the kernel default. A finite value below zero selects automatic tolerance,
+zero selects the kernel default, and a positive value selects that explicit tolerance. A duplicate
+property name is malformed at document persistence admission. A duplicate or nested value root,
+wrong runtime type, invalid boolean value, or non-finite fuzzy value is malformed for design
+admission. The affected feature remains a native feature and reports blocking loss
+`feature.native-kind-retained`; the malformed control is never silently discarded. Valid controls
+wrap the underlying neutral operation independently, and wrapping an already native operation does
+not suppress its native-kind loss.
+
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path
 property, including its ordered subelement selectors. Standalone sweeps distinguish surface from

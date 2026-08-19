@@ -409,7 +409,7 @@ pub(crate) fn transfer(
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         };
-        let definition = post_processed_definition(definition, &owned);
+        let definition = post_processed_definition(definition, &object.type_name, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
             .iter()
@@ -740,53 +740,84 @@ fn feature_ordinals<'a>(
     (ordinals, cycle_affected)
 }
 
-/// Wrap an operation in its shape-refinement and boolean-tolerance controls.
-///
-/// An unresolvable control leaves the operation unwrapped. The controls
-/// qualify an operation rather than define it, so they never cost the
-/// operation its neutral form.
+/// Apply an operation's shape-refinement and boolean-tolerance controls.
 fn post_processed_definition(
     definition: FeatureDefinition,
+    kind: &str,
     properties: &[&PropertyRecord],
 ) -> FeatureDefinition {
-    let Some((refine, fuzzy_tolerance)) = post_process_controls(properties) else {
-        return definition;
-    };
-    FeatureDefinition::PostProcess {
-        operation: Box::new(definition),
-        refine,
-        fuzzy_tolerance,
+    match post_process_controls(properties) {
+        PostProcessControlState::Absent => definition,
+        PostProcessControlState::Valid {
+            refine,
+            fuzzy_tolerance,
+        } => FeatureDefinition::PostProcess {
+            operation: Box::new(definition),
+            refine,
+            fuzzy_tolerance,
+        },
+        PostProcessControlState::Malformed => FeatureDefinition::Native {
+            kind: kind.to_owned(),
+            parameters: native_parameters(properties),
+            properties: BTreeMap::new(),
+        },
     }
 }
 
-/// Resolve the refinement flag and boolean fuzzy tolerance an operation
-/// carries. `None` states that the object carries neither control, or that a
-/// carried control does not resolve to a neutral value.
-fn post_process_controls(properties: &[&PropertyRecord]) -> Option<(bool, FuzzyTolerance)> {
-    if property(properties, "Refine").is_none() && property(properties, "FuzzyTolerance").is_none()
-    {
-        return None;
+enum PostProcessControlState {
+    Absent,
+    Valid {
+        refine: bool,
+        fuzzy_tolerance: FuzzyTolerance,
+    },
+    Malformed,
+}
+
+/// Resolve the exact persisted controls an operation carries.
+fn post_process_controls(properties: &[&PropertyRecord]) -> PostProcessControlState {
+    let refine = match unique_named_property(properties, "Refine") {
+        NamedProperty::Present(property) => match direct_bool_value(property) {
+            Some(value) => Some(value),
+            None => return PostProcessControlState::Malformed,
+        },
+        NamedProperty::Absent => None,
+        NamedProperty::Duplicate => return PostProcessControlState::Malformed,
+    };
+    let fuzzy_tolerance = match unique_named_property(properties, "FuzzyTolerance") {
+        NamedProperty::Present(property) => match direct_fuzzy_tolerance(property) {
+            Some(value) => Some(value),
+            None => return PostProcessControlState::Malformed,
+        },
+        NamedProperty::Absent => None,
+        NamedProperty::Duplicate => return PostProcessControlState::Malformed,
+    };
+    if refine.is_none() && fuzzy_tolerance.is_none() {
+        return PostProcessControlState::Absent;
     }
-    let refine = if property(properties, "Refine").is_some() {
-        bool_property(properties, "Refine")?
-    } else {
-        false
+    PostProcessControlState::Valid {
+        refine: refine.unwrap_or(false),
+        fuzzy_tolerance: fuzzy_tolerance.unwrap_or(FuzzyTolerance::KernelDefault),
+    }
+}
+
+enum NamedProperty<'a> {
+    Absent,
+    Present(&'a PropertyRecord),
+    Duplicate,
+}
+
+fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> NamedProperty<'a> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return NamedProperty::Absent;
     };
-    let value = if property(properties, "FuzzyTolerance").is_some() {
-        scalar_named(properties, "FuzzyTolerance")?
-    } else {
-        0.0
-    };
-    let fuzzy_tolerance = if value < 0.0 {
-        FuzzyTolerance::Automatic
-    } else if value == 0.0 {
-        FuzzyTolerance::KernelDefault
-    } else if value.is_finite() {
-        FuzzyTolerance::Explicit(value)
-    } else {
-        return None;
-    };
-    Some((refine, fuzzy_tolerance))
+    if matches.next().is_some() {
+        return NamedProperty::Duplicate;
+    }
+    NamedProperty::Present(property)
 }
 
 fn unique_matching_property<'a, F>(
@@ -1703,6 +1734,38 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
         "0" | "false" => Some(false),
         _ => None,
     }
+}
+
+fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
+    if property.type_name != "App::PropertyBool" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Bool")?.remove("value")?;
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
+    if property.type_name != "App::PropertyFloatConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .remove("value")?
+        .parse::<f64>()
+        .ok()?;
+    if !value.is_finite() {
+        return None;
+    }
+    Some(if value < 0.0 {
+        FuzzyTolerance::Automatic
+    } else if value == 0.0 {
+        FuzzyTolerance::KernelDefault
+    } else {
+        FuzzyTolerance::Explicit(value)
+    })
 }
 
 fn parse_constraints(
