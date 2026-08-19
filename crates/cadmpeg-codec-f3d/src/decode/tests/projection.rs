@@ -16,9 +16,10 @@ use super::super::{
     apply_appearance_base_colors, bind_mesh_feature_definitions,
     container_only_dimension_parameters, design_projection_gaps, face_selection_is_resolved,
     feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-    mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
-    MeshProjection,
+    mesh_texture_assignments, report_design_projection_gaps, unresolved_dimension_companion_count,
+    DesignProjectionGaps, MeshProjection,
 };
+use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
@@ -26,6 +27,57 @@ use crate::records::{
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
     LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
+
+#[test]
+fn active_face_substitutions_have_a_distinct_loss_note() {
+    let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut native = F3dNative::default();
+    native.design_face_operands.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 201,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "resolved_active_face": "f3d:brep:entity#30",
+            "next_record_index": 202,
+            "next_byte_offset": 100
+        }))
+        .expect("active face operand"),
+    );
+    let mut report = cadmpeg_ir::report::DecodeReport {
+        format: "f3d".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(&mut report, &ir, &native);
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::FeatureFaceSelectionActiveSubstituted.kind())
+        .expect("active-face substitution loss");
+    assert_eq!(loss.message, "1 legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.");
+}
 
 #[test]
 fn mesh_feature_binds_tessellations_in_design_body_order() {
@@ -1411,6 +1463,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             profile_selections: 2,
             path_selections: 1,
             face_selections: 1,
+            active_face_substitutions: 0,
             body_selections: 0,
             partially_resolved_face_members: 0,
             native_edge_selections: 2,

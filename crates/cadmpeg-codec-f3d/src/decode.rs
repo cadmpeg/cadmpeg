@@ -250,6 +250,7 @@ struct DesignProjectionGaps {
     profile_selections: usize,
     path_selections: usize,
     face_selections: usize,
+    active_face_substitutions: usize,
     body_selections: usize,
     partially_resolved_face_members: usize,
     native_edge_selections: usize,
@@ -1443,6 +1444,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 })
                 .count()
         },
+        active_face_substitutions: native
+            .design_face_operands
+            .iter()
+            .filter(|operand| operand.resolved_active_face.is_some())
+            .count(),
         ..DesignProjectionGaps::default()
     };
     let mut edge_selection = |selection: &EdgeSelection| match selection {
@@ -1930,6 +1936,14 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
+        ),
+    );
+    push(
+        F3dLossCode::FeatureFaceSelectionActiveSubstituted,
+        gaps.active_face_substitutions,
+        format!(
+            "{} legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.",
+            gaps.active_face_substitutions
         ),
     );
     push(

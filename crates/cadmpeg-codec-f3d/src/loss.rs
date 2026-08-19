@@ -86,6 +86,8 @@ pub enum F3dLossCode {
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
     FeatureFaceSelectionNative,
+    /// Legacy face operands use a current active face after no historical slot proof.
+    FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Feature face operands stay unresolved inside historical selections.
@@ -194,6 +196,7 @@ impl F3dLossCode {
         Self::FeatureProfileSelectionNative,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
+        Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
@@ -271,6 +274,9 @@ impl F3dLossCode {
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
+            Self::FeatureFaceSelectionActiveSubstituted => {
+                "feature.face-selection-active-substituted"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
@@ -374,6 +380,7 @@ impl F3dLossCode {
             | Self::FeatureProfileSelectionNative
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
@@ -483,6 +490,7 @@ mod tests {
                 "feature.profile-selection-native",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
+                "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
