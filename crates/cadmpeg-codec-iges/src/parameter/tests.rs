@@ -1550,6 +1550,108 @@ fn type108_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type314_form0_boundary_follows_optional_color_name_slot() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source = directory_target(5, 314);
+    let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
+    for name in [TokenValue::String(b"orange".to_vec()), TokenValue::Omitted] {
+        let record = token_parameter_record(
+            5,
+            vec![
+                314.into(),
+                10.into(),
+                20.into(),
+                30.into(),
+                name,
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 314 table boundary");
+        assert_eq!(groups.token_start, 5);
+        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.properties, vec![3]);
+    }
+}
+
+#[test]
+fn type314_table_boundary_precedes_valid_generic_alternative() {
+    let association = directory_target(1, 212);
+    let property_a = directory_target(3, 406);
+    let property_b = directory_target(7, 406);
+    let property_c = directory_target(9, 406);
+    let source = directory_target(5, 314);
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &property_a),
+        (5, &source),
+        (7, &property_b),
+        (9, &property_c),
+    ]);
+    let record = integer_parameter_record(5, &[314, 10, 20, 30, 2, 1, 1, 3, 3, 7, 9]);
+
+    let generic = structural_pointer_group_candidates(&record);
+    let mut valid_starts = Vec::new();
+    for candidate in generic {
+        if groups_for_candidate(&record, &directory, candidate)
+            .expect("generic Type 314 candidate")
+            .fully_valid
+        {
+            valid_starts.push(candidate.token_start);
+        }
+    }
+    assert_eq!(valid_starts, vec![4, 5]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 314 table boundary");
+    assert_eq!(groups.token_start, 5);
+    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.properties, vec![3, 7, 9]);
+}
+
+#[test]
+fn type314_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source = directory_target(5, 314);
+    let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
+    let wrong_field = token_parameter_record(
+        5,
+        vec![
+            314.into(),
+            10.into(),
+            20.into(),
+            30.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_field, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(analysis.groups.expect("Type 314 boundary").token_start, 5);
+
+    for values in [vec![314, 10, 20, 30], vec![314, 10, 20, 30, 1, 1, 1]] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(5, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0, "values={values:?}");
+        assert_eq!(analysis.valid_candidate_count, 0, "values={values:?}");
+        assert!(analysis.groups.is_none(), "values={values:?}");
+    }
+}
+
+#[test]
 fn type214_forms_share_count_driven_boundary() {
     let association = directory_target(3, 212);
     let n1 = vec![
