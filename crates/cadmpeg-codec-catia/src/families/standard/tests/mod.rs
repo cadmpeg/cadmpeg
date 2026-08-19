@@ -21,7 +21,8 @@ pub(super) use crate::families::standard::topology::{
 pub(super) use crate::solve::incidence::{
     compact_boundary_domain_viable, prepare_face_configuration_domains,
     prune_face_configuration_singleton_support, prune_face_configuration_support,
-    prune_ordered_face_endpoint_support, reconstruct_incidence_candidates,
+    prune_incidence_choices_with_deferred_support, prune_ordered_face_endpoint_support,
+    reconstruct_incidence_candidates,
 };
 pub(super) use crate::solve::matching::unique_coordinate_bijection;
 pub(super) use crate::solve::mesh_gauge::{

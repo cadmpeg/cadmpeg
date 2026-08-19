@@ -184,6 +184,16 @@ fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
 }
 
 #[test]
+fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
+    let mut choices = vec![vec![[0, 1]]];
+    let edge_faces = [[0, 0]];
+
+    prune_incidence_choices_with_deferred_support(&mut choices, &edge_faces, 1, 2)
+        .expect("deferred boundary support is not an explicit contradiction");
+    assert_eq!(choices, vec![vec![[0, 1]]]);
+}
+
+#[test]
 fn incidence_propagation_indexes_wide_endpoint_support_domains() {
     let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
     let mut choices = vec![domain.clone(), domain.clone()];

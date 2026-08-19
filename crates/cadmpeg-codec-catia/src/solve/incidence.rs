@@ -36,6 +36,42 @@ pub(crate) fn prune_incidence_choices(
     face_count: usize,
     point_count: usize,
 ) -> Option<()> {
+    prune_incidence_choices_with_explicit_support(
+        choices,
+        edge_faces,
+        face_count,
+        point_count,
+        true,
+    )
+}
+
+/// Prune endpoint pairs by face valency while retaining degree-one endpoints.
+///
+/// Mesh boundary domains may complete that support with an endpoint that is
+/// not present in the explicit candidate set. The mesh-aware caller checks
+/// those deferred supports after it has prepared the coordinate-root domains.
+pub(crate) fn prune_incidence_choices_with_deferred_support(
+    choices: &mut [Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+    point_count: usize,
+) -> Option<()> {
+    prune_incidence_choices_with_explicit_support(
+        choices,
+        edge_faces,
+        face_count,
+        point_count,
+        false,
+    )
+}
+
+fn prune_incidence_choices_with_explicit_support(
+    choices: &mut [Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+    point_count: usize,
+    explicit_support_complete: bool,
+) -> Option<()> {
     fn unique_faces(faces: [usize; 2]) -> impl Iterator<Item = usize> {
         faces
             .into_iter()
@@ -181,14 +217,15 @@ pub(crate) fn prune_incidence_choices(
                 .copied()
                 .filter(|pair| {
                     fits(&degrees, edge_faces, edge, *pair)
-                        && preserves_new_degree_support(
-                            &supports,
-                            &edge_supports,
-                            &degrees,
-                            edge_faces,
-                            edge,
-                            *pair,
-                        )
+                        && (!explicit_support_complete
+                            || preserves_new_degree_support(
+                                &supports,
+                                &edge_supports,
+                                &degrees,
+                                edge_faces,
+                                edge,
+                                *pair,
+                            ))
                 })
                 .collect::<Vec<_>>();
             choices[edge] = retained;
@@ -222,27 +259,30 @@ pub(crate) fn prune_incidence_choices(
             fixed[edge] = true;
             changed = true;
         }
-        for face in 0..face_count {
-            for point in degree_one_points(&degrees, face) {
-                match supports[face].get(&point).copied().unwrap_or(0) {
-                    0 => return None,
-                    1 => {
-                        let edge = sole_supporting_edge(&face_edges, &edge_supports, face, point)?;
-                        let before = choices[edge].len();
-                        choices[edge].retain(|pair| pair.contains(&point));
-                        if choices[edge].is_empty() {
-                            return None;
+        if explicit_support_complete {
+            for face in 0..face_count {
+                for point in degree_one_points(&degrees, face) {
+                    match supports[face].get(&point).copied().unwrap_or(0) {
+                        0 => return None,
+                        1 => {
+                            let edge =
+                                sole_supporting_edge(&face_edges, &edge_supports, face, point)?;
+                            let before = choices[edge].len();
+                            choices[edge].retain(|pair| pair.contains(&point));
+                            if choices[edge].is_empty() {
+                                return None;
+                            }
+                            changed |= choices[edge].len() != before;
+                            remove_edge_support(
+                                &mut supports,
+                                &mut edge_supports,
+                                edge_faces,
+                                edge,
+                                choice_points(&choices[edge]),
+                            )?;
                         }
-                        changed |= choices[edge].len() != before;
-                        remove_edge_support(
-                            &mut supports,
-                            &mut edge_supports,
-                            edge_faces,
-                            edge,
-                            choice_points(&choices[edge]),
-                        )?;
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -4326,7 +4366,20 @@ where
                 return None;
             }
         } else {
-            prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
+            // Mesh boundary domains may leave an endpoint implicit. Their
+            // complete support is checked after coordinate-root preparation;
+            // only the explicit-candidate path can use degree-one support as
+            // a rejection here.
+            if mesh_assignments.is_some() {
+                prune_incidence_choices_with_deferred_support(
+                    &mut choices,
+                    edge_faces,
+                    face_count,
+                    vertex_points.len(),
+                )?;
+            } else {
+                prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
+            }
         }
         Some(choices)
     })() else {
