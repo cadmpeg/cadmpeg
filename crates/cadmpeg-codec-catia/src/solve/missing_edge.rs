@@ -87,10 +87,9 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
         .collect()
 }
 
-/// Select the endpoint-identity grammar belonging to the detected spine
-/// family. Full-form standard rows use occurrence-local endpoint ports;
-/// compact standard and FBB-only rows use table-scoped complete-boundary
-/// handles.
+/// Select endpoint identities from each parsed row's boundary layout. A
+/// complete-boundary row uses table-scoped endpoint handles; an interior row
+/// uses two occurrence-local endpoint ports for its flanking corners.
 pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
 }

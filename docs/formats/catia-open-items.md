@@ -480,16 +480,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `catia.md` §1 gives no rule for the state where neither edge-table grammar is admitted. The decoder uses the delimiter count in that state.
 
-### SN-34. Full-form standard endpoint-port identity
-
-**Question.** Does a two-handle row in a full-form standard spine share its endpoint ports with another row in the same table that stores the same handle?
-
-**Known.** `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs:738-746` sets the boundary layout of every parsed row from its handle count alone: a row with two handles is a complete boundary run. `crates/cadmpeg-codec-catia/src/families/standard/fbb.rs:633-645` parses the full-form standard spine with that same row parser, so a full-form row with two handles also carries that layout. `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:42-59` then gives such a row table-scoped handle identity and gives occurrence-local ports only to rows with more handles. The docstring at `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:90-93` states the form-level rule, and `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:1582-1585` selects placement ports only when every row is a complete boundary run, which is also a form-level test.
-
-**Need.** We must know the rule, because a shared port identity collapses two logical vertices before the solver runs. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3643-3654` then reduces that edge's candidate domain to one pair.
-
-**Conflict.** `catia.md` §5.4 "Full-form standard `u16be` endpoint integers are not vertex indices or reusable port identities." states that each full-form row contributes two occurrence-local ports even when another row stores the same endpoint integer. `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:42-59` shares the port identity of a two-handle full-form row through its table scope.
-
 ### DI-24. PMI dimension quantity and suffix framing
 
 **Question.** Which field gives the physical quantity of a transferred `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, and `DC` suffix framings select?

@@ -18,6 +18,25 @@ fn compact_standard_ports_reuse_handles_within_the_table_scope() {
 }
 
 #[test]
+fn standard_full_table_scopes_complete_rows_and_isolates_interior_rows() {
+    let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
+    bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
+    for handles in [&[10u16, 11][..], &[11, 12, 13][..], &[11, 12][..]] {
+        bytes.extend_from_slice(&[0x02, handles.len() as u8]);
+        for handle in handles {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[
+        0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00,
+    ]);
+
+    let ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
+        .expect("standard full-table ports");
+    assert_eq!(ports, vec![[0, 1], [2, 3], [1, 4]]);
+}
+
+#[test]
 fn standard_mesh_ports_bridge_table_local_endpoint_names() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
