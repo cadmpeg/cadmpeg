@@ -8,8 +8,9 @@ use super::pcurves::{
     complete_exact_boundary_intersection_pcurves_with_budget,
     complete_intersection_pcurves_from_opposite_charts_with_budget,
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget,
-    ordered_parameter_range, pcurve_matches_edge_range_with_index_and_budget,
-    pcurve_parameter_range, IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
+    ordered_parameter_range, pcurve_endpoint_witness_with_index_and_budget,
+    pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
+    IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
@@ -53,7 +54,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> EndpointWitnesses {
     let prefix = format!("nx:s{stream_index}");
     let body_shape_shells = graph.body_shape_shells();
     let valid_face_xmts: BTreeSet<u32> = body_shape_shells
@@ -514,6 +515,10 @@ pub(super) fn emit_topology(
         })
         .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
         .collect();
+    // Preserve the endpoint proof only when the admitted carrier is the exact
+    // intersection candidate consumed by the later attachment pass. A valid
+    // unrelated coedge pcurve must not become a general admission shortcut.
+    let mut endpoint_witnesses = EndpointWitnesses::new();
     let intersection_pcurves: BTreeMap<_, _> = ir
         .model
         .procedural_curves
@@ -556,16 +561,33 @@ pub(super) fn emit_topology(
                     .get(&fields.curve_xmt)
                     .copied()
                     .and_then(ordered_parameter_range);
-                pcurve_matches_edge_range_with_index_and_budget(
+                let parameter_range = use_range
+                    .or(carrier.parameter_range)
+                    .or_else(|| pcurve_parameter_range(&carrier.geometry));
+                let endpoints = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
                     edge,
                     support,
                     &carrier.geometry,
-                    use_range.or(carrier.parameter_range),
+                    parameter_range,
                     carrier.fit_tolerance,
                     adaptive_geometry_budget,
-                )
-                .then_some(*fin_xmt)
+                )?;
+                let curve = index.edges(edge.0.as_str())?.curve.as_ref()?;
+                let parameter_range = parameter_range?;
+                let Some((candidate_geometry, candidate_range, _)) =
+                    intersection_pcurves.get(&(curve.clone(), support.clone()))
+                else {
+                    return Some(*fin_xmt);
+                };
+                if *candidate_geometry != carrier.geometry || *candidate_range != parameter_range {
+                    return Some(*fin_xmt);
+                }
+                endpoint_witnesses
+                    .entry((curve.clone(), support.clone()))
+                    .or_default()
+                    .push((carrier.geometry.clone(), parameter_range, endpoints));
+                Some(*fin_xmt)
             })
             .collect::<BTreeSet<_>>();
         let fallback_pcurves = fin_ids
@@ -764,6 +786,7 @@ pub(super) fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
+    endpoint_witnesses
 }
 
 #[allow(clippy::too_many_arguments)]

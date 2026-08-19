@@ -898,7 +898,7 @@ pub(crate) fn try_decode_geometry(
         };
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
-        emit_topology(
+        let initial_endpoint_witnesses = emit_topology(
             &mut ir,
             si,
             graph,
@@ -949,11 +949,17 @@ pub(crate) fn try_decode_geometry(
                 &coupled_support_uv_geometry_budget,
                 &mut completed_endpoint_witnesses,
             );
-        let mut validated_endpoint_witnesses = validated_support_uv_endpoint_witnesses(
+        let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
+        for (key, witnesses) in validated_support_uv_endpoint_witnesses(
             &ir,
             &pending_ext11_support_uv,
             &validated_support_uv_lanes,
-        );
+        ) {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witnesses);
+        }
         for (key, witness) in newly_validated_endpoint_witnesses {
             validated_endpoint_witnesses
                 .entry(key)

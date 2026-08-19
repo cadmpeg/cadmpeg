@@ -139,7 +139,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     );
 
     assert_eq!(
-        crate::decode::support_uv::endpoint_witness_for_candidate(
+        crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
             &(procedural.curve.clone(), side.1.clone()),
             &pcurve,
@@ -148,7 +148,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         Some([points[0], points[1]])
     );
     assert_eq!(
-        crate::decode::support_uv::endpoint_witness_for_candidate(
+        crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
             &(procedural.curve.clone(), side.1),
             &pcurve,
@@ -216,7 +216,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             &geometry_budget,
         );
 
-    let witness = crate::decode::support_uv::endpoint_witness_for_candidate(
+    let witness = crate::decode::pcurves::endpoint_witness_for_candidate(
         &witnesses,
         &(curve_id, surface),
         &pcurve,

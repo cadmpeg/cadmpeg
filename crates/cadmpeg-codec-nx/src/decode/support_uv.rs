@@ -21,9 +21,10 @@ use super::offset::{
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
-    linear_nurbs_curve_endpoint_witness_with_index, pcurve_edge_endpoint_contract_with_index,
-    pcurve_matches_edge_endpoint_contract, pcurve_surface_endpoints_with_index_and_budget,
-    surface_parameters_for_fit_with_index_and_budget,
+    endpoint_witness_for_candidate, linear_nurbs_curve_endpoint_witness_with_index,
+    pcurve_edge_endpoint_contract_with_index, pcurve_matches_edge_endpoint_contract,
+    pcurve_surface_endpoints_with_index_and_budget,
+    surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
@@ -298,23 +299,6 @@ pub(crate) type PendingExt11SupportUv = (
     f64,
     [Option<Vec<[f64; 2]>>; 2],
 );
-
-pub(crate) type EndpointWitnesses =
-    BTreeMap<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], [Point3; 2])>>;
-
-pub(crate) fn endpoint_witness_for_candidate(
-    witnesses: &EndpointWitnesses,
-    key: &(CurveId, SurfaceId),
-    pcurve: &PcurveGeometry,
-    parameter_range: [f64; 2],
-) -> Option<[Point3; 2]> {
-    witnesses
-        .get(key)?
-        .iter()
-        .find_map(|(candidate, candidate_range, endpoints)| {
-            (candidate == pcurve && *candidate_range == parameter_range).then_some(*endpoints)
-        })
-}
 
 /// Return endpoint witnesses already certified by serialized support-UV lanes.
 /// The lane samples and the intersection parameter range use the same ordered

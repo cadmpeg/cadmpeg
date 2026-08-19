@@ -47,6 +47,23 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) type EndpointWitnesses =
+    BTreeMap<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], [Point3; 2])>>;
+
+pub(crate) fn endpoint_witness_for_candidate(
+    witnesses: &EndpointWitnesses,
+    key: &(CurveId, SurfaceId),
+    pcurve: &PcurveGeometry,
+    parameter_range: [f64; 2],
+) -> Option<[Point3; 2]> {
+    witnesses
+        .get(key)?
+        .iter()
+        .find_map(|(candidate, candidate_range, endpoints)| {
+            (candidate == pcurve && *candidate_range == parameter_range).then_some(*endpoints)
+        })
+}
+
 pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         return None;
@@ -3363,6 +3380,28 @@ pub(crate) fn pcurve_matches_edge_range_with_index_and_budget(
         return false;
     };
     pcurve_matches_edge_endpoints_with_index(index, edge_id, coincident_surface, fit_tolerance)
+}
+
+/// Evaluate and admit a pcurve endpoint pair, returning the exact points that
+/// established the edge-incidence contract for later proof reuse.
+pub(crate) fn pcurve_endpoint_witness_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    edge_id: &EdgeId,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    parameter_range: Option<[f64; 2]>,
+    fit_tolerance: Option<f64>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<[Point3; 2]> {
+    let coincident_surface = pcurve_surface_endpoints_with_index_and_budget(
+        index,
+        surface_id,
+        geometry,
+        parameter_range,
+        geometry_budget,
+    )?;
+    pcurve_matches_edge_endpoints_with_index(index, edge_id, coincident_surface, fit_tolerance)
+        .then_some(coincident_surface)
 }
 
 pub(crate) fn pcurve_surface_endpoints_with_index_and_budget(
