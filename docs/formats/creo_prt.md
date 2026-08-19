@@ -230,7 +230,8 @@ layout. Section cardinality is descriptive and does not select a layout.
 
 Binary selector `54` stores model lengths in inches. The neutral model
 converts every stored length, coordinate, distance, radius, linear tolerance,
-and length-bearing parameter to millimeters by multiplying it by `25.4`.
+length-bearing Boolean-operation tolerance, and length-bearing parameter to
+millimeters by multiplying it by `25.4`.
 Surface and curve parameter coordinates use the same conversion on each
 length-valued parameter axis; angular and dimensionless parameters are
 unchanged.

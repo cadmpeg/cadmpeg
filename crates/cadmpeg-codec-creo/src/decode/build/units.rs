@@ -478,10 +478,21 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
             }
         }
         FeatureDefinition::Pattern { pattern, .. } => scale_pattern_kind(pattern, scale),
-        FeatureDefinition::PostProcess { operation, .. } => {
+        FeatureDefinition::PostProcess {
+            operation,
+            fuzzy_tolerance,
+            ..
+        } => {
             scale_feature_definition(operation, scale);
+            scale_fuzzy_tolerance(fuzzy_tolerance, scale);
         }
         _ => {}
+    }
+}
+
+fn scale_fuzzy_tolerance(tolerance: &mut cadmpeg_ir::features::FuzzyTolerance, scale: f64) {
+    if let cadmpeg_ir::features::FuzzyTolerance::Explicit(value) = tolerance {
+        *value *= scale;
     }
 }
 
@@ -1399,7 +1410,8 @@ mod tests {
 
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
-        FeatureDefinition, PatternKind, PatternScaleCenter, ProfileRef, Termination,
+        FeatureDefinition, FuzzyTolerance, PatternKind, PatternScaleCenter, ProfileRef,
+        Termination,
     };
 
     #[test]
@@ -1529,6 +1541,32 @@ mod tests {
         assert_point3(point, [25.4, 50.8, 76.2]);
         assert_close(final_factor, 2.0);
         assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn scales_explicit_fuzzy_tolerance() {
+        let mut definition = FeatureDefinition::PostProcess {
+            operation: Box::new(FeatureDefinition::Native {
+                kind: "Boolean".into(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            }),
+            refine: false,
+            fuzzy_tolerance: FuzzyTolerance::Explicit(2.0),
+        };
+
+        scale_feature_definition(&mut definition, 25.4);
+
+        let FeatureDefinition::PostProcess {
+            fuzzy_tolerance, ..
+        } = definition
+        else {
+            panic!("test definition changed family");
+        };
+        let FuzzyTolerance::Explicit(value) = fuzzy_tolerance else {
+            panic!("test tolerance changed family");
+        };
+        assert_close(value, 50.8);
     }
 
     #[test]
