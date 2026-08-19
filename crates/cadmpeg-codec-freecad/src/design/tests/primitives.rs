@@ -272,6 +272,8 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             "App::PropertyBool",
             r#"<Bool value="false"/><Bool value="true"/>"#,
         ),
+        ("App::PropertyBool", r#"<Bool value="1"/>"#),
+        ("App::PropertyBool", r#"<Bool value="0"/>"#),
         ("App::PropertyBool", r#"<Bool value="2"/>"#),
     ];
     for target in ["Solid", "Reversed", "Symmetric"] {
@@ -279,6 +281,288 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             let replacement =
                 format!(r#"<Property name="{target}" type="{type_name}">{value}</Property>"#);
             assert_native(&decode(&document(target, Some(&replacement))));
+        }
+    }
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_revolution_flags() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let part_design_flags = [
+        (
+            "Midplane",
+            r#"<Property name="Midplane" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "Reversed",
+            r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "AllowMultiFace",
+            r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+    ];
+    let standalone_flags = [
+        (
+            "Symmetric",
+            r#"<Property name="Symmetric" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "Solid",
+            r#"<Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+    ];
+    let properties = |name: &str, target_name: &str, target: &str, replacement: Option<&str>| {
+        let mut value = if name == "PartDesignRevolution" {
+            String::from(
+                r#"<Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property><Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property><Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>"#,
+            )
+        } else {
+            String::from(
+                r#"<Property name="Source" type="App::PropertyLink"><Link value="Sketch"/></Property><Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property><Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property><Property name="Angle" type="App::PropertyAngle"><Float value="120"/></Property>"#,
+            )
+        };
+        let flags = if name == "PartDesignRevolution" {
+            &part_design_flags[..]
+        } else {
+            &standalone_flags[..]
+        };
+        for &(property_name, property) in flags {
+            if !(name == target_name && property_name == target) {
+                value.push_str(property);
+            }
+        }
+        if name == target_name {
+            if let Some(replacement) = replacement {
+                value.push_str(replacement);
+            }
+        }
+        value
+    };
+    let document = |target_name: &str, target: &str, replacement: Option<&str>| {
+        let design = properties("PartDesignRevolution", target_name, target, replacement);
+        let standalone = properties("StandaloneRevolution", target_name, target, replacement);
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/><Object type="PartDesign::Revolution" name="PartDesignRevolution" id="2"/><Object type="Part::Revolution" name="StandaloneRevolution" id="3"/></Objects><ObjectData Count="3"><Object name="Sketch"><Properties Count="0"/></Object><Object name="PartDesignRevolution"><Properties Count="{design_count}">{design}</Properties></Object><Object name="StandaloneRevolution"><Properties Count="{standalone_count}">{standalone}</Properties></Object></ObjectData></Document>"#,
+            design_count = design.matches("<Property ").count(),
+            standalone_count = standalone.matches("<Property ").count(),
+        )
+    };
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("revolution flag document")
+    };
+    let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
+        assert!(
+            matches!(definition(result, name), FeatureDefinition::Native { kind: value, .. } if value == kind)
+        );
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    };
+
+    for (name, target) in [
+        ("PartDesignRevolution", "Midplane"),
+        ("PartDesignRevolution", "Reversed"),
+        ("PartDesignRevolution", "AllowMultiFace"),
+        ("StandaloneRevolution", "Symmetric"),
+        ("StandaloneRevolution", "Solid"),
+    ] {
+        let result = decode(&document(name, target, None));
+        assert!(result.report().losses.is_empty(), "{name}.{target}");
+        match (name, target) {
+            ("PartDesignRevolution", "Midplane") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        extent: Some(RevolveExtent::OneSided { .. }),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("PartDesignRevolution", "Reversed") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        axis: Some(axis), ..
+                    },
+                    ..
+                } if axis.direction.y == 1.0
+            )),
+            ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        allow_multi_profile_faces: Some(false),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("StandaloneRevolution", "Symmetric") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        extent: Some(RevolveExtent::OneSided { .. }),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("StandaloneRevolution", "Solid") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        solid: Some(false),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let valid = [
+        (
+            "PartDesignRevolution",
+            "Midplane",
+            r#"<Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "PartDesignRevolution",
+            "Reversed",
+            r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "PartDesignRevolution",
+            "AllowMultiFace",
+            r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
+            "StandaloneRevolution",
+            "Symmetric",
+            r#"<Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "StandaloneRevolution",
+            "Solid",
+            r#"<Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+    ];
+    for (name, target, replacement) in valid {
+        let result = decode(&document(name, target, Some(replacement)));
+        assert!(result.report().losses.is_empty(), "{name}.{target}");
+        match (name, target) {
+            ("PartDesignRevolution", "Midplane") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        extent: Some(RevolveExtent::Symmetric { .. }),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("PartDesignRevolution", "Reversed") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        axis: Some(axis), ..
+                    },
+                    ..
+                } if axis.direction.y == -1.0
+            )),
+            ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        allow_multi_profile_faces: Some(false),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("StandaloneRevolution", "Symmetric") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        extent: Some(RevolveExtent::Symmetric { .. }),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            ("StandaloneRevolution", "Solid") => assert!(matches!(
+                definition(&result, name),
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        solid: Some(true),
+                        ..
+                    },
+                    ..
+                }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let malformed_values = [
+        ("App::PropertyString", r#"<String value="false"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="0"/>"#),
+        ("App::PropertyBool", r#"<Bool value="bad"/>"#),
+        (
+            "App::PropertyBool",
+            r#"<Wrapper><Bool value="false"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyBool",
+            r#"<Bool value="false"/><Bool value="true"/>"#,
+        ),
+        ("App::PropertyBool", r#"<Bool value="1"/>"#),
+        ("App::PropertyBool", r#"<Bool value="0"/>"#),
+        ("App::PropertyBool", r#"<Bool value="2"/>"#),
+    ];
+    for (name, target) in [
+        ("PartDesignRevolution", "Midplane"),
+        ("PartDesignRevolution", "Reversed"),
+        ("PartDesignRevolution", "AllowMultiFace"),
+        ("StandaloneRevolution", "Symmetric"),
+        ("StandaloneRevolution", "Solid"),
+    ] {
+        for (type_name, value) in malformed_values {
+            let replacement =
+                format!(r#"<Property name="{target}" type="{type_name}">{value}</Property>"#);
+            assert_native(
+                &decode(&document(name, target, Some(&replacement))),
+                name,
+                if name == "PartDesignRevolution" {
+                    "PartDesign::Revolution"
+                } else {
+                    "Part::Revolution"
+                },
+            );
         }
     }
 }

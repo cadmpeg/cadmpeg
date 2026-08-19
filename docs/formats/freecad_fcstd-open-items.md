@@ -58,6 +58,27 @@ removal. Rebuilt CLI source and absent checks report zero losses. The hostile ba
 blocking native loss for every wrong-runtime, integer-runtime, malformed, nested, duplicate, and
 unknown carrier for each flag.
 
+Part `Revolution` declares `Symmetric` and `Solid` as Bool properties with false constructor
+defaults at `FeatureRevolution.cpp:78-92`. PartDesign `Revolution` and `Groove` inherit
+`Midplane`, `Reversed`, and `AllowMultiFace` from `FeatureSketchBased.cpp:72-126`; their
+revolution and groove constructors establish the shared `Revolved` base at
+`FeatureRevolution.cpp:41-50` and `FeatureGroove.cpp:34-46`. `FeatureRevolved.cpp:163-188,230-238`
+applies reversal and midplane behavior, and `FeatureSketchBased.cpp:220-225,310-315` applies
+the multi-face choice. `PropertyStandard.cpp:2258-2277` writes and restores direct Bool values.
+The producer witness `dp15_revolution_flags_witness.py` saves selected Part and PartDesign
+flags; its extracted `dp15-revolution-flags-source.Document.xml` contains the direct carriers.
+`dp15-revolution-flags-restore.log` shows the source values and the all-selected-properties-absent
+values. Rebuilt CLI checks report zero losses for the source and absent files; the after summary
+and loss-count report show one blocking native loss for every wrong-runtime, integer-runtime,
+malformed, nested, duplicate, and non-Boolean-value carrier for all five flags.
+
+`design.rs:1932-1946` now admits only an exact direct Bool with the producer's `true` or `false`
+value, and `design.rs:3197-3309` applies the family-specific flags. The owner test
+`distinguishes_absent_and_malformed_revolution_flags` covers absent, valid, wrong-runtime,
+integer-runtime, invalid-value, nested, and duplicate carriers for Part `Revolution` and
+PartDesign `Revolution`; existing Revolution/Groove branch tests cover the shared operation
+families.
+
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
 Skin, Pipe, and RectoVerso/BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use
 indices `0`, `1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` has only
@@ -124,7 +145,8 @@ their bit-selected profile, while zero and values with no known bit remain nativ
 
 **Need.** Resolve the `CosmeticThread` carrier discrepancy, then apply the same
 absence-versus-present validation to the remaining design operation flags. Trace each producer
-carrier and preserve its constructor default only when the property is absent.
+carrier and preserve its constructor default only when the property is absent. Revolution and
+Groove boolean flags are settled above.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
@@ -141,8 +163,9 @@ producer's `PartDesign::Hole.PropertiesList` excludes `CosmeticThread`; the sour
 `SideType`/`Type`/`Type2`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
 `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
-exact-carrier decoder rule. Hole enumeration modes, boolean flags, and `BaseProfileType` are
-covered; `CosmeticThread` and the remaining design operation flags stay open.
+exact-carrier decoder rule. Revolution and Groove boolean flags, Hole enumeration modes, Hole
+boolean flags, and `BaseProfileType` are covered; `CosmeticThread` and the remaining design
+operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

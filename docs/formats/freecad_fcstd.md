@@ -677,6 +677,13 @@ values with absent defaults `false`. `Solid` selects solid construction, `Revers
 resolved direction, and `Symmetric` uses `LengthFwd` as the total mirrored extent and ignores
 `LengthRev`. A present carrier with another runtime type, without exactly one direct `Bool`, or
 with any other value does not select a neutral extrusion; the operation remains native.
+Part `Revolution` uses `Symmetric` and `Solid`; PartDesign `Revolution` and `Groove` use
+`Midplane`, `Reversed`, and `AllowMultiFace`. These are `App::PropertyBool` values with direct
+`Bool` values `false` and `true` and absent defaults `false`. `Symmetric` and `Midplane` select a
+symmetric angular extent, `Solid` selects solid construction, `Reversed` reverses the resolved
+axis, and `AllowMultiFace` permits multiple profile faces. A present carrier with another runtime
+type, without exactly one direct `Bool`, or with any other value does not select a neutral
+revolution or groove; the operation remains native.
 Part and PartDesign thickness and Part offset `Mode` carriers use indices `0`, `1`, and `2` for
 Skin, Pipe, and BothSides. `Part::Thickness` and `Part::Offset` `Join` carriers use indices `0`,
 `1`, and `2` for Arc, Tangent, and Intersection. `PartDesign::Thickness` uses the same `Mode`

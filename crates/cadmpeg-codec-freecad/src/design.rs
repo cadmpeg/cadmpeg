@@ -1941,9 +1941,9 @@ fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
         return None;
     }
     let value = direct_root_attributes(property, "Bool")?.remove("value")?;
-    match value.to_ascii_lowercase().as_str() {
-        "1" | "true" => Some(true),
-        "0" | "false" => Some(false),
+    match value.as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
         _ => None,
     }
 }
@@ -3197,7 +3197,7 @@ fn revolution_definition(
     let mode = enumeration_selector(properties, "Type", 0)?;
     let extent = if kind == "Part::Revolution" {
         let angle = angle()?;
-        if bool_property(properties, "Symmetric").unwrap_or(false) {
+        if bool_selector(properties, "Symmetric", false)? {
             RevolveExtent::Symmetric {
                 termination: Termination::Angle { angle },
             }
@@ -3210,7 +3210,7 @@ fn revolution_definition(
         match mode {
             0 => {
                 let angle = angle()?;
-                if bool_property(properties, "Midplane").unwrap_or(false) {
+                if bool_selector(properties, "Midplane", false)? {
                     RevolveExtent::Symmetric {
                         termination: Termination::Angle { angle },
                     }
@@ -3247,7 +3247,12 @@ fn revolution_definition(
             _ => return None,
         }
     };
-    if bool_property(properties, "Reversed").unwrap_or(false) {
+    let reversed = if kind.starts_with("PartDesign::") {
+        bool_selector(properties, "Reversed", false)?
+    } else {
+        false
+    };
+    if reversed {
         axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
     }
     let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
@@ -3292,18 +3297,14 @@ fn revolution_definition(
             extent: Some(extent),
             axis_reference,
             solid: Some(if kind == "Part::Revolution" {
-                if property(properties, "Solid").is_some() {
-                    bool_property(properties, "Solid")?
-                } else {
-                    false
-                }
+                bool_selector(properties, "Solid", false)?
             } else {
                 true
             }),
             face_maker_class,
             fuse_order,
-            allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-                Some(bool_property(properties, "AllowMultiFace")?)
+            allow_multi_profile_faces: if kind.starts_with("PartDesign::") {
+                Some(bool_selector(properties, "AllowMultiFace", false)?)
             } else {
                 None
             },
