@@ -245,6 +245,34 @@ pub struct Entity62UnicodeRecord {
     pub value: String,
 }
 
+/// All attribute-value records admitted from one byte view.
+///
+/// These families share the same byte-level discovery rule: each complete
+/// record starts with a two-byte tag. A single pass can dispatch only the
+/// matching record parser without changing any family-specific framing or
+/// value validation.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EntityValueRecords<'a> {
+    /// Counted type-82 unsigned-integer records.
+    pub(crate) integers: Vec<Entity52IntegerRecord>,
+    /// Counted type-83 finite binary64 records.
+    pub(crate) doubles: Vec<Entity53DoubleRecord>,
+    /// Self-framed printable type-84 string records.
+    pub(crate) strings: Vec<Entity54StringRecord<'a>>,
+    /// Counted type-85 point records.
+    pub(crate) points: Vec<Entity55PointRecord>,
+    /// Counted type-86 vector records.
+    pub(crate) vectors: Vec<Entity56VectorRecord>,
+    /// Counted type-87 axis records.
+    pub(crate) axes: Vec<Entity57AxisRecord>,
+    /// Counted type-88 tag records.
+    pub(crate) tags: Vec<Entity58TagRecord>,
+    /// Counted type-89 direction records.
+    pub(crate) directions: Vec<Entity59DirectionRecord>,
+    /// Counted type-98 Unicode records.
+    pub(crate) unicode: Vec<Entity62UnicodeRecord>,
+}
+
 /// One counted type-99 attribute field-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNamesRecord {
@@ -258,60 +286,70 @@ pub struct FieldNamesRecord {
     pub name_xmts: Vec<u32>,
 }
 
-/// Decode counted type-82 unsigned-integer records.
-pub fn entity_52_integer_records(bytes: &[u8]) -> Vec<Entity52IntegerRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_52_integer_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-83 finite binary64 records.
-pub fn entity_53_double_records(bytes: &[u8]) -> Vec<Entity53DoubleRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_53_double_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-85 point-value records.
-pub fn entity_55_point_records(bytes: &[u8]) -> Vec<Entity55PointRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_55_point_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-86 vector-value records.
-pub fn entity_56_vector_records(bytes: &[u8]) -> Vec<Entity56VectorRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_56_vector_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-87 axis-value records.
-pub fn entity_57_axis_records(bytes: &[u8]) -> Vec<Entity57AxisRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_57_axis_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-88 tag-value records.
-pub fn entity_58_tag_records(bytes: &[u8]) -> Vec<Entity58TagRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_58_tag_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-89 direction-value records.
-pub fn entity_59_direction_records(bytes: &[u8]) -> Vec<Entity59DirectionRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_59_direction_record_at(bytes, offset))
-        .collect()
-}
-
-/// Decode counted type-98 Unicode-value records.
-pub fn entity_62_unicode_records(bytes: &[u8]) -> Vec<Entity62UnicodeRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_62_unicode_record_at(bytes, offset))
-        .collect()
+/// Decode every attribute-value family in one bounded byte pass.
+pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
+    let mut records = EntityValueRecords {
+        integers: Vec::new(),
+        doubles: Vec::new(),
+        strings: Vec::new(),
+        points: Vec::new(),
+        vectors: Vec::new(),
+        axes: Vec::new(),
+        tags: Vec::new(),
+        directions: Vec::new(),
+        unicode: Vec::new(),
+    };
+    for offset in 0..bytes.len() {
+        match bytes.get(offset..offset.saturating_add(2)) {
+            Some([0, 0x52]) => {
+                if let Some(record) = entity_52_integer_record_at(bytes, offset) {
+                    records.integers.push(record);
+                }
+            }
+            Some([0, 0x53]) => {
+                if let Some(record) = entity_53_double_record_at(bytes, offset) {
+                    records.doubles.push(record);
+                }
+            }
+            Some([0, 0x54]) => {
+                if let Some(record) = entity_54_string_record_at(bytes, offset) {
+                    records.strings.push(record);
+                }
+            }
+            Some([0, 0x55]) => {
+                if let Some(record) = entity_55_point_record_at(bytes, offset) {
+                    records.points.push(record);
+                }
+            }
+            Some([0, 0x56]) => {
+                if let Some(record) = entity_56_vector_record_at(bytes, offset) {
+                    records.vectors.push(record);
+                }
+            }
+            Some([0, 0x57]) => {
+                if let Some(record) = entity_57_axis_record_at(bytes, offset) {
+                    records.axes.push(record);
+                }
+            }
+            Some([0, 0x58]) => {
+                if let Some(record) = entity_58_tag_record_at(bytes, offset) {
+                    records.tags.push(record);
+                }
+            }
+            Some([0, 0x59]) => {
+                if let Some(record) = entity_59_direction_record_at(bytes, offset) {
+                    records.directions.push(record);
+                }
+            }
+            Some([0, 0x62]) => {
+                if let Some(record) = entity_62_unicode_record_at(bytes, offset) {
+                    records.unicode.push(record);
+                }
+            }
+            _ => {}
+        }
+    }
+    records
 }
 
 /// Decode counted type-99 attribute field-name records.
@@ -509,13 +547,6 @@ fn counted_value_record_at<T>(
         xmt,
         values,
     })
-}
-
-/// Decode self-framed printable type-84 string records.
-pub fn entity_54_string_records(bytes: &[u8]) -> Vec<Entity54StringRecord<'_>> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_54_string_record_at(bytes, offset))
-        .collect()
 }
 
 /// Decode one complete type-84 printable string record at `offset`.

@@ -445,13 +445,14 @@ impl NativeModel {
         let parasolid_chart_records = parasolid_chart_records(streams);
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
         let parasolid_entity_51_records = parasolid_entity_51_records(streams);
-        let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
-        let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
-        let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
-        let parasolid_entity_vector_records = parasolid_entity_vector_records(streams);
-        let parasolid_entity_57_axis_records = parasolid_entity_57_axis_records(streams);
-        let parasolid_entity_58_tag_records = parasolid_entity_58_tag_records(streams);
-        let parasolid_entity_62_unicode_records = parasolid_entity_62_unicode_records(streams);
+        let value_records = parasolid_entity_value_records(streams);
+        let parasolid_entity_52_integer_records = value_records.integers;
+        let parasolid_entity_53_double_records = value_records.doubles;
+        let parasolid_entity_54_string_records = value_records.strings;
+        let parasolid_entity_vector_records = value_records.vectors;
+        let parasolid_entity_57_axis_records = value_records.axes;
+        let parasolid_entity_58_tag_records = value_records.tags;
+        let parasolid_entity_62_unicode_records = value_records.unicode;
         let parasolid_field_names_records = parasolid_field_names_records(streams);
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
             &parasolid_attribute_definitions,

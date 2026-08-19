@@ -281,18 +281,10 @@ fn deltas_walks_complete_entity_value_records() {
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
-    assert_eq!(
-        crate::parasolid::entity_52_integer_records(&residual)[0].values,
-        [u32::MAX]
-    );
-    assert_eq!(
-        crate::parasolid::entity_53_double_records(&residual)[0].values,
-        [0.25]
-    );
-    assert_eq!(
-        crate::parasolid::entity_54_string_records(&residual)[0].value,
-        "abc"
-    );
+    let value_records = crate::parasolid::entity_value_records(&residual);
+    assert_eq!(value_records.integers[0].values, [u32::MAX]);
+    assert_eq!(value_records.doubles[0].values, [0.25]);
+    assert_eq!(value_records.strings[0].value, "abc");
 }
 
 #[test]

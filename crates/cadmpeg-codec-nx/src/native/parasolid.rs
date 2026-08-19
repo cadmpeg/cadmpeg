@@ -1680,6 +1680,17 @@ pub struct ParasolidEntity62UnicodeRecord {
     pub inflated_offset: u64,
 }
 
+/// Attribute-value records discovered by one pass over the Parasolid streams.
+pub(crate) struct ParasolidEntityValueRecords {
+    pub(crate) integers: Vec<ParasolidEntity52IntegerRecord>,
+    pub(crate) doubles: Vec<ParasolidEntity53DoubleRecord>,
+    pub(crate) strings: Vec<ParasolidEntity54StringRecord>,
+    pub(crate) vectors: Vec<ParasolidEntityVectorRecord>,
+    pub(crate) axes: Vec<ParasolidEntity57AxisRecord>,
+    pub(crate) tags: Vec<ParasolidEntity58TagRecord>,
+    pub(crate) unicode: Vec<ParasolidEntity62UnicodeRecord>,
+}
+
 /// Numeric value-record family referenced by a type-81 record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2100,100 +2111,64 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
     records
 }
 
-/// Decode every self-framed printable type-84 string record.
-pub fn parasolid_entity_54_string_records(
-    streams: &[Stream],
-) -> Vec<ParasolidEntity54StringRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_54_string_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity54StringRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-54-string#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    value: record.value.to_string(),
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
-}
-
-/// Decode every counted type-82 unsigned-integer record.
-pub fn parasolid_entity_52_integer_records(
-    streams: &[Stream],
-) -> Vec<ParasolidEntity52IntegerRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_52_integer_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity52IntegerRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    values: record.values,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
-}
-
-/// Decode every counted type-83 finite binary64 record.
-pub fn parasolid_entity_53_double_records(
-    streams: &[Stream],
-) -> Vec<ParasolidEntity53DoubleRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_53_double_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity53DoubleRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    values: record.values,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
-}
-
-/// Decode every counted type-85, type-86, and type-89 vector-shaped value record.
-pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntityVectorRecord> {
-    let mut records = Vec::new();
+/// Decode every attribute-value family with one scan per Parasolid stream.
+pub(crate) fn parasolid_entity_value_records(streams: &[Stream]) -> ParasolidEntityValueRecords {
+    let mut records = ParasolidEntityValueRecords {
+        integers: Vec::new(),
+        doubles: Vec::new(),
+        strings: Vec::new(),
+        vectors: Vec::new(),
+        axes: Vec::new(),
+        tags: Vec::new(),
+        unicode: Vec::new(),
+    };
     for (stream_ordinal, stream) in streams
         .iter()
         .enumerate()
         .filter(|(_, stream)| stream.kind.is_parasolid())
     {
-        let mut retain = |kind, family: &str, xmt, offset, byte_len, values| {
-            records.push(ParasolidEntityVectorRecord {
+        let values = crate::parasolid::entity_value_records(&stream.inflated);
+        for record in values.integers {
+            records.integers.push(ParasolidEntity52IntegerRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                values: record.values,
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for record in values.doubles {
+            records.doubles.push(ParasolidEntity53DoubleRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                values: record.values,
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for record in values.strings {
+            records.strings.push(ParasolidEntity54StringRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-54-string#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                value: record.value.to_string(),
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        let mut retain_vector = |kind, family: &str, xmt, offset, byte_len, values| {
+            records.vectors.push(ParasolidEntityVectorRecord {
                 id: format!("nx:s{stream_ordinal}:entity-{family}#{xmt}-{offset}"),
                 stream_ordinal: stream_ordinal as u32,
                 kind,
@@ -2203,8 +2178,8 @@ pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntit
                 inflated_offset: offset as u64,
             });
         };
-        for record in crate::parasolid::entity_55_point_records(&stream.inflated) {
-            retain(
+        for record in values.points {
+            retain_vector(
                 ParasolidVectorValueKind::Points,
                 "55-points",
                 record.xmt,
@@ -2213,8 +2188,8 @@ pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntit
                 record.values,
             );
         }
-        for record in crate::parasolid::entity_56_vector_records(&stream.inflated) {
-            retain(
+        for record in values.vectors {
+            retain_vector(
                 ParasolidVectorValueKind::Vectors,
                 "56-vectors",
                 record.xmt,
@@ -2223,8 +2198,8 @@ pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntit
                 record.values,
             );
         }
-        for record in crate::parasolid::entity_59_direction_records(&stream.inflated) {
-            retain(
+        for record in values.directions {
+            retain_vector(
                 ParasolidVectorValueKind::Directions,
                 "59-directions",
                 record.xmt,
@@ -2233,89 +2208,68 @@ pub fn parasolid_entity_vector_records(streams: &[Stream]) -> Vec<ParasolidEntit
                 record.values,
             );
         }
+        for record in values.axes {
+            records.axes.push(ParasolidEntity57AxisRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                values: record.values,
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for record in values.tags {
+            records.tags.push(ParasolidEntity58TagRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                values: record.values,
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+        for record in values.unicode {
+            records.unicode.push(ParasolidEntity62UnicodeRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
+                    record.xmt, record.offset
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: record.xmt,
+                code_units: record.code_units,
+                value: record.value,
+                byte_len: record.byte_len as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
     }
-    records.sort_by(|first, second| first.id.cmp(&second.id));
     records
-}
-
-/// Decode every counted type-87 axis-value record.
-pub fn parasolid_entity_57_axis_records(streams: &[Stream]) -> Vec<ParasolidEntity57AxisRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_57_axis_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity57AxisRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    values: record.values,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
+        .integers
+        .sort_by(|first, second| first.id.cmp(&second.id));
     records
-}
-
-/// Decode every counted type-88 tag-value record.
-pub fn parasolid_entity_58_tag_records(streams: &[Stream]) -> Vec<ParasolidEntity58TagRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_58_tag_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity58TagRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    values: record.values,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
+        .doubles
+        .sort_by(|first, second| first.id.cmp(&second.id));
     records
-}
-
-/// Decode every counted type-98 Unicode-value record.
-pub fn parasolid_entity_62_unicode_records(
-    streams: &[Stream],
-) -> Vec<ParasolidEntity62UnicodeRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_62_unicode_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity62UnicodeRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
-                        record.xmt, record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    code_units: record.code_units,
-                    value: record.value,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|first, second| first.id.cmp(&second.id));
+        .strings
+        .sort_by(|first, second| first.id.cmp(&second.id));
+    records
+        .vectors
+        .sort_by(|first, second| first.id.cmp(&second.id));
+    records
+        .axes
+        .sort_by(|first, second| first.id.cmp(&second.id));
+    records
+        .tags
+        .sort_by(|first, second| first.id.cmp(&second.id));
+    records
+        .unicode
+        .sort_by(|first, second| first.id.cmp(&second.id));
     records
 }
 
