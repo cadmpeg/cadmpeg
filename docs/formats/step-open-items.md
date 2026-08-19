@@ -159,7 +159,9 @@ so each codec gives the same class. `cadmpeg_core::CodecError`
 (`crates/cadmpeg-core/src/error.rs:12-48`) writes that variant as
 `malformed container: {0}` and holds no variant for a policy refusal.
 `crates/cadmpeg-codec-iges/src/reader.rs:212-222` holds a second strict gate
-with the same class. These tests pin the variant with
+with the same class and a wider predicate: it refuses every loss with
+`severity >= Severity::Warning`, which includes losses whose
+`strict_consequence` is `Tolerate`. These tests pin the variant with
 `matches!(error, CodecError::Malformed(_))`:
 `crates/cadmpeg-codec-step/src/parse/tests/complex_order.rs:118`,
 `crates/cadmpeg-codec-step/src/parse/tests/omitted.rs:147`,
@@ -172,6 +174,10 @@ The text `malformed container` tells a reader that the container is
 inconsistent, so a caller cannot separate a damaged file from a policy stop.
 The answer adds a `CodecError` variant in `cadmpeg-core` and changes each codec
 and test that pins `Malformed` for a strict refusal.
+
+**Note.** Do not give the IGES gate the new error class to close this item.
+That gate's predicate is out of doctrine, and separate IGES work deletes the
+gate so the generic gate runs.
 
 ### TP-14. Per-relation status of an admitted pcurve
 
