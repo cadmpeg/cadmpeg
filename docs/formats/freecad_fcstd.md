@@ -726,6 +726,10 @@ versus clearance-hole thread fields, `ModelThread` selects modeled thread geomet
 `UseCustomThreadClearance` enables `CustomThreadClearance`, and `AllowMultiFace` permits multiple
 profile faces. A present carrier with another runtime type, without exactly one direct `Bool`, or
 with any other value does not select a neutral hole; the operation remains native.
+`CosmeticThread`, when present, is an optional `App::PropertyBool` carrier whose direct `Bool`
+values select cosmetic thread presentation. CADIR decision: an absent carrier means `false`. A
+present carrier with another runtime type, without exactly one direct `Bool`, or with any other
+value does not select a neutral hole; the operation remains native.
 `BaseProfileType` is an `App::PropertyInteger` bitmask. Bit `1` selects points, bit `2` selects
 circles, and bit `4` selects arcs. An absent carrier means `6` (circles and arcs). Only these three
 bits affect profile selection; higher bits are ignored. A present carrier with another runtime

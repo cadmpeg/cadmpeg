@@ -272,6 +272,10 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             r#"<Property name="ModelThread" type="App::PropertyBool"><Bool value="false"/></Property>"#,
         ),
         (
+            "CosmeticThread",
+            r#"<Property name="CosmeticThread" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+        ),
+        (
             "DrillForDepth",
             r#"<Property name="DrillForDepth" type="App::PropertyBool"><Bool value="false"/></Property>"#,
         ),
@@ -341,6 +345,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     let targets = [
         "Threaded",
         "ModelThread",
+        "CosmeticThread",
         "DrillForDepth",
         "Tapered",
         "UseCustomThreadClearance",
@@ -373,6 +378,12 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                     .as_deref()
                     .expect("thread specification")
                     .modeled
+            ),
+            "CosmeticThread" => assert!(
+                !specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .cosmetic
             ),
             "DrillForDepth" => assert!(matches!(
                 bottom,
@@ -408,6 +419,10 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         (
             "ModelThread",
             r#"<Property name="ModelThread" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+        ),
+        (
+            "CosmeticThread",
+            r#"<Property name="CosmeticThread" type="App::PropertyBool"><Bool value="true"/></Property>"#,
         ),
         (
             "DrillForDepth",
@@ -457,6 +472,12 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                     .expect("thread specification")
                     .modeled
             ),
+            "CosmeticThread" => assert!(
+                specification
+                    .as_deref()
+                    .expect("thread specification")
+                    .cosmetic
+            ),
             "DrillForDepth" => assert!(matches!(
                 bottom,
                 Some(cadmpeg_ir::features::HoleBottom::Angled {
@@ -502,6 +523,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     for target in [
         "Threaded",
         "ModelThread",
+        "CosmeticThread",
         "DrillForDepth",
         "Tapered",
         "UseCustomThreadClearance",

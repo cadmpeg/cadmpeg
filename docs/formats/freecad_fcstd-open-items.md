@@ -143,29 +143,40 @@ checks report zero losses. The hostile boolean and integer-carrier batch reports
 native loss for every malformed present carrier; BaseProfileType values with known bits retain
 their bit-selected profile, while zero and values with no known bit remain native.
 
-**Need.** Resolve the `CosmeticThread` carrier discrepancy, then apply the same
-absence-versus-present validation to the remaining design operation flags. Trace each producer
-carrier and preserve its constructor default only when the property is absent. Revolution and
-Groove boolean flags are settled above.
+`CosmeticThread` is versioned. The source snapshot identifies itself as FreeCAD 26.3.0-dev in
+`version.json` and declares the property with a true constructor value at
+`FeatureHole.h:53-56` and `FeatureHole.cpp:551-562`; its `onChanged` path at
+`FeatureHole.cpp:1412-1463` uses the property for cosmetic-versus-modeled thread presentation.
+The installed producer reports FreeCAD 1.1.1 Revision 44227, and the headless witness
+`dp15_cosmetic_thread_current_witness.py` reports no `CosmeticThread` property on a new
+`PartDesign::Hole`; its saved `dp15-cosmetic-thread-current.Document.xml` contains no such
+carrier. The property inventory log independently records the absent runtime property.
+
+The format half is therefore settled for the installed producer: it has no `CosmeticThread`
+carrier. CADIR decision: retain the optional carrier in the neutral model for files from a
+producer that persists it, use false when it is absent, and require the exact direct Bool carrier
+and producer `true`/`false` value when it is present. A malformed present carrier retains the
+Hole natively. `design.rs:4913` now uses the exact Bool selector, and the owner test
+`distinguishes_absent_and_malformed_hole_flags` covers absent, valid, wrong-runtime,
+integer-runtime, invalid-value, nested, and duplicate carriers.
+
+**Need.** Apply the same absence-versus-present validation to the remaining design operation
+flags. Trace each producer carrier and preserve its constructor default only when the property is
+absent. Revolution, Groove, and `CosmeticThread` boolean flags are settled above.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. The source constructor declares
-`CosmeticThread` with default `true` at `FeatureHole.cpp:557-561`, but the current producer witness
-contains no `CosmeticThread` property and restores it as absent. The producer/source version
-boundary must be identified before choosing its absence rule. `/snap/bin/freecad.cmd --version`
-reports FreeCAD 1.1.1 Revision 44227, and a new-object property inventory confirms that this
-producer's `PartDesign::Hole.PropertiesList` excludes `CosmeticThread`; the source snapshot's
-`version.json` identifies a separate 26.3 development version.
+neutral semantics or discard a valid legacy default. Remaining flags still require their own
+writer and restore evidence before the generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
 `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
 exact-carrier decoder rule. Revolution and Groove boolean flags, Hole enumeration modes, Hole
-boolean flags, and `BaseProfileType` are covered; `CosmeticThread` and the remaining design
-operation flags stay open.
+boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are covered; the
+remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

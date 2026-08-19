@@ -4910,7 +4910,7 @@ fn hole_definition(
             } else {
                 bool_selector(properties, "ModelActualThread", false)?
             },
-            cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
+            cosmetic: bool_selector(properties, "CosmeticThread", false)?,
             pitch: positive("ThreadPitch").map(Length),
             major_diameter: positive("ThreadDiameter").map(Length),
             hand: match enumeration_selector(properties, "ThreadDirection", 0)? {
