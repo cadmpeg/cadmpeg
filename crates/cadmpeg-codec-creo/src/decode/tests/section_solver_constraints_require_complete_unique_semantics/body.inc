@@ -4416,6 +4416,159 @@
         } if native_kind == "creo:relation:5"
     ));
 
+    let mut type6_radius_definition = definition.clone();
+    let type6_arc = &mut type6_radius_definition
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[1];
+    type6_arc.radius_ref = Some(0);
+    let [type6_first_point, type6_second_point] = type6_arc.point_ids;
+    let type6_center = type6_arc.center_id.expect("arc center");
+    let type6_relation = &mut type6_radius_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0];
+    type6_relation.relation_type = 6;
+    type6_relation.sign = 1;
+    type6_relation.dimension_id = 0;
+    type6_relation.operand_vectors = Some([
+        [
+            Some(type6_first_point),
+            Some(type6_second_point),
+            Some(0),
+            Some(1),
+        ],
+        [Some(type6_center), Some(0), Some(0), Some(0)],
+        [Some(16), Some(15), Some(0), Some(0)],
+    ]);
+    type6_radius_definition
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .dimension_type = 3;
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    assert_eq!(
+        resolved_section_radii(&type6_radius_definition),
+        BTreeMap::from([(0, 3.0)])
+    );
+    type6_radius_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0]
+        .operand_vectors = Some([
+            [
+                Some(type6_first_point),
+                Some(type6_second_point),
+                Some(0),
+                Some(1),
+            ],
+            [Some(type6_center), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ]);
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    type6_radius_definition
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .dimension_type = 4;
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Diameter {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    assert_eq!(
+        resolved_section_radii(&type6_radius_definition),
+        BTreeMap::from([(0, 1.5)])
+    );
+    let mut incomplete_type6 = type6_radius_definition.clone();
+    incomplete_type6
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0]
+        .operand_vectors = Some([
+            [
+                Some(type6_first_point),
+                Some(type6_second_point),
+                Some(0),
+                Some(1),
+            ],
+            [Some(type6_center), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), None],
+        ]);
+    assert!(matches!(
+        section_dimension_constraints(
+            &incomplete_type6,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native {
+            ref native_kind,
+            ..
+        } if native_kind == "creo:relation:6"
+    ));
+    let mut ambiguous_type6 = type6_radius_definition.clone();
+    let mut duplicate_type6_arc = ambiguous_type6
+        .segments
+        .as_ref()
+        .expect("segments")
+        .rows[1]
+        .clone();
+    duplicate_type6_arc.offset = 500;
+    ambiguous_type6
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows
+        .push(duplicate_type6_arc);
+    assert!(matches!(
+        section_dimension_constraints(
+            &ambiguous_type6,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native {
+            ref native_kind,
+            ..
+        } if native_kind == "creo:relation:6"
+    ));
+
     let mut radius_definition = definition.clone();
     radius_definition
         .dimensions

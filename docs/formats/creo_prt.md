@@ -2189,6 +2189,17 @@ dimension is the neutral radius constraint parameter, except that a type-four
 dimension produces a diameter constraint because its stored value is the full
 diameter.
 
+A type-six relation with sign `1`, complete vectors
+`a=[first_point,second_point,0,1]`, `b=[center_point,0,0,0]`, and a complete
+four-slot `c` selector binds the selected linear dimension to the unique arc
+whose endpoint pair, center, and `radius` dimension index match those stored
+operands. Endpoint order does not affect the radius. The `c` selector must be
+complete but does not select a different arc in this form. The selected
+dimension is the neutral radius constraint parameter, except that a type-four
+dimension produces a diameter constraint because its stored value is the full
+diameter. An incomplete selector, incomplete dimension or relation table, or
+ambiguous arc identity remains a native relation.
+
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
 type-three `var_arr` radius with that key. An arc's `radius` field selects the

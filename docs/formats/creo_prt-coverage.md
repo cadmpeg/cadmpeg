@@ -45,7 +45,7 @@ fixtures, scores above L1 remain blocked.
   trimmed line, two unmatched saved endpoints, and a stored `verhor` selector
   those endpoints satisfy; absent or conflicting selectors remain unresolved.
 - Active solver incidences drive coordinate, orientation, equality, radius,
-  and supported dimensional equations; type-five arc-radius relations seed the
+  and supported dimensional equations; type-five and type-six arc-radius relations seed the
   joined radius component in radius and diameter form. Disabled incidences
   remain retained but do not affect solved geometry.
 - Function-two and function-thirteen coordinate-equality equations transfer as

@@ -15,7 +15,7 @@ use super::super::sketch::{
     section_equation_function_thirty_one_point_coordinate_rows,
     section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
     section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
-    section_linear_distance_coordinate, section_segment_rows, section_type5_radius_arc,
+    section_linear_distance_coordinate, section_radius_relation_arc, section_segment_rows,
     unique_decoded_section_segment,
 };
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
@@ -1802,8 +1802,8 @@ pub(in super::super) fn section_dimension_constraints(
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
-                if relation.relation_type == 5 && relation.sign == 1 {
-                    let segment = section_type5_radius_arc(definition, relation)?;
+                if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
+                    let segment = section_radius_relation_arc(definition, relation)?;
                     return Some(circular_dimension_constraint(
                         sketch_entity_id(sketch, segment.external_id),
                         parameter,

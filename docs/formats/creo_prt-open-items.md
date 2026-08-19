@@ -352,9 +352,15 @@ length unit.
 
 ### SP-04. Other relation equations
 
-**Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
+**Question.** What equation does each relation type outside signed type 0, type 1 angular, type 5, type 6, and type 14 encode?
 
 **Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations. Complete `eqtn_arr` function-0, function-2, function-3, and function-35 rows define radial endpoint, scalar equality, unsigned coordinate distance, radius binding, and point-on-line equations when their positional row grammars are complete.
+The supported type-six relation form has sign `1`,
+`a=[first_point,second_point,0,1]`, `b=[center_point,0,0,0]`, and a complete
+four-slot `c` selector; it binds a complete linear dimension to the unique arc
+with the matching endpoint pair, center, and radius dimension index. Type four
+produces a diameter constraint; the other linear dimension types produce a
+radius constraint. An incomplete or ambiguous form remains native.
 Function-13 rows with two type-2 point ordinates and a zero type-7 auxiliary
 row define a same-coordinate equation.
 Function-33 rows with four type-1/type-2 coordinate pairs identifying two

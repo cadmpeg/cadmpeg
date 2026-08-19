@@ -107,8 +107,8 @@ pub(crate) fn resolved_section_radii(
         if section_solver_relation_is_disabled(definition, relation.relation_id) {
             continue;
         }
-        if relation.relation_type == 5 && relation.sign == 1 {
-            let Some(_) = section_type5_radius_arc(definition, relation) else {
+        if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
+            let Some(_) = section_radius_relation_arc(definition, relation) else {
                 continue;
             };
             let Some(dimension) = section_relation_length_dimension(definition, relation) else {
@@ -342,12 +342,64 @@ pub(crate) fn section_type5_radius_arc<'a>(
     if vectors[2] != [Some(16), Some(15), Some(0), Some(0)] {
         return None;
     }
+    unique_section_radius_arc(
+        definition,
+        relation.dimension_id,
+        first_point,
+        second_point,
+        center,
+    )
+}
+
+pub(crate) fn section_type6_radius_arc<'a>(
+    definition: &'a crate::feature::FeatureDefinition,
+    relation: &crate::feature::FeatureRelation,
+) -> Option<&'a crate::feature::FeatureSegment> {
+    (relation.relation_type == 6 && relation.sign == 1).then_some(())?;
+    section_relation_length_dimension(definition, relation)?;
+    let vectors = relation.operand_vectors?;
+    let [Some(first_point), Some(second_point), Some(0), Some(1)] = vectors[0] else {
+        return None;
+    };
+    let [Some(center), Some(0), Some(0), Some(0)] = vectors[1] else {
+        return None;
+    };
+    if !vectors[2].iter().all(Option::is_some) {
+        return None;
+    }
+    unique_section_radius_arc(
+        definition,
+        relation.dimension_id,
+        first_point,
+        second_point,
+        center,
+    )
+}
+
+pub(crate) fn section_radius_relation_arc<'a>(
+    definition: &'a crate::feature::FeatureDefinition,
+    relation: &crate::feature::FeatureRelation,
+) -> Option<&'a crate::feature::FeatureSegment> {
+    match relation.relation_type {
+        5 => section_type5_radius_arc(definition, relation),
+        6 => section_type6_radius_arc(definition, relation),
+        _ => None,
+    }
+}
+
+fn unique_section_radius_arc(
+    definition: &crate::feature::FeatureDefinition,
+    dimension_id: u32,
+    first_point: u32,
+    second_point: u32,
+    center: u32,
+) -> Option<&crate::feature::FeatureSegment> {
     let unique_entities = unique_section_segment_external_ids(definition);
     let matching = section_segment_rows(definition)
         .iter()
         .filter(|segment| {
             segment.kind == crate::feature::FeatureSegmentKind::Arc
-                && segment.radius_ref == Some(relation.dimension_id)
+                && segment.radius_ref == Some(dimension_id)
                 && segment.center_id == Some(center)
                 && (segment.point_ids == [first_point, second_point]
                     || segment.point_ids == [second_point, first_point])
