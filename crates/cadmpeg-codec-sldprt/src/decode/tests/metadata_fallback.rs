@@ -11,6 +11,29 @@ use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+fn direct_extrusion_operation_payload() -> Vec<u8> {
+    let class = b"moExtrusion_c";
+    let name = "Boss";
+    let class_offset = 12usize;
+    let name_offset = class_offset + 6 + class.len();
+    let name_end = name_offset + 6 + name.encode_utf16().count() * 2;
+    let object_id_offset = name_end + 8;
+    let mut payload = vec![0; object_id_offset + 4];
+    payload[..4].copy_from_slice(&1u32.to_le_bytes());
+    payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+    payload[class_offset + 4..class_offset + 6]
+        .copy_from_slice(&(class.len() as u16).to_le_bytes());
+    payload[class_offset + 6..name_offset].copy_from_slice(class);
+    payload[name_offset..name_offset + 5].copy_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
+    payload[name_offset + 5] = name.encode_utf16().count() as u8;
+    for (index, unit) in name.encode_utf16().enumerate() {
+        let start = name_offset + 6 + index * 2;
+        payload[start..start + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    payload[object_id_offset..object_id_offset + 4].copy_from_slice(&7u32.to_le_bytes());
+    payload
+}
+
 #[test]
 fn decode_surfaces_preview_and_solidworks_xml_metadata() {
     let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
@@ -163,6 +186,45 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("typed feature(s) retain native or unresolved required operation operands")));
+}
+
+#[test]
+fn metadata_fallback_binds_resolved_extrusion_operation() {
+    let mut source = synthetic_sldprt();
+    source.extend(make_block(
+        0x12,
+        "SolidWorksMetadata",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="12000"/>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="Localized" id="7"><Dimension Name="Depth">10mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &direct_extrusion_operation_payload(),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded.report().geometry_transferred);
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("metadata extrusion feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        }
+    ));
 }
 
 #[test]

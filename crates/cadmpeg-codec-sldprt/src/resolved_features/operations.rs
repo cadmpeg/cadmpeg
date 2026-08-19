@@ -145,6 +145,18 @@ pub(super) fn extrusion_operation(class: Option<&str>, code: u32) -> Option<Bool
     }
 }
 
+/// Bind operation discriminators shared by geometry and metadata decode.
+pub(crate) fn bind_feature_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
+) {
+    bind_extrusion_operations(features, histories, lanes, form_padding);
+    bind_revolution_operations(features, histories, lanes, form_padding);
+    bind_sweep_operations(features, histories, lanes, form_padding);
+}
+
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],

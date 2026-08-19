@@ -2211,19 +2211,7 @@ fn build_geometry_ir(
     let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
-    crate::resolved_features::operations::bind_extrusion_operations(
-        &mut ir.model.features,
-        &histories,
-        &lanes,
-        form_padding,
-    );
-    crate::resolved_features::operations::bind_revolution_operations(
-        &mut ir.model.features,
-        &histories,
-        &lanes,
-        form_padding,
-    );
-    crate::resolved_features::operations::bind_sweep_operations(
+    crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -3304,6 +3292,17 @@ fn build_metadata_ir(
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
+    let form_padding = ir.source.as_ref().and_then(|source| {
+        crate::resolved_features::operations::form_code_padding(
+            source.attributes.get("sw_version").map(String::as_str),
+        )
+    });
+    crate::resolved_features::operations::bind_feature_operations(
+        &mut ir.model.features,
+        &histories,
+        &lanes,
+        form_padding,
+    );
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
