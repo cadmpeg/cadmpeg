@@ -2171,6 +2171,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
                 let edge_count = operation.edge_wrapper_record_indices.len();
+                let width_owner_count = operation.width_distance_owner_record_indices.len();
                 let claimed = operation
                     .edge_wrapper_record_indices
                     .iter()
@@ -2204,7 +2205,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.edge_group_record_indices.len() == edge_count
                     && operation.edge_operand_record_indices.len() == edge_count
                     && operation.aggregate_operand_record_indices.len() == edge_count
-                    && operation.width_distance_owner_record_indices.len() <= 2
+                    && match operation.edge_width_mode() {
+                        records::DesignEdgeWidthMode::FullEdge => width_owner_count == 0,
+                        records::DesignEdgeWidthMode::Symmetric => width_owner_count == 1,
+                        records::DesignEdgeWidthMode::TwoSides => width_owner_count == 2,
+                        records::DesignEdgeWidthMode::SymmetricPerEdge => {
+                            width_owner_count == edge_count
+                        }
+                        records::DesignEdgeWidthMode::TwoSidesPerEdge => {
+                            edge_count.checked_mul(2) == Some(width_owner_count)
+                        }
+                    }
                     && (!matches!(
                         operation.height_extent,
                         records::DesignEdgeFlangeHeightExtent::ToObject { .. }

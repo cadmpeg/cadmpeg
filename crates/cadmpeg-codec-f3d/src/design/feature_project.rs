@@ -3431,6 +3431,9 @@ pub(crate) fn project_edge_flange(
             }
             SheetMetalFlangeWidth::Symmetric { width: *first }
         }
+        // The source carries one two-sided pair per selected edge, while the
+        // neutral law has no edge-local orientation field to normalize those pairs.
+        (DesignEdgeWidthMode::TwoSidesPerEdge, _) => return None,
         (DesignEdgeWidthMode::TwoSides, [first, second]) => SheetMetalFlangeWidth::TwoSides {
             first: design_length(parameter(*first, "EdgeWidth_1")?)?,
             second: design_length(parameter(*second, "EdgeWidth_2")?)?,

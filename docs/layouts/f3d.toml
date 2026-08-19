@@ -8819,6 +8819,204 @@ source = "spec"
 anchor = "and `260`, and each group's recipe-backed operand"
 
 [[record]]
+name = "edge_flange_class325_334_two_sided_per_edge_fixed_operation"
+kind = "byte"
+section = "3.1"
+anchor = "Their 669-byte primary frame has sixteen ordered references"
+size = 305
+note = "Offsets are relative to the primary scope header. The fixed operation fields close at the second marked role-0x08 group reference; the paired header follows the 669-byte primary frame."
+
+[[record.gap]]
+offset = 0
+size = 96
+note = "The indexed header and variable scope envelope precede the fixed operation section."
+
+[[record.field]]
+name = "bend_position"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "bend position at `96`"
+
+[[record.field]]
+name = "edge_count"
+offset = 100
+type = "u32"
+source = "spec"
+anchor = "edge count `2` at `100`"
+
+[[record.field]]
+name = "edge_wrapper_one_reference"
+offset = 104
+type = "bytes[11]"
+source = "spec"
+anchor = "wrapper references at `104` and `115`"
+
+[[record.field]]
+name = "edge_wrapper_two_reference"
+offset = 115
+type = "bytes[11]"
+source = "spec"
+anchor = "and `115`, settings at `126`"
+
+[[record.field]]
+name = "settings_reference"
+offset = 126
+type = "bytes[11]"
+source = "spec"
+anchor = "settings at `126`"
+
+[[record.field]]
+name = "height_datum"
+offset = 137
+type = "u32"
+source = "spec"
+anchor = "height datum at `137`"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 141
+type = "bytes[11]"
+source = "spec"
+anchor = "angle owner at `141`"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 152
+type = "bytes[11]"
+source = "spec"
+anchor = "height owner at `152`"
+
+[[record.field]]
+name = "reference_side"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "reference side at `163`"
+
+[[record.gap]]
+offset = 167
+size = 2
+note = "Two bytes separate the side discriminator from the radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 169
+type = "f64"
+source = "spec"
+anchor = "inside bend radius in centimetres at `169`"
+
+[[record.field]]
+name = "result_count"
+offset = 177
+type = "u32"
+source = "spec"
+anchor = "Result count `5` is at `177`"
+
+[[record.field]]
+name = "result_one_reference"
+offset = 181
+type = "bytes[11]"
+source = "spec"
+anchor = "result records start at `181`"
+
+[[record.field]]
+name = "result_one_trailer"
+offset = 192
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`"
+
+[[record.field]]
+name = "result_two_reference"
+offset = 196
+type = "bytes[11]"
+source = "spec"
+anchor = "`196`, `211`, `226`, and `241`"
+
+[[record.field]]
+name = "result_two_trailer"
+offset = 207
+type = "u32"
+source = "spec"
+anchor = "`207`, `222`, `237`, and `0`"
+
+[[record.field]]
+name = "result_three_reference"
+offset = 211
+type = "bytes[11]"
+source = "spec"
+anchor = "`196`, `211`, `226`, and `241`"
+
+[[record.field]]
+name = "result_three_trailer"
+offset = 222
+type = "u32"
+source = "spec"
+anchor = "`222`, `237`, and `0`"
+
+[[record.field]]
+name = "result_four_reference"
+offset = 226
+type = "bytes[11]"
+source = "spec"
+anchor = "`196`, `211`, `226`, and `241`"
+
+[[record.field]]
+name = "result_four_trailer"
+offset = 237
+type = "u32"
+source = "spec"
+anchor = "`237`, and `0`"
+
+[[record.field]]
+name = "result_five_reference"
+offset = 241
+type = "bytes[11]"
+source = "spec"
+anchor = "`196`, `211`, `226`, and `241`"
+
+[[record.field]]
+name = "result_five_trailer"
+offset = 252
+type = "u32"
+source = "spec"
+anchor = "and `0` at `252`"
+
+[[record.field]]
+name = "result_separator"
+offset = 256
+type = "u32"
+source = "spec"
+anchor = "A u32 value `1` at `256`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 260
+type = "bytes[11]"
+source = "spec"
+anchor = "aggregate-group reference at `260`"
+
+[[record.gap]]
+offset = 271
+size = 12
+note = "Twelve bytes separate the aggregate-group reference from the first edge-group reference."
+
+[[record.field]]
+name = "edge_group_one_reference"
+offset = 283
+type = "bytes[11]"
+source = "spec"
+anchor = "group references are at `283` and `294`"
+
+[[record.field]]
+name = "edge_group_two_reference"
+offset = 294
+type = "bytes[11]"
+source = "spec"
+anchor = "at `283` and `294`"
+
+[[record]]
 name = "edge_flange_class364_per_edge_width_fixed_operation"
 kind = "byte"
 section = "3.1"

@@ -2665,6 +2665,46 @@ Unstated regions:
 - `163..165` (2 B): Two bytes separate the side discriminator from the radius.
 - `237..249` (12 B): Twelve zero bytes separate the aggregate-group reference from the first edge-group reference.
 
+## `edge_flange_class325_334_two_sided_per_edge_fixed_operation`
+
+Spec §3.1 · layout: byte offsets · size: 305 B
+
+Offsets are relative to the primary scope header. The fixed operation fields close at the second marked role-0x08 group reference; the paired header follows the 669-byte primary frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 96 | 4 | `bend_position` | `u32` | little | spec | bend position at `96` |
+| 100 | 4 | `edge_count` | `u32` | little | spec | edge count `2` at `100` |
+| 104 | 11 | `edge_wrapper_one_reference` | `bytes[11]` | little | spec | wrapper references at `104` and `115` |
+| 115 | 11 | `edge_wrapper_two_reference` | `bytes[11]` | little | spec | and `115`, settings at `126` |
+| 126 | 11 | `settings_reference` | `bytes[11]` | little | spec | settings at `126` |
+| 137 | 4 | `height_datum` | `u32` | little | spec | height datum at `137` |
+| 141 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | angle owner at `141` |
+| 152 | 11 | `height_owner_reference` | `bytes[11]` | little | spec | height owner at `152` |
+| 163 | 4 | `reference_side` | `u32` | little | spec | reference side at `163` |
+| 169 | 8 | `inside_bend_radius` | `f64` | little | spec | inside bend radius in centimetres at `169` |
+| 177 | 4 | `result_count` | `u32` | little | spec | Result count `5` is at `177` |
+| 181 | 11 | `result_one_reference` | `bytes[11]` | little | spec | result records start at `181` |
+| 192 | 4 | `result_one_trailer` | `u32` | little | spec | trailers `1` at `192` |
+| 196 | 11 | `result_two_reference` | `bytes[11]` | little | spec | `196`, `211`, `226`, and `241` |
+| 207 | 4 | `result_two_trailer` | `u32` | little | spec | `207`, `222`, `237`, and `0` |
+| 211 | 11 | `result_three_reference` | `bytes[11]` | little | spec | `196`, `211`, `226`, and `241` |
+| 222 | 4 | `result_three_trailer` | `u32` | little | spec | `222`, `237`, and `0` |
+| 226 | 11 | `result_four_reference` | `bytes[11]` | little | spec | `196`, `211`, `226`, and `241` |
+| 237 | 4 | `result_four_trailer` | `u32` | little | spec | `237`, and `0` |
+| 241 | 11 | `result_five_reference` | `bytes[11]` | little | spec | `196`, `211`, `226`, and `241` |
+| 252 | 4 | `result_five_trailer` | `u32` | little | spec | and `0` at `252` |
+| 256 | 4 | `result_separator` | `u32` | little | spec | A u32 value `1` at `256` |
+| 260 | 11 | `aggregate_group_reference` | `bytes[11]` | little | spec | aggregate-group reference at `260` |
+| 283 | 11 | `edge_group_one_reference` | `bytes[11]` | little | spec | group references are at `283` and `294` |
+| 294 | 11 | `edge_group_two_reference` | `bytes[11]` | little | spec | at `283` and `294` |
+
+Unstated regions:
+
+- `0..96` (96 B): The indexed header and variable scope envelope precede the fixed operation section.
+- `167..169` (2 B): Two bytes separate the side discriminator from the radius.
+- `271..283` (12 B): Twelve bytes separate the aggregate-group reference from the first edge-group reference.
+
 ## `edge_flange_class364_per_edge_width_fixed_operation`
 
 Spec §3.1 · layout: byte offsets · size: 301 B

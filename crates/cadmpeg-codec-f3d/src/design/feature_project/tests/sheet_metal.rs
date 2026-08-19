@@ -279,6 +279,19 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             .is_none(),
         "distinct per-edge widths must remain source-native"
     );
+
+    let mut two_sided_per_edge_operation = multi_scope
+        .edge_flange_operation
+        .clone()
+        .expect("per-edge width operation fixture");
+    two_sided_per_edge_operation.width_mode =
+        Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
+    multi_scope.edge_flange_operation = Some(two_sided_per_edge_operation);
+    assert!(
+        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs)
+            .is_none(),
+        "edge-local two-sided widths remain native until orientation is represented"
+    );
 }
 
 #[test]

@@ -3031,6 +3031,9 @@ pub enum DesignEdgeWidthMode {
     /// Neutral projection can collapse these owners to one symmetric width only
     /// when their stored values agree. Distinct values remain source-native.
     SymmetricPerEdge,
+    /// The fixed section carries one `EdgeWidth_1`/`EdgeWidth_2` pair per
+    /// selected edge. The edge-local orientation is not part of the neutral law.
+    TwoSidesPerEdge,
 }
 
 #[cfg(test)]

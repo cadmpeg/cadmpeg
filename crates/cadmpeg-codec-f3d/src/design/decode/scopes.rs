@@ -55,6 +55,7 @@ use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::design_mirror_scope_class413_tail as mirror_413;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as edge_flange_325_per_edge;
 use crate::layout::edge_flange_class364_per_edge_width_fixed_operation as edge_flange_364_width;
 use crate::layout::edge_flange_fixed_operation_section as edge_flange;
 use crate::layout::edge_flange_legacy_single_edge_fixed_operation as edge_flange_legacy;
@@ -9230,7 +9231,13 @@ pub(crate) fn exact_edge_flange_operation(
                 references,
                 LEGACY_MULTI_EDGE_FLANGE_LAYOUT,
             ),
-            None,
+            legacy_edge_flange_operation_at(
+                bytes,
+                start,
+                paired_at,
+                references,
+                LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT,
+            ),
             None,
         ],
         ("364", "261") => [
@@ -9370,6 +9377,36 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     result_trailers: &[1, 1, 0],
 };
 
+const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
+    frame_length: 669,
+    reference_count: 16,
+    bend_position_offset: edge_flange_325_per_edge::BEND_POSITION,
+    edge_count_offset: edge_flange_325_per_edge::EDGE_COUNT,
+    edge_wrapper_offsets: &[
+        edge_flange_325_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+        edge_flange_325_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+    ],
+    edge_group_offsets: &[
+        edge_flange_325_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        edge_flange_325_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    ],
+    settings_offset: edge_flange_325_per_edge::SETTINGS_REFERENCE,
+    height_datum_offset: edge_flange_325_per_edge::HEIGHT_DATUM,
+    angle_owner_offset: edge_flange_325_per_edge::ANGLE_OWNER_REFERENCE,
+    height_owner_offset: edge_flange_325_per_edge::HEIGHT_OWNER_REFERENCE,
+    reference_side_offset: edge_flange_325_per_edge::REFERENCE_SIDE,
+    bend_radius_offset: edge_flange_325_per_edge::INSIDE_BEND_RADIUS,
+    result_count_offset: edge_flange_325_per_edge::RESULT_COUNT,
+    result_reference_start: edge_flange_325_per_edge::RESULT_ONE_REFERENCE,
+    result_trailer_start: edge_flange_325_per_edge::RESULT_ONE_TRAILER,
+    result_separator_offset: edge_flange_325_per_edge::RESULT_SEPARATOR,
+    aggregate_group_offset: edge_flange_325_per_edge::AGGREGATE_GROUP_REFERENCE,
+    aggregate_operand_count: 2,
+    width_owner_count: 4,
+    width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
+    result_trailers: &[1, 1, 1, 1, 0],
+};
+
 const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
     frame_length: 643,
     reference_count: 14,
@@ -9424,7 +9461,7 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     result_trailers: &[0],
 };
 
-/// Read one exact classed single-edge or full-edge multi-edge `EdgeFlange` form.
+/// Read one exact classed `EdgeFlange` form.
 fn legacy_edge_flange_operation_at(
     bytes: &[u8],
     start: usize,
