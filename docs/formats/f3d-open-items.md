@@ -170,7 +170,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** Which primary-header values select square, triangular, and hollow `Pipe` sections? How is section size measured for the noncircular shapes, and where is hollow-wall placement encoded?
 
-**Known.** Primary-header offset 29 value `1` selects a circular section and offset 30 value `1` selects a filled section. For that form, scalar ordinal two is the outside diameter and scalar ordinal three is an inactive positive thickness. The section is one filled disk and has no inner boundary. The settings reference contains a u32 and one finite double.
+**Known.** Primary-header offset 29 value `1` selects a circular section and offset 30 value `1` selects a filled section. For that form, scalar ordinal two is the outside diameter and scalar ordinal three is an inactive positive thickness. The section is one filled disk and has no inner boundary. The settings reference contains a u32 and one finite double. Class-`405`/`259` and class-`475`/`260` legacy `Pipe` prefixes store the result operation, section shape, and filled flag at offsets `26`, `30`, and `31`; the admitted legacy reference form has four owner-local scalar records, one settings record, one role-`0x0000000500000000` path group, its nonempty ordered members, and no other construction group or trailing scope reference.
 
 **Need.** A writer needs the selector values and dimension conventions for every supported generated section. Hollow forms also need the direction in which thickness changes the section boundary. **Settling specimens:** otherwise equal pipes with each section shape and with the hollow option both off and on.
 

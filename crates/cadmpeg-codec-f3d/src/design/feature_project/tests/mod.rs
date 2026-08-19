@@ -16,6 +16,7 @@ mod extrude;
 mod form;
 mod mirror;
 mod parameters;
+mod pipe;
 mod prelude;
 mod replace_face;
 mod sheet_metal;

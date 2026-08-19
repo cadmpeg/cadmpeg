@@ -1093,6 +1093,22 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
+## `legacy_pipe_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | primary indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | offsets `11` through `19` are zero |
+| 20 | 1 | `prefix_marker` | `u8` | little | spec | offset `20` is u8 `1` · value `1` |
+| 21 | 5 | `zero_run_5` | `bytes[5]` | little | spec | offsets `21` through `25` are zero |
+| 26 | 4 | `operation` | `u32` | little | spec | offset `26` is the result-operation u32 |
+| 30 | 1 | `section_shape` | `u8` | little | spec | offset `30` is the section-shape u8 |
+| 31 | 1 | `filled` | `u8` | little | spec | offset `31` is the filled-section u8 |
+
 ## `sketch_profile_region_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 40 B

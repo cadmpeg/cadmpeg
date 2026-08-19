@@ -6072,6 +6072,7 @@ fn project_fixed_pipe(
         section_shape,
         filled,
         values,
+        record_indexes,
         ..
     } = scope.path_feature_construction.as_ref()?
     else {
@@ -6124,19 +6125,53 @@ fn project_fixed_pipe(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let [path_group] = groups.as_slice() else {
-        return None;
+    let legacy_layout = matches!(
+        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+        ("405", "259") | ("475", "260")
+    );
+    let path_group = if legacy_layout {
+        if groups.iter().any(|group| group.role != ROLE_0X5) {
+            return None;
+        }
+        let mut legacy_paths = groups.iter().filter(|group| group.role == ROLE_0X5);
+        let path_group = legacy_paths.next()?;
+        if legacy_paths.next().is_some() {
+            return None;
+        }
+        let mut claimed = record_indexes.iter().copied().collect::<HashSet<_>>();
+        if claimed.len() != record_indexes.len()
+            || path_group.members.is_empty()
+            || !claimed.insert(path_group.record_index)
+            || path_group
+                .members
+                .iter()
+                .any(|record_index| !claimed.insert(*record_index))
+            || scope.reference_members.len() != path_group.members.len() + 6
+            || scope.reference_members.iter().collect::<HashSet<_>>().len()
+                != scope.reference_members.len()
+            || claimed
+                .iter()
+                .any(|record_index| !scope.reference_members.contains(record_index))
+        {
+            return None;
+        }
+        path_group
+    } else {
+        let [path_group] = groups.as_slice() else {
+            return None;
+        };
+        if path_group.role != ROLE_0X5
+            || path_group.scope_reference_ordinal != 5
+            || scope.reference_members.get(5) != Some(&path_group.record_index)
+            || path_group.members.is_empty()
+            || scope.reference_members.len() != path_group.members.len() + 8
+            || path_group.members.as_slice()
+                != &scope.reference_members[6..scope.reference_members.len() - 2]
+        {
+            return None;
+        }
+        path_group
     };
-    if path_group.role != ROLE_0X5
-        || path_group.scope_reference_ordinal != 5
-        || scope.reference_members.get(5) != Some(&path_group.record_index)
-        || path_group.members.is_empty()
-        || scope.reference_members.len() != path_group.members.len() + 8
-        || path_group.members.as_slice()
-            != &scope.reference_members[6..scope.reference_members.len() - 2]
-    {
-        return None;
-    }
     let path = resolved_loft_path(
         path_group,
         construction_groups,

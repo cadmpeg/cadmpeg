@@ -1510,6 +1510,34 @@ pub(crate) mod compact_loft_operation_prefix {
     pub(crate) const ZERO_RUN_11: usize = 34;
 }
 
+/// Byte offsets for the `legacy_pipe_operation_prefix` record.
+///
+/// Spec §3.1. Record length 32 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix.
+/// ```
+pub(crate) mod legacy_pipe_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prefix_marker` (`u8`). Spec §3.1.
+    pub(crate) const PREFIX_MARKER: usize = 20;
+    /// Stated value of `prefix_marker` (`u8`). Spec §3.1.
+    pub(crate) const PREFIX_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 26;
+    /// Offset of `section_shape` (`u8`). Spec §3.1.
+    pub(crate) const SECTION_SHAPE: usize = 30;
+    /// Offset of `filled` (`u8`). Spec §3.1.
+    pub(crate) const FILLED: usize = 31;
+}
+
 /// Byte offsets for the `sketch_profile_region_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 40 B.

@@ -3587,6 +3587,64 @@ source = "spec"
 anchor = "offsets 34 through 44 are zero"
 
 [[record]]
+name = "legacy_pipe_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Class-`405` paired with class-`259`, and class-`475` paired with class-`260`, use a legacy `Pipe` operation prefix"
+size = 32
+note = "Offsets are relative to the primary indexed header. The legacy scope reference table and variable operand records follow this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "primary indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "offsets `11` through `19` are zero"
+
+[[record.field]]
+name = "prefix_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "offset `20` is u8 `1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_5"
+offset = 21
+type = "bytes[5]"
+source = "spec"
+anchor = "offsets `21` through `25` are zero"
+
+[[record.field]]
+name = "operation"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "offset `26` is the result-operation u32"
+
+[[record.field]]
+name = "section_shape"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "offset `30` is the section-shape u8"
+
+[[record.field]]
+name = "filled"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "offset `31` is the filled-section u8"
+
+[[record]]
 name = "sketch_profile_region_selection_prefix"
 kind = "byte"
 section = "3.1"

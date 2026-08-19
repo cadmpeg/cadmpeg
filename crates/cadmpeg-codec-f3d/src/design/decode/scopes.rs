@@ -65,6 +65,7 @@ use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
+use crate::layout::legacy_pipe_operation_prefix as legacy_pipe;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
@@ -5463,6 +5464,20 @@ pub(crate) fn exact_path_feature_construction(
             })
         }
         DesignFeatureFamily::Pipe => {
+            let legacy_layout = matches!(
+                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                ("405", "259") | ("475", "260")
+            );
+            if legacy_layout
+                && (bytes.get(start + legacy_pipe::ZERO_RUN_9..start + legacy_pipe::PREFIX_MARKER)
+                    != Some(&[0; 9])
+                    || bytes.get(start + legacy_pipe::PREFIX_MARKER)
+                        != Some(&legacy_pipe::PREFIX_MARKER_VALUE)
+                    || bytes.get(start + legacy_pipe::ZERO_RUN_5..start + legacy_pipe::OPERATION)
+                        != Some(&[0; 5]))
+            {
+                return None;
+            }
             let lanes = scope
                 .reference_members
                 .iter()
@@ -5480,19 +5495,28 @@ pub(crate) fn exact_path_feature_construction(
             {
                 return None;
             }
-            let section_shape = *bytes.get(start + 29)?;
-            let filled = match *bytes.get(start + 30)? {
+            let (operation_offset, section_shape_offset, filled_offset) = if legacy_layout {
+                (
+                    start + legacy_pipe::OPERATION,
+                    start + legacy_pipe::SECTION_SHAPE,
+                    start + legacy_pipe::FILLED,
+                )
+            } else {
+                (start + 25, start + 29, start + 30)
+            };
+            let section_shape = *bytes.get(section_shape_offset)?;
+            let filled = match *bytes.get(filled_offset)? {
                 0 => false,
                 1 => true,
                 _ => return None,
             };
             Some(DesignPathFeatureConstruction::Pipe {
-                operation: operation(start + 25)?,
-                operation_offset: u64::try_from(start + 25).ok()?,
+                operation: operation(operation_offset)?,
+                operation_offset: u64::try_from(operation_offset).ok()?,
                 section_shape,
-                section_shape_offset: u64::try_from(start + 29).ok()?,
+                section_shape_offset: u64::try_from(section_shape_offset).ok()?,
                 filled,
-                filled_offset: u64::try_from(start + 30).ok()?,
+                filled_offset: u64::try_from(filled_offset).ok()?,
                 values: lanes.map(|(_, scalar)| scalar.value),
                 record_indexes: lanes.map(|(record_index, _)| record_index),
                 value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),

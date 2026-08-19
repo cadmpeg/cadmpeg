@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
 
 pub(super) fn continue_fixed_kind_operations(
     mut bytes: Vec<u8>,
@@ -1363,6 +1364,76 @@ pub(super) fn continue_fixed_kind_operations(
             }),
         })
     );
+
+    for (pair_ordinal, (class_tag, paired_class_tag)) in
+        [("405", "259"), ("475", "260")].into_iter().enumerate()
+    {
+        let legacy_pipe_start = bytes.len();
+        let mut legacy_pipe = vec![0; 383];
+        legacy_pipe[legacy_pipe_layout::ZERO_RUN_9..legacy_pipe_layout::PREFIX_MARKER]
+            .copy_from_slice(&[0; 9]);
+        legacy_pipe[legacy_pipe_layout::PREFIX_MARKER] = legacy_pipe_layout::PREFIX_MARKER_VALUE;
+        legacy_pipe[legacy_pipe_layout::ZERO_RUN_5..legacy_pipe_layout::OPERATION]
+            .copy_from_slice(&[0; 5]);
+        legacy_pipe[legacy_pipe_layout::OPERATION..legacy_pipe_layout::SECTION_SHAPE]
+            .copy_from_slice(&4u32.to_le_bytes());
+        legacy_pipe[legacy_pipe_layout::SECTION_SHAPE] = 1;
+        legacy_pipe[legacy_pipe_layout::FILLED] = 1;
+        bytes.extend_from_slice(&legacy_pipe);
+        let legacy_scalar_start = bytes.len();
+        let legacy_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
+        let first_record_index = 180 + pair_ordinal as u32 * 4;
+        for (ordinal, value) in legacy_values.into_iter().enumerate() {
+            let record_index = first_record_index + ordinal as u32;
+            let mut scalar = vec![0; 100];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"277");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal as u8;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"261");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut legacy_scope = scope.clone();
+        legacy_scope.byte_offset = legacy_pipe_start as u64;
+        legacy_scope.class_tag = class_tag.into();
+        legacy_scope.paired_class_tag = paired_class_tag.into();
+        legacy_scope.kind = "Pipe".into();
+        legacy_scope.frame_length = 383;
+        legacy_scope.reference_members = (first_record_index..first_record_index + 4).collect();
+        assert_eq!(
+            exact_path_feature_construction(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &legacy_scope,
+                &[],
+            ),
+            Some(DesignPathFeatureConstruction::Pipe {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
+                section_shape: 1,
+                section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
+                    as u64,
+                filled: true,
+                filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
+                values: legacy_values,
+                record_indexes: [
+                    first_record_index,
+                    first_record_index + 1,
+                    first_record_index + 2,
+                    first_record_index + 3,
+                ],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (legacy_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            })
+        );
+    }
 
     let mut companion = DesignParameterCompanion {
         id: "f3d:native:parameter-companion#11".into(),
