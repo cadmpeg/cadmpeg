@@ -656,6 +656,17 @@ has one direct `Integer` value with a decimal signed-integer `value` attribute. 
 constructor default Angle. CADIR decision: a present `Type` with another runtime type, without
 exactly one direct `Integer`, with a non-integer or negative value, or with an unknown family
 index does not select a neutral operation; the operation remains native.
+PartDesign Pad and Pocket use `SideType`, `Type`, and `Type2` `App::PropertyEnumeration` carriers.
+`SideType` indices `0`, `1`, and `2` mean one side, two sides, and symmetric. Pad `Type` and
+`Type2` indices `0`, `1`, `2`, `3`, and `5` mean Length, UpToLast, UpToFirst, UpToFace, and
+UpToShape. Pocket uses the same indices for Length, ThroughAll, UpToFirst, UpToFace, and
+UpToShape. An absent `Type` or `Type2` means Length. An absent `SideType` means one side; for
+legacy records, `Midplane=true` means symmetric, while an exact `Type=4` with no `SideType`
+means two-sided blind extent with `Length` and `Length2`, and takes precedence over `Midplane`.
+Index `4` is the deprecated two-length marker and is not a current termination family when
+`SideType` is present. A selected present carrier with another runtime type, without exactly one
+direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index does
+not select a neutral operation; the affected operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

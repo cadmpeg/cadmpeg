@@ -588,12 +588,13 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="0.5"/></Property>
  </Properties></Object>
- <Object name="LegacyTwoLengths"><Properties Count="4">
-  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
-  <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
-  <Property name="Length" type="App::PropertyLength"><Float value="6"/></Property>
-  <Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property>
- </Properties></Object>
+    <Object name="LegacyTwoLengths"><Properties Count="5">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="6"/></Property>
+    <Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property>
+    <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
+    </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -670,6 +671,134 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         }
     ));
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
+    fn pad_definition(
+        result: &cadmpeg_ir::codec::DecodeResult,
+    ) -> &cadmpeg_ir::features::FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Pad"))
+            .expect("pad feature")
+            .definition
+    }
+
+    let malformed_values = [
+        "<Integer value=\"bad\"/>",
+        "<String value=\"4\"/>",
+        "<Wrapper><Integer value=\"4\"/></Wrapper>",
+        "<Integer value=\"4\"/><Integer value=\"0\"/>",
+        "<Integer value=\"-1\"/>",
+        "<Integer value=\"99\"/>",
+    ];
+    for target in ["SideType", "Type", "Type2"] {
+        let absent_document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="PartDesign::Pad" name="Pad"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="0"/></Object>
+<Object name="Pad"><Properties Count="{count}"><Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>{side_type}{pad_type}{pad_type2}<Property name="Length" type="App::PropertyLength"><Float value="6"/></Property><Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property><Property name="UseCustomVector" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property></Properties></Object></ObjectData></Document>"#,
+            count = 7,
+            side_type = if target == "SideType" {
+                ""
+            } else {
+                r#"<Property name="SideType" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#
+            },
+            pad_type = if target == "Type" {
+                ""
+            } else {
+                r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+            },
+            pad_type2 = if target == "Type2" {
+                ""
+            } else {
+                r#"<Property name="Type2" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+            },
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&absent_document)),
+                &DecodeOptions::default(),
+            )
+            .expect("absent extrusion selector");
+        if target == "SideType" {
+            assert!(matches!(
+                pad_definition(&result),
+                FeatureDefinition::Extrude {
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: Termination::Blind {
+                                length: Length(6.0)
+                            },
+                            ..
+                        }
+                    },
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                pad_definition(&result),
+                FeatureDefinition::Extrude {
+                    extent: ExtrudeExtent::TwoSided { .. },
+                    ..
+                }
+            ));
+        }
+        assert_valid_document(result.ir());
+
+        for value in malformed_values {
+            let property = match value {
+                value if value.starts_with("<String") => {
+                    format!(
+                        r#"<Property name="{target}" type="App::PropertyString">{value}</Property>"#
+                    )
+                }
+                value => format!(
+                    r#"<Property name="{target}" type="App::PropertyEnumeration">{value}</Property>"#
+                ),
+            };
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="PartDesign::Pad" name="Pad"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="0"/></Object>
+<Object name="Pad"><Properties Count="{count}"><Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>{side_type}{pad_type}{pad_type2}<Property name="Length" type="App::PropertyLength"><Float value="6"/></Property><Property name="Length2" type="App::PropertyLength"><Float value="2"/></Property><Property name="UseCustomVector" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property></Properties></Object></ObjectData></Document>"#,
+                count = if target == "Type" { 7 } else { 8 },
+                side_type = if target == "SideType" {
+                    property.as_str()
+                } else if target == "Type" {
+                    ""
+                } else {
+                    r#"<Property name="SideType" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#
+                },
+                pad_type = if target == "Type" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                },
+                pad_type2 = if target == "Type2" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Type2" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                },
+            );
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("malformed extrusion selector");
+            assert!(matches!(
+                pad_definition(&result),
+                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Pad"
+            ));
+            assert_valid_document(result.ir());
+        }
+    }
 }
 
 #[test]

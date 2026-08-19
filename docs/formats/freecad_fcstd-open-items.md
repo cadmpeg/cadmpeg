@@ -30,18 +30,32 @@ the property is absent and requires that exact carrier and direct value before n
 Intersect. Revolution and Groove indices `0` through `4` select their documented angle,
 through-all/last, first, face, and two-angle families.
 
+PartDesign Pad and Pocket register `SideType`, `Type`, and `Type2` as
+`App::PropertyEnumeration` values with constructor index `0`. `SideType` indices `0`, `1`, and
+`2` select one-sided, two-sided, and symmetric extents. Pad `Type` and `Type2` indices `0`, `1`,
+`2`, `3`, and `5` select Length, UpToLast, UpToFirst, UpToFace, and UpToShape. Pocket uses the
+same indices for Length, ThroughAll, UpToFirst, UpToFace, and UpToShape. Each present selected
+carrier requires one direct `Integer` value; a non-integer, negative, unknown, nested, duplicate,
+or wrong-runtime carrier leaves the operation native. An absent `Type` or `Type2` uses Length.
+An absent `SideType` uses one side, except that `Midplane=true` selects symmetric legacy
+semantics and an exact absent-`SideType` `Type=4` carrier selects the deprecated two-length
+two-sided blind form; the `Type=4` form takes precedence over `Midplane=true`. In that form,
+`Length` and `Length2` are the two blind extents. A present `Type=4` is not a current termination
+family.
+
 **Need.** Apply the same absence-versus-present validation to the remaining operation selectors:
-pad/pocket side and termination types, extrusion direction mode, shell and surface modes,
-pattern modes, hole modes and flags, and the remaining design operation flags. Trace each
-producer carrier and preserve its constructor default only when the property is absent.
+extrusion direction mode, shell and surface modes, pattern modes, hole modes and flags, and the
+remaining design operation flags. Trace each producer carrier and preserve its constructor
+default only when the property is absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
 neutral semantics or discard a valid legacy default.
 
-**Note.** Partly settled: Boolean/Revolution/Groove `Type` is covered by the specification and
-the exact-carrier decoder rule. The remaining selectors stay open.
+**Note.** Partly settled: Boolean/Revolution/Groove `Type` and PartDesign Pad/Pocket
+`SideType`/`Type`/`Type2` are covered by the specification and exact-carrier decoder rule. The
+remaining selectors stay open.
 
 ### DP-16. Sketch placement rotation admission
 

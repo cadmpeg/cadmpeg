@@ -3690,7 +3690,7 @@ fn extrusion_definition(
         });
     }
     let legacy_two_lengths = property(properties, "SideType").is_none()
-        && integer_property(properties, "Type") == Some(4);
+        && enumeration_selector(properties, "Type", 0) == Some(4);
     let termination = |side: u8| {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
@@ -3700,7 +3700,7 @@ fn extrusion_definition(
         let termination_type = if legacy_two_lengths {
             0
         } else {
-            integer_property(properties, &type_name).unwrap_or(0)
+            enumeration_selector(properties, &type_name, 0)?
         };
         match termination_type {
             0 => Some(Termination::Blind {
@@ -3725,13 +3725,15 @@ fn extrusion_definition(
             _ => None,
         }
     };
-    let side_type = integer_property(properties, "SideType").unwrap_or_else(|| {
-        if bool_property(properties, "Midplane").unwrap_or(false) {
-            2
-        } else {
-            u64::from(integer_property(properties, "Type") == Some(4))
-        }
-    });
+    let side_type = if property(properties, "SideType").is_some() {
+        enumeration_selector(properties, "SideType", 0)?
+    } else if legacy_two_lengths {
+        1
+    } else if bool_property(properties, "Midplane").unwrap_or(false) {
+        2
+    } else {
+        0
+    };
     // First-side draft and offset apply to every extent shape. `TaperAngle2`
     // and `Offset2` describe a second, independent side and are read only when
     // the extent actually carries one (`SideType` 1 / two-sided). A symmetric
