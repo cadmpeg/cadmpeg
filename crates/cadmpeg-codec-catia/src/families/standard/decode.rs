@@ -3784,27 +3784,13 @@ fn attach_standard_topology(
         } else {
             standard_curve_branch_groups(&supports, options)
         };
-        let initial_assignment = options
-            .iter()
-            .map(|candidates| {
-                if candidates.len() == 1 {
-                    Some(candidates[0])
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let solver_options = if fbb_only {
-            options.clone()
-        } else {
-            standard_curve_branch_candidates_after_partial_assignment(
-                &supports,
-                options,
-                &branch_groups,
-                &initial_assignment,
-                Some(work_budget),
-            )?
-        };
+        // Same-incidence allocation rank is a final relation reduction. Keep
+        // every admitted endpoint pair in the mesh solver until exact trim
+        // cycles, port identities, and face closure have selected a complete
+        // candidate. The complete-solution callback below applies the rank
+        // rule after those constraints, while branch dependencies keep the
+        // relation's surrounding frontier ahead of its rows.
+        let solver_options = options.clone();
         let mut branch_preferred_edges = vec![false; options.len()];
         for edge in branch_groups
             .iter()
@@ -3851,15 +3837,15 @@ fn attach_standard_topology(
             &preferred_budget,
             |pairs| line_preference.is_valid(pairs),
             |pairs| {
-                let branch_valid = fbb_only
-                    || standard_curve_branch_assignment_is_ranked(
+                if !fbb_only
+                    && !standard_curve_branch_assignment_is_ranked(
                         &supports,
                         &solver_options,
                         &branch_groups,
                         pairs,
                         None,
-                    );
-                if !branch_valid {
+                    )
+                {
                     return false;
                 }
                 if !line_preference.is_simple(pairs) {

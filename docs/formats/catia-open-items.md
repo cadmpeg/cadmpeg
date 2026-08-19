@@ -524,25 +524,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
 
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:4833-4846` binds the row of rank `k` in the group's serialized order to the vertex row of rank `k` on each sorted side of the relation, and writes that one pair as the row's domain. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:4935-4938` writes a second such domain for the anchored diagonal stage. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3792-3798` makes the reduced set the solver's candidate domain. The retry at `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3877-3905` searches that same reduced set, so a removed pair does not return. The stage runs only for a line or spline family, a matching sorted face pair, an identical normalized relation, a complete bipartite relation, and a matching boundary frontier.
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. The production decoder passes the complete endpoint domains to the mesh solver. `standard_curve_branch_assignment_is_ranked` checks the rank rule only while validating a complete mesh candidate; it does not replace the solver's domains with rank-selected pairs. The rank stages run only for a line or spline family, a matching sorted face pair, an identical normalized relation, a complete bipartite relation, and a matching boundary frontier.
 
 **Need.** A complete bipartite relation over `n` rows admits `n!` matchings, and the vertex rows are distinct points, so the matchings are not equivalent. A wrong matching gives a wrong line origin, a wrong direction, wrong edge endpoints, and a wrong parameter range. We must know the relation to bind the row.
 
-**Conflict.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" applies allocation rank only after the mesh constraints leave an equivalent complete relation. `crates/cadmpeg-codec-catia/src/families/standard/decode.rs:3792-3798` applies it before them.
-
-**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. Its original identifier was `SN-32`, which now names another item.
+**Note.** Allocation rank remains a candidate-reduction rule, not an admitted serialized endpoint identity. The source relation that assigns a physical row remains unresolved.
 
 ### SN-36. Allocation-rank binding rule
 
 **Question.** Does allocation rank bind a same-incidence row, and under which condition?
 
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row because it is not a serialized endpoint identity, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `catia.md` §5.6 "Same-incidence spline or line rows of one curve family" gives rank-binding stages in the same section, and one of them binds the lexicographically ordered pairs of a circle-row relation by equal rank.
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row because it is not a serialized endpoint identity, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `catia.md` §5.6 "Same-incidence spline or line rows of one curve family" gives rank-binding stages in the same section. The production decoder retains every endpoint pair through mesh search and applies the rank rule only to a complete candidate; rank does not supply a source endpoint identity.
 
-**Need.** The two paragraphs give opposite answers for one construct, so the specification does not state a rule that a decoder or a writer can apply. `SN-35` records what the decoder does now.
+**Need.** We must establish the native relation, or a format-defined gauge invariant, that distinguishes a physical row from another row in the same complete relation. Allocation rank alone does not establish a serialized endpoint identity.
 
-**Conflict.** The two paragraphs of `catia.md` §5.6 disagree. One removes lexicographic order as a binding relation; the other makes it one.
-
-**Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. That pass recorded the disagreement inside its `SN-32` item.
+**Note.** The implementation conflict is closed: allocation rank is no longer applied while constructing the mesh solver's endpoint domains. The native row-assignment meaning remains open.
 
 ## 4. Object stream
 
