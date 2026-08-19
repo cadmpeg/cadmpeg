@@ -189,8 +189,7 @@ pub(crate) use emit::orient_edge_range;
 #[allow(unused_imports)]
 pub(crate) use emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance,
-    orient_edge_range_with_budget, retain_unresolved_topology_carriers, sense, source_meta,
-    surface_tag, synthesize_closed_edge_vertex_with_budget, unknown_stream,
+    retain_unresolved_topology_carriers, sense, source_meta, surface_tag, unknown_stream,
 };
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;

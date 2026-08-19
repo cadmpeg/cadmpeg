@@ -21,7 +21,7 @@ use super::offset::{
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
-    pcurve_matches_edge_range_with_index_and_budget,
+    pcurve_matches_edge_endpoints_with_index, pcurve_surface_endpoints_with_index_and_budget,
     surface_parameters_for_fit_with_index_and_budget,
 };
 use super::MISSING_TOLERANCE;
@@ -1512,21 +1512,42 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
 
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        let candidate_endpoints = candidates
+            .iter()
+            .filter_map(|(key, values)| {
+                let [candidate] = values.as_slice() else {
+                    return None;
+                };
+                Some((
+                    key.clone(),
+                    pcurve_surface_endpoints_with_index_and_budget(
+                        &model_index,
+                        &key.1,
+                        &candidate.0,
+                        None,
+                        geometry_budget,
+                    ),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
         coedge_candidates
             .into_iter()
             .filter_map(|(coedge_id, edge_id, curve, surface, edge_tolerance)| {
-                let [candidate] = candidates.get(&(curve, surface.clone()))?.as_slice() else {
+                let [candidate] = candidates
+                    .get(&(curve.clone(), surface.clone()))?
+                    .as_slice()
+                else {
                     return None;
                 };
+                let coincident_surface = candidate_endpoints
+                    .get(&(curve, surface.clone()))?
+                    .as_ref()?;
                 let fit_tolerance = candidate.2.or(edge_tolerance);
-                pcurve_matches_edge_range_with_index_and_budget(
+                pcurve_matches_edge_endpoints_with_index(
                     &model_index,
                     &edge_id,
-                    &surface,
-                    &candidate.0,
-                    None,
+                    *coincident_surface,
                     fit_tolerance,
-                    geometry_budget,
                 )
                 .then(|| (coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
             })

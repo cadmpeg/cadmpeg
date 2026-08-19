@@ -27,6 +27,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -179,7 +180,16 @@ pub(super) fn emit_topology(
         }
         shells.insert(node.xmt, shell_id);
     }
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .fold(BTreeMap::new(), |mut positions, point| {
+            positions.entry(point.id.clone()).or_insert(point.position);
+            positions
+        });
     let mut vertices = BTreeMap::new();
+    let mut vertex_positions = BTreeMap::new();
     for node in graph
         .of_kind(18)
         .filter(|node| valid_vertex_xmts.contains(&node.xmt))
@@ -188,6 +198,9 @@ pub(super) fn emit_topology(
             continue;
         };
         let Some(point) = points.get(&fields.point).cloned() else {
+            continue;
+        };
+        let Some(point_position) = point_positions.get(&point).copied() else {
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance);
@@ -202,6 +215,7 @@ pub(super) fn emit_topology(
             tolerance,
         });
         vertices.insert(node.xmt, vertex.clone());
+        vertex_positions.insert(vertex, (point_position, tolerance));
     }
     let pcurve_indices: BTreeMap<_, _> = ir
         .model
@@ -210,6 +224,22 @@ pub(super) fn emit_topology(
         .enumerate()
         .map(|(index, pcurve)| (pcurve.id.clone(), index))
         .collect();
+    let curve_indices =
+        ir.model
+            .curves
+            .iter()
+            .enumerate()
+            .fold(BTreeMap::new(), |mut indices, (index, curve)| {
+                indices.entry(curve.id.clone()).or_insert(index);
+                indices
+            });
+    let procedural_curve_ids: BTreeSet<_> = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|procedural| procedural.curve.clone())
+        .collect();
+    let mut curve_point_cache = CurvePointCache::default();
     let mut edges = BTreeMap::new();
     for node in graph
         .of_kind(16)
@@ -296,20 +326,25 @@ pub(super) fn emit_topology(
                 param_range = None;
             }
         }
+        let closed_edge = fin_fields.vertex == 1
+            && fin_fields.forward == fin.xmt
+            && fin_fields.backward == fin.xmt;
         let start = vertices.get(&fin_fields.vertex).cloned().or_else(|| {
-            (fin_fields.vertex == 1
-                && fin_fields.forward == fin.xmt
-                && fin_fields.backward == fin.xmt)
+            closed_edge
                 .then(|| {
-                    synthesize_closed_edge_vertex_with_budget(
+                    let curve = curve.as_ref()?;
+                    let curve_index = curve_indices.get(curve).copied()?;
+                    synthesize_closed_edge_vertex_with_curve_index_and_budget(
                         ir,
                         annotations,
                         &prefix,
                         node,
-                        curve.as_ref()?,
+                        curve,
+                        curve_index,
                         param_range,
                         source_stream,
                         decoded_tolerance(fields.tolerance),
+                        &mut curve_point_cache,
                         adaptive_geometry_budget,
                     )
                 })
@@ -346,15 +381,24 @@ pub(super) fn emit_topology(
             annotations.derived(&id, "tolerance");
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
-            match orient_edge_range_with_budget(
-                ir,
-                carrier,
-                range,
-                &start,
-                &end,
-                decoded_tolerance(fields.tolerance),
-                adaptive_geometry_budget,
-            ) {
+            let oriented = curve_indices.get(carrier).copied().and_then(|curve_index| {
+                let (start_position, start_tolerance) = vertex_positions.get(&start).copied()?;
+                let (end_position, end_tolerance) = vertex_positions.get(&end).copied()?;
+                orient_edge_range_for_geometry_with_budget(
+                    &ir.model.curves[curve_index].geometry,
+                    carrier,
+                    range,
+                    start_position,
+                    start_tolerance,
+                    end_position,
+                    end_tolerance,
+                    decoded_tolerance(fields.tolerance),
+                    procedural_curve_ids.contains(carrier),
+                    &mut curve_point_cache,
+                    adaptive_geometry_budget,
+                )
+            });
+            match oriented {
                 Some((oriented, reverse_edge)) => {
                     param_range = Some(oriented);
                     if reverse_edge {
@@ -832,31 +876,33 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn synthesize_closed_edge_vertex_with_budget(
+fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     prefix: &str,
     edge: &Node,
     curve: &CurveId,
+    curve_index: usize,
     range: Option<[f64; 2]>,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     tolerance: Option<f64>,
+    curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
-    let geometry = &ir
-        .model
-        .curves
-        .iter()
-        .find(|candidate| candidate.id == *curve)?
-        .geometry;
-    let parameter = range.map_or_else(
-        || match geometry {
-            CurveGeometry::Nurbs(nurbs) => nurbs.knots.first().copied().unwrap_or(0.0),
-            _ => 0.0,
-        },
-        |range| range[0],
-    );
-    let position = curve_point_with_budget(geometry, parameter, geometry_budget)?;
+    let parameter = {
+        let geometry = &ir.model.curves[curve_index].geometry;
+        range.map_or_else(
+            || match geometry {
+                CurveGeometry::Nurbs(nurbs) => nurbs.knots.first().copied().unwrap_or(0.0),
+                _ => 0.0,
+            },
+            |range| range[0],
+        )
+    };
+    let position = {
+        let geometry = &ir.model.curves[curve_index].geometry;
+        curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
+    };
     let point = PointId(format!("{prefix}:point#closed-edge-{}", edge.xmt));
     let vertex = VertexId(format!("{prefix}:vertex#closed-edge-{}", edge.xmt));
     annotations
@@ -927,6 +973,7 @@ pub(crate) fn orient_edge_range(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn orient_edge_range_with_budget(
     ir: &CadIr,
     curve: &CurveId,
@@ -942,6 +989,83 @@ pub(crate) fn orient_edge_range_with_budget(
         .iter()
         .find(|candidate| candidate.id == *curve)?
         .geometry;
+    let vertex_position = |vertex: &VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|candidate| candidate.id == *vertex)?;
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|candidate| candidate.id == vertex.point)?;
+        Some((point.position, vertex.tolerance))
+    };
+    let (start_position, start_tolerance) = vertex_position(start)?;
+    let (end_position, end_tolerance) = vertex_position(end)?;
+    let procedural_curve = ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|procedural| procedural.curve == *curve);
+    let mut curve_point_cache = CurvePointCache::default();
+    orient_edge_range_for_geometry_with_budget(
+        geometry,
+        curve,
+        range,
+        start_position,
+        start_tolerance,
+        end_position,
+        end_tolerance,
+        edge_tolerance,
+        procedural_curve,
+        &mut curve_point_cache,
+        geometry_budget,
+    )
+}
+
+const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
+
+#[derive(Default)]
+struct CurvePointCache {
+    entries: BTreeMap<(CurveId, u64), Option<Point3>>,
+}
+
+impl CurvePointCache {
+    fn point_with_budget(
+        &mut self,
+        curve: &CurveId,
+        geometry: &CurveGeometry,
+        parameter: f64,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Option<Point3> {
+        let key = (curve.clone(), parameter.to_bits());
+        if let Some(point) = self.entries.get(&key) {
+            return *point;
+        }
+        let point = curve_point_with_budget(geometry, parameter, geometry_budget);
+        if self.entries.len() < MAX_CURVE_POINT_CACHE_ENTRIES {
+            self.entries.insert(key, point);
+        }
+        point
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn orient_edge_range_for_geometry_with_budget(
+    geometry: &CurveGeometry,
+    curve: &CurveId,
+    range: [f64; 2],
+    start_position: Point3,
+    start_tolerance: Option<f64>,
+    end_position: Point3,
+    end_tolerance: Option<f64>,
+    edge_tolerance: Option<f64>,
+    procedural_curve: bool,
+    curve_point_cache: &mut CurvePointCache,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<([f64; 2], bool)> {
     let range = if range[0] <= range[1] {
         range
     } else {
@@ -959,35 +1083,15 @@ pub(crate) fn orient_edge_range_with_budget(
         _ => range,
     };
     let at = match (
-        curve_point_with_budget(geometry, range[0], geometry_budget),
-        curve_point_with_budget(geometry, range[1], geometry_budget),
+        curve_point_cache.point_with_budget(curve, geometry, range[0], geometry_budget),
+        curve_point_cache.point_with_budget(curve, geometry, range[1], geometry_budget),
     ) {
         (Some(start), Some(end)) => [start, end],
-        _ if ir
-            .model
-            .procedural_curves
-            .iter()
-            .any(|procedural| procedural.curve == *curve) =>
-        {
+        _ if procedural_curve => {
             return Some((range, false));
         }
         _ => return None,
     };
-    let vertex_position = |vertex: &VertexId| {
-        let vertex = ir
-            .model
-            .vertices
-            .iter()
-            .find(|candidate| candidate.id == *vertex)?;
-        let point = ir
-            .model
-            .points
-            .iter()
-            .find(|candidate| candidate.id == vertex.point)?;
-        Some((point.position, vertex.tolerance))
-    };
-    let (start_position, start_tolerance) = vertex_position(start)?;
-    let (end_position, end_tolerance) = vertex_position(end)?;
     let allowance = [edge_tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
@@ -1252,5 +1356,30 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && limit.context.operation == "retain NX unknown stream"
         ));
+    }
+
+    #[test]
+    fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
+        let curve = CurveId("synthetic:curve".into());
+        let geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
+            weights: None,
+            periodic: false,
+        });
+        let geometry_budget = cadmpeg_core::decode::WorkBudget::new(1024);
+        let mut cache = CurvePointCache::default();
+
+        let first = cache
+            .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
+            .expect("NURBS evaluation");
+        let remaining_after_first = geometry_budget.remaining();
+        let second = cache
+            .point_with_budget(&curve, &geometry, 0.25, &geometry_budget)
+            .expect("cached NURBS evaluation");
+
+        assert_eq!(first, second);
+        assert_eq!(geometry_budget.remaining(), remaining_after_first);
     }
 }
