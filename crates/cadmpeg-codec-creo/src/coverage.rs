@@ -29,6 +29,12 @@ pub(crate) const DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT: Co
     CoverageKey("decoded_active_curve_expression_table_cell_assignment_count");
 pub(crate) const DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT: CoverageKey =
     CoverageKey("decoded_configuration_driver_table_reference_count");
+pub(crate) const DECODED_LEGACY_CONFIGURATION_DRIVER_TABLE_COUNT: CoverageKey =
+    CoverageKey("decoded_legacy_configuration_driver_table_count");
+pub(crate) const DECODED_LEGACY_CONFIGURATION_ITEM_COUNT: CoverageKey =
+    CoverageKey("decoded_legacy_configuration_item_count");
+pub(crate) const DECODED_LEGACY_CONFIGURATION_INSTANCE_COUNT: CoverageKey =
+    CoverageKey("decoded_legacy_configuration_instance_count");
 pub(crate) const DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT: CoverageKey =
     CoverageKey("decoded_feature_bounded_curve_segment_count");
 pub(crate) const DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT: CoverageKey =
@@ -292,6 +298,9 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT,
     DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT,
     DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT,
+    DECODED_LEGACY_CONFIGURATION_DRIVER_TABLE_COUNT,
+    DECODED_LEGACY_CONFIGURATION_ITEM_COUNT,
+    DECODED_LEGACY_CONFIGURATION_INSTANCE_COUNT,
     DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT,
     DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT,
     DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,

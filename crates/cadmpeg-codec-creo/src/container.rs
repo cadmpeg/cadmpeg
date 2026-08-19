@@ -267,6 +267,8 @@ pub struct FramingScan<'a> {
     pub principal_unit: Option<legacy::PrincipalUnitSystem>,
     /// Configuration driver-table pointer from `FamilyInf`.
     pub family_table: Option<FamilyTableRecord>,
+    /// Complete legacy ASCII family-table root and ordered rows, when joined.
+    pub legacy_family_table: Option<crate::legacy_family::FamilyTable>,
     /// Declared `Geomlists.n_bodies` cardinality, when present.
     pub declared_body_count: Option<u32>,
     /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
@@ -2235,6 +2237,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let principal_unit = binary_principal_unit(&data)
         .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
+    let legacy_family_table = legacy_ascii
+        .as_ref()
+        .and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
         .iter()
         .filter(|section| section.name == "NovisGeom")
@@ -2451,6 +2456,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             census,
             principal_unit,
             family_table,
+            legacy_family_table,
             declared_body_count,
             first_quilt_ptr,
         },

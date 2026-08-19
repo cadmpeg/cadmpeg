@@ -96,6 +96,7 @@ const CREO_ARENAS: &[&str] = &[
     "feature_operation_states",
     "feature_reference_names",
     "configuration",
+    "configuration_driver_tables",
 ];
 
 /// Record one native-source provenance annotation.

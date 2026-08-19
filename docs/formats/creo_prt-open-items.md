@@ -878,21 +878,15 @@ neutral loop ownership or face admission.
 
 **Need.** We must know the binding to apply display data to the correct entities.
 
-### PP-08. Configuration driver-table traversal
+### PP-09. Neutral family-table semantics
 
-**Question.** How do references traverse the configuration driver table selected by a non-null `FamilyInf.drv_tbl_ptr`?
+**Question.** Which family-table item types represent neutral parameters, dimensions, feature states, active instances, and configuration values?
 
-**Known.** `creo_prt.md` §8.3 "`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table" defines the null and referenced pointer forms and the configuration-root identity. A null pointer means that the part has no family-table configurations.
+**Known.** `creo_prt.md` §8.3 defines the legacy object graph, ordered `items` and `instances` arrays, ordinal value join, complete row fields, and typed value forms 50, 51, and 52. The decoder retains a complete joined table in the native `configuration_driver_tables` arena.
 
-**Need.** We must know the traversal to enumerate all configuration rows.
+**Need.** We must map the complete table columns and instance state to neutral configuration, parameter, feature-state, and active-configuration records without assigning a meaning to an item type or visibility flag that the source does not establish.
 
-### PP-09. Configuration driver-table rows
-
-**Question.** What does each row and field in the configuration driver table represent?
-
-**Known.** A non-null pointer preserves the canonical driver-table entity identifier.
-
-**Need.** We must know the row semantics to transfer configuration parameters and values.
+**Note.** The native table join does not establish active-instance selection, parameter identity, feature suppression semantics, or neutral value units.
 
 ### PP-13. Legacy persistence bodies
 

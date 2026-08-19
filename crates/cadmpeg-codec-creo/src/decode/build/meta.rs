@@ -453,6 +453,19 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
         "decoded_configuration_driver_table_reference_count".to_string(),
         configuration_driver_table_reference_count,
     );
+    let legacy_family_table = scan.framing.legacy_family_table.as_ref();
+    coverage.insert(
+        "decoded_legacy_configuration_driver_table_count".to_string(),
+        usize::from(legacy_family_table.is_some()),
+    );
+    coverage.insert(
+        "decoded_legacy_configuration_item_count".to_string(),
+        legacy_family_table.map_or(0, |table| table.items.len()),
+    );
+    coverage.insert(
+        "decoded_legacy_configuration_instance_count".to_string(),
+        legacy_family_table.map_or(0, |table| table.instances.len()),
+    );
     coverage.insert(
         "transferred_configuration_driver_table_count".to_string(),
         0,

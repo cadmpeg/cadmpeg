@@ -45,6 +45,11 @@ fixtures, scores above L1 remain blocked.
   unique complete `unit_arr` length record supplies the stored-to-millimeter
   scale from `25.4 * factor`. Missing or ambiguous unit records do not select
   a scale.
+- Complete legacy ASCII family-table roots transfer to the native
+  `configuration_driver_tables` arena. The root, ordered item descriptors,
+  uniquely named instance rows, and ordinally aligned typed values are retained
+  with source offsets. Neutral configurations and parameter semantics remain
+  untransferred.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
 - Section lines with a uniquely proven fixed coordinate and unresolved
@@ -666,9 +671,10 @@ fixtures, scores above L1 remain blocked.
    or solve-control count raises a decode loss note. Container and census
    facts about the file — version line, layout, section table, namespace array
    sizes, principal unit, family-table pointer, and configuration state — remain
-   in the source metadata attribute map. Referenced configuration driver tables
-   are counted separately from transferred configuration tables, and every
-   unresolved reference raises a decode loss note.
+   in the source metadata attribute map. Binary driver-table references and
+   complete legacy family-table roots are counted separately. Legacy item and
+   instance row counts are reported separately from neutral configuration
+   transfer, and every unresolved binary reference raises a decode loss note.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1. Capabilities above L1 are extras

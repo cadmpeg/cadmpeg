@@ -4393,11 +4393,32 @@ pointer. The configuration-root identity is
 `creo:family_info:driver_table#root`. `e1` is an explicit null pointer; `f7
 <canonical-reference-id>` identifies a present driver table.
 The pointer is a configuration-root record even when it is null. A referenced
-form retains the canonical entity identifier; interpreting the referenced
-driver-table rows requires their table grammar.
+form retains the canonical entity identifier. A binary null pointer establishes
+that the binary configuration root has no family-table configurations.
 
-A null pointer establishes that the part has no family-table configurations.
-It is a complete configuration state, not an undecoded table.
+Legacy ASCII persistence stores a family table as an object graph. The root is
+the unique direct `drv_tbl_ptr` object whose parent object is named `Solid` or
+`Sld_FamilyInfo` and whose payload is `->`. A `drv_tbl_ptr` nested below an
+`instances` row is that instance's model target, not another root. A null root,
+zero roots, or multiple direct roots does not select a legacy family table.
+
+A selected root has one complete one-dimensional `items` object array and one
+complete one-dimensional `instances` object array. Each array element is a
+direct child of its array object and remains in source order. An item element
+has an inline object payload and exactly one scalar field of each name `id`,
+`type`, `invisible`, and `name`; the first three use type-1 signed integers and
+`name` uses a type-10 string scalar. Item identifiers and names are not unique;
+their zero-based array ordinal is the column key.
+
+An instance element has an arrow object payload, a non-empty UTF-8 `name`, one
+type-1 signed-integer `attributes` scalar, one arrow `drv_tbl_ptr` model target,
+and one complete one-dimensional `values` object array. Instance names are
+unique. The values array has exactly the item-array length, and its inline
+elements join the item columns by ordinal. Each value element has one type-1
+signed-integer `type` scalar and exactly one typed scalar: type `50` selects
+type-2 `value(d_val)`, type `51` selects type-10 `value(s_val)`, and type `52`
+selects type-1 `value(i_val)`. A missing, duplicate, mismatched, or incomplete
+field withholds the table join and retains the source object graph.
 
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits. Code 256 is a literal dictionary entry rather than a clear code.
 

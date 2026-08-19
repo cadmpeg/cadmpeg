@@ -57,6 +57,12 @@ impl PrincipalUnitSystem {
 pub struct Real(u64);
 
 impl Real {
+    /// Construct a real from its exact stored IEEE-754 bits.
+    #[cfg(test)]
+    pub(crate) const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
     /// Numeric value represented by the stored bits.
     pub fn value(self) -> f64 {
         f64::from_bits(self.0)
