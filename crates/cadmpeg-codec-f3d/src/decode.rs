@@ -816,6 +816,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || !thickness.is_some_and(|thickness| positive_finite(thickness.0))
                 || side.is_none()
         }
+        FeatureDefinition::KnitSurface {
+            faces,
+            merge_entities,
+            create_solid,
+            gap_tolerance,
+        } => {
+            !face_selection_is_resolved(faces)
+                || merge_entities.is_none()
+                || create_solid.is_none()
+                || !gap_tolerance.is_some_and(|tolerance| positive_finite(tolerance.0))
+        }
         FeatureDefinition::Block {
             dimensions,
             placement,

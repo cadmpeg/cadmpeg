@@ -337,3 +337,60 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         }
     ));
 }
+
+#[test]
+fn knit_surfaces_require_resolved_faces_and_operation_settings() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let complete =
+        |faces, merge_entities, create_solid, gap_tolerance| FeatureDefinition::KnitSurface {
+            faces,
+            merge_entities,
+            create_solid,
+            gap_tolerance,
+        };
+    let faces = FaceSelection::Faces(vec!["face:1".into()]);
+
+    assert!(!feature_definition_is_incomplete(&complete(
+        faces.clone(),
+        Some(true),
+        Some(true),
+        Some(Length(0.1)),
+    )));
+    assert!(!feature_definition_is_incomplete(&complete(
+        faces.clone(),
+        Some(false),
+        Some(false),
+        Some(Length(0.1)),
+    )));
+    assert!(feature_definition_is_incomplete(&complete(
+        FaceSelection::Native("native:surface-stitch".into()),
+        Some(true),
+        Some(true),
+        Some(Length(0.1)),
+    )));
+    assert!(feature_definition_is_incomplete(&complete(
+        faces.clone(),
+        None,
+        Some(true),
+        Some(Length(0.1)),
+    )));
+    assert!(feature_definition_is_incomplete(&complete(
+        faces.clone(),
+        Some(true),
+        None,
+        Some(Length(0.1)),
+    )));
+    assert!(feature_definition_is_incomplete(&complete(
+        faces.clone(),
+        Some(true),
+        Some(true),
+        Some(Length(0.0)),
+    )));
+    assert!(feature_definition_is_incomplete(&complete(
+        faces,
+        Some(true),
+        Some(true),
+        None,
+    )));
+}

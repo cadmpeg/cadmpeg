@@ -2012,6 +2012,18 @@ pub(crate) fn bind_feature_face_selections(
                     body_recipe_operands,
                 );
             }
+            cadmpeg_ir::features::FeatureDefinition::KnitSurface { faces, .. } => {
+                bind_surface_stitch_face_selection(
+                    faces,
+                    &feature_id,
+                    previous_state_id,
+                    &history.id,
+                    scope,
+                    groups,
+                    entity_operands,
+                    input_topologies,
+                );
+            }
             cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
                 bind_face_selection(
                     targets,
@@ -2051,12 +2063,13 @@ fn bind_entity_face_selection(
 ) {
     use cadmpeg_ir::features::FaceSelection;
 
-    let FaceSelection::Native(group_id) = selection else {
-        return;
+    let group_id = match selection {
+        FaceSelection::Native(group_id) => group_id.clone(),
+        _ => return,
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
-        group.id == *group_id
+        group.id == group_id
             && group.scope_record_index == scope.record_index
             && crate::ids::native_stream(&group.id) == stream
     });
@@ -2066,34 +2079,133 @@ fn bind_entity_face_selection(
     if matching_groups.next().is_some() || group.members.is_empty() {
         return;
     }
+    bind_entity_face_groups(
+        selection,
+        &group_id,
+        feature_id,
+        previous_state_id,
+        operation_history_id,
+        scope,
+        std::slice::from_ref(&group),
+        operands,
+        input_topologies,
+    );
+}
+
+// Keep the serialized-selection context explicit at this boundary so every
+// admission input remains visible to the strict all-members proof.
+#[allow(clippy::too_many_arguments)]
+fn bind_surface_stitch_face_selection(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    operation_history_id: &str,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignEntitySelectionOperand],
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+) {
+    let native_id = match selection {
+        cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.clone(),
+        _ => return,
+    };
+    if native_id != scope.id {
+        return;
+    }
+    let Some(input_end) = scope.reference_members.len().checked_sub(2) else {
+        return;
+    };
+    let input_references = &scope.reference_members[..input_end];
+    if input_references.is_empty() || !input_references.len().is_multiple_of(2) {
+        return;
+    }
+    let stream = crate::ids::native_stream(&scope.id);
+    let mut matching_groups = groups
+        .iter()
+        .filter(|group| {
+            crate::ids::native_stream(&group.id) == stream
+                && group.scope_record_index == scope.record_index
+                && group.role == 0x0000_0005_0000_0000
+                && group.extrude_role.is_none()
+                && group.extrude_face_role.is_none()
+        })
+        .collect::<Vec<_>>();
+    matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    if matching_groups.len().checked_mul(2) != Some(input_references.len())
+        || matching_groups.iter().enumerate().any(|(ordinal, group)| {
+            u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
+                || group.record_index != input_references[ordinal * 2]
+                || group.members.as_slice() != [input_references[ordinal * 2 + 1]]
+        })
+    {
+        return;
+    }
+    bind_entity_face_groups(
+        selection,
+        &native_id,
+        feature_id,
+        previous_state_id,
+        operation_history_id,
+        scope,
+        &matching_groups,
+        operands,
+        input_topologies,
+    );
+}
+
+// Keep the shared selection-binding inputs explicit; this helper is the
+// single admission point for both one-group and SurfaceStitch selections.
+#[allow(clippy::too_many_arguments)]
+fn bind_entity_face_groups(
+    selection: &mut cadmpeg_ir::features::FaceSelection,
+    native_id: &str,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    operation_history_id: &str,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[&crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignEntitySelectionOperand],
+    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+) {
+    use cadmpeg_ir::features::FaceSelection;
+
+    if groups.is_empty() {
+        return;
+    }
     let mut selected = Vec::<(&str, i64, bool)>::new();
-    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return;
-        };
-        let mut matches = operands.iter().filter(|operand| {
-            operand.scope_record_index == scope.record_index
-                && operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == ordinal
-                && operand.record_index == record_index
-                && crate::ids::native_stream(&operand.id) == stream
-        });
-        let Some(operand) = matches.next() else {
-            return;
-        };
-        let [candidate] = operand.historical_face_candidates.as_slice() else {
-            return;
-        };
-        if matches.next().is_some() {
+    let stream = crate::ids::native_stream(&scope.id);
+    for group in groups {
+        if group.members.is_empty() {
             return;
         }
-        let local = candidate.history_id == operation_history_id
-            && candidate.historical_state_ids.contains(&previous_state_id);
-        let Some(source) = historical_brep_source(&candidate.history_id) else {
-            return;
-        };
-        if !selected.contains(&(source, candidate.face_slot, local)) {
-            selected.push((source, candidate.face_slot, local));
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return;
+            };
+            let mut matches = operands.iter().filter(|operand| {
+                operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index == record_index
+                    && crate::ids::native_stream(&operand.id) == stream
+            });
+            let Some(operand) = matches.next() else {
+                return;
+            };
+            let [candidate] = operand.historical_face_candidates.as_slice() else {
+                return;
+            };
+            if matches.next().is_some() {
+                return;
+            }
+            let local = candidate.history_id == operation_history_id
+                && candidate.historical_state_ids.contains(&previous_state_id);
+            let Some(source) = historical_brep_source(&candidate.history_id) else {
+                return;
+            };
+            if !selected.contains(&(source, candidate.face_slot, local)) {
+                selected.push((source, candidate.face_slot, local));
+            }
         }
     }
     let state_id =
@@ -2127,7 +2239,7 @@ fn bind_entity_face_selection(
     *selection = FaceSelection::Historical {
         state: state_id,
         faces,
-        native: group.id.clone(),
+        native: native_id.to_owned(),
     };
 }
 
