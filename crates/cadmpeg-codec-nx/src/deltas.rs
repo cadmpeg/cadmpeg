@@ -2510,10 +2510,21 @@ fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
 /// Return raw deltas bytes with decoded records and compact tombstones masked.
 /// Historical BODY revision intervals are also masked. Current-revision records
 /// needed by semantic scanners are appended in their partition form.
+#[cfg(test)]
 pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
+    semantic_residual_with_census(stream, &census)
+}
+
+/// Return the semantic residual using a census already produced for the stream.
+///
+/// The census owns the complete-record boundaries and canonical forms used by
+/// both topology merging and semantic scanning. Reusing it avoids a second
+/// full walk of a large delta stream while keeping this transformation
+/// byte-for-byte identical to `semantic_residual`.
+pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> Vec<u8> {
     let mut residual = stream.to_vec();
-    let current_scopes = current_revision_scopes(&census, stream.len());
+    let current_scopes = current_revision_scopes(census, stream.len());
     let mut cursor = 0;
     for scope in &current_scopes {
         residual[cursor..scope.start].fill(0xff);
@@ -2544,10 +2555,10 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
             }
         })
         .collect::<Vec<_>>();
-    for record in census.records {
+    for record in &census.records {
         residual[record.offset..record.end].fill(0xff);
     }
-    for tombstone in census.tombstones {
+    for tombstone in &census.tombstones {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
     for record in canonical_residual_records {

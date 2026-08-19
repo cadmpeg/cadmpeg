@@ -432,13 +432,13 @@ fn build_metadata_ir(
             unknowns.push(unknown);
         }
     }
-    let parsed = crate::native::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::ParsedStreams::parse(scan);
     let model = crate::native::NativeModel::extract(
         ctx,
         root,
         &scan.container,
         &scan.streams,
-        &parsed,
+        &mut parsed,
         None,
     );
     crate::native::attach_annotations(ctx, &mut ir, &model, scan, &mut annotations, &mut unknowns)?;

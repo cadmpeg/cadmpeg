@@ -414,7 +414,7 @@ impl NativeModel {
         root: View<'_>,
         container: &Container,
         streams: &[Stream],
-        parsed: &ParsedStreams,
+        parsed: &mut ParsedStreams,
         precomputed_lineage: Option<SegmentLineage>,
     ) -> Self {
         let SegmentLineage {
@@ -433,7 +433,8 @@ impl NativeModel {
         let segment_index_rows = segment_index_rows(container);
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
-        let deltas_events = parasolid_deltas_events(streams);
+        let deltas_events =
+            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);

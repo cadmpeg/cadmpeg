@@ -1570,6 +1570,20 @@ fn semantic_residual_masks_historical_body_revisions() {
 }
 
 #[test]
+fn semantic_residual_with_census_matches_the_standalone_transform() {
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend_from_slice(&status_framed_deltas_intersection_stream());
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&status_framed_deltas_intersection_stream());
+
+    let census = crate::deltas::walk(&deltas);
+    assert_eq!(
+        crate::deltas::semantic_residual_with_census(&deltas, &census),
+        crate::deltas::semantic_residual(&deltas)
+    );
+}
+
+#[test]
 fn semantic_residual_masks_historical_interleaved_body_sequences() {
     let mut first_historical = status_framed_deltas_intersection_stream();
     first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());

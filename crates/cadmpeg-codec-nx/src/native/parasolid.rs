@@ -4,6 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::deltas::Census;
+
 use super::substrate::{ParsedStreams, StreamView};
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -420,7 +422,27 @@ pub(crate) struct ParasolidDeltasEvents {
 }
 
 /// Retain every completely bounded event in every Parasolid deltas stream.
+#[cfg(test)]
 pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
+    let delta_censuses = streams
+        .iter()
+        .map(|stream| {
+            (stream.kind == crate::parasolid::StreamKind::Deltas)
+                .then(|| crate::deltas::walk(&stream.inflated))
+        })
+        .collect();
+    parasolid_deltas_events_with_censuses(streams, delta_censuses)
+}
+
+/// Retain deltas events from censuses produced by the shared decode substrate.
+///
+/// The function consumes the census vector after semantic construction has
+/// finished, so the large record walk is performed once and its owned records
+/// are moved directly into native output.
+pub(crate) fn parasolid_deltas_events_with_censuses(
+    streams: &[Stream],
+    mut delta_censuses: Vec<Option<Census>>,
+) -> ParasolidDeltasEvents {
     let mut events = ParasolidDeltasEvents {
         transmit_headers: Vec::new(),
         terminal_null_references: Vec::new(),
@@ -442,7 +464,10 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         if stream.kind != crate::parasolid::StreamKind::Deltas {
             continue;
         }
-        let census = crate::deltas::walk(&stream.inflated);
+        let census = delta_censuses
+            .get_mut(stream_ordinal)
+            .and_then(Option::take)
+            .unwrap_or_else(|| crate::deltas::walk(&stream.inflated));
         let mut residual_start = 0;
         for (covered_start, covered_end) in census.covered_spans() {
             if residual_start < covered_start {
@@ -2770,7 +2795,8 @@ mod tests {
             schema: None,
         }];
 
-        let events = super::parasolid_deltas_events(&streams);
+        let census = crate::deltas::walk(&streams[0].inflated);
+        let events = super::parasolid_deltas_events_with_censuses(&streams, vec![Some(census)]);
 
         assert_eq!(events.body_revisions.len(), 1);
         assert_eq!(events.body_revisions[0].xmt, 3);
