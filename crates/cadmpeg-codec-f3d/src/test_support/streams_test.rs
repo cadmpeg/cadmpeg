@@ -106,6 +106,13 @@ pub(crate) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)])
     )
 }
 
+pub(crate) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::CopyPaste,
+    )
+}
+
 #[derive(Clone, Copy)]
 enum GeneratedDesignMetastreamVariant {
     Base,
@@ -113,6 +120,7 @@ enum GeneratedDesignMetastreamVariant {
     BaseFeature,
     RemoveBody,
     SurfaceStitch,
+    CopyPaste,
 }
 
 fn generated_design_metastream_with_sketch_types(
@@ -126,6 +134,7 @@ fn generated_design_metastream_with_sketch_types(
         GeneratedDesignMetastreamVariant::BaseFeature
             | GeneratedDesignMetastreamVariant::RemoveBody
             | GeneratedDesignMetastreamVariant::SurfaceStitch
+            | GeneratedDesignMetastreamVariant::CopyPaste
     );
     let include_construction_types = matches!(
         variant,
@@ -166,7 +175,9 @@ fn generated_design_metastream_with_sketch_types(
         } else {
             &[]
         };
-    let geometry_entity_ids: &[u64] = if include_construction_types {
+    let geometry_entity_ids: &[u64] = if include_construction_types
+        || matches!(variant, GeneratedDesignMetastreamVariant::CopyPaste)
+    {
         &[600, 1500]
     } else {
         &[600]
@@ -362,6 +373,21 @@ fn generated_design_metastream_with_sketch_types(
             1,
             crate::records::DESIGN_MODULE_FUSION,
             &[1701],
+        ));
+    } else if matches!(variant, GeneratedDesignMetastreamVariant::CopyPaste) {
+        types.push((
+            "00000000-0000-0000-0000-000000001401",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1600],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001402",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1601],
         ));
     }
     design_metastream_with_records(&types, records)
@@ -1260,6 +1286,133 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
     out.extend_from_slice(&settings_record.to_le_bytes());
     out.extend_from_slice(&[0; 20]);
     records.push((u64::from(settings_record), settings_offset));
+
+    (out, records)
+}
+
+/// Add two local component occurrences, their copy relation, and a `CopyPaste`
+/// scope with the long transform-bearing frame.
+pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    const COMPONENT_GUID: &str = "11111111-2222-3333-4444-555555555555";
+    const SOURCE_OCCURRENCE_GUID: &str = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    const COPIED_OCCURRENCE_GUID: &str = "cccccccc-1111-2222-3333-dddddddddddd";
+
+    fn header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
+        bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(class_tag);
+        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn guid(bytes: &mut [u8], at: usize, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        assert_eq!(units.len(), 36);
+        bytes[at..at + 4].copy_from_slice(&36_u32.to_le_bytes());
+        for (ordinal, unit) in units.into_iter().enumerate() {
+            bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2].copy_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn transform(bytes: &mut [u8], at: usize, translation: [f64; 3]) {
+        let values = [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ];
+        for (ordinal, value) in values.into_iter().enumerate() {
+            bytes[at + ordinal * 8..at + ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let relation_record = 1_500_u32;
+    let source_record = 1_600_u32;
+    let copied_record = 1_601_u32;
+    let component_record = 1_800_u64;
+
+    let source_offset = u64::try_from(out.len()).expect("synthetic source occurrence offset");
+    let mut source = vec![0_u8; 229];
+    header(&mut source, b"269", source_record);
+    source[19] = 1;
+    source[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    source[24] = 1;
+    source[25..33].copy_from_slice(&component_record.to_le_bytes());
+    source[40..44].copy_from_slice(&1_u32.to_le_bytes());
+    guid(&mut source, 44, COMPONENT_GUID);
+    guid(&mut source, 120, SOURCE_OCCURRENCE_GUID);
+    source[197] = 1;
+    source[198..206].copy_from_slice(&component_record.to_le_bytes());
+    source[208] = 1;
+    source[218] = 1;
+    out.extend_from_slice(&source);
+    records.push((u64::from(source_record), source_offset));
+
+    let copied_offset = u64::try_from(out.len()).expect("synthetic copied occurrence offset");
+    let mut copied = vec![0_u8; 357];
+    header(&mut copied, b"270", copied_record);
+    copied[19] = 1;
+    copied[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    copied[24] = 1;
+    copied[25..33].copy_from_slice(&component_record.to_le_bytes());
+    copied[40..44].copy_from_slice(&2_u32.to_le_bytes());
+    guid(&mut copied, 44, COMPONENT_GUID);
+    guid(&mut copied, 120, COPIED_OCCURRENCE_GUID);
+    copied[197] = 1;
+    copied[198..206].copy_from_slice(&component_record.to_le_bytes());
+    transform(&mut copied, 209, [2.0, 3.0, 4.0]);
+    copied[346] = 1;
+    out.extend_from_slice(&copied);
+    records.push((u64::from(copied_record), copied_offset));
+
+    let relation_offset = u64::try_from(out.len()).expect("synthetic CopyPaste relation offset");
+    let mut relation = vec![0_u8; 57];
+    header(&mut relation, b"264", relation_record);
+    relation[21] = 1;
+    relation[22..26].copy_from_slice(&copied_record.to_le_bytes());
+    relation[34] = 1;
+    relation[35..39].copy_from_slice(&source_record.to_le_bytes());
+    relation[46] = 1;
+    relation[47..51].copy_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&relation);
+    records.push((u64::from(relation_record), relation_offset));
+
+    let mut relation_pair = [0_u8; 11];
+    header(&mut relation_pair, b"259", relation_record);
+    out.extend_from_slice(&relation_pair);
+
+    let scope_offset = u64::try_from(out.len()).expect("synthetic CopyPaste scope offset");
+    let mut scope = vec![0_u8; 529];
+    header(&mut scope, b"268", scope_record);
+    transform(&mut scope, 38, [0.0, 0.0, 0.0]);
+    scope[378..382].copy_from_slice(&1_u32.to_le_bytes());
+    scope[382] = 1;
+    scope[383..391].copy_from_slice(&u64::from(relation_record).to_le_bytes());
+    scope[393..397].copy_from_slice(&0_u32.to_le_bytes());
+    scope[397..401].copy_from_slice(&9_u32.to_le_bytes());
+    for (ordinal, unit) in "CopyPaste".encode_utf16().enumerate() {
+        scope[401 + ordinal * 2..403 + ordinal * 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    scope[419..423].copy_from_slice(&1_u32.to_le_bytes());
+    transform(&mut scope, 194, [2.0, 3.0, 4.0]);
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
+
+    let mut scope_pair = [0_u8; 11];
+    header(&mut scope_pair, b"261", scope_record);
+    out.extend_from_slice(&scope_pair);
 
     (out, records)
 }
