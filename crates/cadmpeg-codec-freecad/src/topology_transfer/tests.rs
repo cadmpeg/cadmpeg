@@ -380,6 +380,77 @@ fn edge_representation_selection_follows_family_rules() {
 }
 
 #[test]
+fn pcurve_selection_requires_exact_composed_location() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 2
+1
+1 0 0 0
+0 1 0 0
+0 0 1 0
+1
+1 0 0 0
+0 1 0 0
+0 0 1 5e-13
+Curve2ds 2
+1 0.25 0 1 0
+1 0 0 1 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 5
+Ve 1e-7
+0 0 0
+0 0
+0101101
+*
+Ve 1e-7
+1 0 0
+0 0
+0101101
+*
+Ed
+1e-7 1 1 0
+1 1 0 0 1
+2 2 1 2 0 1
+2 1 1 0 0 1
+0
+0101000
++5 0 -4 0 *
+Wi
+0101000
++3 0 *
+Fa
+0 1e-7 1 0
+1101000
++2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("exact pcurve location selection");
+    let pcurve_id = &result.ir().model.coedges[0].pcurves[0].pcurve;
+    let pcurve = result
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == *pcurve_id)
+        .expect("selected pcurve");
+    match &pcurve.geometry {
+        PcurveGeometry::Line { origin, .. } => assert_eq!(origin.v, 0.0),
+        geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
+    }
+}
+
+#[test]
 fn non_manifold_incidence_does_not_invent_a_radial_order() {
     let edge = EdgeId("edge".into());
     let mut coedges = (0..3)

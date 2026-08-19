@@ -1233,7 +1233,7 @@ impl<'a> Builder<'a> {
             first_edge_representation(representations, |representation| {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
-                    && transforms_equal(
+                    && exact_transforms_equal(
                         edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
@@ -1647,6 +1647,14 @@ fn transforms_equal(left: Transform, right: Transform) -> bool {
         .flatten()
         .zip(right.rows.into_iter().flatten())
         .all(|(left, right)| left.to_bits() == right.to_bits() || (left - right).abs() <= 1.0e-12)
+}
+
+fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
+    left.rows
+        .into_iter()
+        .flatten()
+        .zip(right.rows.into_iter().flatten())
+        .all(|(left, right)| left.to_bits() == right.to_bits())
 }
 
 fn is_reversed(orientation: TextOrientation) -> bool {

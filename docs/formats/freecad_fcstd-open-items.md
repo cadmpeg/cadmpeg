@@ -15,27 +15,6 @@ Each item has an identifier and these fields:
 
 ## 4. Exact-topology transfer
 
-### XT-04. P-curve composed-location equality
-
-**Question.** What equality rule selects a p-curve representation when its surface matches but
-its composed carrier location differs from the face location?
-
-**Known.** The specification requires the first p-curve whose surface and composed location equal
-the face surface. `topology_transfer.rs:1217-1240` selects the first matching representation, and
-`transforms_equal` at `topology_transfer.rs:1644-1650` treats matrix components within `1.0e-12`
-as equal.
-
-**Need.** Establish the producer or kernel equality rule and apply it to duplicate p-curve
-representations. A tolerance must be source-backed and specified; otherwise the comparison must
-be exact.
-
-**Conflict.** Two p-curve representations whose composed locations differ by less than
-`1.0e-12` are treated as equal, so serialized order selects the neutral p-curve even though the
-specification's equality rule is exact. Swapping those representations changes the neutral result
-without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ### XT-05. Neutral topology transform equality
 
 **Question.** What exact location equality and identity rule selects neutral topology and located

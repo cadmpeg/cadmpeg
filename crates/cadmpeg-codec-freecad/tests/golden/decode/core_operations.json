@@ -6817,15 +6817,6 @@
           "id": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Revolution:Shape:Revolution.Shape.brp:7%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A2%3A1"
-            }
-          ],
           "previous": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
@@ -6835,15 +6826,6 @@
           "id": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Revolution:Shape:Revolution.Shape.brp:7%3A1",
-          "pcurves": [
-            {
-              "parameter_range": [
-                0.0,
-                4.0
-              ],
-              "pcurve": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A3%3A1"
-            }
-          ],
           "previous": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Revolution:Shape:Revolution.Shape.brp:7%3A1%3A4",
           "sense": "forward"
@@ -29979,82 +29961,6 @@
           "parameter_range": [
             0.0,
             3.926990816987241
-          ]
-        },
-        {
-          "geometry": {
-            "basis": {
-              "direction": {
-                "u": -1.0,
-                "v": 0.0
-              },
-              "kind": "line",
-              "origin": {
-                "u": -4.0,
-                "v": 0.0
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                -1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.0
-          ]
-        },
-        {
-          "geometry": {
-            "basis": {
-              "direction": {
-                "u": 0.7071067811865477,
-                "v": -0.7071067811865475
-              },
-              "kind": "line",
-              "origin": {
-                "u": 2.8284271247461907,
-                "v": -2.82842712474619
-              }
-            },
-            "kind": "transformed",
-            "transform": [
-              [
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                -1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          },
-          "id": "fcstd:model:pcurve#Revolution:Shape:Revolution.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.0
           ]
         },
         {

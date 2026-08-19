@@ -317,7 +317,9 @@ parameter range is malformed. Only when no 3D curve exists can the first stored 
 representation supply an approximate carrier; a second fallback polygon is malformed. Polygon
 carriers that coexist with an exact 3D curve do not compete for the neutral carrier. For a face
 use, the first pcurve representation whose surface and composed location equal the face surface
-supplies the pcurve; later matching pcurves remain native and do not replace it. A closed-surface
+supplies the pcurve; later matching pcurves remain native and do not replace it. Equality of the
+composed locations is exact; a nonzero difference, including a sub-`1.0e-12` difference, does not
+match. A closed-surface
 representation supplies its second pcurve when the edge use is reversed. A primary and secondary
 pcurve in one closed-surface representation are one paired edge representation, not duplicate
 matching pcurves for one face use. Polygon carriers are separate representation families and are
