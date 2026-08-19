@@ -813,10 +813,11 @@ fn canonicalize_mesh_coordinate_gauges(
 }
 
 fn canonicalize_mesh_candidate(
-    mut topology: StandardTopology,
+    source_topology: &StandardTopology,
     point_assignment: &[usize],
     gauge: Option<MeshCandidateGauge<'_>>,
 ) -> Option<(StandardTopology, Vec<usize>)> {
+    let mut topology = source_topology.clone();
     if point_assignment.len() != topology.logical_vertex_count
         || point_assignment.len() != topology.vertex_points.len()
     {
@@ -879,9 +880,21 @@ fn canonicalize_mesh_candidate(
     Some((topology, (0..point_assignment.len()).collect::<Vec<_>>()))
 }
 
+/// Materialize the canonical representative of one admitted topology orbit.
+///
+/// Returns `None` when the candidate does not satisfy the canonicalizer's
+/// structural invariants or its bounded working storage is unavailable.
+pub(crate) fn canonicalize_mesh_candidate_for_output(
+    topology: &StandardTopology,
+    point_assignment: &[usize],
+    gauge: Option<MeshCandidateGauge<'_>>,
+) -> Option<(StandardTopology, Vec<usize>)> {
+    canonicalize_mesh_candidate(topology, point_assignment, gauge)
+}
+
 #[cfg(test)]
 pub(crate) fn canonicalize_mesh_vertex_labels(
-    topology: StandardTopology,
+    topology: &StandardTopology,
     point_assignment: &[usize],
 ) -> Option<(StandardTopology, Vec<usize>)> {
     canonicalize_mesh_candidate(topology, point_assignment, None)
@@ -925,8 +938,8 @@ pub(crate) fn mesh_candidates_equivalent_with_context(
     if left.0.vertex_points != right.0.vertex_points {
         return false;
     }
-    let left = canonicalize_mesh_candidate(left.0.clone(), &left.1, gauge);
-    let right = canonicalize_mesh_candidate(right.0.clone(), &right.1, gauge);
+    let left = canonicalize_mesh_candidate(&left.0, &left.1, gauge);
+    let right = canonicalize_mesh_candidate(&right.0, &right.1, gauge);
     let equivalent = matches!((&left, &right), (Some(left), Some(right)) if left == right);
     equivalent
 }
@@ -1156,6 +1169,8 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     };
     let identity = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
     let left = (topology(0), identity.clone());
+    let canonical_left = canonicalize_mesh_candidate_for_output(&left.0, &left.1, Some(gauge))
+        .expect("seam candidate canonicalization");
 
     for mask in 1..(1 << COMPONENT_COUNT) {
         let right = (topology(mask), identity.clone());
@@ -1165,6 +1180,12 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         assert!(
             mesh_candidates_equivalent_with_context(&left, &right, Some(gauge)),
             "seam gauge did not collapse mask {mask:#b}"
+        );
+        assert_eq!(
+            canonical_left,
+            canonicalize_mesh_candidate_for_output(&right.0, &right.1, Some(gauge))
+                .expect("seam candidate canonicalization"),
+            "seam gauge representative depends on search arrival order for mask {mask:#b}"
         );
     }
 

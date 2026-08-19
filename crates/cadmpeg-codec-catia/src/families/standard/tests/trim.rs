@@ -212,16 +212,16 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
         &left_candidate,
         &right_candidate
     ));
-    let left = canonicalize_mesh_vertex_labels(left_candidate.0, &left_candidate.1);
-    let right = canonicalize_mesh_vertex_labels(right_candidate.0, &right_candidate.1);
+    let left = canonicalize_mesh_vertex_labels(&left_candidate.0, &left_candidate.1);
+    let right = canonicalize_mesh_vertex_labels(&right_candidate.0, &right_candidate.1);
 
     assert_eq!(left, right);
     assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
 
-    let forward = canonicalize_mesh_vertex_labels(topology(0, 1), &[0, 1]);
+    let forward = canonicalize_mesh_vertex_labels(&topology(0, 1), &[0, 1]);
     let mut reversed = topology(0, 1);
     reversed.faces[0].boundaries[0].coedges[0].reversed = true;
-    let reversed = canonicalize_mesh_vertex_labels(reversed, &[0, 1]);
+    let reversed = canonicalize_mesh_vertex_labels(&reversed, &[0, 1]);
     assert_eq!(forward, reversed);
 }
 

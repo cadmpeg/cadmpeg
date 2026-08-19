@@ -6,8 +6,8 @@ use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
-    canonicalize_endpoint_relation_state, mesh_candidates_equivalent_with_context,
-    MeshCandidateGauge,
+    canonicalize_endpoint_relation_state, canonicalize_mesh_candidate_for_output,
+    mesh_candidates_equivalent_with_context, MeshCandidateGauge,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -9483,6 +9483,10 @@ where
         });
     }
     if let Some((topology, assignment)) = incidence_solution {
+        // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
+        let (topology, assignment) =
+            canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
+                .unwrap_or((topology, assignment));
         return MeshCandidateSolve::Solved(topology, assignment);
     }
     let incidence_rejection = match pair_solutions {
@@ -9519,6 +9523,10 @@ where
     })();
     match fallback {
         Some(MeshEndpointResolve::Solved(topology, assignment)) => {
+            // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
+            let (topology, assignment) =
+                canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
+                    .unwrap_or((topology, assignment));
             MeshCandidateSolve::Solved(topology, assignment)
         }
         Some(MeshEndpointResolve::Ambiguous) => {
