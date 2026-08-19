@@ -1346,7 +1346,6 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
             ruled: false,
             linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         },
     );

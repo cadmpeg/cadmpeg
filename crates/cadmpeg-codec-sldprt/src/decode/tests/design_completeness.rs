@@ -626,7 +626,6 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             ruled: false,
             linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         },
         sweep(Vec::new(), None),

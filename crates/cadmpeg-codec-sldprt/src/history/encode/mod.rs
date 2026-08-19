@@ -404,7 +404,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ruled,
                 linearize,
                 max_degree,
-                check_compatibility,
                 allow_multi_profile_faces,
             } => self.encode_loft(
                 sections,
@@ -416,7 +415,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ruled,
                 linearize,
                 max_degree,
-                check_compatibility,
                 allow_multi_profile_faces,
             ),
             FeatureDefinition::Rib { construction, op } => self.encode_rib(construction, op),

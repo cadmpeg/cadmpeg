@@ -315,7 +315,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         ruled: &bool,
         linearize: &bool,
         max_degree: &Option<u32>,
-        check_compatibility: &Option<bool>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -329,7 +328,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || *ruled
                 || *linearize
                 || max_degree.is_some()
-                || check_compatibility.is_some()
                 || allow_multi_profile_faces.is_some()
             {
                 return Err(CodecError::NotImplemented(format!(

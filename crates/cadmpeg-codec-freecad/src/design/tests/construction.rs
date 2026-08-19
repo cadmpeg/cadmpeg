@@ -872,11 +872,26 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             solid: false,
             ruled: false,
             max_degree: Some(7),
-            check_compatibility: Some(false),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }
     ));
+    let native_properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("native properties");
+    let compatibility_properties = native_properties
+        .iter()
+        .filter(|property| property.name == "CheckCompatibility")
+        .collect::<Vec<_>>();
+    assert_eq!(compatibility_properties.len(), 1);
+    assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
+    assert!(compatibility_properties[0]
+        .raw_xml
+        .contains("<Bool value=\"false\"/>"));
     assert!(matches!(
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {

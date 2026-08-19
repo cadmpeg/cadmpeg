@@ -1421,7 +1421,9 @@ after loft construction. PartDesign lofts do not own `Linearize`. A present carr
 runtime type, without exactly one direct `Bool`, or with another value does not select a neutral
 loft. A malformed standalone loft uses its cached `Shape` as `StoredGeometry` when that shape is
 present; a malformed PartDesign loft remains native when no cached shape is available. When
-carried, the interpolation degree limit and section compatibility policy remain explicit.
+carried, the interpolation degree limit remains explicit. CADIR decision:
+`CheckCompatibility` is not a Loft carrier. A native property with that name remains in the native
+property record and does not alter neutral Loft semantics.
 Standalone lofts create a new result body without fabricating a Boolean relationship.
 
 Sweeps retain the primary and additional ordered sections, primary path and tangent-edge

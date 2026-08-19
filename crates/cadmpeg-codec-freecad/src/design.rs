@@ -4685,11 +4685,6 @@ fn loft_definition(
         None
     };
     let part_design = kind.starts_with("PartDesign::");
-    let check_compatibility = if property(properties, "CheckCompatibility").is_some() {
-        Some(bool_property(properties, "CheckCompatibility")?)
-    } else {
-        None
-    };
     Some(FeatureDefinition::Loft {
         sections: profiles
             .into_iter()
@@ -4711,7 +4706,6 @@ fn loft_definition(
             bool_selector(properties, "Linearize", false)?
         },
         max_degree,
-        check_compatibility,
         allow_multi_profile_faces: if part_design {
             Some(bool_selector(properties, "AllowMultiFace", false)?)
         } else {

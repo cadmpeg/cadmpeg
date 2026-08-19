@@ -403,7 +403,6 @@ fn encoder_writes_source_less_line_sketches() {
             ruled: false,
             linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Rib {

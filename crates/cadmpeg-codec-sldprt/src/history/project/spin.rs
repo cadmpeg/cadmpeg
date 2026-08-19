@@ -148,7 +148,6 @@ pub(crate) fn project_loft(
         ruled: false,
         linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     })
 }

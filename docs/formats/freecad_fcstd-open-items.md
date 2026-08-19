@@ -124,6 +124,11 @@ linearization when selected at `:224-245`. PartDesign loft declares `Ruled=false
 `FeatureSketchBased.cpp:123-126`; `PropertyContainer.cpp:324-404` leaves an omitted carrier at
 the constructor value during restore. `PropertyStandard.cpp:2258-2277` writes and restores the
 direct Bool roots. PartDesign loft does not declare `Linearize`.
+The installed producer's runtime property inventory lists no `CheckCompatibility` property for
+either `Part::Loft` or `PartDesign::AdditiveLoft`; its saved `Document.xml` likewise contains no
+such property. The complete producer-source search finds only `CheckCompatibility` calls on
+OpenCASCADE loft builders in `TopoShape.cpp:2579,2650` and `TopoShapeExpansion.cpp:4574`, not a
+persistent Loft carrier.
 
 Part `Sweep` declares `Solid=true`, `Frenet=true`, `Transition=1`, and `Linearize=false` at
 `PartFeatures.cpp:256-275`; its executor consumes the two booleans and applies linearization at
@@ -275,15 +280,15 @@ integer-runtime, invalid-value, nested, and duplicate carriers.
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
 absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale, and
-`CosmeticThread` boolean flags are settled above. The legacy `CheckCompatibility` carrier still
-needs a neutral representation or a traced retention decision.
+`CosmeticThread` boolean flags are settled above. Helix, ShapeBinder, and the remaining pattern
+flags still need their own writer and restore evidence.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. The remaining compatibility, helix,
-ShapeBinder, and pattern flags still require their own writer and restore evidence before the
-generic fallback sites can change.
+neutral semantics or discard a valid legacy default. The remaining helix, ShapeBinder, and pattern
+flags still require their own writer and restore evidence before the generic fallback sites can
+change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
@@ -294,7 +299,7 @@ exact-carrier decoder rule. Revolution and Groove boolean flags, loft and sweep 
 dress-up `UseAllEdges` and
 `FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
 modes, Hole boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are
-covered; legacy loft compatibility and the remaining design operation flags stay open.
+covered; the remaining helix, ShapeBinder, and pattern flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 
