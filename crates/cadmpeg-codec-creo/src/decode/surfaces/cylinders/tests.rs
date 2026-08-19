@@ -265,6 +265,66 @@ fn split_outline_rejects_duplicate_surface_rows() {
 }
 
 #[test]
+fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 916,
+        header: [0, 0],
+        root_schema_class: Some(916),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        type_byte: 0x24,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 916,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 7,
+    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+                origin: [0.0, 0.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 1.0,
+                length: Some(2.0),
+            }),
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 7,
+            body_offset: 7,
+        });
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_positional_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+    assert!(ir.model.surfaces.is_empty());
+}
+
+#[test]
 fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_are_absent() {
     let mut scan = slot_fillet_scan();
     scan.planes.positional_frames.clear();

@@ -24,7 +24,9 @@ use super::super::holes::{
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
-use super::super::sketch_transfer::{feature_recipe, feature_section_sweep_semantics_conflict};
+use super::super::sketch_transfer::{
+    feature_recipe, feature_schema_class, feature_section_sweep_semantics_conflict,
+};
 use super::super::uniqueness::exactly_one;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
@@ -411,6 +413,13 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
+        // Section-cut rows can use the same type-24 selector and scalar-frame
+        // shape as a repeated-diameter round. The row body alone does not
+        // establish a cylinder carrier in that feature context; section
+        // geometry transfer owns the interpretation.
+        if row.type_byte == 0x24 && feature_schema_class(scan, row.feature_id) == Some(916) {
+            continue;
+        }
         let reference_bound_frame = || {
             let entity_ids = scan
                 .features
