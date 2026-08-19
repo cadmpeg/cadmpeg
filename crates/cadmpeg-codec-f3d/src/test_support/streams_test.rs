@@ -75,23 +75,51 @@ pub(crate) fn segment_metastream(
 }
 
 pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, false, false, false)
+    generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Base)
 }
 
 pub(crate) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, true, true, false)
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::SketchDimension,
+    )
 }
 
 pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, false, false, true)
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::BaseFeature,
+    )
+}
+
+pub(crate) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::RemoveBody,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum GeneratedDesignMetastreamVariant {
+    Base,
+    SketchDimension,
+    BaseFeature,
+    RemoveBody,
 }
 
 fn generated_design_metastream_with_sketch_types(
     records: &[(u64, u64)],
-    include_sketch_types: bool,
-    include_dimension_types: bool,
-    include_feature_types: bool,
+    variant: GeneratedDesignMetastreamVariant,
 ) -> Vec<u8> {
+    let include_sketch_types = matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
+    let include_dimension_types = include_sketch_types;
+    let include_feature_types = matches!(
+        variant,
+        GeneratedDesignMetastreamVariant::BaseFeature
+            | GeneratedDesignMetastreamVariant::RemoveBody
+    );
+    let include_construction_types =
+        matches!(variant, GeneratedDesignMetastreamVariant::RemoveBody);
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     let point_entity_ids: &[u64] = if include_dimension_types {
         &[100, 200, 300, 400, 700, 1300, 1302]
@@ -118,7 +146,18 @@ fn generated_design_metastream_with_sketch_types(
     } else {
         &[]
     };
-    let feature_entity_ids: &[u64] = if include_feature_types { &[1400] } else { &[] };
+    let feature_entity_ids: &[u64] = if include_construction_types {
+        &[1400, 1600]
+    } else if include_feature_types {
+        &[1400]
+    } else {
+        &[]
+    };
+    let geometry_entity_ids: &[u64] = if include_construction_types {
+        &[600, 1500]
+    } else {
+        &[600]
+    };
     let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
         (
             crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
@@ -181,7 +220,7 @@ fn generated_design_metastream_with_sketch_types(
             base,
             0,
             "Geometry",
-            &[600],
+            geometry_entity_ids,
         ),
         (
             "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
@@ -251,6 +290,43 @@ fn generated_design_metastream_with_sketch_types(
             1,
             crate::records::DESIGN_MODULE_FUSION,
             feature_entity_ids,
+        ));
+    }
+    if include_construction_types {
+        types.push((
+            "00000000-0000-0000-0000-000000001401",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001402",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1601],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001403",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1602],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001404",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1603],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001405",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[1604],
         ));
     }
     design_metastream_with_records(&types, records)
@@ -873,6 +949,129 @@ pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, 
     scope.extend_from_slice(&scope_record.to_le_bytes());
     out.extend_from_slice(&scope);
     records.push((u64::from(scope_record), scope_offset));
+
+    (out, records)
+}
+
+/// Add a `RemoveBody` scope and its single whole-body construction group to
+/// the generated Design stream.
+pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn local_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let group_record = 1_500_u32;
+    let scope_offset = u64::try_from(out.len()).expect("synthetic RemoveBody scope offset");
+
+    let mut scope = Vec::new();
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(b"268");
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    scope.extend_from_slice(&[0; 10]);
+    scope.extend_from_slice(&2_u32.to_le_bytes());
+    for reference in [u64::from(group_record), 1600] {
+        scope.push(1);
+        scope.extend_from_slice(&reference.to_le_bytes());
+        scope.extend_from_slice(&[0, 0]);
+    }
+    scope.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut scope, "RemoveBody");
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    scope.extend_from_slice(&[0; 78]);
+    assert_eq!(scope.len(), 157);
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(b"261");
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
+
+    let group_offset = u64::try_from(out.len()).expect("synthetic RemoveBody group offset");
+    let mut group = Vec::new();
+    group.extend_from_slice(&3_u32.to_le_bytes());
+    group.extend_from_slice(b"264");
+    group.extend_from_slice(&group_record.to_le_bytes());
+    group.extend_from_slice(&[0; 8]);
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&1600_u64.to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&0_u32.to_le_bytes());
+    group.extend_from_slice(&0x0000_0004_0000_0000_u64.to_le_bytes());
+    group.extend_from_slice(&[0; 10]);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.extend_from_slice(&1.0_f64.to_le_bytes());
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    local_reference(&mut group, u64::from(group_record + 1));
+    group.push(0);
+    local_reference(&mut group, u64::from(scope_record));
+    group.extend_from_slice(&3_u32.to_le_bytes());
+    group.extend_from_slice(b"259");
+    group.extend_from_slice(&group_record.to_le_bytes());
+    out.extend_from_slice(&group);
+    records.push((u64::from(group_record), group_offset));
+
+    let operand_offset = u64::try_from(out.len()).expect("synthetic body operand offset");
+    let mut operand = Vec::new();
+    operand.extend_from_slice(&3_u32.to_le_bytes());
+    operand.extend_from_slice(b"268");
+    operand.extend_from_slice(&1600_u32.to_le_bytes());
+    operand.extend_from_slice(&[0; 10]);
+    operand.extend_from_slice(&1_u32.to_le_bytes());
+    operand.extend_from_slice(&985_u64.to_le_bytes());
+    operand.extend_from_slice(&3_u32.to_le_bytes());
+    operand.push(1);
+    operand.extend_from_slice(&1603_u64.to_le_bytes());
+    operand.extend_from_slice(&[0, 0]);
+    operand.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(&mut operand, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut operand, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    operand.extend_from_slice(&2_u32.to_le_bytes());
+    operand.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&operand);
+    records.push((1600, operand_offset));
+
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"269");
+    out.extend_from_slice(&1600_u32.to_le_bytes());
+
+    for (record_index, class_tag) in [
+        (1601_u32, "270"),
+        (1602_u32, "271"),
+        (1603_u32, "272"),
+        (1604_u32, "273"),
+    ] {
+        let record_offset = u64::try_from(out.len()).expect("synthetic body operand header");
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+        records.push((u64::from(record_index), record_offset));
+        if record_index == 1603 {
+            out.extend_from_slice(&4_u32.to_le_bytes());
+            out.extend_from_slice(b"1603");
+            out.extend_from_slice(&1604_u32.to_le_bytes());
+            out.extend_from_slice(&[0; 12]);
+            out.extend_from_slice(&16_u32.to_le_bytes());
+            out.extend_from_slice(b"body_recipe_data");
+        }
+    }
 
     (out, records)
 }
