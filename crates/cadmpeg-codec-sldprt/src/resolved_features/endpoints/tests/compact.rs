@@ -113,6 +113,102 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
 }
 
 #[test]
+fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
+    let marker = |id: &str, kind, object_index, coordinates_m, links| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links,
+        link_selector: None,
+    };
+    let first = marker(
+        "first",
+        SketchInputKind::Point,
+        Some(1),
+        Some([0.0, 0.0]),
+        Vec::new(),
+    );
+    let second = marker(
+        "second",
+        SketchInputKind::Point,
+        Some(2),
+        Some([1.0, 0.0]),
+        Vec::new(),
+    );
+    let third = marker(
+        "third",
+        SketchInputKind::Point,
+        Some(3),
+        Some([2.0, 0.0]),
+        Vec::new(),
+    );
+    let mut line = marker(
+        "line",
+        SketchInputKind::LineOrCircle,
+        Some(4),
+        None,
+        vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: second.id.clone(),
+        }],
+    );
+    let relation = |id: &str, other: &SketchInputEntity| {
+        marker(
+            id,
+            SketchInputKind::Relation(SketchRelationKind::Radius),
+            line.object_index,
+            None,
+            vec![
+                SketchInputLink {
+                    local_id: 1,
+                    entity_ref: other.id.clone(),
+                },
+                SketchInputLink {
+                    local_id: 2,
+                    entity_ref: second.id.clone(),
+                },
+            ],
+        )
+    };
+    let radius = relation("radius", &first);
+    line.links.push(SketchInputLink {
+        local_id: 1,
+        entity_ref: radius.id.clone(),
+    });
+    let markers_by_id = [&first, &second, &third, &line, &radius]
+        .into_iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let markers = [&first, &second, &third, &line, &radius];
+
+    assert_eq!(
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    let competing = relation("competing", &third);
+    let markers_by_id = [&first, &second, &third, &line, &radius, &competing]
+        .into_iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let markers = [&first, &second, &third, &line, &radius, &competing];
+    assert_ne!(
+        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers).len(),
+        2
+    );
+}
+
+#[test]
 fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
     let point = SketchInputEntity {
         id: "point".into(),

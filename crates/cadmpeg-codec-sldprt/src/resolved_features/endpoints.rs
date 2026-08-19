@@ -1599,18 +1599,29 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
         return None;
     }
-    let [direct_link] = curve.links.as_slice() else {
+    let mut direct_points = Vec::new();
+    let mut direct_radius_relations = Vec::new();
+    for link in &curve.links {
+        let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
+        if linked.feature_ref != curve.feature_ref {
+            return None;
+        }
+        match linked.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                if linked.coordinates_m.is_some() =>
+            {
+                direct_points.push(linked);
+            }
+            SketchInputKind::Relation(crate::records::SketchRelationKind::Radius) => {
+                direct_radius_relations.push(linked);
+            }
+            _ => return None,
+        }
+    }
+    let [direct] = direct_points.as_slice() else {
         return None;
     };
-    let direct = markers_by_id
-        .get(direct_link.entity_ref.as_str())
-        .copied()?;
-    if direct.coordinates_m.is_none()
-        || !matches!(
-            direct.kind,
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-        )
-    {
+    if direct_radius_relations.len() > 1 {
         return None;
     }
     let object_index = curve.object_index?;
@@ -1641,10 +1652,16 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
             return None;
         };
         (first.id != second.id && (first.id == direct.id || second.id == direct.id))
-            .then_some([first, second])
+            .then_some((relation, [first, second]))
     });
-    let pair = candidates.next()?;
+    let (relation, pair) = candidates.next()?;
     if candidates.next().is_some() {
+        return None;
+    }
+    if direct_radius_relations
+        .first()
+        .is_some_and(|direct_relation| direct_relation.id != relation.id)
+    {
         return None;
     }
     Some(pair)
