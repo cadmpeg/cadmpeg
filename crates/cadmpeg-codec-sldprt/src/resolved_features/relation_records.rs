@@ -410,6 +410,59 @@ mod relation_records_tests {
     }
 
     #[test]
+    fn native_relation_tags_are_scoped_to_the_declared_family() {
+        let operand_pair = |kind| {
+            [0_u16, 1]
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, entity_index)| FeatureInputOperand {
+                    offset: ordinal as u64,
+                    reference_ref: format!("reference-{ordinal}"),
+                    kind,
+                    entity_index,
+                    entity_ref: None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let point_tagged = operand_pair(FeatureInputOperandKind::Native(0x80d5));
+        let line_tagged = operand_pair(FeatureInputOperandKind::Native(0x810f));
+
+        assert!(relation_signature(
+            FeatureInputRelationFamily::PointPointDistance,
+            &point_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::PointPointHorizontalDistance,
+            &point_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::PointPointVerticalDistance,
+            &point_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::Angle,
+            &point_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::LineLineDistance,
+            &line_tagged
+        ));
+
+        assert!(!relation_signature(
+            FeatureInputRelationFamily::PointPointDistance,
+            &line_tagged
+        ));
+        assert!(!relation_signature(
+            FeatureInputRelationFamily::LineLineDistance,
+            &point_tagged
+        ));
+        assert!(!relation_signature(
+            FeatureInputRelationFamily::PointLineDistance,
+            &point_tagged
+        ));
+    }
+
+    #[test]
     fn display_scalar_joins_driving_scalar_after_class_declaration() {
         let vertical = class(10, "sgPntPntVertDist");
         let horizontal = class(30, "sgPntPntHorDist");
@@ -909,6 +962,8 @@ pub(super) fn relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
+    // `80d5` and `810f` are class-scoped relation cells. Keep them behind the
+    // declared family instead of treating either tag as a global marker kind.
     use FeatureInputOperandKind::{Native, D6, E1};
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
@@ -929,12 +984,14 @@ pub(super) fn relation_signature(
             (first.kind == D6 && second.kind == D6)
                 || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
                 || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
+                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
         }
         LineLineDistance => {
             (first.kind == E1 && second.kind == E1)
                 || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
+                || (first.kind == Native(0x810f) && second.kind == Native(0x810f))
                 || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
         }
         PointLineDistance => {
@@ -944,9 +1001,13 @@ pub(super) fn relation_signature(
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
             (first.kind == Native(0x8152) && second.kind == Native(0x8152))
+                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
                 || (first.kind == Native(0x8dcb) && second.kind == Native(0x8dcb))
         }
-        Angle => first.kind == Native(0x8dda) && second.kind == Native(0x8dda),
+        Angle => {
+            (first.kind == Native(0x8dda) && second.kind == Native(0x8dda))
+                || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
+        }
         CircleDiameter => unreachable!("handled as a unary relation"),
     }
 }

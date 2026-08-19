@@ -803,7 +803,7 @@ Keywords length literals use the suffixes `uin`, `mil`, `mm`, `cm`, `in`, `ft`, 
 
 Point-reference cells address feature-local object indices within the owning feature object. A reference resolves when that object index is unique in the feature object. Marker trailer local identifiers are a separate namespace used by operand tags whose layout specifies local-identifier resolution.
 
-Operand tags `80d6`, `80cc`, `837b`, `8ab6`, `8dcb`, `929d`, `bc7c`, and `bd69` select point loci, including the point-qualified curve forms defined above. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line, circle, or arc markers.
+Operand tags `80d6`, `80cc`, `837b`, `8ab6`, `8dcb`, `929d`, `bc7c`, and `bd69` select point loci, including the point-qualified curve forms defined above. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line, circle, or arc markers. In a declared `sgPntPntDist`, `sgPntPntHorDist`, `sgPntPntVertDist`, or `sgAnglDim` relation, tag `80d5` is the ordered two-operand point or relation-marker form. In a declared `sgLLDist` relation, tag `810f` is the ordered two-operand line or relation-marker form. The relation class selects the operand family; these tags do not change the generic object-index and local-identifier rules.
 
 A uniquely linked reference-handle chain resolves to its terminal profile locus. Linked loci intersect a non-unique coordinate-derived locus or entity set for the same handle; a single remaining locus or entity resolves the handle. Cyclic chains and chains with multiple terminal loci remain unresolved. A relation handle whose linked chains identify one common profile entity identifies that entity.
 
