@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 const EPS_CYLINDER_FIT: f64 = 1e-8;
 const EPS_ROUND_CAP_GAP: f64 = 1e-9;
 const EPS_ROUND_CAP_PARALLEL: f64 = 1e-10;
+const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1e-9;
 
 pub(in super::super) fn parallel_support_radius(
@@ -365,6 +366,11 @@ pub(in super::super) fn round_constant_radius(
         .as_deref()
         .and_then(unique_positive_length)
     {
+        if complete_direct_placed_cylinder_radius_agreement(scan, ir, feature_id)
+            .is_some_and(|agrees| !agrees)
+        {
+            return None;
+        }
         return Some(radius);
     }
     let generated_rows = scan
@@ -430,6 +436,45 @@ pub(in super::super) fn round_constant_radius(
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
+}
+
+fn complete_direct_placed_cylinder_radius_agreement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<bool> {
+    let cylinder_rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .collect::<Vec<_>>();
+    let direct_radii = cylinder_rows
+        .iter()
+        .map(|row| {
+            unique_surface_parameter_record(scan, row)
+                .and_then(|record| record.type24_round_radius(row.type_byte))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let placed_radii = cylinder_rows
+        .iter()
+        .map(|row| round_placed_cylinder_radius(ir, row))
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        direct_radii
+            .iter()
+            .zip(placed_radii)
+            .all(|(direct, placed)| {
+                let scale = direct.abs().max(placed.abs()).max(1.0);
+                direct.is_finite()
+                    && *direct > 0.0
+                    && placed.is_finite()
+                    && placed > 0.0
+                    && (direct - placed).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+            }),
+    )
 }
 
 pub(in super::super) fn mixed_round_radius_samples(

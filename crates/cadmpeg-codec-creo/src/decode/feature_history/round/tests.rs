@@ -525,6 +525,72 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
 }
 
 #[test]
+fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for id in [3, 4] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: id as usize,
+        });
+        let token = crate::surface::SurfaceParameterScalar {
+            value: Some(0.5),
+            raw: vec![0x53, 0, 0, 0, 0, 0, 0],
+            offset: 0,
+            length: 7,
+        };
+        scan.surfaces
+            .parameters
+            .push(crate::surface::SurfaceParameterRecord {
+                surface_id: id,
+                body: vec![0; 7],
+                scalar_values: vec![0.5],
+                scalar_tokens: vec![token.clone()],
+                opaque_spans: Vec::new(),
+                scalar_frames: Vec::new(),
+                terminal_scalar_frame: None,
+                tabulated_cylinder_frame: None,
+                positional_cylinder_frame: None,
+                split_cylinder_outline_bounds: None,
+                positional_cone_frame: None,
+                positional_torus_frame: None,
+                boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+                offset: id as usize,
+                body_offset: id as usize + 1,
+            });
+    }
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    for (id, radius) in [(3, 0.5), (4, 0.5)] {
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+    if let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } =
+        &mut ir.model.surfaces[1].geometry
+    {
+        *radius = 0.75;
+    }
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
+    ir.model.surfaces.pop();
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+}
+
+#[test]
 fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;

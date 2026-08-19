@@ -208,7 +208,8 @@ fixtures, scores above L1 remain blocked.
   geometry, edge identities, radii, and extents resolve uniquely.
 - A round with a complete placed set of generated cylinder carriers transfers
   their common positive radius even when generated cap or support rows are
-  also present.
+  also present. A complete direct rolling-radius sample set must agree with the
+  complete placed cylinder set; disagreement withholds the constant radius.
 - An equal-distance chamfer uses a complete transferred model cone carrier
   when its row-local parameter body is opaque; duplicate parameter records do
   not supply an alternate placement.
