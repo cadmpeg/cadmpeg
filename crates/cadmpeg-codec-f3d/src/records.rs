@@ -297,7 +297,8 @@ pub struct DesignDimensionRecipeRecord {
     pub id: String,
     /// Companion record containing this indexed record.
     pub companion_record_index: u32,
-    /// Zero-based recipe position within the companion payload.
+    /// Deterministic decoder ordinal within the companion payload; it is not a
+    /// source operation order.
     pub recipe_ordinal: u32,
     /// Construction recipe contained by this indexed record.
     pub recipe_id: String,

@@ -208,16 +208,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
-### DR-05. Recipe records of a non-locus parameter companion
-
-**Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
-
-**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus. The decoder retains each complete recipe record and its byte offset, and assigns `recipe_ordinal` while walking the records.
-
-**Need.** We must know the operation to build a neutral dimension from more than one recipe record.
-
-**Note.** The prior closure promoted increasing byte offset, a decoder ordering, to the source operation order. No stored operation discriminator or independent operation witness was added. Keep the reader order for deterministic retention, but do not treat it as the format's semantic operation until a controlled multi-recipe specimen separates the alternatives.
-
 ### DR-65. Agreement test of the parallel-line and concentric-circle dimensions
 
 **Question.** Which agreement rule holds for a parallel-line separation and a concentric-circle separation?
