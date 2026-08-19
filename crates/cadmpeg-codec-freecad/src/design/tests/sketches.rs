@@ -141,6 +141,24 @@ fn transfers_geom_point_carrier() {
 }
 
 #[test]
+fn rejects_point_alias_for_geom_point() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+<Geometry type="Part::GeomPoint"><Point X="1.25" Y="-2.5"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("unregistered point carrier");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn rejects_incomplete_present_sketch_placement() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
@@ -163,13 +181,13 @@ fn rejects_malformed_constraint_operand_lists() {
         r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><Point X="0" Y="0"/></Geometry></GeometryList></Property>
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><GeomPoint X="0" Y="0" Z="0"/></Geometry></GeometryList></Property>
 <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain Type="20" ElementIds="0 bad" ElementPositions="0 0"/></ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><Point X="0" Y="0"/></Geometry></GeometryList></Property>
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomPoint"><GeomPoint X="0" Y="0" Z="0"/></Geometry></GeometryList></Property>
 <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1"><Constrain Type="20" First="0" FirstPos="invalid"/></ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#,
     ] {
@@ -220,7 +238,7 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="6">
- <Geometry type="Part::GeomPoint"><Point X="1" Y="2"/></Geometry>
+ <Geometry type="Part::GeomPoint"><GeomPoint X="1" Y="2" Z="0"/></Geometry>
  <Geometry type="Part::GeomEllipse"><Ellipse CenterX="3" CenterY="4" MajorRadius="6" MinorRadius="2" MajorAxisX="0" MajorAxisY="1"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="0" MajorRadius="5" MinorRadius="3" MajorAngle="0.25" FirstParameter="0.5" LastParameter="1.5"/></Geometry>
  <Geometry type="Part::GeomCircle"><Circle CenterX="9" CenterY="9"/></Geometry>
@@ -396,7 +414,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
- <Geometry type="Part::GeomPoint"><Point X="2" Y="6"/></Geometry>
+<Geometry type="Part::GeomPoint"><GeomPoint X="2" Y="6" Z="0"/></Geometry>
 </GeometryList></Property>
 <Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
@@ -637,7 +655,7 @@ fn neutralizes_line_midpoint_coincidence() {
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="2">
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="2" EndY="0"/></Geometry>
-<Geometry type="Part::GeomPoint"><Point X="1" Y="0"/></Geometry>
+<Geometry type="Part::GeomPoint"><GeomPoint X="1" Y="0" Z="0"/></Geometry>
 </GeometryList></Property>
 <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
 <Constrain Type="1" First="0" FirstPos="3" Second="1" SecondPos="1"/>

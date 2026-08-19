@@ -17,24 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-07. Legacy point carrier provenance
-
-**Question.** Does any FreeCAD producer version write a declared `Part::GeomPoint` with a `Point`
-carrier instead of the current `GeomPoint` carrier?
-
-**Known.** The current `PropertyGeometryList::Save` writes the geometry runtime name and
-`GeomPoint::Save` writes a `GeomPoint` carrier. The decoder accepts `Point` as a compatibility
-carrier for `Part::GeomPoint`.
-
-**Need.** Establish a producer source path or independent witness for the historical `Point` tag,
-including producer version and value grammar, or remove the compatibility admission.
-
-**Conflict.** The closure proves the current runtime-name/carrier mapping and one early source
-revision, but that subset does not answer the question about any supported historical producer.
-The compatibility path remains an unproven alias.
-
-**Note.** Reopened. Current-version evidence is a subset closure of a historical-version question.
-
 ### DP-09. Spreadsheet carrier and value-container selection
 
 **Question.** Which property and XML value container supply spreadsheet cells and row or column

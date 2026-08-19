@@ -1192,9 +1192,7 @@ fn validate_sketch_carrier(
     }) else {
         return Ok(());
     };
-    if carrier.tag_name().name() == expected
-        || (kind == "Part::GeomPoint" && carrier.tag_name().name() == "Point")
-    {
+    if carrier.tag_name().name() == expected {
         return Ok(());
     }
     Err(CodecError::Malformed(format!(
@@ -2591,7 +2589,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             },
             _ => native(),
         }
-    } else if matches!(kind, "Part::GeomPoint" | "Point") {
+    } else if kind == "Part::GeomPoint" {
         match (number("X"), number("Y")) {
             (Some(x), Some(y)) => SketchGeometry::Point {
                 position: Point2::new(x, y),
