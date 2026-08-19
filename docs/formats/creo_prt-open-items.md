@@ -651,25 +651,6 @@ a byte scan.
 when the following identifier joins a generated segment and an `e2` byte occurs
 in the next 24 bytes. The specification does not give this window.
 
-### SP-47. Conflicting scalar sources
-
-**Question.** Which source gives the value of a solver scalar when a `var_arr`
-row value, a relation-derived value, and a scalar-equality component disagree?
-
-**Known.** `creo_prt.md` §5 "Function `5` has a direct scalar-equality form with
-two type-6 rows followed by" gives that conflicting finite values leave the
-direct function-5 form native. The specification gives no arbitration rule for
-the general scalar-equality graph.
-
-**Need.** We must know the source order to keep a contested scalar unresolved.
-
-**Conflict.** `merge_scalar_value_candidate` in
-`src/decode/sketch/equations_scalar.rs:456-476` records a disagreement as a null
-value and keeps that null.
-`propagate_section_equation_scalar_equality_values` in
-`src/decode/sketch/equations_scalar.rs:593-630` reads the same null as an absent
-value and writes the component value over it.
-
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding

@@ -581,40 +581,48 @@ pub(crate) fn propagate_section_equation_scalar_equality_values(
     definition: &crate::feature::FeatureDefinition,
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> bool {
-    let Some(variables) = definition
+    let Some(_variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
         return false;
     };
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let components = section_equation_scalar_equality_components(definition);
     let mut changed = false;
     for component in components {
         let mut component_value = None;
         let mut conflicting = false;
         for variable in &component {
-            let invalid_row = variables.rows.iter().any(|row| {
-                (row.variable_type, row.key) == *variable
-                    && row.value.is_some_and(|value| !value.is_finite())
-            });
-            if invalid_row {
-                conflicting = true;
-                break;
-            }
+            let mut variable_value = match scalar_equality_values.get(variable).copied() {
+                Some(Err(())) => {
+                    conflicting = true;
+                    break;
+                }
+                Some(Ok(value)) => value,
+                None => None,
+            };
             match values.get(variable) {
-                Some(Some(value))
-                    if value.is_finite()
-                        && component_value
-                            .is_none_or(|stored| approximately_equal(stored, *value)) =>
-                {
-                    component_value = Some(*value);
+                Some(Some(value)) if value.is_finite() => {
+                    if variable_value.is_some_and(|stored| !approximately_equal(stored, *value)) {
+                        conflicting = true;
+                        break;
+                    }
+                    variable_value = Some(*value);
                 }
                 Some(Some(_) | None) => {
                     conflicting = true;
                     break;
                 }
                 None => {}
+            }
+            if let Some(value) = variable_value {
+                if component_value.is_some_and(|stored| !approximately_equal(stored, value)) {
+                    conflicting = true;
+                    break;
+                }
+                component_value = Some(value);
             }
         }
         if conflicting {

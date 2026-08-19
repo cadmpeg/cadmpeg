@@ -1797,6 +1797,14 @@ missing result is derived from the two finite angles; a stored result must be fi
 non-negative, and equal to that difference. A missing selector, a reversed or
 over-π difference, or a conflicting result leaves the equation native.
 
+Scalar-equality reconciliation is source-independent. It compares finite stored
+`var_arr` row values with finite candidates from dimensions, relations, equation
+forms, and coordinate solving; no source has precedence. A non-finite source or
+any disagreement within a complete scalar-equality component leaves every member
+of that component without a resolved scalar. A derived candidate cannot fill a
+member of a conflicting component. The original stored rows remain retained in
+their native variable record.
+
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.

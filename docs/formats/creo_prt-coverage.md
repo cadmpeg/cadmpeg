@@ -92,6 +92,10 @@ fixtures, scores above L1 remain blocked.
   rows retain their source activity. Zero-valued auxiliary rows in functions
   thirteen, thirty-three, and thirty-five also reconcile through active scalar
   equality components; conflicting or incomplete rows remain native.
+- Scalar-equality components compare stored `var_arr` values with finite
+  dimension, relation, equation, and coordinate-derived candidates without source
+  precedence. A non-finite source or any disagreement blocks every resolved
+  scalar in that component; derived candidates cannot fill a conflicting member.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots

@@ -368,6 +368,27 @@ fn scalar_equality_propagation_preserves_a_conflicting_source() {
 }
 
 #[test]
+fn scalar_equality_propagation_rejects_derived_value_after_finite_row_conflict() {
+    let definition = definition(
+        &equation_body(&[(1, 42, &[0, 1, 2]), (2, 2, &[2, 3])]),
+        vec![
+            row(1, 10, Some(2.0)),
+            row(1, 11, Some(8.0)),
+            row(6, 20, Some(5.0)),
+            row(6, 21, Some(3.0)),
+        ],
+    );
+    let mut values = BTreeMap::from([((6, 20), Some(5.0))]);
+    assert!(propagate_section_equation_scalar_equality_values(
+        &definition,
+        &mut values,
+    ));
+    assert_eq!(values.get(&(6, 20)), Some(&None));
+    assert_eq!(values.get(&(6, 21)), Some(&None));
+    assert!(resolved_section_scalar_values(&definition).is_empty());
+}
+
+#[test]
 fn dimension_equations_accept_scalar_values_proved_by_equality() {
     let mut coordinate_definition = definition(
         &equation_body(&[(1, 3, &[0, 1, 2]), (2, 2, &[2, 3])]),
