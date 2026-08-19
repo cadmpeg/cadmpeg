@@ -579,7 +579,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             owner_record_indices[1],
             owner_record_indices[2],
             owner_record_indices[3],
-            owner_record_indices[4],
+            200,
             owner_record_indices[5],
             owner_record_indices[6],
         ];
@@ -612,14 +612,64 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             bytes[318 + ordinal * 2..320 + ordinal * 2].copy_from_slice(&value.to_le_bytes());
         }
         bytes[334..338].copy_from_slice(&2_u32.to_le_bytes());
+        append_axial_test_header(
+            &mut bytes,
+            paired_class_tag.as_bytes().try_into().unwrap(),
+            scope_record_index,
+        );
+        let frame_start = bytes.len();
+        let frame_class_tag = if class_tag == "364" { b"376" } else { b"327" };
+        append_axial_test_header(&mut bytes, frame_class_tag, 200);
+        let matrix_prefix = if class_tag == "364" { 45 } else { 46 };
+        let transform_offset = if class_tag == "364" { 49 } else { 50 };
+        let frame_length = if class_tag == "364" {
+            crate::layout::assembly_as_built_421_frame_376::LEN
+        } else {
+            crate::layout::assembly_as_built_421_frame_327::LEN
+        };
+        bytes.resize(frame_start + frame_length, 0);
+        bytes[frame_start + matrix_prefix..frame_start + transform_offset]
+            .copy_from_slice(&[1, 1, 0, 0]);
+        let mut solved_transform = identity_matrix();
+        solved_transform[0][3] = 9.0;
+        solved_transform[1][3] = 8.0;
+        solved_transform[2][3] = 7.0;
+        for (ordinal, value) in solved_transform.into_iter().flatten().enumerate() {
+            let at = frame_start + transform_offset + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        append_axial_test_header(
+            &mut bytes,
+            paired_class_tag.as_bytes().try_into().unwrap(),
+            200,
+        );
 
+        let (limit_first_value, limit_second_value) = if class_tag == "420" {
+            (1.5, -1.0)
+        } else {
+            (-1.0, 1.5)
+        };
         let owners = [
             owner(scope_record_index, 100, 0, owner_class, 1.0, 1_000),
             owner(scope_record_index, 101, 1, owner_class, 2.0, 1_001),
             owner(scope_record_index, 102, 2, owner_class, 3.0, 1_002),
             owner(scope_record_index, 103, 3, owner_class, 0.25, 1_003),
-            owner(scope_record_index, 105, 4, owner_class, -1.0, 1_005),
-            owner(scope_record_index, 106, 5, owner_class, 1.5, 1_006),
+            owner(
+                scope_record_index,
+                105,
+                4,
+                owner_class,
+                limit_first_value,
+                1_005,
+            ),
+            owner(
+                scope_record_index,
+                106,
+                5,
+                owner_class,
+                limit_second_value,
+                1_006,
+            ),
         ];
         let alignment = exact_assembly_alignment(
             &bytes,
@@ -632,13 +682,48 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
         assert_eq!(alignment.owner_record_indices, [103, 100, 101, 102]);
         assert_eq!(alignment.value_offsets, [1_003, 1_000, 1_001, 1_002]);
-        let limits = alignment.angular_limits.expect("angular limits");
+        let limits = alignment.limits.expect("assembly limits");
+        assert_eq!(
+            limits.kind,
+            if class_tag == "420" {
+                DesignAssemblyLimitKind::Linear
+            } else {
+                DesignAssemblyLimitKind::Angular
+            }
+        );
         assert_eq!(limits.minimum, -1.0);
         assert_eq!(limits.maximum, 1.5);
-        assert_eq!(limits.owner_record_indices, [105, 106]);
-        assert_eq!(limits.value_offsets, [1_005, 1_006]);
+        assert_eq!(
+            limits.owner_record_indices,
+            if class_tag == "420" {
+                [106, 105]
+            } else {
+                [105, 106]
+            }
+        );
+        assert_eq!(
+            limits.value_offsets,
+            if class_tag == "420" {
+                [1_006, 1_005]
+            } else {
+                [1_005, 1_006]
+            }
+        );
         assert!(alignment.operand_frames.is_none());
         assert!(alignment.operand_paths.is_none());
+        let solved_frame = alignment.solved_frame.expect("solved frame carrier");
+        assert_eq!(solved_frame.reference_record_index, 200);
+        assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
+        assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
+        assert_eq!(
+            solved_frame.class_tag,
+            std::str::from_utf8(frame_class_tag).expect("fixture class tag is ASCII")
+        );
+        assert_eq!(solved_frame.transform[0][3], 9.0);
+        assert_eq!(
+            solved_frame.transform_offset,
+            (frame_start + transform_offset) as u64
+        );
     }
 }
 
@@ -1507,9 +1592,10 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 transform_offset: 4,
             },
         ]),
+        solved_frame: None,
         operand_paths: None,
         axial_operand_targets: None,
-        angular_limits: None,
+        limits: None,
         joint_origin_scope_record_index: None,
     }
 }

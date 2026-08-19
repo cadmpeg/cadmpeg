@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design metadata and bulk-stream byte frames by domain.
 
+pub(crate) mod assembly;
 pub mod body;
 pub mod canvas;
 pub mod components;

@@ -1064,6 +1064,46 @@ pub(crate) mod assembly_as_built_421_scope {
     pub(crate) const FEATURE_ORDINAL: usize = 334;
 }
 
+/// Byte offsets for the `assembly_as_built_421_frame_376` record.
+///
+/// Spec §Assembly operands. Record length 389 B.
+///
+/// ```text
+/// Offsets are relative to the frame carrier's class-376 primary indexed header. The paired indexed header is class 272 at offset 389 and repeats the frame record index.
+/// ```
+pub(crate) mod assembly_as_built_421_frame_376 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 389;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `matrix_prefix` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const MATRIX_PREFIX: usize = 45;
+    /// Stated value of `matrix_prefix` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const MATRIX_PREFIX_VALUE: [u8; 4] = [0x01, 0x01, 0x00, 0x00];
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const MATRIX: usize = 49;
+}
+
+/// Byte offsets for the `assembly_as_built_421_frame_327` record.
+///
+/// Spec §Assembly operands. Record length 390 B.
+///
+/// ```text
+/// Offsets are relative to the frame carrier's class-327 primary indexed header. The paired indexed header is class 262 at offset 390 and repeats the frame record index.
+/// ```
+pub(crate) mod assembly_as_built_421_frame_327 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 390;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `matrix_prefix` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const MATRIX_PREFIX: usize = 46;
+    /// Stated value of `matrix_prefix` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const MATRIX_PREFIX_VALUE: [u8; 4] = [0x01, 0x01, 0x00, 0x00];
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const MATRIX: usize = 50;
+}
+
 /// Byte offsets for the `assembly_operand_path_locator` record.
 ///
 /// Spec §Assembly operands. Record length 190 B.

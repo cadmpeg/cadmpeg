@@ -2588,6 +2588,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && reference_exists
                         })
                 });
+                let solved_frame_link = alignment.solved_frame.as_ref().is_none_or(|frame| {
+                    let expected_class_tag = match scope.class_tag.as_str() {
+                        "364" => "376",
+                        "420" => "327",
+                        _ => return false,
+                    };
+                    let transform_offset = match scope.class_tag.as_str() {
+                        "364" => 49_u64,
+                        "420" => 50_u64,
+                        _ => return false,
+                    };
+                    let Some(header) =
+                        records_by_index.get(&(native_stream, frame.reference_record_index))
+                    else {
+                        return false;
+                    };
+                    as_built_421
+                        && scope.reference_members.get(8).copied()
+                            == Some(frame.reference_record_index)
+                        && scope.reference_member_offsets.get(8).copied()
+                            == Some(frame.reference_offset)
+                        && header.class_tag == expected_class_tag
+                        && frame.class_tag == header.class_tag
+                        && frame.record_byte_offset == header.byte_offset
+                        && frame.transform_offset == frame.record_byte_offset + transform_offset
+                        && design::decode::sketch::valid_sketch_transform(&frame.transform)
+                });
                 let operand_qualifiers_link = match (
                     alignment.operand_frames.as_ref(),
                     alignment.operand_paths.as_ref(),
@@ -2702,7 +2729,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             })
                     });
                 let alignment_scalars_link = if as_built_421 {
-                    match alignment.angular_limits.as_ref() {
+                    match alignment.limits.as_ref() {
                         Some(limits) => {
                             let alignment_lanes = [
                                 (
@@ -2730,22 +2757,45 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     3_u32,
                                 ),
                             ];
-                            let limit_lanes = [
-                                (
-                                    Some(limits.owner_record_indices[0]),
-                                    Some(limits.value_offsets[0]),
-                                    limits.minimum,
-                                    4_u32,
-                                ),
-                                (
-                                    Some(limits.owner_record_indices[1]),
-                                    Some(limits.value_offsets[1]),
-                                    limits.maximum,
-                                    5_u32,
-                                ),
-                            ];
+                            let limit_lanes = if scope.class_tag == "420" {
+                                [
+                                    (
+                                        Some(limits.owner_record_indices[1]),
+                                        Some(limits.value_offsets[1]),
+                                        limits.maximum,
+                                        4_u32,
+                                    ),
+                                    (
+                                        Some(limits.owner_record_indices[0]),
+                                        Some(limits.value_offsets[0]),
+                                        limits.minimum,
+                                        5_u32,
+                                    ),
+                                ]
+                            } else {
+                                [
+                                    (
+                                        Some(limits.owner_record_indices[0]),
+                                        Some(limits.value_offsets[0]),
+                                        limits.minimum,
+                                        4_u32,
+                                    ),
+                                    (
+                                        Some(limits.owner_record_indices[1]),
+                                        Some(limits.value_offsets[1]),
+                                        limits.maximum,
+                                        5_u32,
+                                    ),
+                                ]
+                            };
                             alignment.owner_record_indices.len() == 4
                                 && alignment.value_offsets.len() == 4
+                                && limits.kind
+                                    == if scope.class_tag == "420" {
+                                        records::DesignAssemblyLimitKind::Linear
+                                    } else {
+                                        records::DesignAssemblyLimitKind::Angular
+                                    }
                                 && limits.minimum.is_finite()
                                 && limits.maximum.is_finite()
                                 && limits.minimum <= limits.maximum
@@ -2793,7 +2843,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
                 };
                 let alignment_reference_link = if as_built_421 {
-                    alignment.angular_limits.as_ref().is_some_and(|limits| {
+                    alignment.limits.as_ref().is_some_and(|limits| {
+                        let limit_reference_indices = if scope.class_tag == "420" {
+                            [
+                                limits.owner_record_indices[1],
+                                limits.owner_record_indices[0],
+                            ]
+                        } else {
+                            limits.owner_record_indices
+                        };
                         alignment.owner_record_indices.len() == 4
                             && scope.reference_members.get(4..8)
                                 == Some(
@@ -2806,7 +2864,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     .as_slice(),
                                 )
                             && scope.reference_members.get(9..11)
-                                == Some(limits.owner_record_indices.as_slice())
+                                == Some(limit_reference_indices.as_slice())
                     })
                 } else {
                     scope
@@ -2817,6 +2875,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
+                    && solved_frame_link
                     && operand_qualifiers_link
                     && joint_origin_envelope_link
                     && alignment_reference_link

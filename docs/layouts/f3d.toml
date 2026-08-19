@@ -2479,7 +2479,7 @@ offset = 189
 type = "bytes[121]"
 source = "spec"
 anchor = "the eleven-entry reference table starts with its marked entry at offset 189"
-note = "Entries 0 and 1 form the first operand carrier pair. Entries 2 and 3 form the second pair. Entries 4 through 7 are the placement owners in OffsetX, OffsetY, OffsetZ, and AngleZ order. Entry 8 is the solved connector-frame carrier. Entries 9 and 10 are the AngleMinimum and AngleMaximum owners."
+note = "Entries 0 and 1 form the first operand carrier pair. Entries 2 and 3 form the second pair. Entries 4 through 7 are the placement owners in OffsetX, OffsetY, OffsetZ, and AngleZ order. Entry 8 is the solved connector-frame carrier. Entries 9 and 10 are the generation-specific degree-of-freedom limit owners."
 
 [[record.field]]
 name = "reference_trailer"
@@ -2515,6 +2515,90 @@ anchor = "offset 334 stores the feature ordinal"
 offset = 338
 size = 83
 note = "The fixed frame tail before the paired indexed header is not assigned."
+
+
+[[record]]
+name = "assembly_as_built_421_frame_376"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "class-`364`/`272` form uses owner class `293`, first carrier classes `351`/`307` and `350`/`307`, and frame carrier class `376`"
+size = 389
+note = "Offsets are relative to the frame carrier's class-376 primary indexed header. The paired indexed header is class 272 at offset 389 and repeats the frame record index."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "class-`364`/`272` form uses owner class `293`, first carrier classes `351`/`307` and `350`/`307`, and frame carrier class `376`"
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "The frame-carrier prologue before its matrix marker is not assigned."
+
+[[record.field]]
+name = "matrix_prefix"
+offset = 45
+type = "bytes[4]"
+source = "spec"
+anchor = "frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48"
+value = [1, 1, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48"
+
+[[record.gap]]
+offset = 177
+size = 212
+note = "The frame-carrier tail before the paired indexed header is not assigned."
+
+
+[[record]]
+name = "assembly_as_built_421_frame_327"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "class-`420`/`262` form uses owner class `378`, first carrier classes `426`/`273` and `400`/`273`, and frame carrier class `327`"
+size = 390
+note = "Offsets are relative to the frame carrier's class-327 primary indexed header. The paired indexed header is class 262 at offset 390 and repeats the frame record index."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "class-`420`/`262` form uses owner class `378`, first carrier classes `426`/`273` and `400`/`273`, and frame carrier class `327`"
+
+[[record.gap]]
+offset = 11
+size = 35
+note = "The frame-carrier prologue before its matrix marker is not assigned."
+
+[[record.field]]
+name = "matrix_prefix"
+offset = 46
+type = "bytes[4]"
+source = "spec"
+anchor = "matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49"
+value = [1, 1, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49"
+
+[[record.gap]]
+offset = 178
+size = 212
+note = "The frame-carrier tail before the paired indexed header is not assigned."
 
 
 [[record]]

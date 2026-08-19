@@ -11,8 +11,8 @@ use cadmpeg_ir::products::{
 
 use crate::ids::native_stream;
 use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyOperandPath, DesignComponentOccurrence,
-    DesignParameterScope,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandPath,
+    DesignComponentOccurrence, DesignParameterScope,
 };
 
 /// Return whether a 421-byte As-built scope uses one of the admitted legacy
@@ -95,6 +95,19 @@ pub(crate) fn project_assembly_joints(
         let Some(operands) = operands else {
             continue;
         };
+        let (angular_limits, linear_limits) = match alignment.limits.as_ref() {
+            Some(limits) => {
+                let projected = JointLimits {
+                    minimum: Some(limits.minimum),
+                    maximum: Some(limits.maximum),
+                };
+                match limits.kind {
+                    DesignAssemblyLimitKind::Angular => (Some(projected), None),
+                    DesignAssemblyLimitKind::Linear => (None, Some(projected)),
+                }
+            }
+            None => (None, None),
+        };
         let id = crate::ids::neutral_assembly_joint_id(scope);
         joints.entry(id.0.clone()).or_insert_with(|| AssemblyJoint {
             id,
@@ -111,11 +124,8 @@ pub(crate) fn project_assembly_joints(
             translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
             distance: None,
             distance2: None,
-            angular_limits: alignment.angular_limits.as_ref().map(|limits| JointLimits {
-                minimum: Some(limits.minimum),
-                maximum: Some(limits.maximum),
-            }),
-            linear_limits: None,
+            angular_limits,
+            linear_limits,
             properties: BTreeMap::new(),
             native_ref: Some(scope.id.clone()),
         });

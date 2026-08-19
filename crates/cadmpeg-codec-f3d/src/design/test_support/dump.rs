@@ -101,10 +101,10 @@ pub(crate) use crate::ids::{
 };
 pub(crate) use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignAssemblyAlignment,
-    DesignAssemblyAxialOperandTarget, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
-    DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
+    DesignBaseFeatureConstruction, DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner,
+    DesignBodyRecipeReference, DesignCircularPatternConstruction, DesignCoilExtent,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
     DesignCombineOperation, DesignComponentInsertConstruction, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,

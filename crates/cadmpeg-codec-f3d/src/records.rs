@@ -1370,18 +1370,51 @@ pub struct DesignComponentPatternOccurrences {
     pub generated_occurrence_guids: Vec<String>,
 }
 
-/// Angular limits carried by a legacy As-built assembly scope.
+/// Domain of the two scalar limits carried by a legacy As-built scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignAssemblyLimitKind {
+    /// Limits on the joint's angular degree of freedom.
+    #[default]
+    Angular,
+    /// Limits on the joint's linear degree of freedom.
+    Linear,
+}
+
+/// Ordered lower and upper limits carried by a legacy As-built assembly scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignAssemblyAngularLimits {
-    /// Lower angular bound in radians.
+pub struct DesignAssemblyLimits {
+    /// Degree-of-freedom domain of the limits.
+    #[serde(default)]
+    pub kind: DesignAssemblyLimitKind,
+    /// Lower bound in the domain's native units.
     pub minimum: f64,
-    /// Upper angular bound in radians.
+    /// Upper bound in the domain's native units.
     pub maximum: f64,
     /// Parameter-owner records for the lower and upper bounds.
     pub owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 2],
+}
+
+/// Exact solved frame carried by a legacy 421-byte `As-built` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblySolvedFrame {
+    /// Frame-carrier record named by reference-table entry eight.
+    pub reference_record_index: u32,
+    /// Byte offset of the frame-carrier reference in the scope.
+    pub reference_offset: u64,
+    /// Byte offset of the frame-carrier indexed header.
+    pub record_byte_offset: u64,
+    /// Dynamic class of the frame-carrier indexed record.
+    pub class_tag: String,
+    /// Row-major solved connector frame.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first matrix scalar.
+    pub transform_offset: u64,
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
@@ -1399,15 +1432,19 @@ pub struct DesignAssemblyAlignment {
     /// Exact operand frames embedded by the assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
+    /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solved_frame: Option<DesignAssemblySolvedFrame>,
     /// Exact occurrence paths qualifying the two operand constructions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
     /// Exact pathless operand targets carried by an axial assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axial_operand_targets: Option<[DesignAssemblyAxialOperandTarget; 2]>,
-    /// Optional angular limits carried by a legacy As-built scope.
+    /// Optional limits carried by a legacy As-built scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub angular_limits: Option<DesignAssemblyAngularLimits>,
+    #[serde(alias = "angular_limits")]
+    pub limits: Option<DesignAssemblyLimits>,
     /// `JointOrigin` scope whose datum frame is carried by this scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_scope_record_index: Option<u32>,
