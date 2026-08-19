@@ -17,25 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-03. Sketch profile junction ambiguity and tolerance
-
-**Question.** What neutral endpoint-equivalence and junction policy applies when the producer
-persists coordinates with optional constraint operands but no junction tolerance or tie-break?
-
-**Known.** FreeCAD persists ordered geometry and constraint operands but no generic endpoint
-junction tolerance or junction-selection field. `design.rs:2735-2745` uses a decoder constant of
-64 scaled machine epsilons for coordinate matching, after explicit relations are considered.
-
-**Need.** Establish endpoint equivalence and the admissible profile topology. An ambiguous junction
-must use constraint identity, an explicit source-order rule, or an attributable refusal.
-
-**Conflict.** The `64 × f64::EPSILON` boundary and the separate-seed ambiguity policy are not
-producer rules. They are pinned by decoder tests and a witness that exercises the chosen boundary,
-not by a source tolerance or a complete topology contract. A near-coincident endpoint can therefore
-change profile connectivity solely when it crosses a decoder-owned threshold.
-
-**Note.** Reopened. The closure established producer field absence, not the neutral numeric policy.
-
 ### DP-05. Dependency-cycle ordinal fallback
 
 **Question.** What neutral projection applies when feature dependencies, parents, or expressions

@@ -2623,6 +2623,8 @@ fn endpoint_candidates(
     explicit_relations: &BTreeMap<(usize, bool), BTreeSet<(usize, bool)>>,
     entities: &[SketchEntity],
 ) -> Vec<(usize, bool)> {
+    // Active explicit coincident loci override coordinates. Coordinate matching below is the
+    // decoder-owned CADIR boundary, not a producer tolerance.
     if let Some(explicit) = explicit_relations.get(&endpoint) {
         return explicit
             .iter()
@@ -5705,6 +5707,91 @@ mod profile_tests {
                 reversed: false,
             }]
         );
+    }
+
+    #[test]
+    fn profile_junction_uses_the_cadir_roundoff_boundary() {
+        let entities = |gap| {
+            [
+                entity(
+                    "test:entity#anchor",
+                    SketchGeometry::Line {
+                        start: Point2::new(0.0, 0.0),
+                        end: Point2::new(1.0, 0.0),
+                    },
+                ),
+                entity(
+                    "test:entity#continuation",
+                    SketchGeometry::Line {
+                        start: Point2::new(1.0 + gap, 0.0),
+                        end: Point2::new(2.0, 0.0),
+                    },
+                ),
+            ]
+        };
+
+        let inside = entities(32.0 * f64::EPSILON);
+        let inside_profiles = build_profiles(&inside, &[]);
+        assert_eq!(inside_profiles.len(), 1);
+        assert_eq!(inside_profiles[0].len(), 2);
+
+        let outside = entities(128.0 * f64::EPSILON);
+        let outside_profiles = build_profiles(&outside, &[]);
+        assert_eq!(outside_profiles.len(), 2);
+        assert!(outside_profiles.iter().all(|profile| profile.len() == 1));
+    }
+
+    #[test]
+    fn multiple_explicit_coincident_continuations_remain_separate_seeds() {
+        let entities = [
+            entity(
+                "test:entity#anchor",
+                SketchGeometry::Line {
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#first-continuation",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#second-continuation",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+        ];
+        let constraint = SketchConstraint {
+            id: SketchConstraintId("test:constraint#ambiguous-explicit".into()),
+            sketch: entities[0].sketch.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entities[0].id.clone()),
+                    SketchLocus::Start(entities[1].id.clone()),
+                    SketchLocus::Start(entities[2].id.clone()),
+                ],
+            },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        };
+
+        let profiles = build_profiles(&entities, &[constraint]);
+
+        assert_eq!(profiles.len(), 3);
+        assert!(profiles.iter().all(|profile| profile.len() == 1));
     }
 
     #[test]
