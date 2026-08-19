@@ -3142,6 +3142,121 @@ fn type124_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type118_forms_follow_four_primary_fields() {
+    for form in [0_i64, 1] {
+        let association = directory_target(5, 212);
+        let property = directory_target(9, 406);
+        let mut source = directory_target(11, 118);
+        source.form = form;
+        let directory = BTreeMap::from([(5, &association), (9, &property), (11, &source)]);
+        let explicit = integer_parameter_record(11, &[118, 3, 7, 0, 0, 1, 5, 1, 9]);
+        let omitted = token_parameter_record(
+            11,
+            vec![
+                118.into(),
+                3.into(),
+                7.into(),
+                TokenValue::Omitted,
+                TokenValue::Omitted,
+                1.into(),
+                5.into(),
+                1.into(),
+                9.into(),
+            ],
+        );
+
+        for record in [explicit, omitted] {
+            let analysis = analyze_trailing_pointer_groups(&record, &directory);
+            assert_eq!(analysis.candidate_count, 1, "Form {form}");
+            assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+            let groups = analysis.groups.expect("Type 118 table boundary");
+            assert_eq!(groups.token_start, 5, "Form {form}");
+            assert_eq!(groups.associations, vec![5], "Form {form}");
+            assert_eq!(groups.properties, vec![9], "Form {form}");
+        }
+    }
+}
+
+#[test]
+fn type118_table_boundary_precedes_valid_generic_alternative() {
+    for form in [0_i64, 1] {
+        let first_association = directory_target(1, 212);
+        let second_association = directory_target(5, 212);
+        let property = directory_target(9, 406);
+        let mut source = directory_target(11, 118);
+        source.form = form;
+        let directory = BTreeMap::from([
+            (1, &first_association),
+            (5, &second_association),
+            (9, &property),
+            (11, &source),
+        ]);
+        let record = integer_parameter_record(11, &[118, 3, 7, 0, 2, 1, 5, 1, 9]);
+        let valid_starts = structural_pointer_group_candidates(&record)
+            .into_iter()
+            .filter(|candidate| {
+                groups_for_candidate(&record, &directory, *candidate)
+                    .is_some_and(|groups| groups.fully_valid)
+            })
+            .map(|candidate| candidate.token_start)
+            .collect::<Vec<_>>();
+        assert_eq!(valid_starts, vec![4, 5], "Form {form}");
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 118 table boundary");
+        assert_eq!(groups.token_start, 5, "Form {form}");
+        assert_eq!(groups.associations, vec![5], "Form {form}");
+        assert_eq!(groups.properties, vec![9], "Form {form}");
+    }
+}
+
+#[test]
+fn type118_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    for form in [0_i64, 1] {
+        let association = directory_target(5, 212);
+        let property = directory_target(9, 406);
+        let mut source = directory_target(11, 118);
+        source.form = form;
+        let directory = BTreeMap::from([(5, &association), (9, &property), (11, &source)]);
+        let wrong = token_parameter_record(
+            11,
+            vec![
+                118.into(),
+                3.into(),
+                7.into(),
+                TokenValue::String(b"bad".to_vec()),
+                0.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                9.into(),
+            ],
+        );
+        let analysis = analyze_trailing_pointer_groups(&wrong, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        assert_eq!(
+            analysis
+                .groups
+                .expect("Type 118 wrong-field boundary")
+                .token_start,
+            5,
+            "Form {form}"
+        );
+
+        for values in [vec![118, 3, 7, 0], vec![118, 3, 7, 0, 0, 1, 5, 1]] {
+            let analysis =
+                analyze_trailing_pointer_groups(&integer_parameter_record(11, &values), &directory);
+            assert_eq!(analysis.candidate_count, 0, "Form {form}");
+            assert_eq!(analysis.valid_candidate_count, 0, "Form {form}");
+            assert!(analysis.groups.is_none(), "Form {form}");
+        }
+    }
+}
+
+#[test]
 fn analytic_surface_forms_follow_fixed_primary_boundaries() {
     let association = directory_target(1, 212);
     let property = directory_target(3, 406);
