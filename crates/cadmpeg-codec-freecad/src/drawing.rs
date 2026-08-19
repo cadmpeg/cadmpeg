@@ -287,11 +287,13 @@ fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<
             "drawing property {name} has no root value"
         )));
     };
-    scalar_value(value).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "drawing property {name} has an invalid scalar value"
-        ))
-    })
+    scalar_value(name, &property.type_name, value)
+        .map(Some)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "drawing property {name} has an invalid scalar value"
+            ))
+        })
 }
 
 fn vector_property(
@@ -498,7 +500,9 @@ fn validate_drawing_property(name: &str, property: &PropertyRecord) -> Result<()
                 "drawing property {name} has an invalid vector value"
             )));
         }
-    } else if matches!(name, "X" | "Y" | "Scale" | "Rotation") && scalar_value(value).is_none() {
+    } else if matches!(name, "X" | "Y" | "Scale" | "Rotation")
+        && scalar_value(name, &property.type_name, value).is_none()
+    {
         return Err(CodecError::Malformed(format!(
             "drawing property {name} has an invalid scalar value"
         )));
@@ -626,12 +630,25 @@ fn unique_property<'a>(
     Ok(Some(property))
 }
 
-fn scalar_value(value: &ValueRecord) -> Option<f64> {
-    value
+fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<f64> {
+    let allowed_attributes: &[&str] =
+        if name == "Scale" && type_name == "App::PropertyFloatConstraint" {
+            &["value", "min", "max", "step"]
+        } else {
+            &["value"]
+        };
+    if value
         .attributes
-        .get("value")
-        .or_else(|| value.attributes.get("Value"))
-        .and_then(|value| value.parse().ok())
+        .iter()
+        .any(|(name, value)| !allowed_attributes.contains(&name.as_str()) || !is_finite(value))
+    {
+        return None;
+    }
+    value.attributes.get("value")?.parse().ok()
+}
+
+fn is_finite(value: &str) -> bool {
+    value.parse::<f64>().is_ok_and(f64::is_finite)
 }
 
 fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {

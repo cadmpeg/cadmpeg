@@ -21,24 +21,6 @@ Each item has an identifier and these fields:
 
 ## 7. TechDraw projection
 
-### DG-05. Drawing scalar attribute spelling
-
-**Question.** Which attribute spelling supplies a registered TechDraw scalar value?
-
-**Known.** The registered application-property grammar and FreeCAD scalar writers use the
-lowercase `value` attribute. `drawing.rs:550-607` enforces the direct value-root tag and
-cardinality, but `drawing.rs:629-634` accepts `Value` when `value` is absent and selects `value`
-when both occur.
-
-**Need.** Enforce the producer's canonical scalar attribute and reject unsupported or duplicate
-spellings before transferring position, scale, or rotation.
-
-**Conflict.** `<Float Value="2"/>` supplies a neutral drawing scalar although it is outside the
-settled property grammar. `<Float value="1" Value="2"/>` silently selects `1`; deleting one
-attribute changes the result from `1` to `2` instead of making the contradictory carrier invalid.
-
-**Note.** New hostile-sweep finding.
-
 ### DG-06. Non-page template relationship admission
 
 **Question.** Which drawing runtime types may populate the neutral page-template field?

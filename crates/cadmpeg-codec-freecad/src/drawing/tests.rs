@@ -28,7 +28,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
   <Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property>
   <Property name="X" type="App::PropertyDistance"><Float value="25"/></Property>
   <Property name="Y" type="App::PropertyDistance"><Float value="40"/></Property>
-  <Property name="Scale" type="App::PropertyFloatConstraint"><Float value="2"/></Property>
+  <Property name="Scale" type="App::PropertyFloatConstraint"><Float value="2" min="0.1" max="10" step="0.1"/></Property>
   <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -70,6 +70,10 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
+    assert_eq!(
+        view.parameters["Scale"],
+        r#"<Float value="2" min="0.1" max="10" step="0.1"/>"#
+    );
     assert_eq!(result.ir().model.drawings.len(), 3);
     let neutral_page = result
         .ir()
@@ -279,6 +283,36 @@ fn rejects_duplicate_drawing_carrier_properties_and_values() {
 <ObjectData Count="1"><Object name="View"><Properties Count="2">
  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>
  <Property name="Scale" type="App::PropertyFloat"><Float value="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn rejects_noncanonical_drawing_scalar_attributes() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+ <Property name="X" type="App::PropertyDistance"><Float Value="12.5"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+ <Property name="Scale" type="App::PropertyFloatConstraint"><Float value="1.75" Value="2.5"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View" id="1"/></Objects>
+<ObjectData Count="1"><Object name="View"><Properties Count="1">
+ <Property name="Rotation" type="App::PropertyAngle"><Float value="15.5" unit="deg"/></Property>
 </Properties></Object></ObjectData></Document>"#,
     ];
     for document in documents {

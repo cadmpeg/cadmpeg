@@ -1247,8 +1247,15 @@ registered carrier refuses the document before neutral annotation transfer.
 `X` and `Y` use `App::PropertyDistance`; historical
 `App::PropertyLength` and `App::PropertyFloat` forms are accepted. `Scale` uses
 `App::PropertyFloatConstraint` with the historical `App::PropertyFloat` form, and `Rotation` uses
-`App::PropertyAngle` with the historical `App::PropertyFloat` form. `Direction` and `XDirection`
-use `App::PropertyVector`; captions and format strings use `App::PropertyString`; scale, measure,
+`App::PropertyAngle` with the historical `App::PropertyFloat` form. Scalar carriers use direct
+`Float` roots. The lowercase `value` attribute is mandatory and
+supplies the scalar; `X`, `Y`, `Rotation`, and historical plain `App::PropertyFloat` forms have
+no other scalar attributes. A `Scale` `App::PropertyFloatConstraint` root may also carry finite
+`min`, `max`, and `step` constraint attributes; these do not supply the scalar. Unsupported or
+case-variant attributes and a missing or non-finite `value` are malformed. CADIR decision: an
+absent optional scalar remains absent, while a present malformed registered scalar refuses the
+document before neutral drawing transfer. `Direction` and `XDirection` use
+`App::PropertyVector`; captions and format strings use `App::PropertyString`; scale, measure,
 dimension, and projection modes use `App::PropertyEnumeration`; and lock or perspective flags use
 `App::PropertyBool`. `XSource` uses `App::PropertyXLinkList`; `Sources` uses
 `App::PropertyLinkList`; and `References2D`, `References3D`, and `Source3d` use
