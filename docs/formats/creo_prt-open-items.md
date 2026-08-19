@@ -125,25 +125,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ### SE-14. Other principal unit selectors
 
 **Question.** Which coordinate unit system does each `_principal_sys_units_id`
-value outside `51` and `55` select?
+value outside `51`, `54`, and `55` select?
 
 **Known.** `creo_prt.md` §1.3 "`_principal_sys_units_id` identifies the active
-coordinate unit system." gives `51` for millimeter-Newton-Second and `55` for
-millimeter-Kilogram-Second. `creo_prt.md` §1.3 "In legacy ASCII persistence,
-the unique type-10 `principal_sys_units` scalar" gives an inch system and its
-`25.4` factor to canonical millimeters for legacy ASCII persistence only. The
-binary selector table gives no inch system.
+coordinate unit system." gives `51` for millimeter-Newton-Second, `54` for
+inch-pound-mass-second, and `55` for millimeter-Kilogram-Second. Binary
+selector `54` stores lengths in inches and the neutral model multiplies every
+length-bearing value by `25.4` to produce canonical millimeters. `creo_prt.md`
+§1.3 "In legacy ASCII persistence, the unique type-10
+`principal_sys_units` scalar" gives the same inch system and conversion.
 
 **Need.** We must know each selector to give model coordinates their canonical
 length unit.
-
-**Conflict.** `binary_principal_unit` in `src/container.rs:977-984` keeps an
-unlisted selector as an unknown system.
-`PrincipalUnitSystem::length_scale_mm` in `src/legacy.rs:37-45` then gives no
-scale. `build_source_metadata` in `src/decode/build/meta.rs:81-88` writes a
-source attribute, and writes a length scale only for the legacy ASCII layout.
-The document keeps millimeter lengths for each binary layout, and no loss
-records the substitution.
 
 ## 2. Curves and surfaces
 

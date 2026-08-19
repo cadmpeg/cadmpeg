@@ -11,6 +11,7 @@ mod passthrough;
 mod report;
 mod report_coverage;
 mod report_losses;
+mod units;
 
 pub(super) use ir::{build_container_ir, build_ir, BuiltIr};
 pub(super) use report::build_report;

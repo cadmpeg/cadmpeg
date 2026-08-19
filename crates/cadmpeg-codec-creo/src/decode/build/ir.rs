@@ -486,6 +486,13 @@ pub(in super::super) fn build_ir(
         finish_feature_transfers(scan, &mut ir, &mut annotations, &mut coverage);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations)?;
+    if let Some(length_scale_mm) = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
+    {
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm);
+    }
     collect_feature_coverage(
         scan,
         &ir,

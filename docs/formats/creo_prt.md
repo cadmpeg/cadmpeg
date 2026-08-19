@@ -225,7 +225,15 @@ layout. Section cardinality is descriptive and does not select a layout.
 | Value | Unit system                         |
 | ----: | ----------------------------------- |
 |  `51` | millimeter-Newton-Second (`mmNs`)   |
+|  `54` | inch-pound-mass-second (`inLbmS`)   |
 |  `55` | millimeter-Kilogram-Second (`mmKs`) |
+
+Binary selector `54` stores model lengths in inches. The neutral model
+converts every stored length, coordinate, distance, radius, linear tolerance,
+and length-bearing parameter to millimeters by multiplying it by `25.4`.
+Surface and curve parameter coordinates use the same conversion on each
+length-valued parameter axis; angular and dimensionless parameters are
+unchanged.
 
 In legacy ASCII persistence, the unique type-10 `principal_sys_units` scalar
 identifies the active system. `millimeter Newton Second (mmNs)` stores lengths
