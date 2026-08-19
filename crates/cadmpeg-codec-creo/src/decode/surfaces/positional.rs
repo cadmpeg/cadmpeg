@@ -15,10 +15,11 @@ use crate::container::ContainerScan;
 
 use super::super::analytic::cross;
 use super::super::feature_history::{
-    paired_five_coordinate_sphere_center, unique_surface_parameter_record,
+    paired_five_coordinate_sphere_center, round_constant_radius, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
+use super::super::sketch_transfer::feature_schema_class;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 
@@ -135,6 +136,17 @@ pub(in super::super) fn transfer_positional_tori(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let constant_round_feature_ids = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
+        .map(|row| row.feature_id)
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|feature_id| round_constant_radius(scan, ir, *feature_id).is_some())
+        .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -147,6 +159,15 @@ pub(in super::super) fn transfer_positional_tori(
                 record.surface_id,
             )
             .is_none_or(|unique| unique.offset != record.offset)
+        {
+            continue;
+        }
+        // Class-913 type-26 rows can be rolling-radius samples from the same
+        // generated round family. A positional torus frame is a neutral
+        // carrier only after the complete family proves one constant radius.
+        if row.type_byte == 0x26
+            && feature_schema_class(scan, row.feature_id) == Some(913)
+            && !constant_round_feature_ids.contains(&row.feature_id)
         {
             continue;
         }

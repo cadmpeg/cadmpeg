@@ -7,6 +7,79 @@ use crate::test_support::build_prt;
 use crate::CreoCodec;
 
 #[test]
+fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 913,
+        header: [0, 0],
+        root_schema_class: Some(913),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 7,
+            type_byte: 0x26,
+            kind: crate::surface::SurfaceKind::TorusOrSphere,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 7,
+        },
+        crate::surface::SurfaceRow {
+            id: 8,
+            type_byte: 0x26,
+            kind: crate::surface::SurfaceKind::TorusOrSphere,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 8,
+        },
+    ]);
+    let parameter = |surface_id, minor_radius| crate::surface::SurfaceParameterRecord {
+        surface_id,
+        body: Vec::new(),
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: Some(crate::surface::PositionalTorusFrame {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 5.0,
+            minor_radius,
+        }),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: surface_id as usize,
+        body_offset: surface_id as usize,
+    };
+    scan.surfaces
+        .parameters
+        .extend([parameter(7, 1.0), parameter(8, 2.0)]);
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_positional_tori(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        0
+    );
+    assert!(ir.model.surfaces.is_empty());
+}
+
+#[test]
 fn paired_envelope_spheres_do_not_join_rows_from_neighboring_surface_frames() {
     let lower = [
         0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,
