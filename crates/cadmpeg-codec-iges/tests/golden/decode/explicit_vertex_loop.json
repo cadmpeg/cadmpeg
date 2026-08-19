@@ -3610,7 +3610,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "length": "millimeter"
