@@ -5501,11 +5501,9 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
         let section_key = format!("nx:om-data-blocks-{section_ordinal}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for ordinal in 0..section.records.len() {
-            let remaining = section.records[ordinal..]
-                .iter()
-                .map(|record| record.bytes)
-                .collect::<Vec<_>>();
-            let Some(point) = crate::om::offset_store_named_point(&remaining) else {
+            let Some(point) = crate::om::offset_store_named_point(
+                section.records[ordinal..].iter().map(|record| record.bytes),
+            ) else {
                 continue;
             };
             let records = &section.records[ordinal..ordinal + point.block_count];

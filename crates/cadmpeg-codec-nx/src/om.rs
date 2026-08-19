@@ -834,11 +834,13 @@ pub struct OffsetStoreNamedPoint {
     pub block_count: usize,
 }
 
-/// Decode the minimal consecutive-block span beginning with a named two-scalar point.
-pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoint> {
+/// Decode a named two-scalar point from a streaming block sequence.
+pub(crate) fn offset_store_named_point<'a>(
+    blocks: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<OffsetStoreNamedPoint> {
     let mut bytes = Vec::new();
     let mut candidate = None;
-    for (block_ordinal, block) in blocks.iter().enumerate() {
+    for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
             && construction_payload_named_fields(block)
