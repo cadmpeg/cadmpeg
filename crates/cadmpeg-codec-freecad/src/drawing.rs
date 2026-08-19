@@ -29,10 +29,7 @@ pub(crate) fn transfer(
                 .cloned()
                 .unwrap_or_default();
             ensure_unique_property_names(&owned)?;
-            let (views, template) = if matches!(
-                object.type_name.as_str(),
-                "TechDraw::DrawPage" | "TechDraw::DrawPagePython"
-            ) {
+            let (views, template) = if is_page_type(&object.type_name) {
                 let views = typed_links(&owned, "Views", "App::PropertyLinkList")?
                     .into_iter()
                     .filter_map(|link| link.object)
@@ -177,17 +174,21 @@ pub(crate) fn transfer_neutral(
             .iter()
             .map(|(role, targets)| (role.clone(), targets.iter().map(relationship).collect()))
             .collect::<BTreeMap<_, _>>();
-        let template = record
-            .relationships
-            .get("Template")
-            .and_then(|targets| targets.first())
-            .and_then(|link| {
-                if link.document.is_some() {
-                    return None;
-                }
-                let object = link.object.as_deref().filter(|object| !object.is_empty())?;
-                neutral_ids.get(object).cloned()
-            });
+        let template = if is_page_type(&record.kind) {
+            record
+                .relationships
+                .get("Template")
+                .and_then(|targets| targets.first())
+                .and_then(|link| {
+                    if link.document.is_some() {
+                        return None;
+                    }
+                    let object = link.object.as_deref().filter(|object| !object.is_empty())?;
+                    neutral_ids.get(object).cloned()
+                })
+        } else {
+            None
+        };
         model.drawings.push(Drawing {
             id: DrawingId(neutral_ids[record.object.as_str()].clone()),
             object: record.object.clone(),
@@ -214,6 +215,13 @@ pub(crate) fn transfer_neutral(
 
 fn is_registered_drawing_type(runtime_type: &str) -> bool {
     registered_drawing_kind(runtime_type).is_some()
+}
+
+fn is_page_type(runtime_type: &str) -> bool {
+    matches!(
+        runtime_type,
+        "TechDraw::DrawPage" | "TechDraw::DrawPagePython"
+    )
 }
 
 fn classify(runtime_type: &str) -> DrawingKind {

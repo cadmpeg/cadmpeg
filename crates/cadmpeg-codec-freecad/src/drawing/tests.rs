@@ -183,6 +183,80 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
 }
 
 #[test]
+fn keeps_non_page_template_links_out_of_neutral_page_field() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="TechDraw::DrawPage" name="Page" id="1"/>
+ <Object type="TechDraw::DrawSVGTemplate" name="Template" id="2"/>
+ <Object type="TechDraw::DrawViewPart" name="View" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Page"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="View"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Template"><Properties Count="0"/></Object>
+ <Object name="View"><Properties Count="1">
+  <Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("page and non-page template links");
+    let native_drawings = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawings");
+    let native_view = native_drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#View"))
+        .expect("native view");
+    assert_eq!(
+        native_view.relationships["Template"][0].object.as_deref(),
+        Some("fcstd:native:object#Template")
+    );
+
+    let neutral_template = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#Template"))
+        .expect("neutral template");
+    let neutral_page = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#Page"))
+        .expect("neutral page");
+    let neutral_view = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with("#View"))
+        .expect("neutral view");
+    assert_eq!(
+        neutral_page.template.as_deref(),
+        Some(neutral_template.id.0.as_str())
+    );
+    assert_eq!(
+        neutral_view.relationships["Template"][0].target.as_deref(),
+        Some(neutral_template.id.0.as_str())
+    );
+    assert!(neutral_view.template.is_none());
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn accepts_enumeration_metadata_and_registered_optional_carriers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1">

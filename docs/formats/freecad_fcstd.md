@@ -1199,7 +1199,10 @@ Python variants of the registered classes use the same kind. Drawing property na
 value grammars provide carrier cardinality; projection does not select a carrier by source-order
 precedence. A page `Template` property is one `App::PropertyLink` with at most one target. A page
 `Views` property is one `App::PropertyLinkList` whose targets retain serialized order. Other runtime
-types do not supply page template or page-view carriers.
+types do not supply page template or page-view carriers. CADIR decision: only
+`TechDraw::DrawPage` and `TechDraw::DrawPagePython` populate `Drawing.template`; a non-page
+`Template` relationship remains in the drawing relationship map and does not populate that page
+field.
 
 For a page, the persisted `Template` link is represented as an optional local template identity only
 when its nonempty target resolves to a registered template drawing. Its typed relationship retains an
