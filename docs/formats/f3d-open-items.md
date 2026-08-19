@@ -258,18 +258,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** A parallel-line or concentric-circle dimension whose solved separation agrees with its parameter inside the document linear tolerance, but not inside the fixed bound, does not match. The dimension keeps its native retention and the neutral model gets no constraint. The two rules must be one rule, and the specification must state which one.
 
-### DR-67. Design streams that retain more than one envelope for one record index
-
-**Question.** Which stored field selects the authoritative envelope when one Design stream retains more than one complete scope envelope for one record index?
-
-**Known.** The specification gives no rule for this case. `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` `admit_history_bound_scope_variants` holds the complete rule. It groups the scopes by stream and record index. When exactly one candidate in a group binds to a unique ASM state transition, that candidate is authoritative. When no candidate binds and every payload is equivalent, the candidate with the largest byte offset is kept. Every other group is a malformed-format error.
-
-`equivalent_scope_variant_payload` compares two serialized envelopes after `strip_scope_variant_provenance` removes every field whose name ends with `_offset` or `_offsets`, and removes `id`, `class_tag`, `paired_class_tag`, `history_state_id`, and `previous_history_state_id` at the top level. Two envelopes that name different history states, or that carry different class tags, are therefore equivalent. The state identities are the fields that select the preceding topology for face, edge, and body resolution, so the kept envelope decides which ASM state every operand of that scope resolves against. The discarded envelope leaves no loss and no counter.
-
-The function comment states that an unresolved group stays an error so that a duplicate cannot be selected by byte order. The equivalent-payload branch selects by byte order.
-
-**Need.** A stream with two envelopes for one record index gives one scope, and the choice fixes the history state of every operand in it. We must find the stored field that marks the authoritative envelope, or documents that show the later envelope always supersedes the earlier one.
-
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

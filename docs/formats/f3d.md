@@ -255,7 +255,7 @@ The Design body map selects model BREP entries by complete BREP basename. Each r
 
 ### 3.1 Design metadata
 
-Same-index scope envelopes with the same feature-family token, frame length, family ordinal, and ordered reference indices are equivalent generation forms. If no unique history-state pair selects one, the later envelope in stream order is authoritative. Same-index envelopes with different logical payloads are malformed.
+Same-index scope envelopes with the same logical payload are equivalent generation forms. Scope byte offsets, scope IDs, primary and paired class tags, and the current and effective preceding history-state identities do not participate in that equivalence; all other logical fields, including the feature-family token, frame length, family ordinal, and ordered reference indices, must match. When exactly one envelope's current and effective preceding history-state identities resolve to one ASM transition, that envelope is authoritative. When none resolves to an ASM transition and all logical payloads are equivalent, the later equivalent envelope in stream order is authoritative. Every other duplicate group is malformed.
 
 The last edge-recipe member of a counted construction-operand group ends at the immediately following indexed record. Its terminal record index need not continue the consecutive indices of the member's four-record envelope.
 
