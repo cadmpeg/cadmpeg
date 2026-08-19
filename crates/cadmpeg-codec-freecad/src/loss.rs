@@ -29,6 +29,8 @@ pub enum FreecadLossCode {
     SketchNativeGeometry,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
+    /// Topology color values were retained because their count did not match mapped topology.
+    AppearanceTopologyColorCountMismatch,
 }
 
 impl FreecadLossCode {
@@ -39,6 +41,7 @@ impl FreecadLossCode {
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
+        Self::AppearanceTopologyColorCountMismatch,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -49,6 +52,9 @@ impl FreecadLossCode {
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::AppearanceTopologyColorCountMismatch => {
+                "appearance.topology-color-count-mismatch"
+            }
         }
     }
 
@@ -60,6 +66,7 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
+            Self::AppearanceTopologyColorCountMismatch => Severity::Warning,
         }
     }
 
@@ -71,6 +78,7 @@ impl FreecadLossCode {
             Self::SketchNativeGeometry | Self::SketchNativeConstraint => {
                 LossTaxonomy::RecordNotTyped
             }
+            Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
         }
     }
 
@@ -116,6 +124,7 @@ mod tests {
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
+                "appearance.topology-color-count-mismatch",
             ]
         );
     }

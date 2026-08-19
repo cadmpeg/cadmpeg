@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "5b0279430ec34212e5dff5205a39eb1a4310fb69"
+measured_at = "486548b0901b3c572fa267ce1652dd26fa336e1d"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -28,7 +28,7 @@ production_line_debt = 0
 
 [ceilings]
 from_endian_bytes = 111
-codec_error_malformed_format = 1393
+codec_error_malformed_format = 1392
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
@@ -40,4 +40,3 @@ production_line_debt = 0
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
-codec_error_malformed_format = "raised for FreeCAD exact persistence and topology validation: canonical aliases and sections, ObjectDeps ordering, duplicate property identities, exact application-geometry dispatch, duplicate edge endpoint orientations, duplicate edge representations, duplicate annotation carriers, duplicate product records, overlapping product parents, duplicate joint carriers, duplicate GUI shape associations, duplicate attachment carriers, duplicate product carriers or ambiguous dual placement carriers, noncanonical TechDraw page carriers, duplicate or invalid TechDraw scalar/vector/format carrier values, and invalid, multiply-valued, or noncanonical-runtime product, joint, or attachment placement carriers each reject ambiguous input instead of selecting by source order; this batch adds explicit malformed admission for duplicate document property containers, invalid GUI camera values, wrong-runtime-type product and joint carriers, wrong-runtime-type annotation and drawing carriers, drawing link cardinality conflicts, non-finite or geometrically invalid drawing values, direct-carrier root grammar including enumeration metadata, and propagation of malformed scalar/vector carrier errors into neutral transfer; the FreeCAD GUI registry closure adds explicit malformed admission for every standard GUI root, counted list and side-entry frame, VisualLayerList, expression, material, Part, and Sketcher custom carrier so unregistered values cannot be selected by plausibility; this slice adds explicit malformed admission for invalid exact-shape XML roots and duplicate direct Part carriers while retaining valid transient shape records; this camera slice adds explicit malformed admission for missing or non-Inventor camera settings, duplicate camera fields, and non-finite or zero axis-angle orientation"

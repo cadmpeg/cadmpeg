@@ -855,13 +855,22 @@ association candidates retain the native side entry or material list without a s
 Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
 higher-precedence presentation layers. They are not inferred from the corresponding object color.
 Each list contains a little-endian count followed by packed-color records. A count of one applies
-its color to every
-member of the corresponding Face, Edge, or Vertex element-map group. Otherwise, the count must
-equal the number of names in that ordered group. The group comes only from the element map owned by
-the `Shape` property. Each persistent element name supplies the neutral topology occurrences that
-receive the override. The resulting bindings explicitly record
-face-over-object, edge-array-over-line, or vertex-array-over-point precedence. Missing identity or
-a count mismatch leaves the side entry retained without guessing transient topology labels.
+its color to every member of the corresponding Face, Edge, or Vertex element-map group. FreeCAD
+accepts every other count representable by the side-entry payload and does not compare it with the
+mapped count. Neutral transfer creates indexed bindings only when the count equals the number of
+names in that ordered group. For any other count, the exact side entry remains native, the neutral
+override is withheld, and the decoder emits loss code
+`appearance.topology-color-count-mismatch`; it does not guess transient topology labels. The group
+comes only from the element map owned by the `Shape` property. Each persistent element name
+supplies the neutral topology occurrences that receive an accepted override. The resulting
+bindings explicitly record face-over-object, edge-array-over-line, or vertex-array-over-point
+precedence.
+
+`ShapeAppearance` uses the same admission rule for its material records. One material is the
+uniform object appearance. Multiple materials create indexed Face bindings only when their count
+equals the mapped Face count. A different count, including zero, leaves the exact material-list
+side entry native, withholds the neutral Face override, and emits the same loss code. If persistent
+Face identity is absent, the material list remains native without choosing transient labels.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,

@@ -273,6 +273,173 @@ fn keeps_registered_non_presentation_properties_native() {
 }
 
 #[test]
+fn retains_topology_color_count_mismatches_and_reports_losses() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape">
+<Part ElementMap="1.0" file="Shape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="4">
+1 PostfixCount 0 MapCount 1
+ElementMap 1 1 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 9
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
+Wi 1001000 +7 0 +6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+    let color_list = |colors: &[u32]| {
+        let mut bytes = Vec::with_capacity(4 + colors.len() * 4);
+        bytes.extend_from_slice(&(colors.len() as u32).to_le_bytes());
+        for color in colors {
+            bytes.extend_from_slice(&color.to_le_bytes());
+        }
+        bytes
+    };
+
+    for (mismatched_property, mismatched_count, kind, expected_valid_bindings) in [
+        ("DiffuseColor", 2_usize, "Face", 4_usize),
+        ("LineColorArray", 3_usize, "Edge", 3_usize),
+        ("PointColorArray", 3_usize, "Vertex", 3_usize),
+        ("ShapeAppearance", 2_usize, "Face", 5_usize),
+        ("ShapeAppearance", 0_usize, "Face", 5_usize),
+    ] {
+        let shape_appearance_property = if mismatched_property == "ShapeAppearance" {
+            r#"<Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="2"/></Property>"#
+        } else {
+            ""
+        };
+        let property_count = if mismatched_property == "ShapeAppearance" {
+            5
+        } else {
+            4
+        };
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Shape"><Properties Count="{property_count}">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property>
+<Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
+<Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
+<Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
+{shape_appearance_property}
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let face_colors = color_list(if mismatched_property == "DiffuseColor" {
+            &[0xff00_00ff, 0x00ff_00ff][..mismatched_count]
+        } else {
+            &[0xff00_00ff][..]
+        });
+        let edge_colors = color_list(if mismatched_property == "LineColorArray" {
+            &[0xff00_00ff, 0x00ff_00ff, 0x0000_ffff][..mismatched_count]
+        } else {
+            &[0xff00_00ff][..]
+        });
+        let point_colors = color_list(if mismatched_property == "PointColorArray" {
+            &[0xff00_00ff, 0x00ff_00ff, 0x0000_ffff][..mismatched_count]
+        } else {
+            &[0xff00_00ff][..]
+        });
+        let shape_material_count = if mismatched_property == "ShapeAppearance" {
+            mismatched_count
+        } else {
+            0
+        };
+        let mut shape_materials = (shape_material_count as u32).to_le_bytes().to_vec();
+        for diffuse in [0xff00_00ff, 0x00ff_00ff]
+            .into_iter()
+            .take(shape_material_count)
+        {
+            for packed in [0_u32, diffuse, 0_u32, 0_u32] {
+                shape_materials.extend_from_slice(&packed.to_le_bytes());
+            }
+            shape_materials.extend_from_slice(&0.0_f32.to_le_bytes());
+            shape_materials.extend_from_slice(&0.0_f32.to_le_bytes());
+        }
+        let mut entries = vec![
+            ("Document.xml", document.as_bytes()),
+            ("GuiDocument.xml", gui.as_bytes()),
+            ("DiffuseColor", face_colors.as_slice()),
+            ("LineColorArray", edge_colors.as_slice()),
+            ("PointColorArray", point_colors.as_slice()),
+            ("Shape.brp", brep),
+        ];
+        if mismatched_property == "ShapeAppearance" {
+            entries.push(("ShapeAppearance", shape_materials.as_slice()));
+        }
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&entries)),
+                &DecodeOptions::default(),
+            )
+            .expect("producer-accepted topology color mismatch");
+        assert_eq!(result.report().losses.len(), 1);
+        let loss = &result.report().losses[0];
+        assert_eq!(loss.code.code, "appearance.topology-color-count-mismatch");
+        assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+        assert!(loss.message.contains(kind));
+        assert!(loss
+            .provenance
+            .as_ref()
+            .is_some_and(|source| source.stream == "GuiDocument.xml" && source.offset > 0));
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| binding.channels.contains_key("precedence"))
+                .count(),
+            expected_valid_bindings
+        );
+        let properties = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .expect("namespace")
+            .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+            .expect("GUI properties");
+        assert!(properties.iter().any(|property| {
+            property.name == mismatched_property && property.side_entries == [mismatched_property]
+        }));
+        assert!(crate::validate_native(result.ir()).is_empty());
+    }
+}
+
+#[test]
 fn rejects_ambiguous_gui_containers_and_names() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>

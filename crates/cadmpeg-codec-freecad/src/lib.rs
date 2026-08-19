@@ -1161,6 +1161,7 @@ impl CodecBackend for FcstdCodec {
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
+        let mut gui_losses = Vec::new();
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),
             attributes,
@@ -1330,6 +1331,7 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
+            gui_losses.clone_from(&gui_graph.losses);
             ctx.admit_entities(
                 ir.model.entity_count() as u64,
                 &mut admitted_entities,
@@ -1412,7 +1414,7 @@ impl CodecBackend for FcstdCodec {
         let losses = if options.container_only {
             Vec::new()
         } else {
-            semantic_losses(&ir, &cycle_affected_design_objects)
+            semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)
         };
         ctx.admit_entities(
             ir.model.entity_count() as u64,
@@ -1456,8 +1458,13 @@ impl Encoder for FcstdCodec {
     }
 }
 
-fn semantic_losses(ir: &CadIr, cycle_affected_design_objects: &BTreeSet<String>) -> Vec<LossNote> {
-    let mut losses = ir
+fn semantic_losses(
+    ir: &CadIr,
+    cycle_affected_design_objects: &BTreeSet<String>,
+    gui_losses: &[LossNote],
+) -> Vec<LossNote> {
+    let mut losses = gui_losses.to_vec();
+    losses.extend(ir
         .model
         .features
         .iter()
@@ -1501,7 +1508,7 @@ fn semantic_losses(ir: &CadIr, cycle_affected_design_objects: &BTreeSet<String>)
                     }),
             )
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>());
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
         let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
             return None;

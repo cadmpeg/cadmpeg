@@ -11,7 +11,9 @@ use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
 };
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{
@@ -24,6 +26,7 @@ pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
+    pub(crate) losses: Vec<LossNote>,
 }
 
 struct CameraSettings {
@@ -111,6 +114,7 @@ pub(crate) fn transfer(
         .collect::<HashMap<_, _>>();
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
+    let mut losses = Vec::new();
     let payloads_by_owner = payloads
         .iter()
         .filter_map(|payload| {
@@ -186,7 +190,8 @@ pub(crate) fn transfer(
             .filter(|node| node.has_tag_name("Property"))
             .collect::<Vec<_>>();
         let values = property_nodes
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|property| {
                 property
                     .attribute("name")
@@ -200,6 +205,18 @@ pub(crate) fn transfer(
                 ))
             })
             .collect::<HashMap<_, _>>();
+        let property_provenance = |property_name: &str, type_name: &str| SourceProvenance {
+            format: "fcstd".into(),
+            stream: "GuiDocument.xml".into(),
+            offset: property_nodes
+                .iter()
+                .find(|property| {
+                    property.attribute("name") == Some(property_name)
+                        && property.attribute("type") == Some(type_name)
+                })
+                .map_or(0, |property| property.range().start as u64),
+            tag: Some(format!("ViewProvider {name} property {property_name}")),
+        };
         let visibility = values
             .get("Visibility")
             .and_then(|value| value.attribute("value"))
@@ -250,6 +267,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Face,
                 requires_alpha_conversion,
+                property_provenance("DiffuseColor", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         let payload_prefixes = payloads_by_owner
@@ -284,6 +303,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Edge,
                 requires_alpha_conversion,
+                property_provenance("LineColorArray", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         if let Some(color) = values
@@ -313,6 +334,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Vertex,
                 requires_alpha_conversion,
+                property_provenance("PointColorArray", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         let Some(packed_color) = packed_color else {
@@ -357,13 +380,15 @@ pub(crate) fn transfer(
             });
         }
     }
-    let graph = Graph {
+    let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
         properties: native_properties,
+        losses,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
+    let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ir,
         &graph,
@@ -371,7 +396,9 @@ pub(crate) fn transfer(
         properties,
         payloads,
         element_maps,
+        &mut material_losses,
     )?;
+    graph.losses.extend(material_losses);
     transfer_neutral_presentation(ir, &graph)?;
     Ok(graph)
 }
@@ -3266,6 +3293,7 @@ fn transfer_shape_appearances(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
         let Some(object_id) = provider.object.as_deref() else {
@@ -3281,9 +3309,6 @@ fn transfer_shape_appearances(
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
-        if materials.is_empty() {
-            continue;
-        }
         let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
         let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
@@ -3303,6 +3328,21 @@ fn transfer_shape_appearances(
                 continue;
             }
             if materials.len() != mapped_count {
+                losses.push(
+                    crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
+                        .note(format!(
+                            "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
+                            provider.name,
+                            materials.len(),
+                            mapped_count
+                        ))
+                        .with_provenance(SourceProvenance {
+                            format: "fcstd".into(),
+                            stream: "GuiDocument.xml".into(),
+                            offset: property.byte_start,
+                            tag: Some(property.id.clone()),
+                        }),
+                );
                 continue;
             }
         }
@@ -3545,6 +3585,8 @@ fn transfer_topology_colors(
     element_maps: &[ElementMapRecord],
     kind: TopologyColorKind,
     requires_alpha_conversion: bool,
+    provenance: SourceProvenance,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let view = *entries.get(entry_name).ok_or_else(|| {
         CodecError::Malformed(format!("color list references missing entry {entry_name}"))
@@ -3562,11 +3604,15 @@ fn transfer_topology_colors(
         return Ok(());
     }
     if count != 1 && mapped_count != count {
-        return Err(CodecError::Malformed(format!(
-            "{provider_name} {} color count {count} does not match {} mapped subelements",
-            kind.name(),
-            mapped_count
-        )));
+        losses.push(
+            crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
+                .note(format!(
+                    "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
+                    kind.name()
+                ))
+                .with_provenance(provenance),
+        );
+        return Ok(());
     }
     for (index, packed) in colors.into_iter().enumerate() {
         let lower = kind.name().to_ascii_lowercase();
