@@ -390,10 +390,10 @@ list carries source entity order and the constraint list carries append order an
 operands. The format has no profile chain, profile seed entity, endpoint-junction tolerance, or
 junction tie-break field. `ArcFitTolerance` is a separate precision property
 for fitting arcs of projected external geometry; it is not an endpoint-junction tolerance.
-CADIR decision: when no profile seed is persisted, each disconnected neutral profile starts at
-the lowest unassigned non-construction entity ordinal in `GeometryList` order. The neutral entity
-retains that persisted ordinal, and profiles are emitted in seed order. This is a projection rule,
-not a producer-defined field.
+CADIR decision: FreeCAD persists no profile seed or producer-defined disconnected-profile rule.
+Each disconnected neutral profile therefore starts at the lowest unassigned non-construction
+entity ordinal in `GeometryList` order. The neutral entity retains that persisted ordinal, and
+profiles are emitted in seed order. This is a projection rule, not a producer-defined field.
 
 CADIR decision: an endpoint without an explicit active coincident relation matches another endpoint
 only when their Euclidean distance is at most `64 × f64::EPSILON × max(1, |a.u|, |a.v|, |b.u|,

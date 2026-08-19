@@ -17,27 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-02. Sketch profile seed order
-
-**Question.** Which neutral seed rule applies when the producer does not persist a profile-chain
-seed?
-
-**Known.** FreeCAD persists ordered `GeometryList` and `ConstraintList` values, but no profile
-chain or seed entity. The current projection at `design.rs:2527-2555` starts each disconnected
-profile at the lowest unassigned non-construction entity ordinal.
-
-**Need.** Establish the neutral seed rule and retain the persisted entity ordinal in the decision,
-or define an explicit decoder-owned policy with an attributable result for an unsupported or
-ambiguous seed.
-
-**Conflict.** The closure evidence in `d61600a25` establishes source order and the absence of a
-seed carrier, but it does not establish that the lowest ordinal is the neutral seed. The current
-`BTreeSet::pop_first()` choice is a decoder policy, so exchanging serialized geometry order can
-change profile order without a producer-defined tie-break or loss.
-
-**Note.** Reopened by closure audit. Producer field absence does not settle neutral projection
-ownership.
-
 ### DP-03. Sketch profile junction ambiguity and tolerance
 
 **Question.** What neutral endpoint-equivalence and junction policy applies when the producer

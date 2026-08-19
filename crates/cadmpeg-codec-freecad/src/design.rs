@@ -2528,6 +2528,9 @@ fn build_profiles(
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
 ) -> Vec<Vec<SketchEntityUse>> {
+    // Internal entities arrive in GeometryList order; appended external and built-in reference
+    // entities are construction entries. Indices therefore preserve the persisted ordinal for
+    // every eligible profile entity.
     let profile_entities = entities
         .iter()
         .enumerate()
@@ -2548,6 +2551,7 @@ fn build_profiles(
         }
     }
     let mut profiles = Vec::new();
+    // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
     while let Some(first) = unused.pop_first() {
         let mut chain = vec![SketchEntityUse {
             entity: entities[first].id.clone(),
@@ -5556,6 +5560,45 @@ mod profile_tests {
             .iter()
             .zip(&entities)
             .all(|(profile, entity)| profile[0].entity == entity.id));
+    }
+
+    #[test]
+    fn disconnected_profile_seeds_skip_construction_in_persisted_order() {
+        let mut construction = entity(
+            "test:entity#1",
+            SketchGeometry::Line {
+                start: Point2::new(-1.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        );
+        construction.construction = true;
+        let entities = vec![
+            construction,
+            entity(
+                "test:entity#2",
+                SketchGeometry::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(2.0),
+                },
+            ),
+            entity(
+                "test:entity#3",
+                SketchGeometry::Circle {
+                    center: Point2::new(10.0, 0.0),
+                    radius: Length(2.0),
+                },
+            ),
+        ];
+
+        let profiles = build_profiles(&entities, &[]);
+
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|profile| profile[0].entity.clone())
+                .collect::<Vec<_>>(),
+            vec![entities[1].id.clone(), entities[2].id.clone()]
+        );
     }
 
     #[test]
