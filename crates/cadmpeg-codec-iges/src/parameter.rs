@@ -451,6 +451,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 141 Form 0 puts the model-curve count at index 4. Each item consumes
 /// three fields plus its `K` parameter-curve pointers, so its groups start at
 /// token `5 + 3*N + sum(K(i))` after the entity type token.
+/// Type 142 Form 0 stores five fixed primary fields, so its groups start at
+/// token 6.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -596,6 +598,7 @@ pub(crate) fn entity_primary_end(
         (198, 1) => Some(fixed_primary_end(record, 6)),
         (180, 0 | 1) => Some(boolean_tree_primary_end(record)),
         (141, 0) => Some(boundary_primary_end(record)),
+        (142, 0) => Some(fixed_primary_end(record, 6)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
