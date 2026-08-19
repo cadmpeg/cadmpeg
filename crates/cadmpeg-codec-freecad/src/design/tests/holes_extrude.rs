@@ -142,6 +142,110 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_hole_enumerations() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let hole_document = |target: &str, type_name: &str, value: &str| {
+        let property = if target.is_empty() {
+            String::new()
+        } else {
+            format!(r#"<Property name="{target}" type="{type_name}">{value}</Property>"#)
+        };
+        let thread_type = if target == "ThreadType" || target.is_empty() {
+            String::new()
+        } else {
+            r#"<Property name="ThreadType" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#
+                .to_owned()
+        };
+        let properties = format!("{thread_type}{property}");
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations" id="1"/><Object type="PartDesign::Hole" name="Hole" id="2"/></Objects>
+<ObjectData Count="2"><Object name="Locations"><Properties Count="0"/></Object><Object name="Hole"><Properties Count="{count}"><Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property><Property name="Diameter" type="App::PropertyLength"><Float value="6"/></Property><Property name="Depth" type="App::PropertyLength"><Float value="25"/></Property><Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property>{properties}</Properties></Object></ObjectData></Document>"#,
+            count = 4 + properties.matches("<Property ").count(),
+        )
+    };
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("hole enumeration document")
+    };
+
+    let absent = decode(&hole_document("", "", ""));
+    assert!(matches!(
+        definition(&absent, "Hole"),
+        FeatureDefinition::Hole {
+            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter {
+                points: false,
+                circles: true,
+                arcs: true,
+            }),
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            extent: Some(Termination::Blind {
+                length: Length(25.0),
+            }),
+            bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
+            specification: None,
+            ..
+        }
+    ));
+    assert!(absent.report().losses.is_empty());
+
+    let malformed_values = [
+        ("App::PropertyEnumeration", r#"<Integer value="bad"/>"#),
+        ("App::PropertyString", r#"<String value="0"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="0"/>"#),
+        (
+            "App::PropertyEnumeration",
+            r#"<Wrapper><Integer value="0"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyEnumeration",
+            r#"<Integer value="0"/><Integer value="1"/>"#,
+        ),
+        ("App::PropertyEnumeration", r#"<Integer value="-1"/>"#),
+        ("App::PropertyEnumeration", r#"<Integer value="99"/>"#),
+    ];
+    for target in [
+        "ThreadType",
+        "HoleCutType",
+        "DepthType",
+        "DrillPoint",
+        "ThreadDepthType",
+        "ThreadDirection",
+    ] {
+        for (type_name, value) in malformed_values {
+            let result = decode(&hole_document(target, type_name, value));
+            assert!(matches!(
+                definition(&result, "Hole"),
+                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Hole"
+            ));
+            assert_eq!(result.report().losses.len(), 1);
+            assert!(result.report().losses.iter().all(|loss| {
+                loss.code.namespace == "fcstd"
+                    && loss.code.code == "feature.native-kind-retained"
+                    && loss.severity == cadmpeg_ir::Severity::Blocking
+            }));
+        }
+    }
+}
+
+#[test]
 fn resolves_deprecated_fcstd_hole_cut_indices() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1" ProgramVersion="0.18R4">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Locations"/><Object type="PartDesign::Hole" name="Hole"/></Objects>

@@ -81,9 +81,29 @@ restore probe gives Extent for every absent Mode and active Mode2. The source an
 check with zero decode losses. The selected malformed-carrier batches, including the active
 two-axis Mode2 batch, retain the pattern as native with one blocking loss per file.
 
-**Need.** Apply the same absence-versus-present validation to hole modes and flags and the
-remaining design operation flags. Trace each producer carrier and preserve its constructor default
-only when the property is absent.
+PartDesign `Hole` registers `ThreadType`, `HoleCutType`, `DepthType`, `DrillPoint`,
+`ThreadDepthType`, and `ThreadDirection` as `App::PropertyEnumeration` carriers. Their source
+sequences are respectively None/ISO metric/ISO metric fine/UNC/UNF/UNEF/NPT/BSP/BSW/BSF/ISO tyre;
+None/Counterbore/Countersink/Counterdrill; Dimension/ThroughAll; Flat/Angled; Hole Depth/
+Dimension/Tapped (DIN76); and Right/Left. The constructor defaults are indices 0, 0, 0, 1, 0,
+and 0. `FeatureHole.h:53-79,150-158,160-197`, `FeatureHole.cpp:76-103,467-535,551-625`,
+`PropertyStandard.cpp:397-454`, and `PropertyContainer.cpp:324-404` establish the carriers,
+labels, defaults, direct Integer serialization, and absent-property restore. `design.rs:4826,4852,
+4859,4878,4903,4908` now requires the exact enumeration
+carrier and supplies those defaults only when the property is absent.
+
+The producer witness `/home/pcurve/side2/tmp/freecad-l9/dp15_hole_enum_witness.py` saves a
+default hole and a selected hole. Extracted `dp15-hole-enum-source.Document.xml` contains direct
+values `0,0,0,1,0,0` for the default and `1,1,1,0,1,1` for the selected hole. FreeCAD's
+`dp15_hole_enum_restore_probe.py` restores the source and the all-six-carriers-absent mutation as
+None/None/Dimension/Angled/Hole Depth/Right. Rebuilt CLI checks of source and absent files report
+status ok with zero losses. The selected malformed-carrier batch reports status ok and one
+blocking native loss for every wrong-runtime, integer-runtime, malformed, nested, duplicate,
+negative, and unknown variant of every six carrier.
+
+**Need.** Apply the same absence-versus-present validation to Hole boolean flags and
+`BaseProfileType`, then to the remaining design operation flags. Trace each producer carrier and
+preserve its constructor default only when the property is absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
@@ -93,8 +113,8 @@ neutral semantics or discard a valid legacy default.
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2`, Part `DirMode`, shell/offset `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
-exact-carrier decoder rule. Hole modes and flags and the remaining design operation flags stay
-open.
+exact-carrier decoder rule. Hole enumeration modes are covered; Hole boolean flags,
+`BaseProfileType`, and the remaining design operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

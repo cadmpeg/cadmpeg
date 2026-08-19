@@ -696,6 +696,16 @@ greater than one; a persisted Mode2 has no effect when that occurrence count is 
 decision: a present selected `Mode` or active `Mode2` with another runtime type, without exactly
 one direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index
 does not select a neutral pattern; the operation remains native.
+PartDesign `Hole` enumeration carriers use these indices: `ThreadType` `0` None, `1` ISO metric,
+`2` ISO metric fine, `3` UNC, `4` UNF, `5` UNEF, `6` NPT, `7` BSP, `8` BSW, `9` BSF, and `10`
+ISO tyre; `HoleCutType` `0` None, `1` Counterbore, `2` Countersink, and `3` Counterdrill;
+`DepthType` `0` Dimension and `1` ThroughAll; `DrillPoint` `0` Flat and `1` Angled;
+`ThreadDepthType` `0` Hole Depth, `1` Dimension, and `2` Tapped (DIN76); and `ThreadDirection`
+`0` Right and `1` Left. Absent carriers use the producer defaults: ThreadType 0, HoleCutType 0,
+DepthType 0, DrillPoint 1, ThreadDepthType 0, and ThreadDirection 0. CADIR decision: a present
+selected carrier with another runtime type, without exactly one direct `Integer`, or with a
+non-integer, negative, duplicate, nested, or unsupported index does not select neutral hole
+semantics; the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a
@@ -1458,6 +1468,10 @@ solid-versus-sheet result and the face-maker class used for solids. PartDesign r
 the compatibility ordering used when fusing the new feature with the existing body. Every
 profile-based PartDesign operation—extrusion, revolution, loft, pipe, helix, and hole—retains
 whether a profile containing multiple faces is accepted as one construction input.
+PartDesign holes retain their profile filter, simple, counterbore, countersink, or counterdrill
+cut, blind or through-all extent, flat or angled drill point, taper, and optional thread
+specification. Thread depth distinguishes hole depth, an explicit blind dimension, and the DIN76
+tapped runout law; thread direction distinguishes right- and left-handed construction.
 
 PartDesign linear and polar patterns retain both uniform and explicitly spaced instance
 sequences. Explicit sequences are cumulative transforms beginning at the unchanged seed; per-gap

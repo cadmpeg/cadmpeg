@@ -4823,7 +4823,7 @@ fn hole_definition(
     let legacy_cut_types = program_version
         .and_then(freecad_program_version)
         .is_some_and(|version| version < (0, 21));
-    let kind = match integer_property(properties, "HoleCutType").unwrap_or(0) {
+    let kind = match enumeration_selector(properties, "HoleCutType", 0)? {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
             diameter: Length(positive("HoleCutDiameter")?),
@@ -4849,14 +4849,14 @@ fn hole_definition(
         },
         _ => return None,
     };
-    let extent = match integer_property(properties, "DepthType").unwrap_or(0) {
+    let extent = match enumeration_selector(properties, "DepthType", 0)? {
         0 => Termination::Blind {
             length: Length(positive("Depth")?),
         },
         1 => Termination::ThroughAll,
         _ => return None,
     };
-    let bottom = match integer_property(properties, "DrillPoint").unwrap_or(1) {
+    let bottom = match enumeration_selector(properties, "DrillPoint", 1)? {
         0 => HoleBottom::Flat,
         1 => HoleBottom::Angled {
             included_angle: cadmpeg_ir::features::Angle(positive("DrillPointAngle")?.to_radians()),
@@ -4875,7 +4875,7 @@ fn hole_definition(
     if tapered && taper_angle.is_none() {
         return None;
     }
-    let thread_type = integer_property(properties, "ThreadType").unwrap_or(0);
+    let thread_type = enumeration_selector(properties, "ThreadType", 0)?;
     let specification = if thread_type == 0 {
         None
     } else {
@@ -4900,12 +4900,12 @@ fn hole_definition(
             cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
             pitch: positive("ThreadPitch").map(Length),
             major_diameter: positive("ThreadDiameter").map(Length),
-            hand: match integer_property(properties, "ThreadDirection").unwrap_or(0) {
+            hand: match enumeration_selector(properties, "ThreadDirection", 0)? {
                 0 => ThreadHand::Right,
                 1 => ThreadHand::Left,
                 _ => return None,
             },
-            depth: match integer_property(properties, "ThreadDepthType").unwrap_or(0) {
+            depth: match enumeration_selector(properties, "ThreadDepthType", 0)? {
                 0 => HoleThreadDepth::HoleDepth,
                 1 => HoleThreadDepth::Blind {
                     depth: Length(positive("ThreadDepth")?),
