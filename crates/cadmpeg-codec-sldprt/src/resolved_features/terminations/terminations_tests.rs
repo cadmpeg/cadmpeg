@@ -532,6 +532,113 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
 }
 
 #[test]
+fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
+    let anchor = 100;
+    let payload = |valid_dimension: bool| {
+        let mut payload = vec![0; anchor + 26];
+        payload[anchor..anchor + 2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[anchor + 4] = 1;
+        payload[anchor + 18] = 1;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = if valid_dimension { 0x20 } else { 0x21 };
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        payload.resize(anchor + 200, 0);
+        payload
+    };
+    let resolve = |native_payload| {
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![Feature {
+                id: "extrusion".into(),
+                parent: "history".into(),
+                xml_tag: "Feature".into(),
+                tree_parent: None,
+                source_id: Some("10".into()),
+                parent_source_id: None,
+                ordinal: 10,
+                name: "extrusion".into(),
+                kind: "Boss-Extrude".into(),
+                input_class: Some("moICE_c".into()),
+                suppressed: false,
+                parameters: BTreeMap::from([(String::from("D1"), String::from("5mm"))]),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }];
+        let lane = FeatureInputLane {
+            id: "lane#7".into(),
+            configuration: None,
+            native_payload,
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "extrusion-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 0,
+                offset: 10,
+                value: "extrusion".into(),
+                object_id: Some(10),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+        (
+            histories[0].features[0]
+                .properties
+                .get("EndCondition")
+                .cloned(),
+            histories[0].features[0].parameters.get("D1").cloned(),
+        )
+    };
+
+    assert_eq!(
+        resolve(payload(true)),
+        (Some(String::from("ThroughAll")), Some(String::from("5mm")))
+    );
+
+    let mut through_next = vec![0; anchor + 108];
+    through_next[anchor..anchor + 2].copy_from_slice(&[0x0c, 0x8e]);
+    through_next[anchor + 4] = 1;
+    through_next[anchor + 18] = 2;
+    through_next[anchor + 30..anchor + 34].copy_from_slice(&[1, 0, 0, 1]);
+    through_next[anchor + 92] = 1;
+    through_next[anchor + 100..anchor + 102].copy_from_slice(&[0x83, 0x81]);
+    through_next[anchor + 102..anchor + 106].copy_from_slice(&5u32.to_le_bytes());
+    through_next[anchor + 106..anchor + 108].copy_from_slice(&[0x74, 0x81]);
+    let block = through_next.len();
+    through_next.resize(block + 16, 0);
+    through_next[block + 9] = 0x20;
+    through_next.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+    through_next.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    through_next.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+    through_next.resize(anchor + 200, 0);
+    assert_eq!(
+        resolve(through_next),
+        (Some(String::from("ThroughNext")), Some(String::from("5mm")))
+    );
+
+    assert_eq!(resolve(payload(false)), (None, Some(String::from("5mm"))));
+}
+
+#[test]
 fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
     let mut payload = vec![0; 240];
     payload[..2].copy_from_slice(&[0x95, 0x81]);

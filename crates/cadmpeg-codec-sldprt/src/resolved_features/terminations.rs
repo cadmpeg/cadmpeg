@@ -243,9 +243,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             depth_m: None,
                         });
                     }
-                    if has_depth {
-                        return None;
-                    }
+                    // One-sided through-all/through-next forms may retain a
+                    // display dimension even when semantic D1/Depth already
+                    // exists. Recognize their complete end spec before the
+                    // depth guard, while malformed reference forms remain
+                    // unresolved.
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
                         Some(TerminationVote {
                             condition: "ThroughAll".to_string(),
@@ -264,6 +266,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             canonical_reference: None,
                             depth_m: None,
                         })
+                    } else if has_depth {
+                        None
                     } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
