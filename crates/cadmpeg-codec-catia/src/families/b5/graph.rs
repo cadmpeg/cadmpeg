@@ -4868,11 +4868,14 @@ pub(crate) fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
         .filter(|range| {
             let run = &bytes[range.clone()];
             let frames = object_stream_frames(run);
-            records_from_frames(run, &frames)
-                .iter()
-                .any(|record| matches!(record.class, 0x5f | 0x62))
+            frames.iter().copied().any(is_topology_root_frame)
         })
         .collect()
+}
+
+fn is_topology_root_frame(frame: ObjectFrame) -> bool {
+    (frame.family == 0xb5 && frame.class == 0x5f)
+        || ((frame.family == 0xb5 || frame.family == 0xa8) && frame.class == 0x62)
 }
 
 /// Partition one logical stream into independently resolved object populations.
@@ -4968,7 +4971,8 @@ pub(crate) fn select_object_stream_population(
             let frame_range = frame_start..frame_cursor;
             let topology = frames[frame_range.clone()]
                 .iter()
-                .any(|frame| frame.family == 0xb5 && matches!(frame.class, 0x5f | 0x62));
+                .copied()
+                .any(is_topology_root_frame);
             runs.push(IndexedObjectRun {
                 stream_index,
                 range,

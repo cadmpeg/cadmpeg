@@ -362,6 +362,18 @@ fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
 }
 
 #[test]
+fn wide_header_loop_is_a_topology_root_for_population_selection() {
+    let mut bytes = vec![0xa8, 0x03, 0x62];
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+
+    assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
+    let selection = select_object_stream_population(&[bytes], None);
+    assert!(selection.selected);
+    assert!(!selection.source.is_empty());
+}
+
+#[test]
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes);

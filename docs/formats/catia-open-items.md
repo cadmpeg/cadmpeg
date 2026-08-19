@@ -500,16 +500,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** `catia.md` §5.4 "Full-form standard `u16be` endpoint integers are not vertex indices or reusable port identities." states that each full-form row contributes two occurrence-local ports even when another row stores the same endpoint integer. `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs:42-59` shares the port identity of a two-handle full-form row through its table scope.
 
-### OS-16. Object-stream topology-root records
-
-**Question.** Which records make an object-stream run a topology root?
-
-**Known.** `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4969-4971` marks a run as a topology run when one frame in the run has family `b5` and class `5f` or `62`. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4865-4876` marks a run as a topology root when one materialized record has class `5f` or `62`, with no family condition, and `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4594-4598` materializes family `a8` records of class `34` and `62`. An `a8` loop node therefore makes a topology root for the population partitioner and not for the population selector. `crates/cadmpeg-codec-catia/src/families/b5/graph.rs:4987-4991` selects a population only when exactly one run is a topology run, and refuses the graph when more than one run is.
-
-**Need.** We must know the record set that makes a topology root, because the two rules put the same run on different sides of the selection.
-
-**Note.** The frame-based rule replaced a record-based rule in the same commit that made the frame index single-pass. The record-based rule in the same file was not changed with it.
-
 ### DI-24. PMI dimension quantity and suffix framing
 
 **Question.** Which field gives the physical quantity of a transferred `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, and `DC` suffix framings select?
