@@ -632,76 +632,78 @@ fn horizontal_relation_requires_one_line_or_two_points() {
 
 #[test]
 fn driving_point_distances_resolve_omitted_solver_points() {
-    let mut origin = marker("origin", Some([0.0, 0.0]));
-    origin.offset = 0;
-    let mut negative = marker("negative", Some([-0.007, 0.0]));
-    negative.offset = 1;
-    let mut first_center = marker("first-center", Some([0.008, 0.0]));
-    first_center.offset = 2;
-    let mut second_center = marker("second-center", Some([0.0015, 0.0]));
-    second_center.offset = 3;
-    let operand = |index, marker: Option<&str>| FeatureInputOperand {
-        offset: u64::from(index),
-        reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x820f),
-        entity_index: index,
-        entity_ref: marker.map(str::to_string),
-    };
-    let scalar = |id: &str, value, operands| FeatureInputScalar {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature-native".into()),
-        ordinal: 0,
-        offset: 0,
-        object_id: 0,
-        name: "name".into(),
-        value,
-        role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
-        operands,
-    };
-    let lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: Vec::new(),
-        classes: Vec::new(),
-        names: Vec::new(),
-        scalars: vec![
-            scalar(
-                "center-1",
-                0.008,
-                vec![operand(13, None), operand(3, Some("first-center"))],
-            ),
-            scalar(
-                "center-2",
-                0.0015,
-                vec![operand(13, None), operand(4, Some("second-center"))],
-            ),
-            scalar(
-                "terminal",
-                0.007,
-                vec![operand(12, None), operand(13, None)],
-            ),
-        ],
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: vec![origin, negative, first_center, second_center],
-    };
+    for tag in [0x8100, 0x820f] {
+        let mut origin = marker("origin", Some([0.0, 0.0]));
+        origin.offset = 0;
+        let mut negative = marker("negative", Some([-0.007, 0.0]));
+        negative.offset = 1;
+        let mut first_center = marker("first-center", Some([0.008, 0.0]));
+        first_center.offset = 2;
+        let mut second_center = marker("second-center", Some([0.0015, 0.0]));
+        second_center.offset = 3;
+        let operand = |index, marker: Option<&str>| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::Native(tag),
+            entity_index: index,
+            entity_ref: marker.map(str::to_string),
+        };
+        let scalar = |id: &str, value, operands| FeatureInputScalar {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature-native".into()),
+            ordinal: 0,
+            offset: 0,
+            object_id: 0,
+            name: "name".into(),
+            value,
+            role: FeatureInputScalarRole::Driving,
+            entity_indices: Vec::new(),
+            operands,
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: vec![
+                scalar(
+                    "center-1",
+                    0.008,
+                    vec![operand(13, None), operand(3, Some("first-center"))],
+                ),
+                scalar(
+                    "center-2",
+                    0.0015,
+                    vec![operand(13, None), operand(4, Some("second-center"))],
+                ),
+                scalar(
+                    "terminal",
+                    0.007,
+                    vec![operand(12, None), operand(13, None)],
+                ),
+            ],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![origin, negative, first_center, second_center],
+        };
 
-    assert_eq!(
-        inferred_point_coordinates_by_index(&lane, "feature-native"),
-        HashMap::from([
-            (3, [0.008, 0.0]),
-            (4, [0.0015, 0.0]),
-            (12, [-0.007, 0.0]),
-            (13, [0.0, 0.0]),
-        ])
-    );
+        assert_eq!(
+            inferred_point_coordinates_by_index(&lane, "feature-native"),
+            HashMap::from([
+                (3, [0.008, 0.0]),
+                (4, [0.0015, 0.0]),
+                (12, [-0.007, 0.0]),
+                (13, [0.0, 0.0]),
+            ])
+        );
+    }
 }
 
 #[test]
@@ -715,7 +717,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let operand = |index| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x820f),
+        kind: FeatureInputOperandKind::Native(0x8100),
         entity_index: index,
         entity_ref: None,
     };

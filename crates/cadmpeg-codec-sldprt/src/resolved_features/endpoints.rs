@@ -1625,7 +1625,10 @@ pub(super) fn inferred_point_coordinates_by_index(
     lane: &FeatureInputLane,
     feature: &str,
 ) -> HashMap<u32, [f64; 2]> {
-    const POINT_REFERENCE_TAG: u16 = 0x820f;
+    // These tags address the solver-point namespace in the point-distance
+    // scalar form. They are admitted here only to solve omitted point
+    // coordinates; generic operand resolution still requires a marker match.
+    const SOLVER_POINT_REFERENCE_TAGS: [u16; 2] = [0x8100, 0x820f];
 
     let mut candidates = lane
         .sketch_entities
@@ -1649,10 +1652,13 @@ pub(super) fn inferred_point_coordinates_by_index(
             && scalar.value.is_finite()
             && scalar.value >= 0.0
             && scalar.operands.len() == 2
-            && scalar
-                .operands
-                .iter()
-                .all(|operand| operand.kind == FeatureInputOperandKind::Native(POINT_REFERENCE_TAG))
+            && scalar.operands.iter().all(|operand| {
+                matches!(
+                    operand.kind,
+                    FeatureInputOperandKind::Native(tag)
+                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag)
+                )
+            })
     }) {
         let [first, second] = scalar.operands.as_slice() else {
             unreachable!("scalar operand cardinality was filtered above");
