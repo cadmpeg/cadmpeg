@@ -176,6 +176,118 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
 }
 
 #[test]
+fn declared_entity_handle_accepts_indexed_radial_point_pair() {
+    let kind = FeatureInputOperandKind::Native(0x80f7);
+    let operand = FeatureInputOperand {
+        offset: 100,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 0,
+        entity_ref: None,
+    };
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index,
+        local_id,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 112,
+            name: "sgEntHandle".into(),
+            role: FeatureInputClassRole::SketchEntity,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: operand.reference_ref.clone(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![
+            marker("center", 10, Some(2), Some(1), [0.010, 0.020]),
+            marker("radial", 20, Some(1), Some(3), [0.013, 0.024]),
+        ],
+    };
+    let markers_by_id = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &markers_by_id,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .expect("indexed radial point carrier");
+    assert_eq!(carrier.marker.id, "center");
+    assert_eq!(carrier.center, [0.010, 0.020]);
+    assert_eq!(carrier.construction, Some(false));
+
+    let mut ambiguous_lane = lane.clone();
+    ambiguous_lane.sketch_entities.extend([
+        marker("second-center", 30, Some(4), Some(3), [0.020, 0.030]),
+        marker("second-radial", 40, Some(3), Some(5), [0.023, 0.034]),
+    ]);
+    let ambiguous_markers = ambiguous_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&ambiguous_lane),
+        &ambiguous_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+
+    let mut mismatched_lane = lane;
+    mismatched_lane.sketch_entities[1].object_index = Some(99);
+    let mismatched_markers = mismatched_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&mismatched_lane),
+        &mismatched_markers,
+        "feature",
+        &operand,
+        5.0,
+    )
+    .is_none());
+}
+
+#[test]
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 

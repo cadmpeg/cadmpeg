@@ -924,9 +924,49 @@ fn declared_entity_handle_pairs<'a>(
 ) -> Vec<[&'a SketchInputEntity; 2]> {
     let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
     pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
+    pairs.extend(declared_entity_handle_indexed_point_pairs(lane, feature));
     pairs.sort_unstable_by_key(|[center, radial]| (center.offset, radial.offset));
     pairs.dedup_by(|left, right| left[0].id == right[0].id && left[1].id == right[1].id);
     pairs
+}
+
+/// Resolve the indexed point form used by a declared entity handle when the
+/// radial point carries its own local identifier. The adjacent roster order
+/// and the center-to-radial object/local join are both required; a radius
+/// match alone is not a carrier identity.
+fn declared_entity_handle_indexed_point_pairs<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<[&'a SketchInputEntity; 2]> {
+    let mut markers = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter(|marker| marker.coordinates_m.is_some())
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        })
+        .collect::<Vec<_>>();
+    markers.sort_unstable_by_key(|marker| marker.offset);
+    markers
+        .windows(2)
+        .filter_map(|pair| {
+            let [center, radial] = pair else {
+                unreachable!("slice windows have the requested length")
+            };
+            let center_local_id = center.local_id?;
+            if center_local_id == 0
+                || radial.object_index != Some(center_local_id)
+                || radial.local_id.is_none_or(|local_id| local_id == 0)
+            {
+                return None;
+            }
+            Some([*center, *radial])
+        })
+        .collect()
 }
 
 /// Resolve the wide child form where a curve marker is followed by its radial
