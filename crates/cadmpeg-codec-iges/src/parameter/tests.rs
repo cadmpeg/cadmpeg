@@ -1991,6 +1991,332 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type310_nested_boundary_follows_character_and_motion_counts() {
+    let association = directory_target(1, 212);
+    let source = directory_target(5, 310);
+    let directory = BTreeMap::from([(1, &association), (5, &source)]);
+    for (values, expected_start) in [
+        (
+            vec![
+                310.into(),
+                1.into(),
+                TokenValue::String(b"A".to_vec()),
+                0.into(),
+                10.into(),
+                1.into(),
+                65.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+            ],
+            10_usize,
+        ),
+        (
+            vec![
+                310.into(),
+                1.into(),
+                TokenValue::String(b"A".to_vec()),
+                0.into(),
+                10.into(),
+                1.into(),
+                65.into(),
+                0.into(),
+                0.into(),
+                2.into(),
+                0.into(),
+                1.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                4.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+            ],
+            16,
+        ),
+        (
+            vec![
+                310.into(),
+                1.into(),
+                TokenValue::String(b"A".to_vec()),
+                0.into(),
+                10.into(),
+                2.into(),
+                65.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                66.into(),
+                8.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                8.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+            ],
+            17,
+        ),
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(5, values), &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "expected_start={expected_start}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "expected_start={expected_start}"
+        );
+        let groups = analysis.groups.expect("Type 310 nested boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+    }
+}
+
+#[test]
+fn type310_nested_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let source = directory_target(7, 310);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property_5),
+        (7, &source),
+    ]);
+    let record = token_parameter_record(
+        7,
+        vec![
+            310.into(),
+            101.into(),
+            TokenValue::String(b"MAIN".to_vec()),
+            (-9).into(),
+            10.into(),
+            2.into(),
+            65.into(),
+            8.into(),
+            0.into(),
+            1.into(),
+            TokenValue::Omitted,
+            1.into(),
+            2.into(),
+            66.into(),
+            8.into(),
+            0.into(),
+            2.into(),
+            TokenValue::Omitted,
+            0.into(),
+            0.into(),
+            1.into(),
+            8.into(),
+            2.into(),
+            1.into(),
+            3.into(),
+            6.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+        ],
+    );
+    let generic = structural_pointer_group_candidates(&record);
+    let valid_starts = generic
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![22, 23]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 310 table boundary");
+    assert_eq!(groups.token_start, 23);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5, 5, 5, 5, 5, 5]);
+}
+
+#[test]
+fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recover() {
+    let association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 310);
+    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+    let wrong_fields = token_parameter_record(
+        7,
+        vec![
+            310.into(),
+            101.into(),
+            TokenValue::String(b"MAIN".to_vec()),
+            (-9).into(),
+            TokenValue::String(b"bad-scale".to_vec()),
+            2.into(),
+            65.into(),
+            8.into(),
+            0.into(),
+            1.into(),
+            TokenValue::Omitted,
+            1.into(),
+            2.into(),
+            66.into(),
+            8.into(),
+            0.into(),
+            2.into(),
+            TokenValue::Omitted,
+            0.into(),
+            0.into(),
+            1.into(),
+            8.into(),
+            0.into(),
+            1.into(),
+            3.into(),
+            6.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+            5.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong_fields, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis
+            .groups
+            .expect("Type 310 wrong-field boundary")
+            .token_start,
+        23
+    );
+
+    let malformed = [
+        token_parameter_record(
+            7,
+            vec![
+                310.into(),
+                101.into(),
+                TokenValue::String(b"MAIN".to_vec()),
+                0.into(),
+                10.into(),
+                0.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            7,
+            vec![
+                310.into(),
+                101.into(),
+                TokenValue::String(b"MAIN".to_vec()),
+                0.into(),
+                10.into(),
+                1.into(),
+                65.into(),
+                8.into(),
+                0.into(),
+                (-1).into(),
+                1.into(),
+                3.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            7,
+            vec![
+                310.into(),
+                101.into(),
+                TokenValue::String(b"MAIN".to_vec()),
+                0.into(),
+                10.into(),
+                1.into(),
+                65.into(),
+                8.into(),
+                0.into(),
+                i64::MAX.into(),
+            ],
+        ),
+        token_parameter_record(
+            7,
+            vec![
+                310.into(),
+                101.into(),
+                TokenValue::String(b"MAIN".to_vec()),
+                0.into(),
+                10.into(),
+                2.into(),
+                65.into(),
+                8.into(),
+                0.into(),
+                1.into(),
+                TokenValue::Omitted,
+                1.into(),
+                2.into(),
+                66.into(),
+                8.into(),
+                0.into(),
+                2.into(),
+                TokenValue::Omitted,
+                0.into(),
+                0.into(),
+            ],
+        ),
+        token_parameter_record(
+            7,
+            vec![
+                310.into(),
+                101.into(),
+                TokenValue::String(b"MAIN".to_vec()),
+                0.into(),
+                10.into(),
+                2.into(),
+                65.into(),
+                8.into(),
+                0.into(),
+                1.into(),
+                TokenValue::Omitted,
+                1.into(),
+                2.into(),
+                66.into(),
+                8.into(),
+                0.into(),
+                2.into(),
+                TokenValue::Omitted,
+                0.into(),
+                0.into(),
+                1.into(),
+                8.into(),
+                0.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+    ];
+    for record in malformed {
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type214_forms_share_count_driven_boundary() {
     let association = directory_target(3, 212);
     let n1 = vec![

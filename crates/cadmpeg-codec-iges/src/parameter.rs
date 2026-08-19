@@ -435,6 +435,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 304 Form 1 stores four fixed values, so its groups start at token five;
 /// Form 2 stores `M` segment lengths and one hexadecimal pattern, so its groups
 /// start at token `M + 3`.
+/// Type 310 Form 0 puts `N` at index 5. Each character adds four fields and
+/// three fields per pen motion, so its groups start after the complete nested
+/// character and motion span.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -508,6 +511,7 @@ pub(crate) fn entity_primary_end(
         (314, 0) => Some(fixed_primary_end(record, 5)),
         (304, 1) => Some(fixed_primary_end(record, 5)),
         (304, 2) => Some(line_font_pattern_primary_end(record)),
+        (310, 0) => Some(text_font_primary_end(record)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
@@ -565,6 +569,36 @@ fn line_font_pattern_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|count| count.checked_add(3))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn text_font_primary_end(record: &ParameterRecord) -> usize {
+    let Some(character_count) = record
+        .integer(5)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+
+    let mut cursor = 6_usize;
+    for _ in 0..character_count {
+        let Some(motion_count) = cursor
+            .checked_add(3)
+            .and_then(|index| record.integer(index))
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = motion_count
+            .checked_mul(3)
+            .and_then(|motion_span| cursor.checked_add(4)?.checked_add(motion_span))
+            .filter(|end| *end <= record.tokens.len())
+        else {
+            return record.tokens.len();
+        };
+        cursor = next;
+    }
+    cursor
 }
 
 fn segmented_visibility_primary_end(record: &ParameterRecord) -> usize {
