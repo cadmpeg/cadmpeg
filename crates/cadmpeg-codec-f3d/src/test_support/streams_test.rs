@@ -75,17 +75,22 @@ pub(crate) fn segment_metastream(
 }
 
 pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, false, false)
+    generated_design_metastream_with_sketch_types(records, false, false, false)
 }
 
 pub(crate) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, true, true)
+    generated_design_metastream_with_sketch_types(records, true, true, false)
+}
+
+pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(records, false, false, true)
 }
 
 fn generated_design_metastream_with_sketch_types(
     records: &[(u64, u64)],
     include_sketch_types: bool,
     include_dimension_types: bool,
+    include_feature_types: bool,
 ) -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     let point_entity_ids: &[u64] = if include_dimension_types {
@@ -113,6 +118,7 @@ fn generated_design_metastream_with_sketch_types(
     } else {
         &[]
     };
+    let feature_entity_ids: &[u64] = if include_feature_types { &[1400] } else { &[] };
     let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
         (
             crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
@@ -236,6 +242,15 @@ fn generated_design_metastream_with_sketch_types(
             1,
             "Dimension",
             companion_entity_ids,
+        ));
+    }
+    if include_feature_types {
+        types.push((
+            "00000000-0000-0000-0000-000000001400",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_FUSION,
+            feature_entity_ids,
         ));
     }
     design_metastream_with_records(&types, records)
@@ -818,6 +833,46 @@ pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     out.extend_from_slice(b"261");
     out.extend_from_slice(&placement_record.to_le_bytes());
     records.push((u64::from(placement_record), placement_offset));
+
+    (out, records)
+}
+
+/// Add the self-contained 267-byte result-body form of a `Base Feature`
+/// parameter scope to the generated Design stream.
+pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let scope_class_tag = 268_u32;
+    let scope_offset = u64::try_from(out.len()).expect("synthetic Base Feature scope offset");
+
+    let mut scope = Vec::new();
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(scope_class_tag.to_string().as_bytes());
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    scope.extend_from_slice(&[0; 10]);
+    scope.resize(138, 0);
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    scope.push(1);
+    scope.extend_from_slice(&985_u32.to_le_bytes());
+    scope.extend_from_slice(&[0; 6]);
+    scope.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut scope, "Base Feature");
+    scope.extend_from_slice(&1_u32.to_le_bytes());
+    scope.extend_from_slice(&[0; 78]);
+    assert_eq!(scope.len(), 267);
+    scope.extend_from_slice(&3_u32.to_le_bytes());
+    scope.extend_from_slice(b"261");
+    scope.extend_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
 
     (out, records)
 }
