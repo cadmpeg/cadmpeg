@@ -1347,6 +1347,22 @@ pub(super) struct CreoSurfaceRowRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoSurfaceContourRecord {
+    pub(super) id: String,
+    pub(super) surface_id: u32,
+    pub(super) chain_index: usize,
+    pub(super) curve_header_id: u32,
+    pub(super) trv: u8,
+    pub(super) parameter_envelope: [Option<f64>; 4],
+    pub(super) separator_reference: Option<u32>,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) envelope_offset: usize,
+    pub(super) surface_row_offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoSurfacePrototypeRecord {
     pub(super) id: String,
     pub(super) declared_family: String,
@@ -1480,6 +1496,33 @@ pub(super) fn surface_prototype_records(
                 .map(surface_named_parameter_record)
                 .collect(),
             offset: record.offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
+pub(super) fn surface_contour_records(
+    scan: &ContainerScan,
+    records: &[crate::surface::SurfaceContourRecord],
+    namespace: &str,
+) -> Vec<CreoSurfaceContourRecord> {
+    records
+        .iter()
+        .map(|record| CreoSurfaceContourRecord {
+            id: format!(
+                "creo:{namespace}:surface_contour#{}-{}",
+                record.surface_id, record.offset
+            ),
+            surface_id: record.surface_id,
+            chain_index: record.chain_index,
+            curve_header_id: record.curve_header_id,
+            trv: record.trv,
+            parameter_envelope: record.parameter_envelope,
+            separator_reference: record.separator_reference,
+            body: record.body.clone(),
+            offset: record.offset,
+            envelope_offset: record.envelope_offset,
+            surface_row_offset: record.surface_row_offset,
             source_section: source_section(scan, record.offset),
         })
         .collect()

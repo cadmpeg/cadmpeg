@@ -137,6 +137,10 @@ fixtures, scores above L1 remain blocked.
   offsets do not order material bodies.
 - Named surface rows require byte-backed `orient` and `boundary_type`
   discriminators; absent or undefined values remain opaque.
+- Complete positional surface contour chains retain their curve-header
+  references, traversal bytes, ordered parameter-space envelope slots, and
+  separator references as native records. The chain is not yet used to assign
+  outer or inner loop roles or to relax strict face admission.
 - Eight-slot type-24 terminal frames require mutually exclusive
   single-diameter and square-radial invariants; a collision withholds the
   carrier.

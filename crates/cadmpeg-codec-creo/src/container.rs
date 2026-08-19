@@ -40,8 +40,9 @@ use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
 use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceEllipse, ReferenceLine};
 use crate::surface::{
-    self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
-    SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
+    self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceContourRecord,
+    SurfaceParameterRecord, SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
+    TabulatedCylinderCurveReplay,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -312,6 +313,15 @@ pub struct SurfaceScan {
     pub nonvisible_parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
     pub cross_section_parameters: Vec<SurfaceParameterRecord>,
+    /// Complete positional contour-chain entries from the selected material
+    /// model geometry namespace.
+    pub contours: Vec<SurfaceContourRecord>,
+    /// Complete positional contour-chain entries from the separate invisible
+    /// and construction surface namespace.
+    pub nonvisible_contours: Vec<SurfaceContourRecord>,
+    /// Complete positional contour-chain entries from DEPDB cross-section
+    /// geometry.
+    pub cross_section_contours: Vec<SurfaceContourRecord>,
     /// Labeled surface prototypes with fully decoded scalar fields.
     pub prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
@@ -1177,6 +1187,51 @@ fn cross_section_surface_parameters(
                 .map(|mut record| {
                     record.offset += section.offset;
                     record.body_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            surface::contour_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.envelope_offset += section.offset;
+                    record.surface_row_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(
+            surface::cross_section_contour_records(payload)
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.envelope_offset += section.offset;
+                    record.surface_row_offset += section.offset;
                     record
                 }),
         );
@@ -2156,6 +2211,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
     let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
+    let nonvisible_surface_contours = surface_contours(&data, &nonvisible_geometry_sections);
+    let surface_contours = surface_contours(&data, &model_geometry_sections);
+    let cross_section_surface_contours = cross_section_surface_contours(&data, &sections);
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&data, &model_geometry_sections);
     let plane_local_systems = plane_local_systems(&data, &model_geometry_sections);
@@ -2359,6 +2417,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             parameters: surface_parameters,
             nonvisible_parameters: nonvisible_surface_parameters,
             cross_section_parameters: cross_section_surface_parameters,
+            contours: surface_contours,
+            nonvisible_contours: nonvisible_surface_contours,
+            cross_section_contours: cross_section_surface_contours,
             prototypes: surface_prototypes,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,

@@ -406,6 +406,26 @@ The family-aware positional parameter body owns complete scalar tokens. Its
 compound close bounds the plane envelope when a header-shaped byte inside a
 complete parameter scalar interrupts the structural envelope walk. The
 following compound-close-bounded body is the local system.
+A positional row may then carry a complete contour chain after the local-system
+close. Its grammar is:
+
+```
+contour          := <curve_hdr_ptr_ci2> <trv> <envlp0> <envlp1> <envlp2> <envlp3> <close>
+chain            := contour_terminal
+                  | contour_intermediate ([<f7> <reference_ci>] contour_intermediate)*
+                    [<f7> <reference_ci>] contour_terminal
+curve_hdr_ptr_ci2 := canonical two-byte compact integer (`80..bf` lead)
+trv              := `00` | `01` | `02` | `03` | `f6`
+contour_intermediate := contour with `close = e3`
+contour_terminal := contour with `close = e1`
+```
+
+Each `envlp` slot uses the positional surface-row scalar lane. The four slots
+remain in source order. `34 <byte> <byte>` occupies one unresolved three-byte
+slot and has no numeric value. An `e3` contour close may be followed by the
+optional separator reference `f7 <reference_ci>` before the next contour. The
+terminal `e1` closes the chain; row-tail data follows it. A chain requires its
+terminal marker and all four envelope slots for every entry.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.

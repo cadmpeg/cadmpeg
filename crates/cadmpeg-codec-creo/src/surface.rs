@@ -359,6 +359,34 @@ pub struct SurfaceParameterRecord {
     pub body_offset: usize,
 }
 
+/// One complete contour-chain entry following a positional `srf_array` row's
+/// envelope and local-system bodies.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceContourRecord {
+    /// Owning `srf_array` geometry identifier.
+    pub surface_id: u32,
+    /// Zero-based position in the owning contour chain.
+    pub chain_index: usize,
+    /// Two-byte compact reference carried by the contour header.
+    pub curve_header_id: u32,
+    /// Stored contour traversal byte.
+    pub trv: u8,
+    /// Four ordered parameter-space envelope slots. `None` retains a
+    /// structurally framed unresolved slot.
+    pub parameter_envelope: [Option<f64>; 4],
+    /// Optional canonical reference following this contour's close marker.
+    pub separator_reference: Option<u32>,
+    /// Exact contour bytes from `curve_header_id` through its `e3` or `e1`
+    /// close marker.
+    pub body: Vec<u8>,
+    /// Byte offset of the contour header in the containing stream.
+    pub offset: usize,
+    /// Byte offset of the first parameter-space envelope scalar.
+    pub envelope_offset: usize,
+    /// Byte offset of the owning positional surface row.
+    pub surface_row_offset: usize,
+}
+
 /// Return the positional parameter record for `surface_id` only when exactly
 /// one exists.
 pub(crate) fn unique_surface_parameter(
@@ -3138,6 +3166,155 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         records.push(record);
     }
     records
+}
+
+/// Decode complete positional surface contour chains from the visible
+/// `srf_array` namespace.
+pub fn contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
+    contour_records_for_rows(payload, &rows(payload))
+}
+
+/// Decode complete positional surface contour chains from a DEPDB
+/// cross-section namespace.
+#[must_use]
+pub fn cross_section_contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
+    contour_records_for_rows(payload, &cross_section_rows(payload))
+}
+
+fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceContourRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let frames = surface_array_frames(payload);
+    let mut records = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let frame_end = frames
+            .iter()
+            .find(|frame| row.offset >= frame.start && row.offset < frame.end)
+            .map_or(payload.len(), |frame| frame.end);
+        let row_end = rows
+            .get(index + 1)
+            .filter(|next| next.offset < frame_end)
+            .map_or(frame_end, |next| next.offset);
+        let Some(body_start) = positional_body_start(payload, row) else {
+            continue;
+        };
+        if body_start >= row_end {
+            continue;
+        }
+        let Some(envelope_close) =
+            surface_body_compound_close(row.kind, &payload[body_start..row_end], &cache)
+                .map(|relative| body_start + relative)
+        else {
+            continue;
+        };
+        let Some(local_system_start) = envelope_close.checked_add(1) else {
+            continue;
+        };
+        let Some(local_system_close) = first_compound_close(payload, local_system_start, row_end)
+        else {
+            continue;
+        };
+        let Some(contour_start) = local_system_close.checked_add(1) else {
+            continue;
+        };
+        let Some(chain) = parse_surface_contour_chain(payload, contour_start, row_end, row, &cache)
+        else {
+            continue;
+        };
+        records.extend(chain);
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn parse_surface_contour_chain(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    row: &SurfaceRow,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<SurfaceContourRecord>> {
+    let mut cursor = start;
+    let mut chain = Vec::new();
+    loop {
+        let contour_start = cursor;
+        if cursor.checked_add(2).is_none_or(|next| next > end) {
+            return None;
+        }
+        let head = payload.get(cursor..cursor + 2)?;
+        if !(0x80..=0xbf).contains(&head[0]) {
+            return None;
+        }
+        let (curve_header_id, after_head) = compact_int(payload, cursor);
+        if after_head != cursor + 2 || curve_header_id == 0 {
+            return None;
+        }
+        let trv = *payload.get(after_head)?;
+        if !matches!(trv, 0x00..=0x03 | 0xf6) {
+            return None;
+        }
+        let envelope_offset = after_head + 1;
+        let mut parameter_envelope = [None; 4];
+        cursor = envelope_offset;
+        for value in &mut parameter_envelope {
+            let (decoded, next) = decode_surface_contour_envelope_scalar(payload, cursor, cache)?;
+            if next > end || decoded.is_some_and(|value| !value.is_finite()) {
+                return None;
+            }
+            *value = decoded;
+            cursor = next;
+        }
+        let close = *payload.get(cursor)?;
+        if !matches!(close, psb::token::COMPOUND_CLOSE | 0xe1) {
+            return None;
+        }
+        cursor += 1;
+        let contour_end = cursor;
+        let terminal = close == 0xe1;
+        let separator_reference =
+            if !terminal && payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let (reference, next) = psb::reference_id(payload, cursor + 1).ok()?;
+                if next > end {
+                    return None;
+                }
+                cursor = next;
+                Some(reference)
+            } else {
+                None
+            };
+        chain.push(SurfaceContourRecord {
+            surface_id: row.id,
+            chain_index: chain.len(),
+            curve_header_id,
+            trv,
+            parameter_envelope,
+            separator_reference,
+            body: payload[contour_start..contour_end].to_vec(),
+            offset: contour_start,
+            envelope_offset,
+            surface_row_offset: row.offset,
+        });
+        if terminal {
+            return Some(chain);
+        }
+        if cursor >= end {
+            return None;
+        }
+    }
+}
+
+fn decode_surface_contour_envelope_scalar(
+    payload: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(Option<f64>, usize)> {
+    if payload.get(offset) == Some(&0x34) {
+        payload
+            .get(offset..offset.checked_add(3)?)
+            .map(|_| (None, offset + 3))
+    } else {
+        scalar::decode_in_surface_row_lane(payload, offset, cache)
+            .map(|(value, next)| (Some(value), next))
+    }
 }
 
 fn decode_positional_torus_frame(

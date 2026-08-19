@@ -24,6 +24,12 @@ pub fn surface_rows(data: &[u8]) {
     let _ = crate::surface::rows(data);
 }
 
+/// Exercise Creo positional surface contour-chain extraction.
+pub fn surface_contours(data: &[u8]) {
+    let _ = crate::surface::contour_records(data);
+    let _ = crate::surface::cross_section_contour_records(data);
+}
+
 /// Exercise Creo PSB scalar decoding.
 pub fn scalar(data: &[u8]) {
     let cache = ScalarCache::from_section(data);
@@ -65,6 +71,7 @@ mod tests {
         super::datum(&[]);
         super::curve_prototypes(&[]);
         super::surface_rows(&[]);
+        super::surface_contours(&[]);
         super::scalar(&[]);
         super::compact_int(&[]);
         super::psb_tokens(&[]);
@@ -78,6 +85,7 @@ mod tests {
         super::datum(&data);
         super::curve_prototypes(&data);
         super::surface_rows(&data);
+        super::surface_contours(&data);
         super::scalar(&data);
         super::compact_int(&data);
         super::psb_tokens(&data);

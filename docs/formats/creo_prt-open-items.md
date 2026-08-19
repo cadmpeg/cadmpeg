@@ -686,7 +686,13 @@ value and writes the component value over it.
 
 **Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
 
-**Known.** Parameter-space containment can classify loops only when complete pcurves and a surface chart are available.
+**Known.** Positional surface rows carry a contour chain after the local-system
+close. Each entry stores a two-byte curve-header reference, `trv`, four ordered
+parameter-space envelope slots, and an intermediate `e3` or terminal `e1`
+close; an optional `f7` separator reference may precede the next entry.
+Parameter-space containment can classify loops only when complete pcurves and a
+surface chart are available. The stored chain fields do not yet identify an
+outer or inner loop.
 
 **Need.** We must know the field to classify loops when containment is unavailable.
 

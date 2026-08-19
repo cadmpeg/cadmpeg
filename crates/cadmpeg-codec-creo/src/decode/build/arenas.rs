@@ -29,7 +29,7 @@ use super::super::records::{
     half_edge_records, half_edge_vertex_incidence_records, loop_records, outline_plane_records,
     pcurve_endpoint_records, plane_envelope_records, plane_local_system_records,
     prototype_pcurve_records, reference_circle_records, reference_conic_records,
-    reference_ellipse_records, reference_line_records, sketch_records,
+    reference_ellipse_records, reference_line_records, sketch_records, surface_contour_records,
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
 };
@@ -139,6 +139,47 @@ pub(in super::super) fn emit_geometry_arenas(
         |record| &record.source_section,
         |record| record.offset as u64,
         "cross_section_surface_namespace_row",
+        Exactness::ByteExact,
+    )?;
+    let surface_contours = surface_contour_records(scan, &scan.surfaces.contours, "visibgeom");
+    emit_uniform(
+        ir,
+        annotations,
+        "surface_contours",
+        &surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "surface_contour_chain_entry",
+        Exactness::ByteExact,
+    )?;
+    let nonvisible_surface_contours =
+        surface_contour_records(scan, &scan.surfaces.nonvisible_contours, "novisgeom");
+    emit_uniform(
+        ir,
+        annotations,
+        "nonvisible_surface_contours",
+        &nonvisible_surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_surface_contour_chain_entry",
+        Exactness::ByteExact,
+    )?;
+    let cross_section_surface_contours = surface_contour_records(
+        scan,
+        &scan.surfaces.cross_section_contours,
+        "cross_section_geometry",
+    );
+    emit_uniform(
+        ir,
+        annotations,
+        "cross_section_surface_contours",
+        &cross_section_surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "cross_section_surface_contour_chain_entry",
         Exactness::ByteExact,
     )?;
     let surface_prototypes =
