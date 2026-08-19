@@ -216,16 +216,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
-### DR-05. Recipe records of a non-locus parameter companion
-
-**Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
-
-**Known.** `f3d.md` §3.1 "Within a dimensional companion," gives the containment order and the retention order. `f3d.md` §3.1 "An edge recipe's words" gives the edge-recipe-subsequence join. `f3d.md` §3.1 "A recipe-backed linear dimension" gives the measurement rule for a recipe-backed linear dimension that has no locus.
-
-**Need.** We must know the operation to build a neutral dimension from more than one recipe record.
-
-**Note.** The change that deleted this item changed only `f3d.md` and this document. It added no code and no test. It wrote the decoder's current policy into `f3d.md` §3.1 "All complete construction-recipe records in one non-locus dimension companion". That paragraph gives `recipe_ordinal` the authority to order the records, but `recipe_ordinal` is not a stored field: `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs` numbers the records with `enumerate()`, and `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs` builds that list from the recipes whose byte offsets fall inside the companion payload span, sorted by byte offset. The paragraph therefore records byte order as the format's operation order. The second sentence of the paragraph repeats the measurement rule that `f3d.md` §3.1 "A recipe-backed linear dimension" already gives.
-
 ### DR-32A. Component records that share one component GUID
 
 **Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
