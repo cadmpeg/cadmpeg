@@ -1102,6 +1102,28 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     };
     let child_pairs = declared_entity_handle_declared_child_pairs(lane, feature);
     let pairs = declared_entity_handle_pairs(lane, feature);
+    // An explicit radial identity is stronger than one feature-scoped child
+    // declaration. Resolve it first because an unrelated line or arc child
+    // can coexist with the circular-dimension point pair. Multiple child
+    // declarations remain ambiguous, even when one point pair also matches.
+    if child_pairs.len() <= 1 {
+        if let Some(entity_ref) = operand.entity_ref.as_deref() {
+            let mut candidates = pairs
+                .iter()
+                .copied()
+                .filter(|[_, radial]| radial.id == entity_ref);
+            let candidate = candidates.next();
+            if candidates.next().is_some() {
+                return None;
+            }
+            if let Some([center, radial]) = candidate {
+                let [cu, cv] = center.coordinates_m?;
+                let [ru, rv] = radial.coordinates_m?;
+                let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+                return same_dimension_length(radius, expected_radius).then_some((center, radius));
+            }
+        }
+    }
     if let [child_pair] = child_pairs.as_slice() {
         // The relation operand identifies the radial child when present. Use
         // that identity to reject a mismatched child. The scoped child
