@@ -45,6 +45,18 @@ fn finds_one_byte_and_two_byte_surface_rows() {
 }
 
 #[test]
+fn accepts_type24_row_with_boundary_type_eight() {
+    let payload = b"srf_array\0\xf8\x01\xae\x71\x24\xae\x5a\xf6\x08\0";
+    let decoded = rows(payload);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].id, 11_889);
+    assert_eq!(decoded[0].kind, SurfaceKind::Cylinder);
+    assert_eq!(decoded[0].feature_id, 11_866);
+    assert_eq!(decoded[0].boundary_type, 0x08);
+}
+
+#[test]
 fn cross_section_count_rejects_boundary_one_body_candidate() {
     let payload =
         b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x24\x04\x01\x06\0\x2d\x25\x32\xf6\x01\x01\xe2";

@@ -106,8 +106,8 @@ pub struct SurfaceRow {
     /// `true` when the row's orientation byte is `0xf6` (reversed), `false`
     /// when it is `0x01` (as-stored orientation).
     pub reversed: bool,
-    /// The row's `boundary_type` byte: one of `0x00`, `0x01`, `0x06`, or
-    /// `0xf6`.
+    /// The row's `boundary_type` byte: one of `0x00`, `0x01`, `0x06`, `0x08`,
+    /// or `0xf6`.
     pub boundary_type: u8,
     /// The `next_geom_ptr` compact integer: the identifier of the next
     /// `srf_array` row in this namespace's link chain.
@@ -1975,7 +1975,7 @@ pub fn placed_outline_planes(
     result
 }
 
-const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0xf6];
+const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0x08, 0xf6];
 
 #[derive(Debug, Clone, Copy)]
 struct SurfaceArrayFrame {

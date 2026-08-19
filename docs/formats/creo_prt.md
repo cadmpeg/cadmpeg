@@ -379,7 +379,7 @@ An unlabeled persistence payload does not define geometry rows.
 | DEPDB count           | Sum `srf_array` counts across concatenated geometry subsections.                    |
 | Positional row header | `<geom_id_ci> <geom_type> <feat_id_ci> <orient> <boundary_type> <next_geom_ptr_ci>` |
 | Orientation bytes     | `01`, `f6`                                                                          |
-| Boundary bytes        | `00`, `01`, `06`, `f6`                                                              |
+| Boundary bytes        | `00`, `01`, `06`, `08`, `f6`                                                         |
 
 A counted surface-array frame ends at the next `srf_array`, `crv_array`,
 `lo_array`, or `qlt_array` label. Header-shaped bytes outside that frame do not
