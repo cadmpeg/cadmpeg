@@ -246,6 +246,11 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
 
 #[cfg(test)]
 mod tests {
+    use crate::records::{
+        DesignComponentOccurrence, DesignCopyPasteComponentOperation, DesignParameterScope,
+    };
+    use cadmpeg_ir::products::PrototypeReference;
+
     #[test]
     fn local_component_placement_scales_only_translation_to_millimetres() {
         let transform = [
@@ -263,5 +268,66 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
+    }
+
+    #[test]
+    fn equal_component_guids_share_one_definition_across_carrier_references() {
+        const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
+        const SOURCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        const COPY: &str = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";
+        let occurrence = |record_index: u32, component_record_index: u64, occurrence_guid: &str| {
+            DesignComponentOccurrence {
+                id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
+                class_tag: "256".into(),
+                record_index,
+                byte_offset: u64::from(record_index),
+                component_record_index,
+                component_guid: COMPONENT.into(),
+                component_guid_offset: 48,
+                occurrence_guid: occurrence_guid.into(),
+                occurrence_guid_offset: 124,
+                occurrence_ordinal: 1,
+                transform: None,
+                transform_offset: None,
+            }
+        };
+        let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            "CopyPaste",
+            10,
+        );
+        scope.copy_paste_component_operation = Some(DesignCopyPasteComponentOperation {
+            relation_record_index: 20,
+            source_occurrence_record_index: 100,
+            copied_occurrence_record_index: 101,
+            component_guid: COMPONENT.into(),
+            source_occurrence_guid: SOURCE.into(),
+            copied_occurrence_guid: COPY.into(),
+            source_transform: identity_matrix(),
+            source_transform_offset: 0,
+            copied_transform: identity_matrix(),
+            copied_transform_offset: 0,
+        });
+
+        let (definitions, occurrences) =
+            super::project_local_components(&[scope], &native_occurrences);
+
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(occurrences.len(), 2);
+        let definition = definitions[0].id.clone();
+        assert!(occurrences.iter().all(|occurrence| matches!(
+            &occurrence.prototype,
+            PrototypeReference::Local { definition: actual } if actual == &definition
+        )));
+    }
+
+    fn identity_matrix() -> [[f64; 4]; 4] {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
     }
 }
