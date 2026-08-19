@@ -459,6 +459,11 @@ reference. Both fields retain their complete wrapper bytes. `dum_array`,
 with no bytes before the next named-record header has an empty body. A
 `frst_cntr_crv_hdr_ptr` field and its following `trv` field each store one
 compact integer; the `trv` header terminates the preceding pointer body. A
+`frst_cntr_ptr` field and a `next_cntr_ptr` field each store one compact
+integer. The `envlp`, `outline`, and `srf_flip_dat` fields retain their bounded
+body bytes exactly; their bodies end at the next named-record header or the
+prototype close. These fields are part of the prototype's contour-chain data
+and do not by themselves materialize a surface row or a face.
 count-prefixed compact-integer array is typed as such only when exactly the
 declared number of compact integers consumes the entire bounded field body;
 trailing bytes make the field opaque.

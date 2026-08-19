@@ -2255,8 +2255,13 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "par_v_1",
     "offset_type",
     "parent_feats",
+    "frst_cntr_ptr",
     "frst_cntr_crv_hdr_ptr",
     "trv",
+    "envlp",
+    "outline",
+    "next_cntr_ptr",
+    "srf_flip_dat",
     "id",
     "type",
     "flip",
@@ -2288,7 +2293,14 @@ fn named_surface_value(
     let scalar_field = radius_field || parameter_bound_field || name == "half_angle";
     let compact_integer_field = matches!(
         name,
-        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "trv" | "data_type"
+        "id" | "type"
+            | "tan_cond"
+            | "degree"
+            | "frst_cntr_ptr"
+            | "frst_cntr_crv_hdr_ptr"
+            | "trv"
+            | "next_cntr_ptr"
+            | "data_type"
     );
     if scalar_field && body == [0x18] {
         return SurfaceNamedValue::ScalarSequence(vec![0.0]);
