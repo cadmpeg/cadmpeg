@@ -646,6 +646,16 @@ one-angle or two-angle extent, and additive or subtractive effect. Fillet operat
 constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
 Dress-up dispatch recognizes exactly `Part::Fillet`, `PartDesign::Fillet`, `Part::Chamfer`, and
 `PartDesign::Chamfer`. Other runtime names remain native operations.
+PartDesign Boolean `Type` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean
+Fuse, Cut, and Common; these select neutral Join, Cut, and Intersect operations. PartDesign
+Revolution `Type` is an `App::PropertyEnumeration` whose indices `0` through `4` mean Angle,
+UpToLast, UpToFirst, UpToFace, and TwoAngles. PartDesign Groove uses the same carrier and
+indices `0` through `4` for Angle, ThroughAll, UpToFirst, UpToFace, and TwoAngles. Each carrier
+has one direct `Integer` value with a decimal signed-integer `value` attribute. An absent Boolean
+`Type` uses the constructor default Fuse; an absent Revolution or Groove `Type` uses the
+constructor default Angle. CADIR decision: a present `Type` with another runtime type, without
+exactly one direct `Integer`, with a non-integer or negative value, or with an unknown family
+index does not select a neutral operation; the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

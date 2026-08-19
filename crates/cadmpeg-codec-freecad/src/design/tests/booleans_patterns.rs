@@ -130,6 +130,81 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
+    for (type_property, expected_native) in [
+        ("", false),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="bad"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyString"><String value="1"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Wrapper><Integer value="0"/></Wrapper></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/><Integer value="1"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="-1"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="99"/></Property>"#,
+            true,
+        ),
+    ] {
+        let property_count = if type_property.is_empty() { 2 } else { 3 };
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Box" name="A"/><Object type="Part::Box" name="B"/><Object type="PartDesign::Boolean" name="Boolean"/></Objects>
+<ObjectData Count="3">
+<Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+<Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+<Object name="Boolean"><Properties Count="{property_count}">{type_property}<Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property><Property name="Shape" type="Part::PropertyPartShape"><Part file="Boolean.Shape.brp"/></Property></Properties></Object>
+</ObjectData></Document>"#
+        );
+        let brep = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("Boolean.Shape.brp", brep),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("PartDesign boolean selector");
+        let definition = &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Boolean"))
+            .expect("Boolean feature")
+            .definition;
+        if expected_native {
+            assert!(matches!(
+                definition,
+                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Boolean"
+            ));
+        } else {
+            assert!(matches!(
+                definition,
+                FeatureDefinition::Combine {
+                    op: BooleanOp::Join,
+                    ..
+                }
+            ));
+        }
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
 pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="6">

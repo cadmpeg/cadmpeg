@@ -22,22 +22,26 @@ Each item has an identifier and these fields:
 **Question.** How are absent and malformed design operation mode or flag properties distinguished
 before selecting a neutral operation family?
 
-**Known.** `design.rs:3898-3918` extracts the first parseable generic value attribute without a
-runtime-type or direct-root gate. Callers default an absent or malformed selector at
-`design.rs:2809`, `3309`, `3334`, `4061`, `4310`, and `4336` before choosing revolution,
-extrusion, boolean, hole, or other operation modes. The specification requires invalid modes to
-remain attributable native operations.
+**Known.** PartDesign Boolean, Revolution, and Groove `Type` carriers are settled. The producer
+registers each as an `App::PropertyEnumeration` with a constructor default of index `0`; its
+writer emits one direct `Integer` value. `design.rs:1906-1923` now supplies the default only when
+the property is absent and requires that exact carrier and direct value before neutral dispatch at
+`design.rs:3183` and `design.rs:4569`. Boolean indices `0` through `2` select Join, Cut, and
+Intersect. Revolution and Groove indices `0` through `4` select their documented angle,
+through-all/last, first, face, and two-angle families.
 
-**Need.** Validate each named selector's runtime type, direct root, cardinality, and value before
-applying a legacy absent-property default. A present malformed selector must leave the operation
-native or produce an attributable refusal.
+**Need.** Apply the same absence-versus-present validation to the remaining operation selectors:
+pad/pocket side and termination types, extrusion direction mode, shell and surface modes,
+pattern modes, hole modes and flags, and the remaining design operation flags. Trace each
+producer carrier and preserve its constructor default only when the property is absent.
 
-**Conflict.** A `PartDesign::Boolean` with a valid source group and a nonnumeric `Type` carrier
-defaults to `Join`; a malformed `PartDesign::Revolution` mode similarly defaults to angular
-termination. Replacing the malformed carrier with a valid explicit mode changes neutral semantics
-without a refusal or loss.
+**Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
+collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
+salvage rules may differ by operation family; changing them without tracing the writer can change
+neutral semantics or discard a valid legacy default.
 
-**Note.** New hostile-sweep finding.
+**Note.** Partly settled: Boolean/Revolution/Groove `Type` is covered by the specification and
+the exact-carrier decoder rule. The remaining selectors stay open.
 
 ### DP-16. Sketch placement rotation admission
 

@@ -611,3 +611,78 @@ fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
         ));
     }
 }
+
+#[test]
+fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
+    for (type_property, expected_native) in [
+        ("", false),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="bad"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyString"><String value="4"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Wrapper><Integer value="0"/></Wrapper></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/><Integer value="1"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="-1"/></Property>"#,
+            true,
+        ),
+        (
+            r#"<Property name="Type" type="App::PropertyEnumeration"><Integer value="99"/></Property>"#,
+            true,
+        ),
+    ] {
+        let property_count = if type_property.is_empty() { 5 } else { 6 };
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="PartDesign::Revolution" name="Revolution"/></Objects>
+<ObjectData Count="2">
+<Object name="Sketch"><Properties Count="0"/></Object>
+<Object name="Revolution"><Properties Count="{property_count}"><Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property><Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property><Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>{type_property}<Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="30"/></Property></Properties></Object>
+</ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("PartDesign revolution selector");
+        let definition = &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Revolution"))
+            .expect("Revolution feature")
+            .definition;
+        if expected_native {
+            assert!(matches!(
+                definition,
+                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Revolution"
+            ));
+        } else {
+            assert!(matches!(
+                definition,
+                FeatureDefinition::Revolve {
+                    construction: cadmpeg_ir::features::RevolutionConstruction {
+                        extent: Some(RevolveExtent::OneSided {
+                            termination: Termination::Angle { .. }
+                        }),
+                        ..
+                    },
+                    ..
+                }
+            ));
+        }
+        assert_valid_document(result.ir());
+    }
+}

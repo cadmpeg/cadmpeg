@@ -183,7 +183,11 @@ pub(crate) fn transfer(
             })
         } else if is_boolean(&object.type_name) {
             boolean_definition(&object.type_name, &owned)
-                .or_else(|| cached_shape_definition(&owned))
+                .or_else(|| {
+                    (object.type_name != "PartDesign::Boolean")
+                        .then(|| cached_shape_definition(&owned))
+                        .flatten()
+                })
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1903,6 +1907,25 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
     }
 }
 
+/// Read an operation enumeration while keeping absence distinct from malformed persistence.
+/// `FreeCAD` constructors provide the legacy default for an absent property; a present property
+/// must use the exact enumeration carrier before its value can select neutral semantics.
+fn enumeration_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyEnumeration" {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, "Integer")?;
+    let value = attributes.get("value")?.parse::<i64>().ok()?;
+    u64::try_from(value).ok()
+}
+
 fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
     if property.type_name != "App::PropertyBool" {
         return None;
@@ -3161,7 +3184,7 @@ fn revolution_definition(
             .filter(|angle| angle.is_finite() && *angle > 0.0)
             .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
     };
-    let mode = integer_property(properties, "Type").unwrap_or(0);
+    let mode = enumeration_selector(properties, "Type", 0)?;
     let extent = if kind == "Part::Revolution" {
         let angle = angle()?;
         if bool_property(properties, "Symmetric").unwrap_or(false) {
@@ -4547,7 +4570,7 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
 
 fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let op = if kind == "PartDesign::Boolean" {
-        match integer_property(properties, "Type").unwrap_or(0) {
+        match enumeration_selector(properties, "Type", 0)? {
             0 => BooleanOp::Join,
             1 => BooleanOp::Cut,
             2 => BooleanOp::Intersect,
