@@ -379,10 +379,22 @@ names require these carrier tags: `GeomLine`, `LineSegment`, `Circle`, `ArcOfCir
 `X`, `Y`, and `Z` attributes. A registered runtime name paired with another carrier tag is
 malformed. Metadata children `Construction`, `GeoExtensions`, and `UID` do not count as geometry
 carriers.
-An `ExternalGeometry` link creates an ordered construction entity. When `ExternalGeo` supplies its
-cached carrier, that carrier defines the solved sketch geometry. Without a cached carrier, the
-neutral entity retains the target document, object, and subelements as an unresolved external
-reference. Constraints can address its entity, endpoint, and center loci without inventing solved
+An `ExternalGeo` `GeometryList` begins with exactly two reserved direct `Geometry` records. The
+first has persisted geometry id `-1` and is the horizontal sketch axis; the second has id `-2` and
+is the vertical sketch axis. Both reserved records have an empty external reference. Every later
+record is a cached external carrier. Its external key is the `Ref` attribute of its direct
+`Sketcher::ExternalGeometryExtension`; the legacy `Geometry` attributes `ref` and `flags` carry
+the same reference and flag bits when the extension is not present, and a current record mirrors
+them in lowercase `ref` and `flags`. If both spellings are present, they are equal. The key for a
+local `ExternalGeometry` link is its persisted object name, a dot, and its subelement name, such
+as `Source.Edge1`. A cache record with a non-empty key belongs to the one link with that exact key.
+One link may own zero, one, or multiple cached carriers; carrier order remains `ExternalGeo` order,
+and each carrier creates one ordered construction entity with the link's subelements. A link with
+no carrier creates an unresolved external-reference entity. A non-empty key with no link is valid
+only when the carrier's `Missing` flag bit is set; its solved geometry is retained without a link.
+An empty key is a detached carrier and has no link. A short prefix, wrong reserved id, duplicate
+link match, unmatched non-missing key, or any `GeometryList` count/direct-child mismatch is
+malformed. Constraints can address its entity, endpoint, and center loci without inventing solved
 coordinates.
 
 Sketch persistence has separate ordered `GeometryList` and `ConstraintList` values. The geometry

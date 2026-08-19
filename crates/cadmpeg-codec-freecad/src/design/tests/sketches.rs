@@ -98,6 +98,130 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn rejects_external_geo_without_its_reserved_axis_prefix() {
+    for external_geo in [
+        r#"<GeometryList count="1"><Geometry type="Part::GeomCircle" ref="Source.Edge1"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry></GeometryList>"#,
+        r#"<GeometryList count="2"><Geometry type="Part::GeomLineSegment" id="-1"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry><Geometry type="Part::GeomLineSegment" id="0"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry></GeometryList>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList">{external_geo}</Property>
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("invalid ExternalGeo prefix");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn associates_external_carriers_by_ref_and_retains_link_groups() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="5">
+<Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomCircle" id="1" ref="Source.Edge2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge2" Flags="0"/></GeoExtensions><Circle CenterX="2" CenterY="3" Radius="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="2" ref="Source.Edge2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge2" Flags="0"/></GeoExtensions><LineSegment StartX="2" StartY="3" EndX="4" EndY="3"/></Geometry>
+<Geometry type="Part::GeomPoint" id="3" ref="Source.Edge1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge1" Flags="0"/></GeoExtensions><GeomPoint X="5" Y="6" Z="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("external carrier groups");
+    let entities = &result.ir().model.sketch_entities;
+    assert_eq!(entities.len(), 3);
+    let entity = |suffix: &str| {
+        entities
+            .iter()
+            .find(|entity| entity.id.0.ends_with(suffix))
+            .unwrap_or_else(|| panic!("missing entity {suffix}"))
+    };
+    let first_edge2 = entity(":external:0");
+    assert_eq!(first_edge2.endpoint_refs, ["Edge2"]);
+    assert!(matches!(
+        first_edge2.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Circle { .. }
+    ));
+    let second_edge2 = entity(":external:1");
+    assert_eq!(second_edge2.endpoint_refs, ["Edge2"]);
+    assert!(matches!(
+        second_edge2.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Line { .. }
+    ));
+    let edge1 = entity(":external:2");
+    assert_eq!(edge1.endpoint_refs, ["Edge1"]);
+    assert!(matches!(
+        edge1.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+    ));
+}
+
+#[test]
+fn retains_missing_external_carrier_without_a_link() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomPoint" id="1" ref="Missing.Edge1" flags="8"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Missing.Edge1" Flags="8"/></GeoExtensions><GeomPoint X="2" Y="3" Z="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("missing external carrier");
+    let entity = &result.ir().model.sketch_entities[0];
+    assert!(entity.endpoint_refs.is_empty());
+    assert!(matches!(
+        entity.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+    ));
+}
+
+#[test]
+fn rejects_unmatched_external_carrier_without_missing_flag() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomCircle" id="1" ref="Source.Edge2"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry>
+</GeometryList></Property>
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("unmatched external carrier");
+    assert!(error
+        .to_string()
+        .contains("no matching ExternalGeometry link"));
+}
+
+#[test]
 fn rejects_nested_and_duplicate_sketch_value_roots() {
     for (property_name, type_name, root) in [
         ("Geometry", "Part::PropertyGeometryList", "GeometryList"),
@@ -499,9 +623,9 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
 </GeometryList></Property>
 <Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
- <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
- <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
- <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
+ <Geometry type="Part::GeomLineSegment" id="-1"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+ <Geometry type="Part::GeomLineSegment" id="-2"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+ <Geometry type="Part::GeomCircle" ref="Source.Edge1"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
 </GeometryList></Property>
 <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="17">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>

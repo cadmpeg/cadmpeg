@@ -17,27 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-13. ExternalGeo cached-carrier prefix admission
-
-**Question.** Which leading `ExternalGeo` records are reserved, and how must the cached-carrier
-list correspond to `ExternalGeometry` links?
-
-**Known.** `design.rs:1214-1227` validates the declared count against direct `Geometry` children,
-then scans all descendant `Geometry` records and unconditionally skips two before pairing the
-remaining records with `ExternalGeometry` links. FreeCAD's sketch representation reserves two
-leading external-geometry slots, while the specification requires any supplied cached carrier to
-define the solved external entity.
-
-**Need.** Validate the reserved prefix, direct list framing, cache cardinality, and link/cache
-ordinal correspondence before emitting external sketch entities. Reject malformed short or
-misframed lists instead of treating an ignored cache as absent.
-
-**Conflict.** A `GeometryList count="1"` containing one valid cached `Circle` passes the count
-check, but `.skip(2)` drops it; a corresponding link is then emitted as an unresolved external
-reference. A supplied solved carrier is ignored without a refusal or loss.
-
-**Note.** New hostile-sweep finding.
-
 ### DP-14. Sketch constraint family-code default
 
 **Question.** How does constraint transfer distinguish an absent or malformed family code from an
