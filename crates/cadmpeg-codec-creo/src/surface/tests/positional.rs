@@ -176,6 +176,28 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
 }
 
 #[test]
+fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
+    let first = PositionalCylinderFrame {
+        origin: [1.0, 2.0, 3.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 2.0,
+        length: Some(8.0),
+    };
+    assert_eq!(
+        unique_positional_cylinder_frame(&[first, first]),
+        Some(first)
+    );
+
+    let mut conflicting = first;
+    conflicting.radius = 3.0;
+    assert_eq!(
+        unique_positional_cylinder_frame(&[first, conflicting]),
+        None
+    );
+}
+
+#[test]
 fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     let negative_x = [
         0x11, 0x18, 0x13, 0x29, 0xd9, 0x99, 0x47, 0x03, 0x33, 0x2d, 0x35, 0x0c, 0xcc, 0xcc, 0xcc,

@@ -881,6 +881,11 @@ reference direction.
 
 Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their per-instance radius does not inherit the prototype default; derive it from bound `fc 05` cap-circle geometry or from a byte-backed analytic construction.
 
+Every complete positional-cylinder body is checked against each defined row
+grammar. The carrier is admitted only when all matching grammars produce the
+same origin, axis, reference direction, radius, and stored axial length. A
+body with conflicting complete interpretations remains native.
+
 A `tab_cyl` prototype can carry `i_pnts`, `end_tangts`, and `params` as
 separate named fields. `params` uses `f8 <count>` and contains exactly `count`
 curve parameters. Its `2d <tail7>` form reconstructs `40 <tail7>`. The `params`

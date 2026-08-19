@@ -148,6 +148,9 @@ fixtures, scores above L1 remain blocked.
 - Eight-slot type-24 terminal frames require mutually exclusive
   single-diameter and square-radial invariants; a collision withholds the
   carrier.
+- Positional-cylinder bodies are admitted only when every matching defined
+  row grammar agrees on the complete model-space frame; conflicting frame
+  candidates remain native.
 - Positional cylinder terminal radii require one positive scalar start that
   consumes the body remainder; overlapping starts withhold the carrier.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface

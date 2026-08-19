@@ -3407,26 +3407,87 @@ fn decode_positional_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    decode_compact_y_axis_cylinder_frame(body, cache)
-        .or_else(|| decode_local_system_cylinder_frame(body, cache))
-        .or_else(|| decode_zero_support_cylinder_frame(body, cache))
-        .or_else(|| decode_signed_zero_support_cylinder_frame(body, cache))
-        .or_else(|| decode_signed_axis_aligned_cylinder_frame(body, cache))
-        .or_else(|| decode_signed_axial_radial_cylinder_frame(body, cache))
-        .or_else(|| decode_signed_radial_envelope_cylinder_frame(body, cache))
-        .or_else(|| decode_xz_axis_y_radial_cylinder_frame(body, cache))
-        .or_else(|| decode_symmetric_revolution_cylinder_frame(body, cache))
-        .or_else(|| decode_axial_endpoint_radial_sample_cylinder_frame(body, cache))
-        .or_else(|| decode_precise_center_edge_cylinder_frame(body, cache))
-        .or_else(|| decode_precise_held_center_cylinder_frame(body, cache))
-        .or_else(|| decode_compound_local_system_cylinder_frame(body, cache))
-        .or_else(|| decode_local_system_suffix_cylinder_frame(body, cache))
-        .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
-        .or_else(|| decode_held_axis_cylinder_frame(body, cache))
-        .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
-        .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
-        .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
-        .filter(PositionalCylinderFrame::is_valid)
+    let candidates = positional_cylinder_frame_candidates(body, cache);
+    unique_positional_cylinder_frame(&candidates)
+}
+
+fn positional_cylinder_frame_candidates(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Vec<PositionalCylinderFrame> {
+    [
+        decode_compact_y_axis_cylinder_frame(body, cache),
+        decode_local_system_cylinder_frame(body, cache),
+        decode_zero_support_cylinder_frame(body, cache),
+        decode_signed_zero_support_cylinder_frame(body, cache),
+        decode_signed_axis_aligned_cylinder_frame(body, cache),
+        decode_signed_axial_radial_cylinder_frame(body, cache),
+        decode_signed_radial_envelope_cylinder_frame(body, cache),
+        decode_xz_axis_y_radial_cylinder_frame(body, cache),
+        decode_symmetric_revolution_cylinder_frame(body, cache),
+        decode_axial_endpoint_radial_sample_cylinder_frame(body, cache),
+        decode_precise_center_edge_cylinder_frame(body, cache),
+        decode_precise_held_center_cylinder_frame(body, cache),
+        decode_compound_local_system_cylinder_frame(body, cache),
+        decode_local_system_suffix_cylinder_frame(body, cache),
+        decode_referenced_planar_envelope_cylinder_frame(body, cache),
+        decode_held_axis_cylinder_frame(body, cache),
+        decode_axial_radial_cylinder_frame(body, cache),
+        decode_compact_axis_aligned_cylinder_frame(body, cache),
+        decode_directrix_lane_axis_aligned_cylinder_frame(body, cache),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(PositionalCylinderFrame::is_valid)
+    .collect()
+}
+
+fn unique_positional_cylinder_frame(
+    candidates: &[PositionalCylinderFrame],
+) -> Option<PositionalCylinderFrame> {
+    let first = candidates.first().copied()?;
+    candidates
+        .iter()
+        .all(|candidate| positional_cylinder_frames_agree(first, *candidate))
+        .then_some(first)
+}
+
+fn positional_cylinder_frames_agree(
+    first: PositionalCylinderFrame,
+    second: PositionalCylinderFrame,
+) -> bool {
+    let scale = first
+        .origin
+        .into_iter()
+        .chain(second.origin)
+        .chain([first.radius, second.radius])
+        .chain(first.length)
+        .chain(second.length)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
+    first
+        .origin
+        .into_iter()
+        .zip(second.origin)
+        .all(|(left, right)| close(left, right))
+        && first
+            .axis
+            .into_iter()
+            .zip(second.axis)
+            .all(|(left, right)| close(left, right))
+        && first
+            .ref_direction
+            .into_iter()
+            .zip(second.ref_direction)
+            .all(|(left, right)| close(left, right))
+        && close(first.radius, second.radius)
+        && match (first.length, second.length) {
+            (Some(left), Some(right)) => close(left, right),
+            (None, None) => true,
+            _ => false,
+        }
 }
 
 fn decode_xz_axis_y_radial_cylinder_frame(
