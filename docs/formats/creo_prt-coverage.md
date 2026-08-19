@@ -170,8 +170,10 @@ fixtures, scores above L1 remain blocked.
   legacy type-10 `principal_sys_units` scalar transfers the active length
   system and its canonical millimeter scale. The neutral unit boundary applies
   that scale to model-space feature-motion distances and origins, explicit
-  pattern-scale centers, and explicit Boolean-operation fuzzy tolerances, while
-  preserving directions, angles, scale factors, and relative tolerances.
+  pattern-scale centers, explicit Boolean-operation fuzzy tolerances, and
+  emitted procedural construction vectors, origins, and cache tolerances,
+  while preserving unit directions, angles, scale factors, parameter
+  intervals, and relative tolerances.
   Complete finite type-2 scalars and
   dimensioned run-length arrays transfer as exact typed native records without
   expanding repeated elements. Complete type-1 signed-integer scalars and

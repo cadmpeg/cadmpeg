@@ -235,9 +235,10 @@ millimeters by multiplying it by `25.4`.
 Surface and curve parameter coordinates use the same conversion on each
 length-valued parameter axis; angular and dimensionless parameters are
 unchanged.
-This includes model-space origins and distances carried by feature motions
-and explicit pattern centers; unit vectors, angles, and scale factors are
-unchanged.
+This includes model-space origins and distances carried by feature motions,
+explicit pattern centers, procedural construction vectors and origins, and
+procedural cache fit tolerances; unit vectors, angles, scale factors, and
+parameter intervals are unchanged.
 
 In legacy ASCII persistence, the unique type-10 `principal_sys_units` scalar
 identifies the active system. `millimeter Newton Second (mmNs)` stores lengths

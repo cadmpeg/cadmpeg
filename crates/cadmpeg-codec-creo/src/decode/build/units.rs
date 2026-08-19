@@ -3,8 +3,9 @@
 //!
 //! The PSB scanner keeps source values in their stored unit so native records
 //! remain faithful to the file.  This module is the single boundary at which
-//! the already-built neutral model is converted to millimeters.  Directions,
-//! angles, ratios, and source-native arenas are intentionally not scaled.
+//! the already-built neutral model is converted to millimeters.  Unit
+//! directions, angles, ratios, and source-native arenas are intentionally not
+//! scaled.
 
 use std::collections::BTreeMap;
 
@@ -12,7 +13,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement, SpatialSketchGeometry};
 use cadmpeg_ir::transform::Transform;
 
@@ -34,6 +35,14 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
     }
     for curve in &mut ir.model.curves {
         scale_curve_geometry(&mut curve.geometry, length_scale_mm);
+    }
+    for procedural in &mut ir.model.procedural_surfaces {
+        scale_procedural_surface_definition(&mut procedural.definition, length_scale_mm);
+        scale_optional(&mut procedural.cache_fit_tolerance, length_scale_mm);
+    }
+    for procedural in &mut ir.model.procedural_curves {
+        scale_procedural_curve_definition(&mut procedural.definition, length_scale_mm);
+        scale_optional(&mut procedural.cache_fit_tolerance, length_scale_mm);
     }
     for point in &mut ir.model.points {
         scale_point3(&mut point.position, length_scale_mm);
@@ -154,6 +163,12 @@ fn scale_point3(point: &mut Point3, scale: f64) {
     point.x *= scale;
     point.y *= scale;
     point.z *= scale;
+}
+
+fn scale_vector3(vector: &mut Vector3, scale: f64) {
+    vector.x *= scale;
+    vector.y *= scale;
+    vector.z *= scale;
 }
 
 fn scale_transform_translation(transform: &mut Transform, scale: f64) {
@@ -1020,6 +1035,58 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
     }
 }
 
+fn scale_procedural_surface_definition(
+    definition: &mut cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    scale: f64,
+) {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    match definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            direction,
+            native_position,
+            ..
+        } => {
+            scale_vector3(direction, scale);
+            if let Some(position) = native_position {
+                scale_point3(position, scale);
+            }
+        }
+        ProceduralSurfaceDefinition::LinearSweep { direction, .. } => {
+            scale_vector3(direction, scale);
+        }
+        ProceduralSurfaceDefinition::Revolution { axis_origin, .. }
+        | ProceduralSurfaceDefinition::AxisRevolution { axis_origin, .. } => {
+            scale_point3(axis_origin, scale);
+        }
+        ProceduralSurfaceDefinition::Sum { basepoint, .. } => {
+            scale_vector3(basepoint, scale);
+        }
+        _ => {}
+    }
+}
+
+fn scale_procedural_curve_definition(
+    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    scale: f64,
+) {
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+
+    if let ProceduralCurveDefinition::Helix {
+        center,
+        major,
+        minor,
+        pitch,
+        ..
+    } = definition
+    {
+        scale_point3(center, scale);
+        scale_vector3(major, scale);
+        scale_vector3(minor, scale);
+        scale_vector3(pitch, scale);
+    }
+}
+
 fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Option<f64> {
     match geometry {
         CurveGeometry::Line { .. } => Some(length_scale_mm),
@@ -1570,6 +1637,93 @@ mod tests {
     }
 
     #[test]
+    fn scales_procedural_model_lengths_and_cache_tolerances() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model
+            .procedural_surfaces
+            .push(cadmpeg_ir::geometry::ProceduralSurface {
+                id: cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
+                surface: cadmpeg_ir::ids::SurfaceId("surface".into()),
+                definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                    directrix: cadmpeg_ir::ids::CurveId("directrix".into()),
+                    parameter_interval: Some([1.0, 2.0]),
+                    direction: Vector3::new(1.0, 2.0, 3.0),
+                    native_position: Some(Point3::new(4.0, 5.0, 6.0)),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: Some(7.0),
+                record_bounds: Some([Some(8.0), None, Some(9.0), None]),
+            });
+        ir.model
+            .procedural_curves
+            .push(cadmpeg_ir::geometry::ProceduralCurve {
+                id: cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
+                curve: cadmpeg_ir::ids::CurveId("curve".into()),
+                definition: cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+                    angle_range: [0.0, 1.0],
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    major: Vector3::new(4.0, 5.0, 6.0),
+                    minor: Vector3::new(7.0, 8.0, 9.0),
+                    pitch: Vector3::new(10.0, 11.0, 12.0),
+                    apex_factor: 0.25,
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cache_fit_tolerance: Some(13.0),
+            });
+
+        normalize_model_lengths(&mut ir, 25.4);
+
+        let surface = &ir.model.procedural_surfaces[0];
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+            direction,
+            native_position,
+            parameter_interval,
+            ..
+        } = &surface.definition
+        else {
+            panic!("test surface construction changed family");
+        };
+        assert_vector3(*direction, [25.4, 50.8, 76.2]);
+        assert_point3(
+            *native_position.as_ref().expect("test native position"),
+            [101.6, 127.0, 152.4],
+        );
+        assert_eq!(*parameter_interval, Some([1.0, 2.0]));
+        assert_close(
+            surface.cache_fit_tolerance.expect("test surface tolerance"),
+            177.8,
+        );
+        assert_eq!(
+            surface.record_bounds,
+            Some([Some(8.0), None, Some(9.0), None])
+        );
+
+        let curve = &ir.model.procedural_curves[0];
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            center,
+            major,
+            minor,
+            pitch,
+            axis,
+            apex_factor,
+            ..
+        } = &curve.definition
+        else {
+            panic!("test curve construction changed family");
+        };
+        assert_point3(*center, [25.4, 50.8, 76.2]);
+        assert_vector3(*major, [101.6, 127.0, 152.4]);
+        assert_vector3(*minor, [177.8, 203.2, 228.6]);
+        assert_vector3(*pitch, [254.0, 279.4, 304.8]);
+        assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_close(*apex_factor, 0.25);
+        assert_close(
+            curve.cache_fit_tolerance.expect("test curve tolerance"),
+            330.2,
+        );
+    }
+
+    #[test]
     fn scales_pcurve_coordinates_per_surface_axis() {
         let mut geometry = PcurveGeometry::Line {
             origin: Point2::new(1.0, 2.0),
@@ -1638,6 +1792,12 @@ mod tests {
     }
 
     fn assert_point3(actual: Point3, expected: [f64; 3]) {
+        assert_close(actual.x, expected[0]);
+        assert_close(actual.y, expected[1]);
+        assert_close(actual.z, expected[2]);
+    }
+
+    fn assert_vector3(actual: Vector3, expected: [f64; 3]) {
         assert_close(actual.x, expected[0]);
         assert_close(actual.y, expected[1]);
         assert_close(actual.z, expected[2]);
