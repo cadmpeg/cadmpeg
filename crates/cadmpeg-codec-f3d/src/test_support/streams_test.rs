@@ -75,96 +75,121 @@ pub(crate) fn segment_metastream(
 }
 
 pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(records, false)
+}
+
+pub(crate) fn generated_design_sketch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(records, true)
+}
+
+fn generated_design_metastream_with_sketch_types(
+    records: &[(u64, u64)],
+    include_sketch_types: bool,
+) -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    design_metastream_with_records(
-        &[
-            (
-                crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
-                crate::design::presentation::BODY_PRESENTATION_BASE_TYPE_GUID,
-                crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
-                "Body",
-                &[985],
-            ),
-            (
-                crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
-                base,
-                4,
-                "MSketch",
-                &[277],
-            ),
-            (
-                "33333333-4444-5555-6666-777777777777",
-                "",
-                5,
-                "Dimension",
-                &[270, 271],
-            ),
-            (
-                "60403D47-0C49-49B0-BDE8-1679608164A2",
-                base,
-                1,
-                "MSketch",
-                &[33, 44],
-            ),
-            (
-                crate::design::presentation::BROWSER_NODE_TYPE_GUID,
-                crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
-                crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-                crate::records::DESIGN_MODULE_FUSION,
-                &[900],
-            ),
-            (
-                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-                base,
-                crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
-                crate::records::DESIGN_MODULE_BODY,
-                &[7],
-            ),
-            (
-                crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
-                base,
-                crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
-                "Scene",
-                &[986],
-            ),
-            (
-                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
-                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
-                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-                crate::records::DESIGN_MODULE_BODY,
-                &[899],
-            ),
-            (
-                "F0130424-8B7E-4092-93C9-1CA807482534",
-                base,
-                0,
-                "Geometry",
-                &[600],
-            ),
-            (
-                "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
-                base,
-                3,
-                crate::records::DESIGN_MODULE_SKETCH,
-                &[800],
-            ),
-            (
-                "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
-                base,
-                11,
-                "Geometry",
-                &[100, 200, 300, 400, 700],
-            ),
-            (
-                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
-                base,
-                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
-                crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
-                &[101, 201, 301, 401, 701],
-            ),
-        ],
-        records,
-    )
+    let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
+        (
+            crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+            crate::design::presentation::BODY_PRESENTATION_BASE_TYPE_GUID,
+            crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
+            "Body",
+            &[985],
+        ),
+        (
+            crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
+            base,
+            4,
+            "MSketch",
+            &[277],
+        ),
+        (
+            "33333333-4444-5555-6666-777777777777",
+            "",
+            5,
+            "Dimension",
+            &[270, 271],
+        ),
+        (
+            "60403D47-0C49-49B0-BDE8-1679608164A2",
+            base,
+            1,
+            "MSketch",
+            &[33, 44],
+        ),
+        (
+            crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[900],
+        ),
+        (
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+            base,
+            crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
+            crate::records::DESIGN_MODULE_BODY,
+            &[7],
+        ),
+        (
+            crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+            base,
+            crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
+            "Scene",
+            &[986],
+        ),
+        (
+            crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+            crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+            crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+            crate::records::DESIGN_MODULE_BODY,
+            &[899],
+        ),
+        (
+            "F0130424-8B7E-4092-93C9-1CA807482534",
+            base,
+            0,
+            "Geometry",
+            &[600],
+        ),
+        (
+            "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+            base,
+            3,
+            crate::records::DESIGN_MODULE_SKETCH,
+            &[800],
+        ),
+        (
+            "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+            base,
+            11,
+            "Geometry",
+            &[100, 200, 300, 400, 700],
+        ),
+        (
+            crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
+            base,
+            crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
+            crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
+            &[101, 201, 301, 401, 701],
+        ),
+    ];
+    if include_sketch_types {
+        types.push((
+            "00000000-0000-0000-0000-000000001100",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_SKETCH,
+            &[1100],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000000584",
+            base,
+            1,
+            crate::records::DESIGN_MODULE_SKETCH,
+            &[584],
+        ));
+    }
+    design_metastream_with_records(&types, records)
 }
 
 pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
@@ -689,5 +714,61 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     out.extend_from_slice(b"419");
     out.extend_from_slice(&4646u32.to_le_bytes());
     out.extend_from_slice(b"body_recipe_data");
+    (out, records)
+}
+
+/// Add a localized Sketch scope and its identity placement carrier to the
+/// generated Design stream. The existing stream already carries the sketch
+/// entity header, points, curves, and relations; this variant closes the
+/// scope-to-placement join so the normal projection pipeline can materialize
+/// that graph as a neutral Sketch.
+pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        for unit in units {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+
+    let scope_record = 1_100_u32;
+    let placement_record = 584_u32;
+    let scope_class_tag = 268_u32;
+    let placement_class_tag = 269_u32;
+
+    let scope_offset = u64::try_from(out.len()).expect("synthetic Sketch scope offset");
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(scope_class_tag.to_string().as_bytes());
+    out.extend_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&[0; 10]);
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    for reference in [277_u32, placement_record] {
+        out.push(1);
+        out.extend_from_slice(&reference.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+    }
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(&mut out, "Sketch");
+    let mut tail = [0_u8; 78];
+    tail[..4].copy_from_slice(&1_u32.to_le_bytes());
+    tail[30..34].copy_from_slice(&u32::MAX.to_le_bytes());
+    out.extend_from_slice(&tail);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(scope_class_tag.to_string().as_bytes());
+    out.extend_from_slice(&scope_record.to_le_bytes());
+    records.push((u64::from(scope_record), scope_offset));
+
+    let placement_offset = u64::try_from(out.len()).expect("synthetic Sketch placement offset");
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(placement_class_tag.to_string().as_bytes());
+    out.extend_from_slice(&placement_record.to_le_bytes());
+    out.extend_from_slice(&[0; 190]);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"261");
+    out.extend_from_slice(&placement_record.to_le_bytes());
+    records.push((u64::from(placement_record), placement_offset));
+
     (out, records)
 }

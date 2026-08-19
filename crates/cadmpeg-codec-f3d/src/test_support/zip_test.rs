@@ -130,12 +130,62 @@ pub(crate) fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Ve
         .iter()
         .map(|guid| generated_instance_properties_for(guid))
         .collect::<Vec<_>>();
-    f3d_with_smbh_and_instance_properties(smbh, &properties)
+    let (design_bulk, design_records) = generated_design_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_records,
+    )
 }
 
 pub(crate) fn f3d_with_smbh_and_instance_properties(
     smbh: &[u8],
     properties: &[Vec<u8>],
+) -> Vec<u8> {
+    let (design_bulk, design_records) = generated_design_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design(
+        smbh,
+        properties,
+        &design_bulk,
+        &design_records,
+    )
+}
+
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (design_bulk, design_records) = generated_design_sketch_bulkstream();
+    let design_metastream = generated_design_sketch_metastream(&design_records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+    )
+}
+
+fn f3d_with_smbh_and_instance_properties_and_design(
+    smbh: &[u8],
+    properties: &[Vec<u8>],
+    design_bulk: &[u8],
+    design_records: &[(u64, u64)],
+) -> Vec<u8> {
+    let design_metastream = generated_design_metastream(design_records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        smbh,
+        properties,
+        design_bulk,
+        &design_metastream,
+    )
+}
+
+fn f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+    smbh: &[u8],
+    properties: &[Vec<u8>],
+    design_bulk: &[u8],
+    design_metastream: &[u8],
 ) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let proteins = properties
@@ -176,14 +226,12 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
         .unwrap();
         zip.write_all(protein).unwrap();
     }
-    let (design_bulk, design_records) = generated_design_bulkstream();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&design_bulk).unwrap();
+    zip.write_all(design_bulk).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&generated_design_metastream(&design_records))
-        .unwrap();
+    zip.write_all(design_metastream).unwrap();
     let (act_bulk, act_records) = generated_act_bulkstream();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
