@@ -21,8 +21,8 @@ use super::support_uv::{
     assign_ext11_support_uv_with_index,
     attach_completed_intersection_pcurves_for_stream_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
-    complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_budget, linear_knots,
-    support_uv_budget_exhausted, support_uv_completion_budget_limit,
+    complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_validated_lanes,
+    linear_knots, support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index,
 };
 use super::{report_untransferred_streams, Counts, Scan};
@@ -263,6 +263,10 @@ pub(crate) fn try_decode_geometry(
         let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
         let mut pending_ext11_support_uv = Vec::new();
+        // Admission validates each populated lane against its selected support
+        // surface. Later topology completion only fills absent pcurves, so
+        // this provenance remains valid through the invalidation pass.
+        let mut validated_support_uv_lanes = BTreeSet::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
         // The model is accumulated across streams. Completion must not retry
@@ -635,6 +639,13 @@ pub(crate) fn try_decode_geometry(
                     ))
                 });
             if let Some(charted) = charted {
+                if let Some(support_uv) = intersection_support_uv.get(&construction.xmt) {
+                    for (side, lane) in support_uv.iter().enumerate() {
+                        if lane.is_some() {
+                            validated_support_uv_lanes.insert((procedural_id.clone(), side));
+                        }
+                    }
+                }
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
                     charted.points.clone(),
@@ -893,9 +904,10 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
             &completion_geometry_budget,
         );
-        invalidate_inconsistent_support_uv_with_budget(
+        invalidate_inconsistent_support_uv_with_validated_lanes(
             &mut ir,
             &pending_ext11_support_uv,
+            &validated_support_uv_lanes,
             &support_uv_validation_budget,
             &completion_geometry_budget,
         );

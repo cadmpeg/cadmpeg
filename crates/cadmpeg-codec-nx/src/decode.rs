@@ -133,8 +133,7 @@ pub(crate) use support_uv::{
 #[allow(unused_imports)]
 pub(crate) use support_uv::{
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
-    invalidate_inconsistent_support_uv_with_budget, linear_knots, missing_support_parameter,
-    pcurve_control_point_seed, pcurve_requires_completion,
+    linear_knots, missing_support_parameter, pcurve_control_point_seed, pcurve_requires_completion,
     pending_support_lanes_requiring_completion, support_uv_lane_matches_surface_with_budget,
     PendingExt11SupportUv,
 };

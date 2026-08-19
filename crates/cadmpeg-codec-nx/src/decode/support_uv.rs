@@ -503,12 +503,19 @@ pub(crate) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    invalidate_inconsistent_support_uv_with_budget(ir, pending, &support_budget, &geometry_budget);
+    invalidate_inconsistent_support_uv_with_validated_lanes(
+        ir,
+        pending,
+        &BTreeSet::new(),
+        &support_budget,
+        &geometry_budget,
+    );
 }
 
-pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
+pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
+    validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
@@ -529,6 +536,9 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_budget(
             for (side, support) in context.sides.iter().enumerate() {
                 if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                     break;
+                }
+                if validated_lanes.contains(&(procedural_id.clone(), side)) {
+                    continue;
                 }
                 let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
                     continue;
