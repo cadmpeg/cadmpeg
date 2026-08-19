@@ -33,6 +33,7 @@ use crate::layout::compact_legacy_68_profile_variant_curve as legacy_68;
 use crate::layout::compact_legacy_84_construction_line as legacy_84;
 use crate::layout::compact_legacy_84_coordinate_roster_curve as legacy_84_roster;
 use crate::layout::compact_legacy_90_geometry_line as legacy_90;
+use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96_roster;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
 use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
@@ -404,6 +405,9 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             && !boundary_relation)
     {
         return Vec::new();
+    }
+    if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
+        return compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers);
     }
     if legacy_wide_profile_roster_curve(payload, offset) {
         return coordinate_roster_curve_endpoint_markers(payload, curve, markers);
@@ -1116,6 +1120,9 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     let Some(offset) = usize::try_from(curve.offset).ok() else {
         return Vec::new();
     };
+    if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
+        return compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers);
+    }
     let current_complete_roster =
         current_referenced_compact_curve_uses_marker_roster(payload, offset);
     let compact_96_complete_roster = compact_96_profile_line_uses_complete_roster(payload, offset);
@@ -1420,6 +1427,47 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
             )
         })
         .collect::<Vec<_>>();
+    if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
+        endpoints
+    } else {
+        Vec::new()
+    }
+}
+
+fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    let Some(offset) = usize::try_from(curve.offset).ok() else {
+        return Vec::new();
+    };
+    if !compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
+        return Vec::new();
+    }
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    let endpoints = [
+        View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_FIRST),
+        View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_SECOND),
+    ]
+    .into_iter()
+    .filter_map(|index| owned.get(usize::from(index?)).copied())
+    .collect::<Vec<_>>();
     if endpoints.len() == 2 && endpoints[0].id != endpoints[1].id {
         endpoints
     } else {
@@ -3588,6 +3636,9 @@ pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -
     if prefix != LEGACY_SKETCH_MARKER {
         return None;
     }
+    if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
+        return Some(legacy_96_roster::ENDPOINT_FIRST);
+    }
     if packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some() {
         return Some(48);
     }
@@ -3667,6 +3718,75 @@ fn compact_96_profile_line_uses_complete_roster(payload: &[u8], offset: usize) -
         && compact_indexed_curve_endpoint_indices(payload, offset).is_some()
         && compact_indexed_curve_record_end(payload, offset)
             == Some(CompactIndexedCurveRecordEnd::Marker96)
+}
+
+fn compact_legacy_96_profile_roster_curve_uses_complete_roster(
+    payload: &[u8],
+    offset: usize,
+) -> bool {
+    let header =
+        payload.get(offset + legacy_96_roster::HEADER..offset + legacy_96_roster::SHARED_SELECTOR);
+    let endpoints = [
+        View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_FIRST),
+        View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_SECOND),
+    ];
+    payload.get(offset + legacy_96_roster::MARKER..offset + legacy_96_roster::HEADER)
+        == Some(LEGACY_SKETCH_MARKER)
+        && (header == Some(&[0xff; 8])
+            || header == Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]))
+        && payload
+            .get(offset + legacy_96_roster::SHARED_SELECTOR..offset + legacy_96_roster::NATIVE_KIND)
+            == Some(&legacy_96_roster::SHARED_SELECTOR_VALUE.to_le_bytes())
+        && marker_native_code(payload, offset) == Some(legacy_96_roster::NATIVE_KIND_VALUE)
+        && payload.get(
+            offset + legacy_96_roster::NATIVE_KIND + std::mem::size_of::<u32>()
+                ..offset + legacy_96_roster::PROFILE_LOCUS,
+        ) == Some(&[0; 2])
+        && payload.get(offset + legacy_96_roster::PROFILE_LOCUS..offset + legacy_96_roster::ROLE)
+            == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(legacy_96_roster::ROLE_VALUE)
+        && payload.get(
+            offset + legacy_96_roster::ROLE + std::mem::size_of::<u16>()
+                ..offset + legacy_96_roster::SELECTOR,
+        ) == Some(&legacy_96_roster::STATE_AT_29_VALUE.to_le_bytes())
+        && payload.get(offset + legacy_96_roster::SELECTOR..offset + legacy_96_roster::SELECTOR + 8)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        && payload.get(
+            offset + legacy_96_roster::SELECTOR + std::mem::size_of::<[u8; 8]>()
+                ..offset + legacy_96_roster::STATE_VALUE,
+        ) == Some(&[0; 9])
+        && payload
+            .get(offset + legacy_96_roster::STATE_VALUE..offset + legacy_96_roster::ENDPOINT_FIRST)
+            == Some(&legacy_96_roster::STATE_VALUE_VALUE.to_le_bytes())
+        && matches!(endpoints, [Some(first), Some(second)] if first != second && first != u16::MAX && second != u16::MAX)
+        && payload.get(
+            offset + legacy_96_roster::ZERO_ENDPOINT_PREFIX
+                ..offset + legacy_96_roster::SIGNED_SELECTOR,
+        ) == Some(&legacy_96_roster::ZERO_ENDPOINT_PREFIX_VALUE)
+        && payload.get(
+            offset + legacy_96_roster::SIGNED_SELECTOR
+                ..offset + legacy_96_roster::ZERO_SELECTOR_TRAILER,
+        ) == Some(&legacy_96_roster::SIGNED_SELECTOR_VALUE.to_le_bytes())
+        && payload.get(
+            offset + legacy_96_roster::ZERO_SELECTOR_TRAILER..offset + legacy_96_roster::TAIL_STATE,
+        ) == Some(&legacy_96_roster::ZERO_SELECTOR_TRAILER_VALUE)
+        && View::u16_le_at(payload, offset + legacy_96_roster::TAIL_STATE)
+            .is_some_and(|state| state != 0 && state != u16::MAX)
+        && payload.get(
+            offset + legacy_96_roster::TAIL_STATE_PREFIX
+                ..offset + legacy_96_roster::TAIL_STATE_MARKER,
+        ) == Some(&legacy_96_roster::TAIL_STATE_PREFIX_VALUE.to_le_bytes())
+        && payload.get(
+            offset + legacy_96_roster::TAIL_STATE_MARKER
+                ..offset + legacy_96_roster::ZERO_TAIL_IDENTITY,
+        ) == Some(&legacy_96_roster::TAIL_STATE_MARKER_VALUE.to_le_bytes())
+        && payload.get(
+            offset + legacy_96_roster::ZERO_TAIL_IDENTITY
+                ..offset + legacy_96_roster::ONE_TAIL_IDENTITY,
+        ) == Some(&legacy_96_roster::ZERO_TAIL_IDENTITY_VALUE.to_le_bytes())
+        && payload.get(offset + legacy_96_roster::ONE_TAIL_IDENTITY..offset + legacy_96_roster::LEN)
+            == Some(&legacy_96_roster::ONE_TAIL_IDENTITY_VALUE.to_le_bytes())
+        && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_96_roster::LEN))
 }
 
 pub(super) fn packed_legacy_curve_endpoint_indices(

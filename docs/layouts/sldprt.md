@@ -1089,6 +1089,42 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_96_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 96 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing geometry-marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A compact-legacy 96-byte profile-roster curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `f32` | little | spec | marker +13 stores f32 `-1` · value `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A compact-legacy 96-byte profile-roster curve has native kind u32 `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | zero state u16 at marker +29 · value `0` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 0c 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | Marker +48 stores f64 `1` · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | marker +56 and marker +58 store distinct zero-based ordinals |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | marker +56 and marker +58 store distinct zero-based ordinals |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | marker +60 is zero u32 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 is f64 `-1` · value `-1.0` |
+| 72 | 10 | `zero_selector_trailer` | `bytes[10]` | little | spec | marker +72 through +81 are zero · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 82 | 2 | `tail_state` | `u16` | little | spec | Marker +82 stores a nonzero, non-null u16 state |
+| 84 | 2 | `tail_state_prefix` | `u16` | little | spec | marker +84 is zero u16 · value `0` |
+| 86 | 2 | `tail_state_marker` | `u16` | little | spec | marker +86 is u16 `1` · value `1` |
+| 88 | 4 | `zero_tail_identity` | `u32` | little | spec | marker +88 is zero u32 · value `0` |
+| 92 | 4 | `one_tail_identity` | `u32` | little | spec | marker +92 is u32 `1` · value `1` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `compact_legacy_84_construction_line`
 
 Spec §2 · layout: byte offsets · size: 84 B

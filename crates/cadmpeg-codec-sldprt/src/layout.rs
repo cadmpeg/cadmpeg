@@ -1356,6 +1356,81 @@ pub(crate) mod extended_geometry_locus_96_construction_line {
     pub(crate) const IDENTITY_SECOND: usize = 92;
 }
 
+/// Byte offsets for the `compact_legacy_96_profile_roster_curve` record.
+///
+/// Spec §2. Record length 96 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing geometry-marker roster.
+/// ```
+pub(crate) mod compact_legacy_96_profile_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 96;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`f32`, little-endian). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`f32`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: f32 = -1.0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state_at_29` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE_AT_29: usize = 29;
+    /// Stated value of `state_at_29` (`u16`). Spec §2.
+    pub(crate) const STATE_AT_29_VALUE: u16 = 0x0000;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 60;
+    /// Stated value of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `zero_selector_trailer` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_TRAILER: usize = 72;
+    /// Stated value of `zero_selector_trailer` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_TRAILER_VALUE: [u8; 10] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `tail_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE: usize = 82;
+    /// Offset of `tail_state_prefix` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE_PREFIX: usize = 84;
+    /// Stated value of `tail_state_prefix` (`u16`). Spec §2.
+    pub(crate) const TAIL_STATE_PREFIX_VALUE: u16 = 0x0000;
+    /// Offset of `tail_state_marker` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE_MARKER: usize = 86;
+    /// Stated value of `tail_state_marker` (`u16`). Spec §2.
+    pub(crate) const TAIL_STATE_MARKER_VALUE: u16 = 0x0001;
+    /// Offset of `zero_tail_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_TAIL_IDENTITY: usize = 88;
+    /// Stated value of `zero_tail_identity` (`u32`). Spec §2.
+    pub(crate) const ZERO_TAIL_IDENTITY_VALUE: u32 = 0x0000_0000;
+    /// Offset of `one_tail_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_TAIL_IDENTITY: usize = 92;
+    /// Stated value of `one_tail_identity` (`u32`). Spec §2.
+    pub(crate) const ONE_TAIL_IDENTITY_VALUE: u32 = 0x0000_0001;
+}
+
 /// Byte offsets for the `compact_legacy_84_construction_line` record.
 ///
 /// Spec §2. Record length 84 B.

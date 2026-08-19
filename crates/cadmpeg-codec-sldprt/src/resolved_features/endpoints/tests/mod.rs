@@ -26,4 +26,5 @@ mod compact;
 mod construction_lines;
 mod extended;
 mod profile_lines;
+mod profile_roster_96;
 mod terminals;
