@@ -3,35 +3,19 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::{model_surface_partials_by_id, model_surface_point_by_id};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::{write_step, StepCodec, StepWriteOptions};
 
 #[test]
 fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
@@ -170,6 +154,76 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     assert!((point.x - 2.0 * 0.5_f64.cos()).abs() < 1.0e-12);
     assert!((point.y - 2.0 * 0.5_f64.sin()).abs() < 1.0e-12);
     assert!((point.z - 2.0).abs() < 1.0e-12);
+}
+
+#[test]
+fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc05_periodic_trim.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode periodic trim witness");
+
+    let expected = [
+        (
+            "step:data:surface#8",
+            [[5.5, 0.5 + std::f64::consts::TAU], [0.5, 4.5]],
+            true,
+            true,
+        ),
+        (
+            "step:data:surface#9",
+            [
+                [5.5, 0.5 + std::f64::consts::TAU],
+                [0.5 + std::f64::consts::TAU, 4.5],
+            ],
+            true,
+            false,
+        ),
+        (
+            "step:data:surface#10",
+            [
+                [0.5 + std::f64::consts::TAU, 5.5],
+                [5.5, 0.5 + std::f64::consts::TAU],
+            ],
+            false,
+            true,
+        ),
+        (
+            "step:data:surface#11",
+            [[4.5, 0.5], [4.5, 0.5]],
+            false,
+            false,
+        ),
+    ];
+    for (surface_id, expected_ranges, expected_u_sense, expected_v_sense) in expected {
+        let construction = decoded
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|surface| surface.surface.as_str() == surface_id)
+            .expect("periodic trimmed surface construction");
+        assert!(matches!(
+            &construction.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
+                parameter_ranges,
+                u_sense: Some(u_sense),
+                v_sense: Some(v_sense),
+                ..
+            } if parameter_ranges
+                .iter()
+                .flatten()
+                .zip(expected_ranges.iter().flatten())
+                .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12)
+                && *u_sense == expected_u_sense
+                && *v_sense == expected_v_sense
+        ));
+    }
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

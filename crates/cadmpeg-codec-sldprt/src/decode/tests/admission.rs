@@ -128,10 +128,10 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_core::CodecError::Malformed(message)) => {
+        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => {
             assert!(
-                message.contains("strict mode rejects sldprt/"),
-                "unexpected message: {message}"
+                loss_code.starts_with("sldprt/"),
+                "unexpected loss code: {loss_code}"
             );
         }
         other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),

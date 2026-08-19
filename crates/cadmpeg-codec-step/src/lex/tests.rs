@@ -112,11 +112,12 @@ fn lexer_rejects_strings_that_exceed_the_stored_length_limit() {
 }
 
 #[test]
-fn lexer_accepts_hyphens_in_enumeration_names() {
+fn lexer_accepts_underscores_and_rejects_hyphens_in_enumeration_names() {
     assert_eq!(
-        crate::lex::lex(b".USER-DEFINED.").unwrap()[0].kind,
-        crate::lex::TokenKind::Enumeration("USER-DEFINED".into())
+        crate::lex::lex(b"._USER2.").unwrap()[0].kind,
+        crate::lex::TokenKind::Enumeration("_USER2".into())
     );
+    assert!(crate::lex::lex(b".USER-DEFINED.").is_err());
 }
 
 #[test]
