@@ -785,10 +785,10 @@ Cross-checked against code:
 
 Spec §Assembly operands · layout: byte offsets · size: 421 B
 
-Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. Class 364 paired with 272 and class 420 paired with 262 use this layout.
+Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. All four admitted 421-byte As-built generations use this layout.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -812,13 +812,13 @@ Spec §Assembly operands · layout: byte offsets · size: 389 B
 Offsets are relative to the frame carrier's class-376 primary indexed header. The paired indexed header is class 272 at offset 389 and repeats the frame record index.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class-`364`/`272` form uses owner class `293`, first carrier classes `351`/`307` and `350`/`307`, and frame carrier class `376` |
-| 45 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48 · value `[1, 1, 0, 0]` |
-| 49 | 128 | `matrix` | `f64[16]` | little | spec | frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48 |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | \| `364 / 272` \| `293 / 272` \| |
+| 45 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | \| `364 / 272` \| `293 / 272` \| · value `[1, 1, 0, 0]` |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | \| `364 / 272` \| `293 / 272` \| |
 
 Unstated regions:
 
@@ -832,18 +832,58 @@ Spec §Assembly operands · layout: byte offsets · size: 390 B
 Offsets are relative to the frame carrier's class-327 primary indexed header. The paired indexed header is class 262 at offset 390 and repeats the frame record index.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class-`420`/`262` form uses owner class `378`, first carrier classes `426`/`273` and `400`/`273`, and frame carrier class `327` |
-| 46 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49 · value `[1, 1, 0, 0]` |
-| 50 | 128 | `matrix` | `f64[16]` | little | spec | matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49 |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | \| `420 / 262` \| `378 / 262` \| |
+| 46 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | \| `420 / 262` \| `378 / 262` \| · value `[1, 1, 0, 0]` |
+| 50 | 128 | `matrix` | `f64[16]` | little | spec | \| `420 / 262` \| `378 / 262` \| |
 
 Unstated regions:
 
 - `11..46` (35 B): The frame-carrier prologue before its matrix marker is not assigned.
 - `178..390` (212 B): The frame-carrier tail before the paired indexed header is not assigned.
+
+## `assembly_as_built_421_frame_448`
+
+Spec §Assembly operands · layout: byte offsets · size: 390 B
+
+Offsets are relative to the frame carrier's class-448 primary indexed header. The paired indexed header is class 263 at offset 390 and repeats the frame record index.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | \| `417 / 263` \| `318 / 263` \| |
+| 46 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | \| `417 / 263` \| `318 / 263` \| · value `[1, 1, 0, 0]` |
+| 50 | 128 | `matrix` | `f64[16]` | little | spec | \| `417 / 263` \| `318 / 263` \| |
+
+Unstated regions:
+
+- `11..46` (35 B): The frame-carrier prologue before its matrix marker is not assigned.
+- `178..390` (212 B): The frame-carrier tail before the paired indexed header is not assigned.
+
+## `assembly_as_built_421_frame_297`
+
+Spec §Assembly operands · layout: byte offsets · size: 385 B
+
+Offsets are relative to the frame carrier's class-297 primary indexed header. The paired indexed header is class 258 at offset 385 and repeats the frame record index.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | \| `457 / 258` \| `418 / 258` \| |
+| 45 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | \| `457 / 258` \| `418 / 258` \| · value `[1, 1, 0, 0]` |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | \| `457 / 258` \| `418 / 258` \| |
+
+Unstated regions:
+
+- `11..45` (34 B): The frame-carrier prologue before its matrix marker is not assigned.
+- `177..385` (208 B): The frame-carrier tail before the paired indexed header is not assigned.
 
 ## `assembly_operand_path_locator`
 

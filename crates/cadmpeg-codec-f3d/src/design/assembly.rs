@@ -15,18 +15,109 @@ use crate::records::{
     DesignComponentOccurrence, DesignParameterScope,
 };
 
-/// Return whether a 421-byte As-built scope uses one of the admitted legacy
-/// generation pairs.
-pub(crate) fn is_legacy_as_built_421(
+/// One exact generation of the legacy 421-byte `As-built` alignment grammar.
+///
+/// The scope class pair is the admission key. All other fields are part of
+/// that key's grammar and must not be inferred from a neighboring generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacyAsBuilt421Generation {
+    Class364,
+    Class420,
+    Class417,
+    Class457,
+}
+
+impl LegacyAsBuilt421Generation {
+    /// Owner-frame primary class for the six scalar lanes.
+    pub(crate) const fn owner_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "293",
+            Self::Class420 => "378",
+            Self::Class417 => "318",
+            Self::Class457 => "418",
+        }
+    }
+
+    /// Owner-frame paired class.
+    pub(crate) const fn owner_paired_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "272",
+            Self::Class420 => "262",
+            Self::Class417 => "263",
+            Self::Class457 => "258",
+        }
+    }
+
+    /// Solved connector-frame primary class named by reference-table entry 8.
+    pub(crate) const fn frame_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "376",
+            Self::Class420 => "327",
+            Self::Class417 => "448",
+            Self::Class457 => "297",
+        }
+    }
+
+    /// Solved connector-frame paired class.
+    pub(crate) const fn frame_paired_class_tag(self) -> &'static str {
+        self.owner_paired_class_tag()
+    }
+
+    /// Byte length from the solved frame primary header to its paired header.
+    pub(crate) const fn frame_length(self) -> usize {
+        match self {
+            Self::Class364 => 389,
+            Self::Class420 | Self::Class417 => 390,
+            Self::Class457 => 385,
+        }
+    }
+
+    /// Offset of the four-byte marker immediately before the solved matrix.
+    pub(crate) const fn matrix_prefix(self) -> usize {
+        match self {
+            Self::Class420 | Self::Class417 => 46,
+            Self::Class364 | Self::Class457 => 45,
+        }
+    }
+
+    /// Offset of the first f64 in the solved row-major matrix.
+    pub(crate) const fn matrix_offset(self) -> usize {
+        match self {
+            Self::Class420 | Self::Class417 => 50,
+            Self::Class364 | Self::Class457 => 49,
+        }
+    }
+
+    /// Domain of the two limit lanes.
+    pub(crate) const fn limit_kind(self) -> DesignAssemblyLimitKind {
+        match self {
+            Self::Class364 => DesignAssemblyLimitKind::Angular,
+            Self::Class420 | Self::Class417 | Self::Class457 => DesignAssemblyLimitKind::Linear,
+        }
+    }
+
+    /// Whether source limit lanes are stored maximum then minimum.
+    pub(crate) const fn reverse_limit_order(self) -> bool {
+        matches!(self, Self::Class420 | Self::Class417)
+    }
+}
+
+/// Admit one exact 421-byte `As-built` scope generation.
+pub(crate) fn legacy_as_built_421_generation(
     frame_length: u64,
     class_tag: &str,
     paired_class_tag: &str,
-) -> bool {
-    frame_length == 421
-        && matches!(
-            (class_tag, paired_class_tag),
-            ("364", "272") | ("420", "262")
-        )
+) -> Option<LegacyAsBuilt421Generation> {
+    if frame_length != 421 {
+        return None;
+    }
+    match (class_tag, paired_class_tag) {
+        ("364", "272") => Some(LegacyAsBuilt421Generation::Class364),
+        ("420", "262") => Some(LegacyAsBuilt421Generation::Class420),
+        ("417", "263") => Some(LegacyAsBuilt421Generation::Class417),
+        ("457", "258") => Some(LegacyAsBuilt421Generation::Class457),
+        _ => None,
+    }
 }
 
 /// Return the half-open owner-lane range that carries assembly alignment.
@@ -261,7 +352,8 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use crate::records::{
-        DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity, DesignParameterScope,
+        DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity,
+        DesignAssemblyLimitKind, DesignParameterScope,
     };
 
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
@@ -363,6 +455,92 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
+    }
+
+    #[test]
+    fn legacy_as_built_421_generation_map_is_exact() {
+        for (
+            scope_class,
+            scope_paired_class,
+            owner_class,
+            owner_paired_class,
+            frame_class,
+            frame_paired_class,
+            frame_length,
+            matrix_prefix,
+            matrix_offset,
+            limit_kind,
+            reverse_limit_order,
+        ) in [
+            (
+                "364",
+                "272",
+                "293",
+                "272",
+                "376",
+                "272",
+                389,
+                45,
+                49,
+                DesignAssemblyLimitKind::Angular,
+                false,
+            ),
+            (
+                "420",
+                "262",
+                "378",
+                "262",
+                "327",
+                "262",
+                390,
+                46,
+                50,
+                DesignAssemblyLimitKind::Linear,
+                true,
+            ),
+            (
+                "417",
+                "263",
+                "318",
+                "263",
+                "448",
+                "263",
+                390,
+                46,
+                50,
+                DesignAssemblyLimitKind::Linear,
+                true,
+            ),
+            (
+                "457",
+                "258",
+                "418",
+                "258",
+                "297",
+                "258",
+                385,
+                45,
+                49,
+                DesignAssemblyLimitKind::Linear,
+                false,
+            ),
+        ] {
+            let generation =
+                super::legacy_as_built_421_generation(421, scope_class, scope_paired_class)
+                    .expect("generation is admitted");
+            assert_eq!(generation.owner_class_tag(), owner_class);
+            assert_eq!(generation.owner_paired_class_tag(), owner_paired_class);
+            assert_eq!(generation.frame_class_tag(), frame_class);
+            assert_eq!(generation.frame_paired_class_tag(), frame_paired_class);
+            assert_eq!(generation.frame_length(), frame_length);
+            assert_eq!(generation.matrix_prefix(), matrix_prefix);
+            assert_eq!(generation.matrix_offset(), matrix_offset);
+            assert_eq!(generation.limit_kind(), limit_kind);
+            assert_eq!(generation.reverse_limit_order(), reverse_limit_order);
+        }
+        assert!(super::legacy_as_built_421_generation(420, "364", "272").is_none());
+        assert!(super::legacy_as_built_421_generation(421, "364", "262").is_none());
+        assert!(super::legacy_as_built_421_generation(421, "999", "272").is_none());
     }
 
     #[test]

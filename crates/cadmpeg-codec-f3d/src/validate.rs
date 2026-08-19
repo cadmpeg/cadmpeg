@@ -2530,11 +2530,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let compact_frames = matches!(scope.frame_length, 633 | 732);
                 let axial_frames = matches!(scope.frame_length, 705 | 772);
                 let as_built_frames = scope.kind == "As-built" && scope.frame_length == 399;
-                let as_built_421 = design::assembly::is_legacy_as_built_421(
+                let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length,
                     &scope.class_tag,
                     &scope.paired_class_tag,
                 );
+                let as_built_421 = as_built_421_generation.is_some();
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
@@ -2589,15 +2590,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
                 });
                 let solved_frame_link = alignment.solved_frame.as_ref().is_none_or(|frame| {
-                    let expected_class_tag = match scope.class_tag.as_str() {
-                        "364" => "376",
-                        "420" => "327",
-                        _ => return false,
-                    };
-                    let transform_offset = match scope.class_tag.as_str() {
-                        "364" => 49_u64,
-                        "420" => 50_u64,
-                        _ => return false,
+                    let Some(generation) = as_built_421_generation else {
+                        return false;
                     };
                     let Some(header) =
                         records_by_index.get(&(native_stream, frame.reference_record_index))
@@ -2609,10 +2603,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             == Some(frame.reference_record_index)
                         && scope.reference_member_offsets.get(8).copied()
                             == Some(frame.reference_offset)
-                        && header.class_tag == expected_class_tag
+                        && header.class_tag == generation.frame_class_tag()
                         && frame.class_tag == header.class_tag
                         && frame.record_byte_offset == header.byte_offset
-                        && frame.transform_offset == frame.record_byte_offset + transform_offset
+                        && frame.transform_offset
+                            == frame.record_byte_offset
+                                + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
                         && design::decode::sketch::valid_sketch_transform(&frame.transform)
                 });
                 let operand_qualifiers_link = match (
@@ -2728,7 +2724,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         == Some(scope.byte_offset + 36)
                             })
                     });
-                let alignment_scalars_link = if as_built_421 {
+                let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
                     match alignment.limits.as_ref() {
                         Some(limits) => {
                             let alignment_lanes = [
@@ -2757,7 +2753,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     3_u32,
                                 ),
                             ];
-                            let limit_lanes = if scope.class_tag == "420" {
+                            let limit_lanes = if generation.reverse_limit_order() {
                                 [
                                     (
                                         Some(limits.owner_record_indices[1]),
@@ -2790,12 +2786,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             };
                             alignment.owner_record_indices.len() == 4
                                 && alignment.value_offsets.len() == 4
-                                && limits.kind
-                                    == if scope.class_tag == "420" {
-                                        records::DesignAssemblyLimitKind::Linear
-                                    } else {
-                                        records::DesignAssemblyLimitKind::Angular
-                                    }
+                                && limits.kind == generation.limit_kind()
                                 && limits.minimum.is_finite()
                                 && limits.maximum.is_finite()
                                 && limits.minimum <= limits.maximum
@@ -2842,9 +2833,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 })
                     })
                 };
-                let alignment_reference_link = if as_built_421 {
+                let alignment_reference_link = if let Some(generation) = as_built_421_generation {
                     alignment.limits.as_ref().is_some_and(|limits| {
-                        let limit_reference_indices = if scope.class_tag == "420" {
+                        let limit_reference_indices = if generation.reverse_limit_order() {
                             [
                                 limits.owner_record_indices[1],
                                 limits.owner_record_indices[0],

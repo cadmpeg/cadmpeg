@@ -1377,11 +1377,12 @@ pub(crate) fn exact_assembly_alignment(
     {
         return None;
     }
-    let as_built_421 = crate::design::assembly::is_legacy_as_built_421(
+    let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
         &scope.class_tag,
         &scope.paired_class_tag,
-    );
+    )
+    .is_some();
     let (angle, offset, owner_record_indices, value_offsets, limits) = if as_built_421 {
         let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
         (

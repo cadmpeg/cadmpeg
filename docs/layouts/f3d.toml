@@ -2446,12 +2446,12 @@ note = "The compact assembly forms use the two tabulated scope-relative locator-
 
 [[record]]
 name = "assembly_as_built_421_scope"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "In a 421-byte `As-built` scope"
 size = 421
-note = "Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. Class 364 paired with 272 and class 420 paired with 262 use this layout."
+note = "Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. All four admitted 421-byte As-built generations use this layout."
 
 [[record.field]]
 name = "indexed_header"
@@ -2519,10 +2519,10 @@ note = "The fixed frame tail before the paired indexed header is not assigned."
 
 [[record]]
 name = "assembly_as_built_421_frame_376"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "class-`364`/`272` form uses owner class `293`, first carrier classes `351`/`307` and `350`/`307`, and frame carrier class `376`"
+anchor = "| `364 / 272` | `293 / 272` |"
 size = 389
 note = "Offsets are relative to the frame carrier's class-376 primary indexed header. The paired indexed header is class 272 at offset 389 and repeats the frame record index."
 
@@ -2531,7 +2531,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "class-`364`/`272` form uses owner class `293`, first carrier classes `351`/`307` and `350`/`307`, and frame carrier class `376`"
+anchor = "| `364 / 272` | `293 / 272` |"
 
 [[record.gap]]
 offset = 11
@@ -2543,7 +2543,7 @@ name = "matrix_prefix"
 offset = 45
 type = "bytes[4]"
 source = "spec"
-anchor = "frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48"
+anchor = "| `364 / 272` | `293 / 272` |"
 value = [1, 1, 0, 0]
 
 [[record.field]]
@@ -2551,7 +2551,7 @@ name = "matrix"
 offset = 49
 type = "f64[16]"
 source = "spec"
-anchor = "frame carrier's row-major rigid matrix starts at offset 49 after bytes `01 01 00 00` at offsets 45 through 48"
+anchor = "| `364 / 272` | `293 / 272` |"
 
 [[record.gap]]
 offset = 177
@@ -2561,10 +2561,10 @@ note = "The frame-carrier tail before the paired indexed header is not assigned.
 
 [[record]]
 name = "assembly_as_built_421_frame_327"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "class-`420`/`262` form uses owner class `378`, first carrier classes `426`/`273` and `400`/`273`, and frame carrier class `327`"
+anchor = "| `420 / 262` | `378 / 262` |"
 size = 390
 note = "Offsets are relative to the frame carrier's class-327 primary indexed header. The paired indexed header is class 262 at offset 390 and repeats the frame record index."
 
@@ -2573,7 +2573,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "class-`420`/`262` form uses owner class `378`, first carrier classes `426`/`273` and `400`/`273`, and frame carrier class `327`"
+anchor = "| `420 / 262` | `378 / 262` |"
 
 [[record.gap]]
 offset = 11
@@ -2585,7 +2585,7 @@ name = "matrix_prefix"
 offset = 46
 type = "bytes[4]"
 source = "spec"
-anchor = "matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49"
+anchor = "| `420 / 262` | `378 / 262` |"
 value = [1, 1, 0, 0]
 
 [[record.field]]
@@ -2593,11 +2593,95 @@ name = "matrix"
 offset = 50
 type = "f64[16]"
 source = "spec"
-anchor = "matrix starts at offset 50 after bytes `01 01 00 00` at offsets 46 through 49"
+anchor = "| `420 / 262` | `378 / 262` |"
 
 [[record.gap]]
 offset = 178
 size = 212
+note = "The frame-carrier tail before the paired indexed header is not assigned."
+
+
+[[record]]
+name = "assembly_as_built_421_frame_448"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "| `417 / 263` | `318 / 263` |"
+size = 390
+note = "Offsets are relative to the frame carrier's class-448 primary indexed header. The paired indexed header is class 263 at offset 390 and repeats the frame record index."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "| `417 / 263` | `318 / 263` |"
+
+[[record.gap]]
+offset = 11
+size = 35
+note = "The frame-carrier prologue before its matrix marker is not assigned."
+
+[[record.field]]
+name = "matrix_prefix"
+offset = 46
+type = "bytes[4]"
+source = "spec"
+anchor = "| `417 / 263` | `318 / 263` |"
+value = [1, 1, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "| `417 / 263` | `318 / 263` |"
+
+[[record.gap]]
+offset = 178
+size = 212
+note = "The frame-carrier tail before the paired indexed header is not assigned."
+
+
+[[record]]
+name = "assembly_as_built_421_frame_297"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/assembly.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "| `457 / 258` | `418 / 258` |"
+size = 385
+note = "Offsets are relative to the frame carrier's class-297 primary indexed header. The paired indexed header is class 258 at offset 385 and repeats the frame record index."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "| `457 / 258` | `418 / 258` |"
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "The frame-carrier prologue before its matrix marker is not assigned."
+
+[[record.field]]
+name = "matrix_prefix"
+offset = 45
+type = "bytes[4]"
+source = "spec"
+anchor = "| `457 / 258` | `418 / 258` |"
+value = [1, 1, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "| `457 / 258` | `418 / 258` |"
+
+[[record.gap]]
+offset = 177
+size = 208
 note = "The frame-carrier tail before the paired indexed header is not assigned."
 
 

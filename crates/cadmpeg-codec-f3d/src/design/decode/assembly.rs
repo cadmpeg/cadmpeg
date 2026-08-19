@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact legacy As-built assembly alignment frames.
 
+use crate::layout::assembly_as_built_421_frame_297 as as_built_421_frame_297;
 use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
+use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
 use crate::records::{
-    DesignAssemblyLimitKind, DesignAssemblyLimits, DesignAssemblySolvedFrame, DesignParameterOwner,
-    DesignParameterScope,
+    DesignAssemblyLimits, DesignAssemblySolvedFrame, DesignParameterOwner, DesignParameterScope,
 };
 use cadmpeg_core::decode::View;
 
@@ -26,14 +27,12 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     scope: &DesignParameterScope,
     lanes: &[&DesignParameterOwner],
 ) -> Option<LegacyAsBuilt421Alignment> {
-    if !crate::design::assembly::is_legacy_as_built_421(
+    let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
         &scope.class_tag,
         &scope.paired_class_tag,
-    ) || scope.kind != "As-built"
-        || lanes.len() != 6
-        || scope.reference_members.len() != 11
-    {
+    )?;
+    if scope.kind != "As-built" || lanes.len() != 6 || scope.reference_members.len() != 11 {
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
@@ -70,14 +69,9 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    let expected_owner_class = if scope.class_tag == "364" {
-        "293"
-    } else {
-        "378"
-    };
     if lanes
         .iter()
-        .any(|owner| owner.class_tag != expected_owner_class)
+        .any(|owner| owner.class_tag != generation.owner_class_tag() || owner.frame_length != 103)
     {
         return None;
     }
@@ -96,30 +90,19 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    let (kind, minimum, maximum, limit_owner_record_indices, limit_value_offsets) =
-        match scope.class_tag.as_str() {
-            "364" => (
-                DesignAssemblyLimitKind::Angular,
-                limit_first.evaluated_value,
-                limit_second.evaluated_value,
-                [limit_first.record_index, limit_second.record_index],
-                [
-                    limit_first.evaluated_value_offset,
-                    limit_second.evaluated_value_offset,
-                ],
-            ),
-            "420" => (
-                DesignAssemblyLimitKind::Linear,
-                limit_second.evaluated_value,
-                limit_first.evaluated_value,
-                [limit_second.record_index, limit_first.record_index],
-                [
-                    limit_second.evaluated_value_offset,
-                    limit_first.evaluated_value_offset,
-                ],
-            ),
-            _ => return None,
-        };
+    let (minimum_owner, maximum_owner) = if generation.reverse_limit_order() {
+        (limit_second, limit_first)
+    } else {
+        (limit_first, limit_second)
+    };
+    let kind = generation.limit_kind();
+    let minimum = minimum_owner.evaluated_value;
+    let maximum = maximum_owner.evaluated_value;
+    let limit_owner_record_indices = [minimum_owner.record_index, maximum_owner.record_index];
+    let limit_value_offsets = [
+        minimum_owner.evaluated_value_offset,
+        maximum_owner.evaluated_value_offset,
+    ];
     if !minimum.is_finite() || !maximum.is_finite() || minimum > maximum {
         return None;
     }
@@ -157,22 +140,19 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignAssemblySolvedFrame> {
-    if !crate::design::assembly::is_legacy_as_built_421(
+    let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
         &scope.class_tag,
         &scope.paired_class_tag,
-    ) || scope.kind != "As-built"
+    )?;
+    if scope.kind != "As-built"
         || scope.reference_members.len() != 11
         || scope.reference_member_offsets.len() != 11
     {
         return None;
     }
     let frame_record_index = *scope.reference_members.get(8)?;
-    let expected_class_tag = match scope.class_tag.as_str() {
-        "364" => "376",
-        "420" => "327",
-        _ => return None,
-    };
+    let expected_class_tag = generation.frame_class_tag();
     let mut frame_candidates =
         records
             .offsets(frame_record_index)
@@ -186,29 +166,45 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     if frame_candidates.next().is_some() {
         return None;
     }
-    let (frame_length, matrix_prefix, transform_offset, matrix_prefix_value) =
-        match scope.class_tag.as_str() {
-            "364" => (
-                as_built_421_frame_376::LEN,
-                as_built_421_frame_376::MATRIX_PREFIX,
-                as_built_421_frame_376::MATRIX,
-                as_built_421_frame_376::MATRIX_PREFIX_VALUE,
-            ),
-            "420" => (
-                as_built_421_frame_327::LEN,
-                as_built_421_frame_327::MATRIX_PREFIX,
-                as_built_421_frame_327::MATRIX,
-                as_built_421_frame_327::MATRIX_PREFIX_VALUE,
-            ),
-            _ => return None,
-        };
+    let (frame_length, matrix_prefix, transform_offset, matrix_prefix_value) = match generation {
+        crate::design::assembly::LegacyAsBuilt421Generation::Class364 => (
+            as_built_421_frame_376::LEN,
+            as_built_421_frame_376::MATRIX_PREFIX,
+            as_built_421_frame_376::MATRIX,
+            as_built_421_frame_376::MATRIX_PREFIX_VALUE,
+        ),
+        crate::design::assembly::LegacyAsBuilt421Generation::Class420 => (
+            as_built_421_frame_327::LEN,
+            as_built_421_frame_327::MATRIX_PREFIX,
+            as_built_421_frame_327::MATRIX,
+            as_built_421_frame_327::MATRIX_PREFIX_VALUE,
+        ),
+        crate::design::assembly::LegacyAsBuilt421Generation::Class417 => (
+            as_built_421_frame_448::LEN,
+            as_built_421_frame_448::MATRIX_PREFIX,
+            as_built_421_frame_448::MATRIX,
+            as_built_421_frame_448::MATRIX_PREFIX_VALUE,
+        ),
+        crate::design::assembly::LegacyAsBuilt421Generation::Class457 => (
+            as_built_421_frame_297::LEN,
+            as_built_421_frame_297::MATRIX_PREFIX,
+            as_built_421_frame_297::MATRIX,
+            as_built_421_frame_297::MATRIX_PREFIX_VALUE,
+        ),
+    };
+    if frame_length != generation.frame_length()
+        || matrix_prefix != generation.matrix_prefix()
+        || transform_offset != generation.matrix_offset()
+    {
+        return None;
+    }
     if exact_indexed_header_at(
         bytes,
         frame_start.checked_add(frame_length)?,
         frame_record_index,
     )
     .as_deref()
-        != Some(scope.paired_class_tag.as_str())
+        != Some(generation.frame_paired_class_tag())
     {
         return None;
     }

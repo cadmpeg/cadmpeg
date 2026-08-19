@@ -9,6 +9,8 @@
 )]
 use super::prelude::*;
 
+const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
+
 #[test]
 fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let scope_record_index = 10_u32;
@@ -566,8 +568,21 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             companion_record_index: record_index + 2,
         }
     };
-    for (class_tag, paired_class_tag, owner_class) in [("364", "272", "293"), ("420", "262", "378")]
-    {
+    for (class_tag, paired_class_tag, owner_class, expected_limit_kind, reverse_limit_order) in [
+        ("364", "272", "293", DesignAssemblyLimitKind::Angular, false),
+        ("420", "262", "378", DesignAssemblyLimitKind::Linear, true),
+        ("417", "263", "318", DesignAssemblyLimitKind::Linear, true),
+        ("457", "258", "418", DesignAssemblyLimitKind::Linear, false),
+    ] {
+        let generation = crate::design::assembly::legacy_as_built_421_generation(
+            421,
+            class_tag,
+            paired_class_tag,
+        )
+        .expect("fixture generation is admitted");
+        assert_eq!(generation.owner_class_tag(), owner_class);
+        assert_eq!(generation.limit_kind(), expected_limit_kind);
+        assert_eq!(generation.reverse_limit_order(), reverse_limit_order);
         let scope_record_index = 10_u32;
         let owner_record_indices = [100, 101, 102, 103, 104, 105, 106];
         let reference_members = [
@@ -618,15 +633,15 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             scope_record_index,
         );
         let frame_start = bytes.len();
-        let frame_class_tag = if class_tag == "364" { b"376" } else { b"327" };
-        append_axial_test_header(&mut bytes, frame_class_tag, 200);
-        let matrix_prefix = if class_tag == "364" { 45 } else { 46 };
-        let transform_offset = if class_tag == "364" { 49 } else { 50 };
-        let frame_length = if class_tag == "364" {
-            crate::layout::assembly_as_built_421_frame_376::LEN
-        } else {
-            crate::layout::assembly_as_built_421_frame_327::LEN
-        };
+        let frame_class_tag = generation.frame_class_tag();
+        append_axial_test_header(
+            &mut bytes,
+            frame_class_tag.as_bytes().try_into().unwrap(),
+            200,
+        );
+        let matrix_prefix = generation.matrix_prefix();
+        let transform_offset = generation.matrix_offset();
+        let frame_length = generation.frame_length();
         bytes.resize(frame_start + frame_length, 0);
         bytes[frame_start + matrix_prefix..frame_start + transform_offset]
             .copy_from_slice(&[1, 1, 0, 0]);
@@ -644,7 +659,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             200,
         );
 
-        let (limit_first_value, limit_second_value) = if class_tag == "420" {
+        let (limit_first_value, limit_second_value) = if reverse_limit_order {
             (1.5, -1.0)
         } else {
             (-1.0, 1.5)
@@ -678,24 +693,19 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             &owners,
         )
         .expect("exact 421-byte As-built alignment");
-        assert_eq!(alignment.angle, 0.25);
-        assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+        assert!((alignment.angle - 0.25).abs() <= EPS_EXACT_FIXTURE);
+        for (actual, expected) in alignment.offset.into_iter().zip([1.0, 2.0, 3.0]) {
+            assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
+        }
         assert_eq!(alignment.owner_record_indices, [103, 100, 101, 102]);
         assert_eq!(alignment.value_offsets, [1_003, 1_000, 1_001, 1_002]);
         let limits = alignment.limits.expect("assembly limits");
-        assert_eq!(
-            limits.kind,
-            if class_tag == "420" {
-                DesignAssemblyLimitKind::Linear
-            } else {
-                DesignAssemblyLimitKind::Angular
-            }
-        );
-        assert_eq!(limits.minimum, -1.0);
-        assert_eq!(limits.maximum, 1.5);
+        assert_eq!(limits.kind, expected_limit_kind);
+        assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
+        assert!((limits.maximum - 1.5).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             limits.owner_record_indices,
-            if class_tag == "420" {
+            if reverse_limit_order {
                 [106, 105]
             } else {
                 [105, 106]
@@ -703,7 +713,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         );
         assert_eq!(
             limits.value_offsets,
-            if class_tag == "420" {
+            if reverse_limit_order {
                 [1_006, 1_005]
             } else {
                 [1_005, 1_006]
@@ -715,11 +725,8 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         assert_eq!(solved_frame.reference_record_index, 200);
         assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
         assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
-        assert_eq!(
-            solved_frame.class_tag,
-            std::str::from_utf8(frame_class_tag).expect("fixture class tag is ASCII")
-        );
-        assert_eq!(solved_frame.transform[0][3], 9.0);
+        assert_eq!(solved_frame.class_tag, frame_class_tag);
+        assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             solved_frame.transform_offset,
             (frame_start + transform_offset) as u64
