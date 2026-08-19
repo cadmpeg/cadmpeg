@@ -440,6 +440,185 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
 }
 
 #[test]
+fn explicit_point_entity_handle_circle_dimension_uses_tagged_center() {
+    let marker = |id: &str, offset, object_index, local_id, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index: Some(object_index),
+        local_id: Some(local_id),
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let lane = |kind| FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 112,
+            name: "sgEntHandle".into(),
+            role: FeatureInputClassRole::SketchEntity,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: "reference".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 100,
+            kind,
+            class_ref: Some("class".into()),
+            object_index: 0,
+        }],
+        sketch_entities: vec![
+            marker("center", 10, 21, 0, [0.010, 0.020]),
+            marker("pair-center-a", 20, 50, 49, [0.000, 0.000]),
+            marker("pair-radial-a", 30, 49, 3, [0.003, 0.004]),
+            marker("pair-center-b", 40, 60, 59, [0.020, 0.030]),
+            marker("pair-radial-b", 50, 59, 5, [0.023, 0.034]),
+        ],
+    };
+
+    for kind in [
+        FeatureInputOperandKind::Native(0x80d4),
+        FeatureInputOperandKind::Native(0x80d5),
+    ] {
+        let operand = FeatureInputOperand {
+            offset: 100,
+            reference_ref: "reference".into(),
+            kind,
+            entity_index: 0,
+            entity_ref: Some("center".into()),
+        };
+        let lane = lane(kind);
+        let markers_by_id = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        let carrier = dimensioned_relation_carrier(
+            std::slice::from_ref(&lane),
+            &markers_by_id,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .expect("tagged explicit point center");
+        assert_eq!(carrier.marker.id, "center");
+        assert_eq!(carrier.center, [0.010, 0.020]);
+        assert!(carrier.curve.is_none());
+        assert_eq!(carrier.construction, Some(false));
+
+        let mut wrong_marker_kind_lane = lane.clone();
+        wrong_marker_kind_lane.sketch_entities[0].kind = SketchInputKind::LineOrCircle;
+        let wrong_marker_kind = wrong_marker_kind_lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert!(dimensioned_relation_carrier(
+            std::slice::from_ref(&wrong_marker_kind_lane),
+            &wrong_marker_kind,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .is_none());
+
+        let mut wrong_address = operand.clone();
+        wrong_address.entity_index = 1;
+        assert!(dimensioned_relation_carrier(
+            std::slice::from_ref(&lane),
+            &markers_by_id,
+            "feature",
+            &wrong_address,
+            5.0,
+        )
+        .is_none());
+
+        let mut unreferenced = operand.clone();
+        unreferenced.entity_ref = None;
+        assert!(dimensioned_relation_carrier(
+            std::slice::from_ref(&lane),
+            &markers_by_id,
+            "feature",
+            &unreferenced,
+            5.0,
+        )
+        .is_none());
+
+        let mut wrong_feature_lane = lane.clone();
+        wrong_feature_lane.sketch_entities[0].feature_ref = Some("other".into());
+        let wrong_feature_markers = wrong_feature_lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert!(dimensioned_relation_carrier(
+            std::slice::from_ref(&wrong_feature_lane),
+            &wrong_feature_markers,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .is_none());
+
+        let mut nonfinite_lane = lane.clone();
+        nonfinite_lane.sketch_entities[0].coordinates_m = Some([f64::NAN, 0.020]);
+        let nonfinite_markers = nonfinite_lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert!(dimensioned_relation_carrier(
+            std::slice::from_ref(&nonfinite_lane),
+            &nonfinite_markers,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .is_none());
+
+        let mut second_lane = lane.clone();
+        second_lane.id = "lane-2".into();
+        second_lane.classes[0].parent = "lane-2".into();
+        second_lane.references[0].parent = "lane-2".into();
+        for marker in &mut second_lane.sketch_entities {
+            marker.parent = "lane-2".into();
+        }
+        let lanes = [lane, second_lane];
+        let duplicate_owner_markers = lanes
+            .iter()
+            .flat_map(|lane| lane.sketch_entities.iter())
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert!(dimensioned_relation_carrier(
+            &lanes,
+            &duplicate_owner_markers,
+            "feature",
+            &operand,
+            5.0,
+        )
+        .is_none());
+    }
+}
+
+#[test]
 fn declared_slot_handle_selects_indexed_dimension_center() {
     let kind = FeatureInputOperandKind::Native(0x88e7);
     let operand = FeatureInputOperand {

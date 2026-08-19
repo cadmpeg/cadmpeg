@@ -1052,6 +1052,44 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     same_dimension_length(radius, expected_radius).then_some(center)
 }
 
+/// Resolve the explicit point-center form of a circular dimension.
+///
+/// Tags `d4 80` and `d5 80` carry the point identity in the resolved operand
+/// reference. The reference must resolve to a point marker in the unique
+/// `sgEntHandle` lane, and its local identifier must equal the operand
+/// address. No radius-based pair or marker-family fallback is valid for these
+/// tags.
+pub(super) fn declared_entity_handle_point_dimension_center<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+) -> Option<&'a SketchInputEntity> {
+    if !matches!(
+        operand.kind,
+        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
+    ) {
+        return None;
+    }
+    let entity_ref = operand.entity_ref.as_deref()?;
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let marker = lane.sketch_entities.iter().find(|marker| {
+        marker.id == entity_ref
+            && marker.feature_ref.as_deref() == Some(feature)
+            && marker.local_id == Some(u32::from(operand.entity_index))
+            && matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+    })?;
+    marker
+        .coordinates_m
+        .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+        .then_some(marker)
+}
+
 pub(super) fn declared_entity_handle_circular_marker<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
