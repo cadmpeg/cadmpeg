@@ -216,18 +216,6 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
-### DR-32A. Component records that share one component GUID
-
-**Question.** May two local component-occurrence carriers in one Design stream carry equal component GUIDs and unequal component-record references?
-
-**Known.** `f3d.md` §3.1 "A local component occurrence is an indexed carrier" states that equal component GUIDs name the same reusable local component definition, and each carrier stores the same u64 component-record reference twice. The validator holds one component-record reference per component GUID per stream and reports a carrier that contradicts an earlier one.
-
-Documents exist with two unplaced ordinal-one carriers whose component GUIDs are equal, whose occurrence GUIDs differ, and whose component-record references differ. Both carriers satisfy every fixed member of the 229-byte frame, and both duplicate their own component-record reference across offsets 24 and 197, so neither is a misread frame.
-
-**Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
-
-**Note.** The change that deleted this item takes the first reading and removes the validator report. It adds no specimen that separates the two readings and gives no reasoning in its commit body. `component_record_index` stays decoded and unused for identity: `crates/cadmpeg-codec-f3d/src/design/decode/components.rs` only makes sure that the two copies inside one carrier agree, and `crates/cadmpeg-codec-f3d/src/design/components.rs` builds the neutral component identity from the component GUID alone. Two carriers that describe two definitions therefore merge into one neutral component, and no loss records the merge. The added validator test builds both carriers from the rule that it confirms.
-
 ### DR-65. Agreement test of the parallel-line and concentric-circle dimensions
 
 **Question.** Which agreement rule holds for a parallel-line separation and a concentric-circle separation?
