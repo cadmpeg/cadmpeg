@@ -459,6 +459,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 210 Form 0 puts the positive leader count `N` at index 2 and the `N`
 /// leader pointers at indexes 3 through `2 + N`, so its groups start at token
 /// `3 + N`.
+/// Type 212 Form 0 puts the positive string count `NS` at index 1 and stores
+/// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -607,6 +609,7 @@ pub(crate) fn entity_primary_end(
         (142, 0) => Some(fixed_primary_end(record, 6)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
+        (212, 0) => Some(general_note_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
@@ -1134,6 +1137,17 @@ fn general_label_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(3))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn general_note_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(12))
+        .and_then(|span| span.checked_add(2))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

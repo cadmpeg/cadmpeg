@@ -12306,6 +12306,175 @@ fn type210_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
+fn type212_form0_follows_string_count() {
+    let text_block = |text: &[u8]| -> Vec<TokenValue> {
+        vec![
+            TokenValue::Integer(text.len() as i64),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(1),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::Integer(0),
+            TokenValue::String(text.to_vec()),
+        ]
+    };
+    let association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 212);
+    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+
+    let cases = [
+        (
+            {
+                let mut values = vec![TokenValue::Integer(212), TokenValue::Integer(1)];
+                values.extend(text_block(b"A"));
+                values.extend([
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(5),
+                ]);
+                values
+            },
+            14_usize,
+        ),
+        (
+            {
+                let mut values = vec![TokenValue::Integer(212), TokenValue::Integer(2)];
+                values.extend(text_block(b"A"));
+                values.extend(text_block(b"BC"));
+                values.extend([
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(3),
+                    TokenValue::Integer(1),
+                    TokenValue::Integer(5),
+                ]);
+                values
+            },
+            26_usize,
+        ),
+    ];
+
+    for (values, expected_start) in cases {
+        let record = token_parameter_record(7, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 212 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![3]);
+        assert_eq!(groups.properties, vec![5]);
+    }
+}
+
+#[test]
+fn type212_table_boundary_precedes_valid_generic_alternative() {
+    let first_association = directory_target(1, 212);
+    let second_association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 212);
+    let directory = BTreeMap::from([
+        (1, &first_association),
+        (3, &second_association),
+        (5, &property),
+        (7, &source),
+    ]);
+    let record =
+        integer_parameter_record(7, &[212, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 3, 1, 5]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![13, 14]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 212 table boundary");
+    assert_eq!(groups.token_start, 14);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recover() {
+    let association = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(7, 212);
+    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+    let complete = |count: TokenValue, font: TokenValue, mirror: TokenValue| {
+        vec![
+            212.into(),
+            count,
+            1.into(),
+            1.into(),
+            1.into(),
+            font,
+            0.into(),
+            0.into(),
+            mirror,
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            TokenValue::String(b"A".to_vec()),
+            1.into(),
+            3.into(),
+            1.into(),
+            5.into(),
+        ]
+    };
+
+    for (font, mirror) in [
+        (TokenValue::String(b"bad".to_vec()), TokenValue::Integer(0)),
+        (TokenValue::Integer(1), TokenValue::Integer(9)),
+    ] {
+        let analysis = analyze_trailing_pointer_groups(
+            &token_parameter_record(7, complete(1.into(), font, mirror)),
+            &directory,
+        );
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        assert_eq!(
+            analysis
+                .groups
+                .expect("Type 212 wrong-field boundary")
+                .token_start,
+            14
+        );
+    }
+
+    for record in [
+        token_parameter_record(7, complete(TokenValue::Real(1.5), 1.into(), 0.into())),
+        token_parameter_record(7, complete(TokenValue::Omitted, 1.into(), 0.into())),
+        token_parameter_record(7, complete(i64::MAX.into(), 1.into(), 0.into())),
+        token_parameter_record(7, complete(1.into(), 1.into(), 0.into())[..4].to_vec()),
+    ] {
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+
+    let mut truncated_group = complete(1.into(), 1.into(), 0.into());
+    truncated_group.pop();
+    let analysis =
+        analyze_trailing_pointer_groups(&token_parameter_record(7, truncated_group), &directory);
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
+}
+
+#[test]
 fn type410_entity_table_boundaries_follow_view_fields() {
     let cases = [
         (0_i64, vec![410, 1, 1, 0, 0, 0, 0, 0, 0, 1, 3, 0], 9_usize),

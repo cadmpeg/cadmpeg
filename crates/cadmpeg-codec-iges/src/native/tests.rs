@@ -566,7 +566,7 @@ fn decode_dimensioned_geometry_uses_counted_geometry_pointers() {
 }
 
 #[test]
-fn decode_general_note_count_stops_before_trailing_property_group() {
+fn decode_general_note_truncated_count_rejects_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 212,
@@ -590,10 +590,7 @@ fn decode_general_note_count_stops_before_trailing_property_group() {
     let entity = &native.arenas["entities"][0];
     let annotation = &native.arenas["annotations"][0];
 
-    assert_eq!(
-        entity.fields()["property_links"][0],
-        "iges:entity:directory#3"
-    );
+    assert!(entity.fields()["property_links"][0].is_null());
     assert_eq!(annotation.fields()["declared_string_count"], 2);
     assert!(annotation.fields()["strings"]
         .as_array()

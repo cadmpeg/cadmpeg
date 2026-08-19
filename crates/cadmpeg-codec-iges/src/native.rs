@@ -4264,11 +4264,7 @@ pub(crate) fn store(
             Some(if entry.entity_type == 212 {
                 let count = record
                     .and_then(|record| {
-                        record.count_with_stride_before_default_tail(
-                            1,
-                            12,
-                            primary_end(entry.sequence, record),
-                        )
+                        record.count_with_stride_before(1, 12, primary_end(entry.sequence, record))
                     })
                     .unwrap_or_default();
                 NativeAnnotation::GeneralNote {
