@@ -91,7 +91,7 @@ impl StepSchema {
 
     pub(crate) fn ap242_edition(identifier: &str) -> Option<&'static str> {
         const NAME: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
-        let (name, oid) = split_schema_identifier(identifier)?;
+        let (name, oid) = schema_identifier_arcs(identifier)?;
         if !name.eq_ignore_ascii_case(NAME) {
             return None;
         }
@@ -150,18 +150,25 @@ impl StepSchema {
     }
 }
 
-fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<i64>>)> {
-    let identifier = identifier.trim();
-    let Some(open) = identifier.rfind('{') else {
-        return Some((identifier, None));
+/// The schema name and the object identifier arcs of one schema identifier.
+///
+/// The edition report needs the arcs as numbers, so an object identifier with a
+/// named component, with fewer than two components, or with a component that is
+/// not a plain decimal number has no arcs. `split_schema_identifier` owns the
+/// name and object identifier split.
+fn schema_identifier_arcs(identifier: &str) -> Option<(&str, Option<Vec<u64>>)> {
+    let (name, object_identifier) =
+        crate::parse::schema_identifier::split_schema_identifier(identifier)?;
+    let Some(object_identifier) = object_identifier else {
+        return Some((name, None));
     };
-    if !identifier.ends_with('}') || identifier[..open].trim().is_empty() {
+    if name.is_empty() {
         return None;
     }
-    let oid = identifier[open + 1..identifier.len() - 1]
+    let arcs = object_identifier
         .split_whitespace()
-        .map(str::parse::<i64>)
-        .collect::<Result<Vec<i64>, _>>()
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<u64>, _>>()
         .ok()?;
-    (!oid.is_empty()).then(|| (identifier[..open].trim_end(), Some(oid)))
+    (arcs.len() >= 2).then_some((name, Some(arcs)))
 }

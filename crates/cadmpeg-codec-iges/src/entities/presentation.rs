@@ -516,6 +516,7 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Body".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
@@ -549,6 +550,7 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Face".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }

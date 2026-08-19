@@ -28,7 +28,7 @@ production_line_debt = 0
 
 [ceilings]
 from_endian_bytes = 111
-codec_error_malformed_format = 1265
+codec_error_malformed_format = 1264
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
