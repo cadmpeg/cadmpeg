@@ -231,6 +231,39 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
 }
 
 #[test]
+fn strict_decode_refuses_an_unresolved_pointer_loss() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000200",
+            parameters: "402,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,99,0;".into(),
+        },
+    ]);
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap_err();
+
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => {
+            assert_eq!(loss_code, IgesLossCode::PointerUnresolved.kind().as_str());
+        }
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
 fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {

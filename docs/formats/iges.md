@@ -483,5 +483,9 @@ Every non-null Directory Entry has one retained native identity and one
 `transfer_ledger` disposition. A supported entity without neutral projection
 has a stable namespaced loss code, source provenance, and its retained native
 record. A projected entity with reduced fidelity records the reduction on the
-same source identity. Salvage mode returns warning losses; strict mode refuses
-any warning-or-higher loss before returning a semantic result.
+same source identity. Salvage mode records every loss in the decode report.
+Strict mode refuses through the shared decode gate: a loss causes refusal when
+its shared taxonomy defines a strict severity floor and the loss severity
+reaches that floor. For the current IGES loss set that is exactly
+`iges/graph.pointer-unresolved` and `iges/curve.composite-carrier-degraded`.
+Every other IGES loss is recorded in the decode report in both modes.

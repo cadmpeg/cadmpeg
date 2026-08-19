@@ -298,22 +298,18 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 }
 
 #[test]
-fn strict_decode_rejects_an_attributed_projection_loss() {
+fn strict_decode_reports_an_attributed_projection_loss_without_refusal() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
 
-    let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
+    let result = IgesCodec.decode(&mut Cursor::new(bytes), &options).unwrap();
 
-    assert!(error.to_string().contains(&format!(
-        "strict mode rejects {}",
-        IgesLossCode::EntityNotProjected.kind()
-    )));
-    assert!(error
-        .to_string()
-        .contains("interpretation flag disagrees with the entity form"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

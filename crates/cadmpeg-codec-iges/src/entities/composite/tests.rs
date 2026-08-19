@@ -719,6 +719,29 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 }
 
 #[test]
+fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+            &options,
+        )
+        .unwrap_err();
+
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => {
+            assert_eq!(
+                loss_code,
+                IgesLossCode::CompositeCarrierDegraded.kind().as_str()
+            );
+        }
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
 fn decode_concatenates_exact_circular_arc_and_line_children() {
     let result = IgesCodec
         .decode(

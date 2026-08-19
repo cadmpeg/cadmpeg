@@ -3,7 +3,7 @@
 
 use crate::loss::IgesLossCode;
 use crate::{card, directory, entities, global, graph, native, parameter};
-use cadmpeg_core::decode::{DecodeContext, DecodeMode};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::hash::{
@@ -273,17 +273,6 @@ fn decode_with_occurrence_limits(
             "iges_semantic_validation",
         )?;
         reject_invalid_semantic_ir(&ir, &losses)?;
-        if options.policy.mode == DecodeMode::Strict {
-            if let Some(loss) = losses
-                .iter()
-                .find(|loss| loss.severity >= Severity::Warning)
-            {
-                return Err(CodecError::Malformed(format!(
-                    "strict mode rejects {}: {}",
-                    loss.code, loss.message
-                )));
-            }
-        }
     }
     let mut transfer_ledger = TransferLedger::default();
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {

@@ -173,25 +173,17 @@ impl IgesLossCode {
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
-    const fn strict_floor(self) -> Option<Severity> {
-        self.shared_taxonomy().strict_floor()
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
         LossKind::namespaced("iges", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `iges/<local>`; the message is the per-instance
-    /// text only. Severity and strict floor come from the local code.
+    /// text only. Severity comes from the local code and the strict floor from
+    /// the shared taxonomy.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
