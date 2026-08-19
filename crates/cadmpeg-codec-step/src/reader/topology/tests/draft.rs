@@ -335,84 +335,36 @@ fn one_document_warning_counts_every_admitted_pcurve_relation() {
     assert!(!message.contains("more"), "{message}");
 }
 
-/// The warning names the first `PCURVE_UNPROVED_NOTE_EXEMPLARS` relations in
-/// decode order and gives the number of relations it does not name.
+/// The document counts an admitted relation only when the body that holds it
+/// reaches the document. The witness adds a second face with two
+/// `FACE_OUTER_BOUND` loops to the shell of the two-admission fixture. The
+/// first face admits both relations, then the second face rejects the whole
+/// topology root, so the discarded relations report nothing.
 #[test]
-fn admission_warning_names_the_bounded_exemplars_and_counts_the_rest() {
-    let mut admissions = PcurveAdmissions::default();
-    let extra = 4;
-    for index in 0..(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra) as u64 {
-        admissions.record(index, 100 + index, 200 + index);
-    }
-    let note = admissions
-        .note()
-        .expect("recorded admissions give a warning");
-    let message = note.message.as_str();
-
-    assert!(
-        message.contains(&format!(
-            "admits {} pcurve relation(s)",
-            PCURVE_UNPROVED_NOTE_EXEMPLARS + extra
-        )),
-        "{message}"
-    );
-    for index in 0..PCURVE_UNPROVED_NOTE_EXEMPLARS as u64 {
-        assert!(
-            message.contains(&format!(
-                "curve #{index} on surface #{} at coedge use #{}",
-                100 + index,
-                200 + index
-            )),
-            "{message}"
+fn a_discarded_topology_root_counts_no_admitted_relation() {
+    let source = String::from_utf8(include_bytes!("data/tp12_two_admissions.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#55=OPEN_SHELL('',(#54));",
+            "#58=FACE_OUTER_BOUND('',#52,.T.);\n#59=FACE_OUTER_BOUND('',#52,.T.);\n#60=ADVANCED_FACE('',(#58,#59),#11,.T.);\n#55=OPEN_SHELL('',(#54,#60));",
         );
-    }
-    for index in
-        PCURVE_UNPROVED_NOTE_EXEMPLARS as u64..(PCURVE_UNPROVED_NOTE_EXEMPLARS + extra) as u64
-    {
-        assert!(
-            !message.contains(&format!("curve #{index} on surface")),
-            "{message}"
-        );
-    }
-    assert!(
-        message.ends_with(&format!(", and {extra} more")),
-        "{message}"
-    );
-}
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode discarded-root witness");
 
-/// A count at the exemplar bound names every relation and counts no remainder.
-#[test]
-fn admission_warning_at_the_exemplar_bound_names_every_relation() {
-    let mut admissions = PcurveAdmissions::default();
-    for index in 0..PCURVE_UNPROVED_NOTE_EXEMPLARS as u64 {
-        admissions.record(index, 100 + index, 200 + index);
-    }
-    let note = admissions
-        .note()
-        .expect("recorded admissions give a warning");
-    let message = note.message.as_str();
-
-    assert!(
-        message.contains(&format!(
-            "admits {PCURVE_UNPROVED_NOTE_EXEMPLARS} pcurve relation(s)"
-        )),
-        "{message}"
-    );
-    assert!(
-        message.ends_with(&format!(
-            "curve #{} on surface #{} at coedge use #{}",
-            PCURVE_UNPROVED_NOTE_EXEMPLARS - 1,
-            100 + PCURVE_UNPROVED_NOTE_EXEMPLARS - 1,
-            200 + PCURVE_UNPROVED_NOTE_EXEMPLARS - 1
-        )),
-        "{message}"
-    );
-}
-
-/// A document with no admitted relation reports no admission warning.
-#[test]
-fn no_admitted_relation_reports_no_admission_warning() {
-    assert!(PcurveAdmissions::default().note().is_none());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::FaceMultipleOuterBounds.kind() && loss.message.contains("#60")
+    }));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyRootRejected.kind()
+            && loss.message.contains("face with multiple outer bounds")
+    }));
+    assert!(decoded.ir().model.coedges.is_empty());
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PcurveGlobalFidelityUnproved.kind()));
 }
 
 #[test]
