@@ -3,34 +3,6 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
-
-use std::fmt::Write as _;
-use std::io::Cursor;
-
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
-
-use crate::ids::StepIdentity;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
 
 #[test]
 fn parser_accepts_external_instance_references_in_edition_three() {
@@ -47,6 +19,29 @@ fn parser_accepts_external_instance_references_in_edition_three() {
     assert_eq!(
         exchange.records[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(100)]
+    );
+}
+
+#[test]
+fn standalone_relative_reference_has_no_implicit_transport_base() {
+    let source = include_bytes!("data/er01_standalone_relative_uri.p21");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("standalone URI witness");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.references[0].uri, "parts/child.p21#target");
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(10),
+            crate::parse::Value::Reference(2),
+        ]
+    );
+    assert_eq!(
+        exchange.records[&4].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(3),
+            crate::parse::Value::String(b"parts/document.p21#target".to_vec()),
+        ]
     );
 }
 
@@ -225,5 +220,37 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
             crate::parse::Value::Reference(1),
             crate::parse::Value::Reference(3),
         ]
+    );
+}
+
+#[test]
+fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<named>='anchored line';<number>=2.;ENDSEC;REFERENCE;@10=<#named>;@11=<#number>;@12=<#missing>;ENDSEC;DATA;#1=LINE('literal',#6,#7);#2=LINE(<named>,#6,#7);#3=LINE(@10,#6,#7);#4=LINE(@11,#6,#7);#5=LINE(@12,#6,#7);#6=KNOWN();#7=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("resolve name branches");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].kind,
+        crate::parse::ParseDiagnosticKind::OmittedEntityName
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters[0],
+        crate::parse::Value::String(b"literal".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&2].partials[0].parameters[0],
+        crate::parse::Value::String(b"anchored line".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&3].partials[0].parameters[0],
+        crate::parse::Value::String(b"anchored line".to_vec())
+    );
+    assert_eq!(
+        exchange.records[&4].partials[0].parameters[0],
+        crate::parse::Value::String(Vec::new())
+    );
+    assert_eq!(
+        exchange.records[&5].partials[0].parameters[0],
+        crate::parse::Value::Omitted
     );
 }

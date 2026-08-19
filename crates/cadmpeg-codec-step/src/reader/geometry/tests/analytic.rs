@@ -3,35 +3,45 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id,
 };
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
 use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+
+const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
+const EPS_APLL_POINT: f64 = 1.0e-12;
+const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
+
+fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
+    let CurveGeometry::Polyline {
+        points,
+        parameters,
+        chordal_deflection,
+    } = &curve.geometry
+    else {
+        panic!("expected tessellated curve to transfer as a polyline");
+    };
+    assert!(parameters.is_none());
+    assert!(chordal_deflection.abs() < EPS_TESSELLATED_CURVE_POINT);
+    assert_eq!(points.len(), expected.len());
+    for (point, &(x, y, z)) in points.iter().zip(expected) {
+        assert!((point.x - x).abs() < EPS_TESSELLATED_CURVE_POINT);
+        assert!((point.y - y).abs() < EPS_TESSELLATED_CURVE_POINT);
+        assert!((point.z - z).abs() < EPS_TESSELLATED_CURVE_POINT);
+    }
+}
 
 #[test]
 pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
@@ -194,7 +204,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
 }
 
 #[test]
-fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
+fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -207,7 +217,7 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode normalized linear-extrusion pcurve");
+        .expect("decode source-parameterized linear-extrusion pcurve");
 
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert_eq!(
@@ -227,37 +237,71 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter())
         .next()
-        .expect("calibrated linear-extrusion pcurve use")
+        .expect("source-parameterized linear-extrusion pcurve use")
         .pcurve
         .clone();
-    assert!(used_id.as_str().starts_with("step:data:pcurve#56-use-"));
+    assert_eq!(used_id.as_str(), "step:data:pcurve#56");
     let used = decoded
         .ir()
         .model
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == used_id)
-        .expect("calibrated linear-extrusion pcurve");
+        .expect("source-parameterized linear-extrusion pcurve");
     assert!(matches!(
         &used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Transformed {
-            basis,
-            transform,
-        } if matches!(
-            basis.as_ref(),
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                control_points,
-                ..
-        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
-        ) && (transform.rows[0][0] - 10.0).abs() < 1.0e-12
-            && transform.rows[1][1].abs() < 1.0e-12
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            ..
+        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
     ));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/tp03_directrix_parameter_scales.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode directrix parameter scale witness");
+
+    let line_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#19")
+        .expect("line-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &line_pcurve.geometry else {
+        panic!("line-directrix witness did not retain a line pcurve");
+    };
+    assert!((direction.u - 10.0).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!(direction.v.abs() < EPS_TP03_PARAMETER_SCALE);
+
+    let revolution_pcurve = decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#29")
+        .expect("circle-directrix pcurve");
+    let PcurveGeometry::Line { direction, .. } = &revolution_pcurve.geometry else {
+        panic!("circle-directrix witness did not retain a line pcurve");
+    };
+    let degree_to_radian = std::f64::consts::PI / 180.0;
+    assert!((direction.u - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+    assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
+
+    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -297,6 +341,40 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
             .count(),
         1
     );
+}
+
+#[test]
+fn swept_surface_chart_ignores_pcurve_population() {
+    let check = |source: &[u8], expected_pcurve_u: f64| {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode swept-surface chart witness");
+        let surface_id = SurfaceId("step:data:surface#9".into());
+        let index = ModelIndex::new(decoded.ir());
+        assert_eq!(
+            model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
+            Some(Point3::new(5.0, 0.0, 0.0))
+        );
+        let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+            .expect("swept-surface chart partials");
+        assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+        let pcurve = decoded
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
+            .expect("swept-surface pcurve");
+        assert!(matches!(
+            pcurve.geometry,
+            PcurveGeometry::Line { direction, .. }
+                if direction.u == expected_pcurve_u && direction.v == 0.0
+        ));
+    };
+
+    check(include_bytes!("data/pc03_chart_valid.p21"), 10.0);
+    check(include_bytes!("data/pc03_chart_population.p21"), 100.0);
 }
 
 #[test]
@@ -406,6 +484,112 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
                 && end.abs() < 1.0e-12
         )
     }));
+}
+
+#[test]
+fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("data/pc07_ellipse_canonicalization.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode ellipse canonicalization witness");
+
+    let reversed = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#9")
+        .expect("reversed ellipse");
+    assert!(matches!(
+        reversed.geometry,
+        CurveGeometry::Ellipse {
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } if major_direction == Vector3::new(0.0, 1.0, 0.0)
+            && major_radius == 6.0
+            && minor_radius == 2.0
+    ));
+
+    let ordered = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#10")
+        .expect("ordered ellipse");
+    assert!(matches!(
+        ordered.geometry,
+        CurveGeometry::Ellipse {
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } if major_direction == Vector3::new(1.0, 0.0, 0.0)
+            && major_radius == 6.0
+            && minor_radius == 2.0
+    ));
+
+    for (curve_id, expected_range) in [
+        ("#13", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#14", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
+    ] {
+        let construction_id = ProceduralCurveId(StepIdentity::construction(
+            "trimmed_curve",
+            curve_id.trim_start_matches('#'),
+        ));
+        let construction = decoded
+            .ir()
+            .model
+            .procedural_curves
+            .iter()
+            .find(|curve| curve.id == construction_id)
+            .expect("trimmed ellipse construction");
+        assert!(matches!(
+            &construction.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range,
+                ..
+            } if parameter_range
+                .iter()
+                .zip(expected_range.iter())
+                .all(|(actual, expected)| (*actual - *expected).abs() < 1.0e-12)
+        ));
+    }
+
+    let numeric_start = model_curve_point_by_id(
+        &ModelIndex::new(decoded.ir()),
+        &CurveId("step:data:curve#13".into()),
+        0.0,
+    )
+    .expect("numeric trim start");
+    assert!((numeric_start.x - 2.0).abs() < 1.0e-12);
+    assert!(numeric_start.y.abs() < 1.0e-12);
+    let cartesian_end = model_curve_point_by_id(
+        &ModelIndex::new(decoded.ir()),
+        &CurveId("step:data:curve#14".into()),
+        std::f64::consts::FRAC_PI_2,
+    )
+    .expect("Cartesian trim end");
+    assert!(cartesian_end.x.abs() < 1.0e-12);
+    assert!((cartesian_end.y - 6.0).abs() < 1.0e-12);
+
+    let index = ModelIndex::new(decoded.ir());
+    let replica_start = model_curve_point_by_id(
+        &index,
+        &CurveId("step:data:curve#17".into()),
+        -std::f64::consts::FRAC_PI_2,
+    )
+    .expect("replica start");
+    assert!((replica_start.x - 12.0).abs() < 1.0e-12);
+    assert!(replica_start.y.abs() < 1.0e-12);
+
+    assert!(decoded.report().losses.is_empty());
 }
 
 #[test]
@@ -647,4 +831,213 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
+    let decoded = decode_inline(
+        "#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#21=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#22=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20,#21)) REPRESENTATION_CONTEXT('model','3D'));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(0.,0.,1.));
+#12=DIRECTION('',(1.,0.,0.));
+#13=AXIS2_PLACEMENT_3D('',#10,#11,#12);
+#14=PLANE('',#13);
+#1=APLL_POINT('leader',(1.,2.,3.),.NONE.);
+#2=APLL_POINT_WITH_SURFACE('surface',(4.,5.,6.),.POSITIVE_ARROWHEAD.,#14);
+#3=(APLL_POINT(.NONE.) CARTESIAN_POINT((7.,8.,9.)) GEOMETRIC_REPRESENTATION_ITEM() POINT() REPRESENTATION_ITEM('complex leader'));
+#4=APLL_POINT((10.,11.,12.),.NONE.);
+#5=ANNOTATION_TO_MODEL_LEADER_LINE('model',(#1,#2,#3));
+#6=ANNOTATION_TO_ANNOTATION_LEADER_LINE('annotation',(#4));
+#7=AUXILIARY_LEADER_LINE('auxiliary',(#1,#2),#5);",
+    );
+
+    assert_eq!(decoded.ir().model.points.len(), 4);
+    for (id, expected) in [
+        ("#1", (1.0, 2.0, 3.0)),
+        ("#2", (4.0, 5.0, 6.0)),
+        ("#3", (7.0, 8.0, 9.0)),
+        ("#4", (10.0, 11.0, 12.0)),
+    ] {
+        let point = decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| {
+                point
+                    .source_object
+                    .as_ref()
+                    .is_some_and(|source| source.object_id == id)
+            })
+            .unwrap_or_else(|| panic!("missing APLL point {id}"));
+        assert!((point.position.x - expected.0).abs() < EPS_APLL_POINT);
+        assert!((point.position.y - expected.1).abs() < EPS_APLL_POINT);
+        assert!((point.position.z - expected.2).abs() < EPS_APLL_POINT);
+    }
+    let named_point = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id == "#1")
+        })
+        .expect("named APLL point");
+    assert_eq!(
+        named_point
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("leader")
+    );
+    let complex_point = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| {
+            point
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.object_id == "#3")
+        })
+        .expect("complex APLL point");
+    assert_eq!(
+        complex_point
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("complex leader")
+    );
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    for (id, kind) in [
+        (1, "apll_point"),
+        (2, "apll_point_with_surface"),
+        (3, "apll_point"),
+        (4, "apll_point"),
+        (5, "annotation_to_model_leader_line"),
+        (6, "annotation_to_annotation_leader_line"),
+        (7, "auxiliary_leader_line"),
+    ] {
+        assert!(
+            unknowns.iter().any(|record| {
+                (id == 3 && record.id.0.ends_with("#3") && record.id.0.contains(kind))
+                    || (id != 3 && record.id.0 == format!("step:data:{kind}#{id}"))
+            }),
+            "missing retained source record #{id}"
+        );
+    }
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn invalid_apll_leader_point_stays_source_native() {
+    let decoded = decode_inline(
+        "#1=APLL_POINT('invalid',(1.,2.),.NONE.);
+#2=ANNOTATION_TO_MODEL_LEADER_LINE('invalid',(#1));",
+    );
+
+    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:apll_point#1"));
+}
+
+#[test]
+fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
+    let decoded = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=COORDINATES_LIST('',3,((1.,0.,0.),(2.,0.,0.),(2.,1.,0.),(3.,1.,0.)));
+#4=TESSELLATED_CURVE_SET('display curve',#3,((1,2,3),(3,4)));
+#5=(REPRESENTATION_ITEM('complex curve') TESSELLATED_CURVE_SET(#3,((4,1))));
+#6=REPRESENTATION('display',(#4,#5),#2);",
+    );
+
+    let first = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#4")
+        .expect("first tessellated line strip");
+    let second = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#4-strip-1")
+        .expect("second tessellated line strip");
+    let complex = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#5")
+        .expect("complex tessellated line strip");
+    assert_tessellated_curve_polyline(
+        first,
+        &[(10.0, 0.0, 0.0), (20.0, 0.0, 0.0), (20.0, 10.0, 0.0)],
+    );
+    assert_tessellated_curve_polyline(second, &[(20.0, 10.0, 0.0), (30.0, 10.0, 0.0)]);
+    assert_tessellated_curve_polyline(complex, &[(30.0, 10.0, 0.0), (10.0, 0.0, 0.0)]);
+    assert_eq!(
+        first
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#4")
+    );
+    assert_eq!(
+        first
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("display curve")
+    );
+    assert!(!decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            record.id.0.ends_with("#3")
+                || record.id.0.ends_with("#4")
+                || record.id.0.ends_with("#5")
+        }));
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
+    let decoded = decode_inline(
+        "#1=COORDINATES_LIST('',3,((1.,0.,0.),(2.,0.,0.)));
+#2=TESSELLATED_CURVE_SET(#1,((0,1)));",
+    );
+
+    assert!(!decoded.ir().model.curves.iter().any(|curve| {
+        curve
+            .source_object
+            .as_ref()
+            .is_some_and(|source| source.object_id == "#2")
+    }));
+    assert!(decoded
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0.ends_with("#2")));
 }

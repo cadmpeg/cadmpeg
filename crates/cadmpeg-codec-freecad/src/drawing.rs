@@ -107,6 +107,7 @@ pub(crate) fn transfer_neutral(
             kind: classify(&record.kind),
             runtime_type: record.kind.clone(),
             order: order as u32,
+            visible: None,
             relationships: record
                 .relationships
                 .iter()

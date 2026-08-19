@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
-    DimensionKind, GeometricToleranceKind, PmiDefinition, PmiQuantity, PmiTarget,
+    DatumTargetForm, DimensionKind, GeometricToleranceKind, PmiDefinition, PmiQuantity, PmiTarget,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -109,7 +109,18 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
 struct ColorSpec<'a> {
     color: cadmpeg_ir::topology::Color,
     appearance: Option<&'a Appearance>,
-    binding_id: Option<&'a str>,
+    hidden: bool,
+}
+
+fn equivalent_style_spec(left: ColorSpec<'_>, right: ColorSpec<'_>) -> bool {
+    left.color == right.color
+        && left.hidden == right.hidden
+        && left
+            .appearance
+            .and_then(|appearance| appearance.name.as_deref())
+            == right
+                .appearance
+                .and_then(|appearance| appearance.name.as_deref())
 }
 
 struct LoopSegment {
@@ -176,6 +187,10 @@ pub(crate) struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
+    conflicted_appearance_bindings: BTreeSet<String>,
+    appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<String>>,
+    hidden_appearance_items: Vec<Ref>,
+    hidden_presentation_layer_items: Vec<Ref>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
     unwritten_pcurve_carriers: BTreeSet<String>,
@@ -184,6 +199,7 @@ pub(crate) struct Builder<'a> {
     empty_wire_regions: BTreeSet<String>,
     missing_wire_shells: BTreeSet<(String, String)>,
     hidden_bodies_without_items: BTreeSet<String>,
+    hidden_presentation_layers_without_items: BTreeSet<String>,
     dangling_appearance_bindings: BTreeSet<(String, String)>,
     colorless_appearance_bindings: BTreeSet<(String, String)>,
     written_pmi: usize,
@@ -327,6 +343,10 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
+            conflicted_appearance_bindings: BTreeSet::new(),
+            appearance_binding_target_conflicts: BTreeMap::new(),
+            hidden_appearance_items: Vec::new(),
+            hidden_presentation_layer_items: Vec::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
             unwritten_pcurve_carriers: BTreeSet::new(),
@@ -335,6 +355,7 @@ impl<'a> Builder<'a> {
             empty_wire_regions: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
             hidden_bodies_without_items: BTreeSet::new(),
+            hidden_presentation_layers_without_items: BTreeSet::new(),
             dangling_appearance_bindings: BTreeSet::new(),
             colorless_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
@@ -427,8 +448,10 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         self.emit_presentation(context);
+        self.emit_appearance_visibility();
         self.emit_pmi(context);
         self.emit_layers();
+        self.emit_layer_visibility();
         self.note_unrepresented();
     }
 
@@ -440,8 +463,17 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|appearance| (appearance.id.as_str(), appearance))
             .collect();
-        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
-        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let hidden_binding_ids = ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.visible == Some(false))
+            .map(|binding| binding.id.as_str())
+            .collect::<BTreeSet<_>>();
+        let mut body_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
+        let mut face_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
+        let mut body_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut face_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -458,14 +490,22 @@ impl<'a> Builder<'a> {
             let spec = ColorSpec {
                 color,
                 appearance: Some(appearance),
-                binding_id: Some(&binding.id),
+                hidden: hidden_binding_ids.contains(binding.id.as_str()),
             };
             match &binding.target {
                 AppearanceTarget::Body(id) => {
-                    body_colors.entry(id.as_str()).or_insert(spec);
+                    body_candidates.entry(id.as_str()).or_default().push(spec);
+                    body_binding_ids
+                        .entry(id.as_str())
+                        .or_default()
+                        .push(binding.id.as_str());
                 }
                 AppearanceTarget::Face(id) => {
-                    face_colors.entry(id.as_str()).or_insert(spec);
+                    face_candidates.entry(id.as_str()).or_default().push(spec);
+                    face_binding_ids
+                        .entry(id.as_str())
+                        .or_default()
+                        .push(binding.id.as_str());
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -480,22 +520,81 @@ impl<'a> Builder<'a> {
             .extend(dangling_appearance_bindings);
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
+
+        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut conflicting_body_targets = BTreeSet::new();
+        let mut conflicting_face_targets = BTreeSet::new();
+        let mut conflicted_binding_ids = BTreeSet::new();
+        let mut target_conflicts = BTreeMap::new();
+        for (target, candidates) in body_candidates {
+            let Some(first) = candidates.first().copied() else {
+                continue;
+            };
+            if candidates
+                .iter()
+                .copied()
+                .any(|candidate| !equivalent_style_spec(first, candidate))
+            {
+                conflicting_body_targets.insert(target.to_string());
+                let ids = body_binding_ids
+                    .get(target)
+                    .expect("body appearance candidate has binding ids")
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect::<BTreeSet<_>>();
+                conflicted_binding_ids.extend(ids.iter().cloned());
+                target_conflicts.insert(("body".into(), target.into()), ids);
+            } else {
+                body_colors.insert(target, first);
+            }
+        }
+        for (target, candidates) in face_candidates {
+            let Some(first) = candidates.first().copied() else {
+                continue;
+            };
+            if candidates
+                .iter()
+                .copied()
+                .any(|candidate| !equivalent_style_spec(first, candidate))
+            {
+                conflicting_face_targets.insert(target.to_string());
+                let ids = face_binding_ids
+                    .get(target)
+                    .expect("face appearance candidate has binding ids")
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect::<BTreeSet<_>>();
+                conflicted_binding_ids.extend(ids.iter().cloned());
+                target_conflicts.insert(("face".into(), target.into()), ids);
+            } else {
+                face_colors.insert(target, first);
+            }
+        }
+        self.conflicted_appearance_bindings
+            .extend(conflicted_binding_ids);
+        self.appearance_binding_target_conflicts
+            .extend(target_conflicts);
         for body in &ir.model.bodies {
-            if let Some(color) = body.color {
-                body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
-                    color,
-                    appearance: None,
-                    binding_id: None,
-                });
+            if !conflicting_body_targets.contains(body.id.as_str()) {
+                if let Some(color) = body.color {
+                    body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
+                        color,
+                        appearance: None,
+                        hidden: false,
+                    });
+                }
             }
         }
         for face in &ir.model.faces {
-            if let Some(color) = face.color {
-                face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
-                    color,
-                    appearance: None,
-                    binding_id: None,
-                });
+            if !conflicting_face_targets.contains(face.id.as_str()) {
+                if let Some(color) = face.color {
+                    face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
+                        color,
+                        appearance: None,
+                        hidden: false,
+                    });
+                }
             }
         }
 
@@ -525,6 +624,9 @@ impl<'a> Builder<'a> {
         faces.sort_by(|a, b| a.0.cmp(&b.0));
         let mut styled_bodies: BTreeSet<&str> = BTreeSet::new();
         for (face_id, face) in &faces {
+            if conflicting_face_targets.contains(face_id) {
+                continue;
+            }
             let own = face_colors.get(face_id.as_str()).copied();
             let body = face_body.get(face_id.as_str()).copied();
             let inherited = body.and_then(|b| body_colors.get(b).copied());
@@ -538,23 +640,29 @@ impl<'a> Builder<'a> {
                     styled_bodies.insert(b);
                 }
             }
-            if let Some(binding_id) = spec.binding_id {
-                self.written_appearance_bindings
-                    .insert(binding_id.to_string());
+            if own.is_some() {
+                if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                }
+            } else if let Some(body_id) = body {
+                if let Some(binding_ids) = body_binding_ids.get(body_id) {
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                }
             }
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
             let style = self.surface_style(spec.color, name, &mut style_refs);
-            styled.push(
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
-            );
+            styled.push(self.emit_styled_item(style, *face, spec.hidden));
         }
         let mut direct_unstyled = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
-            if self.written_appearance_bindings.contains(&binding.id) {
+            if self.written_appearance_bindings.contains(&binding.id)
+                || self.conflicted_appearance_bindings.contains(&binding.id)
+            {
                 continue;
             }
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
@@ -603,10 +711,11 @@ impl<'a> Builder<'a> {
                 _ => unreachable!(),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            styled.push(
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
-            );
+            styled.push(self.emit_styled_item(
+                style,
+                target,
+                hidden_binding_ids.contains(binding.id.as_str()),
+            ));
         }
         for (body_id, spec) in &body_colors {
             if styled_bodies.contains(body_id) {
@@ -623,9 +732,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_id) = spec.binding_id {
+            if let Some(binding_ids) = body_binding_ids.get(*body_id) {
                 self.written_appearance_bindings
-                    .insert(binding_id.to_string());
+                    .extend(binding_ids.iter().map(|id| (*id).to_string()));
             }
             let name = spec
                 .appearance
@@ -640,10 +749,11 @@ impl<'a> Builder<'a> {
             } else {
                 self.surface_style(spec.color, name, &mut style_refs)
             };
-            styled.extend(targets.into_iter().map(|target| {
-                self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}"))
-            }));
+            styled.extend(
+                targets
+                    .into_iter()
+                    .map(|target| self.emit_styled_item(style, target, spec.hidden)),
+            );
             styled_bodies.insert(body_id);
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -673,6 +783,16 @@ impl<'a> Builder<'a> {
         );
     }
 
+    fn emit_styled_item(&mut self, style: Ref, target: Ref, hidden: bool) -> Ref {
+        let item = self
+            .emitter
+            .emit("STYLED_ITEM", &format!("'color',({style}),{target}"));
+        if hidden {
+            self.hidden_appearance_items.push(item);
+        }
+        item
+    }
+
     fn surface_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
@@ -685,7 +805,7 @@ impl<'a> Builder<'a> {
             real(f64::from(color.g)),
             real(f64::from(color.b))
         );
-        let key = format!("surface:{name}:{rgb}");
+        let key = format!("surface:{name}:{rgb}:{}", color.a.to_bits());
         if let Some(style) = cache.get(&key) {
             return *style;
         }
@@ -701,9 +821,20 @@ impl<'a> Builder<'a> {
         let style_fill = self
             .emitter
             .emit("SURFACE_STYLE_FILL_AREA", &fill.to_string());
+        let mut styles = vec![style_fill];
+        if color.a < 1.0 {
+            let transparency = self
+                .emitter
+                .emit("SURFACE_STYLE_TRANSPARENT", &real(1.0 - f64::from(color.a)));
+            let rendering = self.emitter.emit(
+                "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
+                &format!(".CONSTANT_SHADING.,{colour},{}", refs(&[transparency])),
+            );
+            styles.push(rendering);
+        }
         let side = self
             .emitter
-            .emit("SURFACE_SIDE_STYLE", &format!("'',({style_fill})"));
+            .emit("SURFACE_SIDE_STYLE", &format!("'',{}", refs(&styles)));
         let usage = self
             .emitter
             .emit("SURFACE_STYLE_USAGE", &format!(".BOTH.,{side}"));
@@ -872,8 +1003,13 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !assigned.is_empty() {
-                self.emitter.emit(
+            if assigned.is_empty() {
+                if layer.visible == Some(false) {
+                    self.hidden_presentation_layers_without_items
+                        .insert(layer.id.0);
+                }
+            } else {
+                let assignment = self.emitter.emit(
                     "PRESENTATION_LAYER_ASSIGNMENT",
                     &format!(
                         "{},{},{}",
@@ -882,6 +1018,9 @@ impl<'a> Builder<'a> {
                         refs(&assigned)
                     ),
                 );
+                if layer.visible == Some(false) {
+                    self.hidden_presentation_layer_items.push(assignment);
+                }
             }
         }
     }
@@ -1485,6 +1624,60 @@ impl<'a> Builder<'a> {
             .extend(hidden_without_items);
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
+        }
+    }
+
+    fn emit_appearance_visibility(&mut self) {
+        let hidden_bindings = self
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.visible == Some(false))
+            .count();
+        if hidden_bindings == 0 {
+            return;
+        }
+        if !self.schema.supports_visibility() {
+            self.loss(
+                StepLossCode::HiddenAppearanceVisibilityUnsupported,
+                format!(
+                    "{hidden_bindings} hidden appearance binding visibility assignment(s) are unsupported by {}",
+                    self.schema.file_schema()
+                ),
+            );
+            return;
+        }
+        if !self.hidden_appearance_items.is_empty() {
+            self.emitter
+                .emit("INVISIBILITY", &refs(&self.hidden_appearance_items));
+        }
+    }
+
+    fn emit_layer_visibility(&mut self) {
+        let hidden_layers = self
+            .ir
+            .model
+            .presentation_layers
+            .iter()
+            .filter(|layer| layer.visible == Some(false))
+            .count();
+        if hidden_layers == 0 {
+            return;
+        }
+        if !self.schema.supports_visibility() {
+            self.loss(
+                StepLossCode::HiddenPresentationLayerVisibilityUnsupported,
+                format!(
+                    "{hidden_layers} hidden presentation layer visibility assignment(s) are unsupported by {}",
+                    self.schema.file_schema()
+                ),
+            );
+            return;
+        }
+        if !self.hidden_presentation_layer_items.is_empty() {
+            self.emitter
+                .emit("INVISIBILITY", &refs(&self.hidden_presentation_layer_items));
         }
     }
 
@@ -2567,6 +2760,42 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn pmi_target_ref(&self, target: &PmiTarget) -> Option<Ref> {
+        match target {
+            PmiTarget::Body { body } => self
+                .body_step_refs
+                .get(body.as_str())
+                .copied()
+                .or_else(|| self.body_shape_refs.get(body.as_str()).copied()),
+            PmiTarget::Face { face } => self.face_step_refs.get(face.as_str()).copied(),
+            PmiTarget::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+            PmiTarget::Vertex { vertex } => self.vertex_refs.get(vertex.as_str()).copied(),
+            PmiTarget::Point { point } => self.point_refs.get(point.as_str()).copied(),
+            PmiTarget::Curve { curve } => self.curve_refs.get(curve.as_str()).copied(),
+            PmiTarget::Product { .. }
+            | PmiTarget::Occurrence { .. }
+            | PmiTarget::ShapeAspect { .. } => None,
+        }
+    }
+
+    fn emit_datum_target(
+        &mut self,
+        pds: Ref,
+        annotation: &cadmpeg_ir::PmiAnnotation,
+        form: &DatumTargetForm,
+        identification: &str,
+    ) -> Ref {
+        self.emitter.emit(
+            "DATUM_TARGET",
+            &format!(
+                "{},{},{pds},.F.,{}",
+                string(annotation.name.as_deref().unwrap_or("")),
+                string(datum_target_form_text(form)),
+                string(identification)
+            ),
+        )
+    }
+
     fn emit_pmi(&mut self, context: Ref) {
         if self.ir.model.pmi.is_empty() || !self.schema.supports_semantic_pmi() {
             return;
@@ -2577,6 +2806,26 @@ impl<'a> Builder<'a> {
         };
         let mut annotation_refs = HashMap::new();
         let mut aspects = HashMap::<String, Ref>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget {
+                form,
+                identification,
+                ..
+            } = &annotation.definition
+            else {
+                continue;
+            };
+            for target in &annotation.targets {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    continue;
+                };
+                if aspects.contains_key(source_id) {
+                    continue;
+                }
+                let target = self.emit_datum_target(pds, annotation, form, identification);
+                aspects.insert(source_id.clone(), target);
+            }
+        }
         for annotation in &annotations {
             for target in &annotation.targets {
                 let PmiTarget::ShapeAspect { source_id } = target else {
@@ -2590,23 +2839,141 @@ impl<'a> Builder<'a> {
                 });
             }
         }
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
+                continue;
+            };
+            for target in basis {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    continue;
+                };
+                aspects.entry(source_id.clone()).or_insert_with(|| {
+                    self.emitter.emit(
+                        "SHAPE_ASPECT",
+                        &format!("{},'',{pds},.T.", string(source_id)),
+                    )
+                });
+            }
+        }
+        let mut datum_target_refs = HashMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget {
+                form,
+                identification,
+                ..
+            } = &annotation.definition
+            else {
+                continue;
+            };
+            let target_ref = annotation.targets.iter().find_map(|target| {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    return None;
+                };
+                aspects.get(source_id).copied()
+            });
+            let target_ref = target_ref
+                .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
+            datum_target_refs.insert(annotation.id.clone(), target_ref);
+        }
+        let mut datum_target_basis_exact = HashMap::<cadmpeg_ir::ids::PmiId, bool>::new();
+        for annotation in &annotations {
+            let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
+                continue;
+            };
+            let Some(&datum_target) = datum_target_refs.get(&annotation.id) else {
+                datum_target_basis_exact.insert(annotation.id.clone(), false);
+                continue;
+            };
+            let mut exact = true;
+            for target in basis {
+                let PmiTarget::ShapeAspect { source_id } = target else {
+                    exact = false;
+                    continue;
+                };
+                let Some(basis_ref) = aspects.get(source_id).copied() else {
+                    exact = false;
+                    continue;
+                };
+                self.emitter.emit(
+                    "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP",
+                    &format!("'','',{basis_ref},{datum_target}"),
+                );
+            }
+            datum_target_basis_exact.insert(annotation.id.clone(), exact);
+        }
         let fallback_aspect = self
             .emitter
             .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."));
         let target_ref = |annotation: &cadmpeg_ir::PmiAnnotation| {
-            annotation.targets.iter().find_map(|target| {
-                if let PmiTarget::ShapeAspect { source_id } = target {
-                    aspects.get(source_id).copied()
-                } else {
-                    None
-                }
-            })
-        };
-        let targets_exact = |annotation: &cadmpeg_ir::PmiAnnotation| {
             annotation
                 .targets
                 .iter()
-                .all(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+                .find_map(|target| {
+                    if let PmiTarget::ShapeAspect { source_id } = target {
+                        aspects.get(source_id).copied()
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| datum_target_refs.get(&annotation.id).copied())
+        };
+        let mut target_items = Vec::new();
+        for annotation in &annotations {
+            if matches!(&annotation.definition, PmiDefinition::Presentation { .. }) {
+                continue;
+            }
+            for target in &annotation.targets {
+                if let Some(target_ref) = self.pmi_target_ref(target) {
+                    if !target_items.contains(&target_ref) {
+                        target_items.push(target_ref);
+                    }
+                }
+            }
+        }
+        let target_representation = (!target_items.is_empty()).then(|| {
+            self.emitter.emit(
+                "SHAPE_REPRESENTATION",
+                &format!("'PMI geometric targets',{},{context}", refs(&target_items)),
+            )
+        });
+        let mut targets_exact_by_annotation = HashMap::new();
+        for annotation in &annotations {
+            let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
+            let definition = target_ref(annotation).unwrap_or(fallback_aspect);
+            let mut exact = true;
+            for target in &annotation.targets {
+                let Some(identified_item) = self.pmi_target_ref(target) else {
+                    if !matches!(target, PmiTarget::ShapeAspect { .. }) {
+                        exact = false;
+                    }
+                    continue;
+                };
+                let Some(used_representation) = target_representation else {
+                    exact = false;
+                    continue;
+                };
+                if semantic {
+                    self.emitter.emit(
+                        "GEOMETRIC_ITEM_SPECIFIC_USAGE",
+                        &format!("'','',{definition},{used_representation},{identified_item}"),
+                    );
+                } else {
+                    exact = false;
+                }
+            }
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
+                exact &= datum_target_basis_exact
+                    .get(&annotation.id)
+                    .copied()
+                    .unwrap_or(false);
+            }
+            targets_exact_by_annotation.insert(annotation.id.clone(), exact);
+        }
+        let targets_exact = |annotation: &cadmpeg_ir::PmiAnnotation| {
+            targets_exact_by_annotation
+                .get(&annotation.id)
+                .copied()
+                .unwrap_or(false)
         };
 
         for annotation in &annotations {
@@ -2620,6 +2987,11 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), datum);
+                self.written_pmi += usize::from(targets_exact(annotation));
+            }
+        }
+        for annotation in &annotations {
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
                 self.written_pmi += usize::from(targets_exact(annotation));
             }
         }
@@ -2868,11 +3240,13 @@ impl<'a> Builder<'a> {
                 }
                 PmiDefinition::Datum { .. }
                 | PmiDefinition::DatumSystem { .. }
+                | PmiDefinition::DatumTarget { .. }
                 | PmiDefinition::Presentation { .. } => {}
             }
         }
         let mut presentation_items = Vec::new();
         let mut presentation_semantics = Vec::new();
+        let mut hidden_presentation_items = Vec::new();
         for annotation in &annotations {
             let PmiDefinition::Presentation {
                 text,
@@ -2923,6 +3297,9 @@ impl<'a> Builder<'a> {
                 ),
             );
             presentation_items.push(occurrence);
+            if annotation.visible == Some(false) {
+                hidden_presentation_items.push(occurrence);
+            }
             presentation_semantics.push((occurrence, semantic_refs));
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
@@ -2942,6 +3319,21 @@ impl<'a> Builder<'a> {
                         &format!("'','',{semantic},{model},{occurrence}"),
                     );
                 }
+            }
+        }
+        if !hidden_presentation_items.is_empty() {
+            if self.schema.supports_visibility() {
+                self.emitter
+                    .emit("INVISIBILITY", &refs(&hidden_presentation_items));
+            } else {
+                self.loss(
+                    StepLossCode::HiddenPmiVisibilityUnsupported,
+                    format!(
+                        "{} hidden PMI annotation visibility assignment(s) are unsupported by {}",
+                        hidden_presentation_items.len(),
+                        self.schema.file_schema()
+                    ),
+                );
             }
         }
         for (annotation, reference) in annotation_refs {
@@ -3449,6 +3841,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.hidden_presentation_layers_without_items.is_empty() {
+            let layers = self
+                .hidden_presentation_layers_without_items
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::HiddenPresentationLayerOmitted,
+                format!(
+                    "{} hidden presentation layer(s) had no emitted STEP assignment and were omitted from INVISIBILITY: {layers}",
+                    self.hidden_presentation_layers_without_items.len()
+                ),
+            );
+        }
         if !self.dangling_appearance_bindings.is_empty() {
             let bindings = self
                 .dangling_appearance_bindings
@@ -3914,6 +4321,20 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let appearance_binding_target_conflicts = self.appearance_binding_target_conflicts.clone();
+        for ((target_kind, target_id), bindings) in appearance_binding_target_conflicts {
+            let binding_ids = bindings
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::AppearanceBindingTargetConflict,
+                format!(
+                    "appearance bindings {binding_ids} have conflicting target style projections for {target_kind} '{target_id}' and were not written"
+                ),
+            );
+        }
         let lossy_appearances = self
             .ir
             .model
@@ -3927,6 +4348,20 @@ impl<'a> Builder<'a> {
                     .iter()
                     .filter(|binding| binding.appearance == appearance.id)
                     .collect::<Vec<_>>();
+                let alpha_unwritable = appearance.base_color.is_some_and(|color| {
+                    color.a != 1.0
+                        && bindings.iter().any(|binding| match &binding.target {
+                            AppearanceTarget::Curve(_)
+                            | AppearanceTarget::Edge(_)
+                            | AppearanceTarget::Point(_)
+                            | AppearanceTarget::Vertex(_) => true,
+                            AppearanceTarget::Body(body) => self
+                                .bodies
+                                .get(body.as_str())
+                                .is_some_and(|body| body.kind == BodyKind::Wire),
+                            _ => false,
+                        })
+                });
                 appearance.asset_guid.is_some()
                     || appearance.visual_guid.is_some()
                     || appearance.physical_token.is_some()
@@ -3936,11 +4371,12 @@ impl<'a> Builder<'a> {
                         .is_some_and(|schema| schema != "step_surface_style")
                     || appearance.category.is_some()
                     || !appearance.properties.is_empty()
-                    || appearance.base_color.is_none_or(|color| color.a != 1.0)
+                    || alpha_unwritable
                     || bindings.is_empty()
-                    || bindings
-                        .iter()
-                        .any(|binding| !self.written_appearance_bindings.contains(&binding.id))
+                    || bindings.iter().any(|binding| {
+                        !self.written_appearance_bindings.contains(&binding.id)
+                            && !self.conflicted_appearance_bindings.contains(&binding.id)
+                    })
             })
             .count();
         if lossy_appearances > 0 {
@@ -3948,7 +4384,7 @@ impl<'a> Builder<'a> {
                 StepLossCode::AppearanceReducedToBaseColor,
                 format!(
                     "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
-                     schemas, textures, and shader properties were not written to STEP"
+                     unsupported schemas, textures, and shader properties were not written to STEP"
                 ),
             );
         }
@@ -4030,6 +4466,17 @@ impl<'a> Builder<'a> {
             losses: self.losses.clone(),
             notes: self.notes.clone(),
         }
+    }
+}
+
+fn datum_target_form_text(form: &DatumTargetForm) -> &str {
+    match form {
+        DatumTargetForm::Point => "point",
+        DatumTargetForm::Line => "line",
+        DatumTargetForm::Rectangle => "rectangle",
+        DatumTargetForm::Circle => "circle",
+        DatumTargetForm::CircularCurve => "circular curve",
+        DatumTargetForm::Other(value) => value,
     }
 }
 

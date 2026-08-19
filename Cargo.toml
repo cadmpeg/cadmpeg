@@ -71,6 +71,7 @@ flate2 = "1"
 zstd = "0.13"
 crc32fast = "1"
 roxmltree = "0.21"
+hdf5-reader = { version = "0.9.1", default-features = false }
 regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
