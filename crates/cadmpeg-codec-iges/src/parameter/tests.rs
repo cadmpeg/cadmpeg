@@ -1981,6 +1981,126 @@ fn type130_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type150_form0_boundary_follows_twelve_primary_fields_and_defaults() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source = directory_target(7, 150);
+    let directory = BTreeMap::from([(1, &association), (3, &property), (7, &source)]);
+    let explicit =
+        integer_parameter_record(7, &[150, 2, 3, 4, 1, 2, 3, 1, 0, 0, 0, 0, 1, 1, 1, 1, 3]);
+    let omitted = token_parameter_record(
+        7,
+        vec![
+            150.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            TokenValue::Omitted,
+            1.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+        ],
+    );
+
+    for record in [explicit, omitted] {
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 150 table boundary");
+        assert_eq!(groups.token_start, 13);
+        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.properties, vec![3]);
+    }
+}
+
+#[test]
+fn type150_table_boundary_precedes_valid_generic_alternative() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source = directory_target(7, 150);
+    let directory = BTreeMap::from([(1, &association), (3, &property), (7, &source)]);
+    let record =
+        integer_parameter_record(7, &[150, 2, 3, 4, 1, 2, 3, 1, 0, 0, 0, 0, 2, 1, 1, 1, 3]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![12, 13]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 150 table boundary");
+    assert_eq!(groups.token_start, 13);
+    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.properties, vec![3]);
+}
+
+#[test]
+fn type150_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recover() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source = directory_target(7, 150);
+    let directory = BTreeMap::from([(1, &association), (3, &property), (7, &source)]);
+    let wrong = token_parameter_record(
+        7,
+        vec![
+            150.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+            TokenValue::String(b"bad".to_vec()),
+            2.into(),
+            3.into(),
+            1.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+        ],
+    );
+    let analysis = analyze_trailing_pointer_groups(&wrong, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    assert_eq!(
+        analysis
+            .groups
+            .expect("Type 150 wrong-field boundary")
+            .token_start,
+        13
+    );
+
+    for values in [
+        vec![150, 2, 3, 4, 1, 2, 3, 1, 0, 0, 0, 0],
+        vec![150, 2, 3, 4, 1, 2, 3, 1, 0, 0, 0, 0, 1, 1, 1, 1],
+    ] {
+        let analysis =
+            analyze_trailing_pointer_groups(&integer_parameter_record(7, &values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn analytic_surface_forms_follow_fixed_primary_boundaries() {
     let association = directory_target(1, 212);
     let property = directory_target(3, 406);
