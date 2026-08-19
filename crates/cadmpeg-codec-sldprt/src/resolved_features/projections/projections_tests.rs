@@ -1408,3 +1408,75 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
             ]) && selections.len() == 1
     ));
 }
+
+#[test]
+fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
+    let feature = Feature {
+        id: "variable".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("10".into()),
+        parent_source_id: None,
+        ordinal: 0,
+        name: "Variable fillet".into(),
+        kind: "VarFillet".into(),
+        input_class: Some("VarFillet_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([("D0".into(), "R50".into()), ("D1".into(), "R4".into())]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let component = |instance, local_id| FeatureInputComponentPathEntry {
+        instance: Some(instance),
+        type_signature: [0x38, 0x80, 0x3b, 0, 20, 0, 0, 0, 100, 0, 0, 0],
+        local_id: Some(local_id),
+    };
+    let selection = FeatureInputEdgeSelection {
+        id: "edge".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 80,
+        object_name_ref: "name".into(),
+        feature_ref: "variable".into(),
+        local_edge_ids: vec![28, 36, 4],
+        components: Vec::new(),
+        references: vec![
+            vec![component(0x81a5, 28)],
+            vec![component(0x81a5, 36)],
+            vec![component(0x81a5, 4)],
+        ],
+        producer_feature_refs: Vec::new(),
+        terminal_feature_ref: None,
+    };
+
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        std::slice::from_ref(&history),
+        &[],
+        &[&selection],
+    )
+    .expect("endpoint-less two-control roster");
+    assert!(matches!(
+        groups.as_slice(),
+        [(RadiusSpec::Variable { points }, selections)]
+            if matches!(points.as_slice(), [
+                VariableRadius { parameter: 0.0, radius: Length(50.0) },
+                VariableRadius { parameter: 1.0, radius: Length(4.0) },
+            ]) && selections.len() == 1
+    ));
+
+    let mut collision = selection;
+    collision.references[0][0].instance = Some(0x8083);
+    assert!(variable_fillet_radius_groups("variable", &[history], &[], &[&collision]).is_none());
+}

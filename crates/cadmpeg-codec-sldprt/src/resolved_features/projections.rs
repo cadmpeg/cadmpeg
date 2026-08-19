@@ -476,7 +476,6 @@ pub(crate) fn project_compact_edge_selections(
             &feature.definition,
             FeatureDefinition::Fillet { groups }
                 if matches!(groups.as_slice(), [FilletGroup {
-                    edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Unresolved { .. },
                     ..
                 }])
@@ -491,15 +490,23 @@ pub(crate) fn project_compact_edge_selections(
                 let [group] = groups.as_slice() else {
                     unreachable!("checked one fillet group")
                 };
-                let tangency_weight = group.tangency_weight;
-                *groups = radius_groups
-                    .into_iter()
-                    .map(|(radius, selections)| FilletGroup {
-                        edges: projected_edges(&selections),
-                        radius,
-                        tangency_weight,
-                    })
-                    .collect();
+                let existing_edges = group.edges.clone();
+                if matches!(&existing_edges, EdgeSelection::Unresolved) || radius_groups.len() == 1
+                {
+                    let tangency_weight = group.tangency_weight;
+                    *groups = radius_groups
+                        .into_iter()
+                        .map(|(radius, selections)| FilletGroup {
+                            edges: if matches!(&existing_edges, EdgeSelection::Unresolved) {
+                                projected_edges(&selections)
+                            } else {
+                                existing_edges.clone()
+                            },
+                            radius,
+                            tangency_weight,
+                        })
+                        .collect();
+                }
             }
         }
         let groups = match &mut feature.definition {
@@ -551,6 +558,61 @@ fn variable_fillet_radius_groups<'a>(
         .collect::<HashSet<_>>();
     if parameter_names.len() != feature.parameters.len() || parameter_names.len() < 2 {
         return None;
+    }
+
+    // A legacy VarFillet with exactly the two ordered controls 0 and 1 may
+    // omit endpoint markers entirely. Its three-reference edge-control
+    // roster supplies one feature-wide radius profile for every selected edge.
+    // Require that roster shape and reject any endpoint-bearing reference so a
+    // feature with several endpoint-specific profiles cannot enter this path.
+    let has_legacy_edge_control_roster = selections.iter().any(|selection| {
+        selection.references.len() == 3
+            && selection.local_edge_ids.len() == selection.references.len()
+            && selection
+                .references
+                .iter()
+                .zip(&selection.local_edge_ids)
+                .all(|(reference, local_id)| {
+                    let [component] = reference.as_slice() else {
+                        return false;
+                    };
+                    component.local_id == Some(*local_id)
+                })
+    });
+    let has_endpoint_reference = selections
+        .iter()
+        .flat_map(|selection| selection.references.iter())
+        .flat_map(|reference| reference.iter())
+        .any(|component| component.instance == Some(0x8083));
+    if parameter_names.len() == 2 && has_legacy_edge_control_roster && !has_endpoint_reference {
+        let mut ordered_parameters = parameter_names
+            .iter()
+            .map(|name| {
+                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        if ordered_parameters
+            .iter()
+            .enumerate()
+            .all(|(expected, (actual, _))| expected == *actual)
+        {
+            let mut selections = selections.to_vec();
+            selections.sort_unstable_by_key(|selection| selection.ordinal);
+            let points = ordered_parameters
+                .into_iter()
+                .enumerate()
+                .map(|(parameter, (_, radius))| VariableRadius {
+                    parameter: parameter as f64,
+                    radius: Length(radius),
+                })
+                .collect();
+            return Some(vec![(RadiusSpec::Variable { points }, selections)]);
+        }
     }
 
     let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
