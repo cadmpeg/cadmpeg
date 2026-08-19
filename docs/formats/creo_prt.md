@@ -1419,6 +1419,28 @@ single contact point. These two-carrier contacts define a topological vertex
 without requiring a third carrier. Every additional incident carrier must
 contain the same point.
 
+### 3.5 Loop namespace: `lo_array`
+
+`lo_array` is a native loop-roster namespace. Its records are retained as
+native data; their semantic joins to faces, contours, and curve topology are
+not defined by this namespace.
+
+| Item                  | Rule                                                            |
+| --------------------- | --------------------------------------------------------------- |
+| ND frame header       | `lo_array\0 f3 f8 <count> f7 <class> fb e3`                    |
+| DEPDB frame header    | `lo_array\0 f2 f8 <count> f7 <class> fb e3`                    |
+| Bare frame header     | `lo_array\0 f8 <count> f7 <class> fb e3`                       |
+| Named prototype       | Required fields `lo_id`, `lo_type`, `lo_subtype`, `feat_id`, `attributes`, `direction`, `next_lo_ptr`, and `object_data`; close `f1 f7 <class> e3` |
+| Positional row prefix | `<lo_id_ci> <lo_type_ci> <lo_subtype_ci> <feat_id_ci> <attributes> <direction_ci> <next_lo_ptr_ci>` |
+| Positional row body   | The bounded bytes after the prefix through the row-close `e3`. |
+
+`<count>` is the frame slot extent. The frame ends at the next `crv_array`,
+`lo_array`, `qlt_array`, or `srf_array` label. A complete positional row must
+have all seven prefix fields and a row-close `e3`. Rows are retained only
+while their count does not exceed the frame extent. An unresolvable row
+boundary or an overfull frame withholds the affected positional rows. The row
+body is retained as exact native bytes and has no neutral loop meaning.
+
 ## 4. Curve namespace: `crv_array`
 
 `crv_array` provides edge identifiers, half-edge topology, type bytes, and pcurve records.

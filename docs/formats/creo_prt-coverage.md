@@ -141,6 +141,10 @@ fixtures, scores above L1 remain blocked.
   references, traversal bytes, ordered parameter-space envelope slots, and
   separator references as native records. The chain is not yet used to assign
   outer or inner loop roles or to relax strict face admission.
+- Complete `lo_array` frame headers and bounded positional roster rows retain
+  their fixed fields and exact bodies as native records. Their joins to faces,
+  contours, and curve topology remain unresolved and do not affect neutral
+  loop or face admission.
 - Eight-slot type-24 terminal frames require mutually exclusive
   single-diameter and square-radial invariants; a collision withholds the
   carrier.

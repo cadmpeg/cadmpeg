@@ -54,6 +54,8 @@ const CREO_ARENAS: &[&str] = &[
     "curve_topology_rows",
     "nonvisible_curve_topology_rows",
     "cross_section_curve_rows",
+    "loop_array_frames",
+    "loop_array_records",
     "half_edges",
     "loops",
     "topological_vertices",

@@ -818,6 +818,19 @@ outer or inner loop.
 
 **Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
+### TP-19. `lo_array` roster semantics
+
+**Question.** Which fields in a positional `lo_array` row bind its native
+roster entry to a face, contour chain, curve header, and traversal orientation?
+
+**Known.** `creo_prt.md` §3.5 defines the `lo_array` frame header, named
+prototype fields, seven-field positional prefix, and bounded row body. The
+decoder retains complete frame and row bytes without assigning neutral loop or
+face meaning.
+
+**Need.** We must know the joins before `lo_array` rows can contribute to
+neutral loop ownership or face admission.
+
 ## 5. Packed persistence data
 
 ### PP-01. Packed `VisibGeom` records

@@ -298,6 +298,38 @@ pub(super) struct CreoLoopRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoLoopArrayFrameRecord {
+    pub(super) id: String,
+    pub(super) variant: Option<u8>,
+    pub(super) declared_count: u32,
+    pub(super) class_id: u32,
+    pub(super) materialized_count: usize,
+    pub(super) overfull: bool,
+    pub(super) offset: usize,
+    pub(super) prototype_end: usize,
+    pub(super) end: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoLoopArrayRecord {
+    pub(super) id: String,
+    pub(super) frame_offset: usize,
+    pub(super) lo_id: u32,
+    pub(super) lo_type: u32,
+    pub(super) lo_subtype: u32,
+    pub(super) feature_id: u32,
+    pub(super) attributes: u8,
+    pub(super) direction: u32,
+    pub(super) next_lo_ptr: u32,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) body_offset: usize,
+    pub(super) end: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoTopologicalVertexRecord {
     pub(super) id: String,
     pub(super) vertex_id: u32,
@@ -1005,6 +1037,48 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
                 .copied()
                 .map(half_edge_ref)
                 .collect(),
+        })
+        .collect()
+}
+
+pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArrayFrameRecord> {
+    scan.loop_arrays
+        .frames
+        .iter()
+        .map(|frame| CreoLoopArrayFrameRecord {
+            id: format!("creo:loop_array:frame#{}", frame.offset),
+            variant: frame.variant,
+            declared_count: frame.declared_count,
+            class_id: frame.class_id,
+            materialized_count: frame.materialized_count,
+            overfull: frame.overfull,
+            offset: frame.offset,
+            prototype_end: frame.prototype_end,
+            end: frame.end,
+            source_section: source_section(scan, frame.offset),
+        })
+        .collect()
+}
+
+pub(super) fn loop_array_record_records(scan: &ContainerScan) -> Vec<CreoLoopArrayRecord> {
+    scan.loop_arrays
+        .records
+        .iter()
+        .map(|record| CreoLoopArrayRecord {
+            id: format!("creo:loop_array:record#{}", record.offset),
+            frame_offset: record.frame_offset,
+            lo_id: record.lo_id,
+            lo_type: record.lo_type,
+            lo_subtype: record.lo_subtype,
+            feature_id: record.feature_id,
+            attributes: record.attributes,
+            direction: record.direction,
+            next_lo_ptr: record.next_lo_ptr,
+            body: record.body.clone(),
+            offset: record.offset,
+            body_offset: record.body_offset,
+            end: record.end,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }

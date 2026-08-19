@@ -26,10 +26,11 @@ use super::super::records::{
     feature_operation_state_records, feature_placement_instruction_records,
     feature_reference_name_records, feature_replay_affected_id_records,
     feature_revolution_extent_records, feature_row_records, feature_section_transform_records,
-    half_edge_records, half_edge_vertex_incidence_records, loop_records, outline_plane_records,
-    pcurve_endpoint_records, plane_envelope_records, plane_local_system_records,
-    prototype_pcurve_records, reference_circle_records, reference_conic_records,
-    reference_ellipse_records, reference_line_records, sketch_records, surface_contour_records,
+    half_edge_records, half_edge_vertex_incidence_records, loop_array_frame_records,
+    loop_array_record_records, loop_records, outline_plane_records, pcurve_endpoint_records,
+    plane_envelope_records, plane_local_system_records, prototype_pcurve_records,
+    reference_circle_records, reference_conic_records, reference_ellipse_records,
+    reference_line_records, sketch_records, surface_contour_records,
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
 };
@@ -349,6 +350,20 @@ pub(in super::super) fn emit_geometry_arenas(
         |record| &record.source_section,
         |record| record.offset as u64,
         "cross_section_curve_row",
+        Exactness::ByteExact,
+    )?;
+    let loop_array_frames = loop_array_frame_records(scan);
+    store_arena(ir, "loop_array_frames", &loop_array_frames)?;
+    let loop_array_records = loop_array_record_records(scan);
+    emit_uniform(
+        ir,
+        annotations,
+        "loop_array_records",
+        &loop_array_records,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "loop_array_record",
         Exactness::ByteExact,
     )?;
     let half_edges = half_edge_records(scan);

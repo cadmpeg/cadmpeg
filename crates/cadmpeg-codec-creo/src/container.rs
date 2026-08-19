@@ -35,6 +35,7 @@ use crate::feature::{
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
+use crate::loop_array::{self, LoopArrayFrame, LoopArrayRecord, LoopArrayScan};
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
@@ -214,10 +215,10 @@ pub struct FamilyTableRecord {
     pub offset: usize,
 }
 
-/// Structural data read from one `.prt` file. The 76 decoded products are
-/// grouped into per-domain sub-structs so each consumer names the domain it
-/// reads. `ContainerScan` is never serialized; grouping and field naming are
-/// internal and do not affect IR or JSON output.
+/// Structural data read from one `.prt` file. Decoded products are grouped
+/// into per-domain sub-structs so each consumer names the domain it reads.
+/// `ContainerScan` is never serialized; grouping and field naming are internal
+/// and do not affect IR or JSON output.
 pub struct ContainerScan<'a> {
     /// Container framing: raw bytes, header, TOC-enumerated sections, and
     /// model-level diagnostics.
@@ -235,6 +236,8 @@ pub struct ContainerScan<'a> {
     pub curves: CurveScan,
     /// Native half-edge adjacency graph resolved from curve topology rows.
     pub topology: TopologyScan,
+    /// Native `lo_array` frame headers and complete positional roster rows.
+    pub loop_arrays: LoopArrayScan,
     /// Feature rows, definitions, operations, and the implicit entity graph.
     pub features: FeatureScan,
 }
@@ -1240,6 +1243,32 @@ fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<Surf
     records
 }
 
+fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
+    let mut frames = Vec::new();
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        let scan = loop_array::scan(payload);
+        frames.extend(scan.frames.into_iter().map(|mut frame| {
+            frame.offset += section.offset;
+            frame.prototype_end += section.offset;
+            frame.end += section.offset;
+            frame
+        }));
+        records.extend(scan.records.into_iter().map(|mut record| {
+            record.frame_offset += section.offset;
+            record.offset += section.offset;
+            record.body_offset += section.offset;
+            record.end += section.offset;
+            record
+        }));
+    }
+    frames.sort_by_key(|frame: &LoopArrayFrame| frame.offset);
+    records.sort_by_key(|record: &LoopArrayRecord| record.offset);
+    LoopArrayScan { frames, records }
+}
+
 fn tabulated_cylinder_curve_replays(
     data: &[u8],
     sections: &[Section],
@@ -2205,6 +2234,23 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter(|section| section.name == "NovisGeom")
         .cloned()
         .collect::<Vec<_>>();
+    let mut loop_array_sections = model_geometry_sections.clone();
+    loop_array_sections.extend(nonvisible_geometry_sections.iter().cloned());
+    loop_array_sections.extend(
+        sections
+            .iter()
+            .filter(|section| {
+                if section.name != "Xsections" {
+                    return false;
+                }
+                let end = (section.offset + section.length).min(data.len());
+                find(&data[section.offset..end], b"Sld_Xsections\0", 0).is_some()
+            })
+            .cloned(),
+    );
+    loop_array_sections.sort_by_key(|section| section.offset);
+    loop_array_sections.dedup_by_key(|section| section.offset);
+    let loop_arrays = loop_array_scan(&data, &loop_array_sections);
     let nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
     let surface_rows = surface_rows(&data, &model_geometry_sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
@@ -2460,6 +2506,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             vertices: topological_vertices,
             half_edge_vertex_incidence,
         },
+        loop_arrays,
         features: FeatureScan {
             ids: feature_ids,
             rows: feature_rows,
