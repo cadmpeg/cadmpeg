@@ -253,6 +253,7 @@ fn mesh_edge_occurrences(
         .collect()
 }
 
+#[derive(Debug)]
 struct StandardMeshAnalysis {
     edge_rows: Vec<EdgeRow>,
     cycles: Vec<Vec<Vec<u32>>>,
@@ -444,8 +445,18 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
     let face_count = selected_standard_run(bytes)?.1;
+    let context = StandardMeshBoundaryContext::parse(bytes, serialized);
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
-        standard_mesh_boundary_assignments(bytes, assignment, None).is_some()
+        context.as_ref().map_or_else(
+            || standard_mesh_boundary_assignments(bytes, assignment, None).is_some(),
+            |base| {
+                base.with_edge_faces(assignment)
+                    .and_then(|context| {
+                        standard_mesh_boundary_assignments_from_context(&context, None)
+                    })
+                    .is_some()
+            },
+        )
     })
 }
 
@@ -630,6 +641,7 @@ enum MeshFaceAssignmentDomain {
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardMeshBoundaryContext {
+    analysis: Arc<StandardMeshAnalysis>,
     edge_rows: Vec<EdgeRow>,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
@@ -639,7 +651,7 @@ pub(crate) struct StandardMeshBoundaryContext {
 
 impl StandardMeshBoundaryContext {
     pub(crate) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
-        let analysis = standard_mesh_analysis(bytes)?;
+        let analysis = Arc::new(standard_mesh_analysis(bytes)?);
         if analysis.edge_rows.len() != edge_faces.len() {
             return None;
         }
@@ -652,12 +664,26 @@ impl StandardMeshBoundaryContext {
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
+        let edge_rows = analysis.edge_rows.clone();
         Some(Self {
-            edge_rows: analysis.edge_rows,
+            analysis,
+            edge_rows,
             coverage,
             edge_ports,
             edge_runs,
             cycle_lengths,
+        })
+    }
+
+    fn with_edge_faces(&self, edge_faces: &[[usize; 2]]) -> Option<Self> {
+        let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
+        Some(Self {
+            analysis: Arc::clone(&self.analysis),
+            edge_rows: self.edge_rows.clone(),
+            coverage,
+            edge_ports: self.edge_ports.clone(),
+            edge_runs: self.edge_runs.clone(),
+            cycle_lengths: self.cycle_lengths.clone(),
         })
     }
 }

@@ -3372,22 +3372,30 @@ fn attach_standard_topology(
                     .collect()
             })
             .collect::<Vec<_>>();
-        for edge in 0..allowed_faces.len() {
-            let mut exhausted = false;
+        let mut closure_incomplete = false;
+        'edges: for edge in 0..allowed_faces.len() {
             allowed_faces[edge].retain(|face| {
                 let mut trial = edge_faces.clone();
                 trial[edge][1] = *face;
-                match missing_edge::face_endpoint_candidates_close(&trial, options, *face) {
+                let closure = missing_edge::face_endpoint_candidates_close(&trial, options, *face);
+                match closure {
                     missing_edge::FaceEndpointClosureOutcome::Closed => true,
                     missing_edge::FaceEndpointClosureOutcome::Rejected => false,
+                    // This local search is a bounded necessary-condition
+                    // check. Exhaustion proves neither rejection nor closure;
+                    // retain the face domain for the mesh-aware solver, which
+                    // owns the complete joint endpoint constraints.
                     missing_edge::FaceEndpointClosureOutcome::Exhausted => {
-                        exhausted = true;
+                        closure_incomplete = true;
                         true
                     }
                 }
             });
-            if exhausted {
-                return Err(StandardTopologyFailure::TopologySearchExhausted);
+            if closure_incomplete {
+                // Do not spend the same local bound on later alternatives. All
+                // unvisited alternatives remain in `allowed_faces` and are
+                // checked by the complete joint search below.
+                break 'edges;
             }
         }
         if let Some(completed) =
