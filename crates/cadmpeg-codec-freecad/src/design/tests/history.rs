@@ -732,7 +732,7 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
 }
 
 #[test]
-fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
+fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
 <ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
@@ -753,8 +753,10 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
     assert!(features
         .iter()
         .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
-    assert!(features[0].dependencies.is_empty());
-    assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+    assert!(features
+        .iter()
+        .all(|feature| feature.dependencies.is_empty()));
+    assert!(features.iter().all(|feature| feature.parent.is_none()));
     assert_eq!(
         result
             .report()
@@ -773,6 +775,130 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
         .expect("objects");
     assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
     assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn retains_cycle_affected_expression_links_only_in_native_properties() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="1"><Dep Name="First"/></ObjectDeps>
+<Object type="PartDesign::Pad" name="First"/><Object type="PartDesign::Pad" name="Second"/>
+</Objects><ObjectData Count="2">
+<Object name="First"><Properties Count="2">
+<Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Second.Length"/></ExpressionEngine></Property>
+</Properties></Object>
+<Object name="Second"><Properties Count="2">
+<Property name="Length" type="App::PropertyLength"><Float value="20"/></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="First.Length"/></ExpressionEngine></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic expression graph");
+    assert!(result.ir().model.features.iter().all(|feature| {
+        feature.dependencies.is_empty()
+            && feature.parent.is_none()
+            && matches!(feature.definition, FeatureDefinition::Native { .. })
+    }));
+    let parameters = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.name == "Length")
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 2);
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert!(properties.iter().any(|property| {
+        property.name == "ExpressionEngine" && property.raw_xml.contains("Second.Length")
+    }));
+    assert!(properties.iter().any(|property| {
+        property.name == "ExpressionEngine" && property.raw_xml.contains("First.Length")
+    }));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        2
+    );
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2">
+<Cell address="A1" alias="first" content="=second"/>
+<Cell address="B1" alias="second" content="=first"/>
+</Cells></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic spreadsheet expressions");
+    let sheet = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sheet"))
+        .expect("sheet feature");
+    assert!(matches!(sheet.definition, FeatureDefinition::Native { .. }));
+    assert!(sheet.dependencies.is_empty());
+    let parameters = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&sheet.id))
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 2);
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        1
+    );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert!(properties
+        .iter()
+        .any(|property| { property.name == "cells" && property.raw_xml.contains("=second") }));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

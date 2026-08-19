@@ -17,27 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-05. Dependency-cycle ordinal fallback
-
-**Question.** What neutral projection applies when feature dependencies, parents, or expressions
-form a cycle?
-
-**Known.** FreeCAD persists directed dependency cycles in the native graph. The current ordinal
-assignment at `design.rs:679-694` selects remaining cycle-affected objects in source order, and
-the dependency filter at `design.rs:450-456` keeps only targets with earlier neutral ordinals.
-
-**Need.** Define a stable neutral cycle projection that preserves the admissible relation set and
-its source provenance, or retain the affected relation and operation as native with an explicit
-blocking result. Do not silently discard cycle edges by a decoder-owned source-order rule.
-
-**Conflict.** The closure evidence in `f6fd9df86` establishes that FreeCAD can persist reciprocal
-links and that recompute requires a DAG, but it does not establish source-order ordinal assignment
-or earlier-target edge discard as the neutral result. Reordering the persisted objects can therefore
-change the neutral dependency subset while the native cycle remains the same.
-
-**Note.** Reopened by closure audit. Native cycle retention and a blocking loss do not establish
-the neutral relation projection.
-
 ### DP-07. Legacy point carrier provenance
 
 **Question.** Does any FreeCAD producer version write a declared `Part::GeomPoint` with a `Point`

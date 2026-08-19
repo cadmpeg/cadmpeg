@@ -87,7 +87,7 @@ pub(crate) fn transfer(
         .iter()
         .map(|candidate| (feature_id(candidate), candidate.order))
         .collect::<HashMap<_, _>>();
-    let (feature_ordinals, cycle_affected) = feature_ordinals(
+    let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -424,48 +424,58 @@ pub(crate) fn transfer(
                     .cloned()
             })
             .collect();
-        let mut dependency_objects = object
-            .dependencies
-            .iter()
-            .filter(|_| !is_body(&object.type_name))
-            .map(|dependency| (dependency.as_str(), true))
-            .chain(
-                owned
-                    .iter()
-                    .flat_map(|property| &property.links)
-                    .filter_map(|link| link.object.as_deref())
-                    .map(|dependency| (dependency, false)),
-            )
-            .collect::<Vec<_>>();
-        let mut seen_dependencies = BTreeSet::new();
-        dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
-        let mut dependencies = dependency_objects
-            .into_iter()
-            .filter_map(|(dependency, declared)| {
-                feature_ids
-                    .get(dependency)
-                    .cloned()
-                    .map(|feature| (feature, declared))
-            })
-            .filter(|(dependency, declared)| {
-                (*declared && !cycle_affected.contains(object.id.as_str()))
-                    || ordinal_by_feature
+        let cycle_affected = cycle_affected.contains(object.id.as_str());
+        let dependencies = if cycle_affected {
+            // The native object and property arenas retain the exact cycle.
+            // A neutral edge would require a decoder-owned cycle break and
+            // would change when persisted declaration order changes.
+            Vec::new()
+        } else {
+            let mut dependency_objects = object
+                .dependencies
+                .iter()
+                .filter(|_| !is_body(&object.type_name))
+                .map(|dependency| (dependency.as_str(), true))
+                .chain(
+                    owned
+                        .iter()
+                        .flat_map(|property| &property.links)
+                        .filter_map(|link| link.object.as_deref())
+                        .map(|dependency| (dependency, false)),
+                )
+                .collect::<Vec<_>>();
+            let mut seen_dependencies = BTreeSet::new();
+            dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
+            let mut dependencies = dependency_objects
+                .into_iter()
+                .filter_map(|(dependency, declared)| {
+                    feature_ids
                         .get(dependency)
+                        .cloned()
+                        .map(|feature| (feature, declared))
+                })
+                .filter(|(dependency, declared)| {
+                    *declared
+                        || ordinal_by_feature
+                            .get(dependency)
+                            .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+                })
+                .map(|(dependency, _)| dependency)
+                .collect::<Vec<_>>();
+            for dependency in semantic_dependencies {
+                if !dependencies.contains(&dependency)
+                    && ordinal_by_feature
+                        .get(&dependency)
                         .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-            })
-            .map(|(dependency, _)| dependency)
-            .collect::<Vec<_>>();
-        for dependency in semantic_dependencies {
-            if !dependencies.contains(&dependency)
-                && ordinal_by_feature
-                    .get(&dependency)
-                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-            {
-                dependencies.push(dependency);
+                {
+                    dependencies.push(dependency);
+                }
             }
-        }
+            dependencies
+        };
         let parent = parent_by_member
             .get(object.id.as_str())
+            .filter(|_| !cycle_affected)
             .filter(|parent| {
                 ordinal_by_feature
                     .get(*parent)
@@ -488,7 +498,41 @@ pub(crate) fn transfer(
             native_ref: Some(object.id.clone()),
         });
     }
-    bind_parameter_dependencies(&mut ir.model.parameters, objects);
+    let initial_cycle_affected_features = objects
+        .iter()
+        .filter(|object| cycle_affected.contains(object.id.as_str()))
+        .map(feature_id)
+        .collect::<BTreeSet<_>>();
+    let parameter_cycle_features = bind_parameter_dependencies(
+        &mut ir.model.parameters,
+        objects,
+        &initial_cycle_affected_features,
+    );
+    for object in objects {
+        if !parameter_cycle_features.contains(&feature_id(object)) {
+            continue;
+        }
+        cycle_affected.insert(object.id.clone());
+        if let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.native_ref.as_deref() == Some(object.id.as_str()))
+        {
+            feature.definition = FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(
+                    properties_by_owner
+                        .get(object.id.as_str())
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                ),
+                properties: BTreeMap::new(),
+            };
+            feature.dependencies.clear();
+            feature.parent = None;
+        }
+    }
     Ok(cycle_affected)
 }
 
@@ -1947,7 +1991,11 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
         })
 }
 
-fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &[ObjectRecord]) {
+fn bind_parameter_dependencies(
+    parameters: &mut Vec<DesignParameter>,
+    objects: &[ObjectRecord],
+    cycle_affected_features: &BTreeSet<FeatureId>,
+) -> BTreeSet<FeatureId> {
     let object_names = objects
         .iter()
         .map(|object| (feature_id(object), object.name.as_str()))
@@ -2002,7 +2050,18 @@ fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &
                 dependencies.insert(dependency.clone());
             }
         }
-        parameter.dependencies = dependencies.into_iter().collect();
+        parameter.dependencies = if parameter
+            .owner
+            .as_ref()
+            .is_some_and(|owner| cycle_affected_features.contains(owner))
+        {
+            // The native property record retains the expression. A neutral
+            // parameter edge would create an invented evaluation order for
+            // a history that FreeCAD itself could not topologically sort.
+            Vec::new()
+        } else {
+            dependencies.into_iter().collect()
+        };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
     for parameter in parameters.iter() {
@@ -2014,22 +2073,36 @@ fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &
     for ordinals in owner_ordinals.values_mut() {
         ordinals.sort_unstable();
     }
-    order_parameters_by_dependencies(parameters);
+    let parameter_cycle_features = order_parameters_by_dependencies(parameters);
+    for parameter in parameters.iter_mut() {
+        if parameter
+            .owner
+            .as_ref()
+            .is_some_and(|owner| parameter_cycle_features.contains(owner))
+        {
+            // The native property record retains the expression. A neutral
+            // parameter edge would create an invented evaluation order for
+            // a history that FreeCAD itself could not topologically sort.
+            parameter.dependencies.clear();
+        }
+    }
     let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
     for parameter in parameters {
         let index = next_ordinal.entry(parameter.owner.clone()).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
     }
+    parameter_cycle_features
 }
 
-fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
     let known = parameters
         .iter()
         .map(|parameter| parameter.id.clone())
         .collect::<BTreeSet<_>>();
     let mut remaining = std::mem::take(parameters);
     let mut emitted = BTreeSet::new();
+    let mut cycle_features = BTreeSet::new();
     while !remaining.is_empty() {
         let Some(index) = remaining.iter().position(|parameter| {
             parameter
@@ -2037,13 +2110,19 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
                 .iter()
                 .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
         }) else {
+            cycle_features.extend(
+                remaining
+                    .iter()
+                    .filter_map(|parameter| parameter.owner.clone()),
+            );
             parameters.append(&mut remaining);
-            return;
+            break;
         };
         let parameter = remaining.remove(index);
         emitted.insert(parameter.id.clone());
         parameters.push(parameter);
     }
+    cycle_features
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {

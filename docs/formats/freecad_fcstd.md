@@ -1226,11 +1226,12 @@ their consumers. Body child lists are structural membership, not body inputs. If
 contains a dependency, parent, or expression cycle, the native graph retains it.
 The dependency envelope has no neutral cycle ordinal or edge-discard field.
 CADIR decision: when acyclic admission cannot progress, the remaining cycle-affected objects receive
-ordinals in persisted object order for stable identity. Their native dependencies remain exact, but
-a neutral feature dependency is retained only when its target ordinal precedes the consumer, giving
-a deterministic acyclic subset. Their typed definitions are replaced by native definitions and
-each reports blocking loss `feature.cyclic-history`; the source cycle is not assigned a producer
-recompute order.
+ordinals in persisted object order for stable identity, but they have no neutral feature dependency,
+parent, or expression-derived parameter dependency. Their typed definitions are replaced by native
+definitions. The exact ObjectDeps, parent-membership, property-link, and expression records remain
+in the native graph, and each cycle-affected feature reports blocking loss
+`feature.cyclic-history`. The decoder does not choose a source-order cycle break or assign a
+producer recompute order.
 
 Design dispatch uses exact runtime names. `PartDesign::Pad`, `PartDesign::Pocket`, and
 `Part::Extrusion` are extrusions; `PartDesign::Revolution`, `PartDesign::Groove`, and

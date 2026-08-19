@@ -1487,7 +1487,7 @@ fn semantic_losses(
                 (
                     FreecadLossCode::FeatureCyclicHistory,
                     format!(
-                        "FCStd design operation {kind} is retained natively because history ordering is cycle-affected"
+                        "FCStd design operation {kind} is retained natively because neutral dependency ordering is cycle-affected"
                     ),
                 )
             } else {
