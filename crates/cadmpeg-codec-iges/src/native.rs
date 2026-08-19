@@ -4782,15 +4782,12 @@ pub(crate) fn store(
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
         .collect::<BTreeMap<_, _>>();
-    // Semantic decode supplies an admission set; container-only decode passes
-    // None so native expansion retains every parseable structure record.
-    let occurrence_definitions = all_occurrence_definitions
-        .into_iter()
-        .filter(|(sequence, _)| {
-            structure_admitted.is_none_or(|admitted| admitted.contains(sequence))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let contained_instances = occurrence_definitions
+    // Keep parseable member lists as containment evidence even when semantic
+    // structure admission rejects their definitions. A rejected definition is
+    // not traversed below, but one of its admitted child instances must not be
+    // promoted to a root. Container-only decode passes None and retains every
+    // parseable structure record for expansion.
+    let contained_instances = all_occurrence_definitions
         .values()
         .flat_map(|definition| definition.members.iter().copied())
         .filter(|sequence| {
@@ -4799,6 +4796,12 @@ pub(crate) fn store(
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
         })
         .collect::<std::collections::BTreeSet<_>>();
+    let occurrence_definitions = all_occurrence_definitions
+        .into_iter()
+        .filter(|(sequence, _)| {
+            structure_admitted.is_none_or(|admitted| admitted.contains(sequence))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
     for curve in &ir.model.curves {
         if let Some(sequence) = curve

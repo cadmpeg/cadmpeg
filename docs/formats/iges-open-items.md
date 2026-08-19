@@ -365,18 +365,6 @@ Confirmed implementation: parameter.rs::entity_primary_end registers (132, 0) th
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-20. Root promotion of an instance in a rejected definition
-
-**Question.** Must a Type 408 or Type 420 instance that a Type 308 or Type 320 member list contains become a top-level product occurrence when semantic structure admission rejects that containing definition?
-
-**Known.** `native.rs:4787-4792` limits `occurrence_definitions` to the definitions in the structure admission set. `native.rs:4793-4802` builds `contained_instances` from that limited map only. `native.rs:4891-4898` selects each admitted Type 408 or Type 420 instance that `contained_instances` does not hold, and expands it from the identity transform. `entities/structure.rs:1790-1793` rejects a Type 308 definition when its name is empty, when its Directory entity-use flag is not `2`, or when its Directory transformation pointer is not zero. `entities/structure.rs:2027-2057` also rejects the definition when a member instance points to a definition that does not have a lower depth. `entities/structure.rs:2059-2069` admits an instance from the definition that the instance points to, not from the definition that contains the instance. A definition that structure rejects continues to parse at `native.rs:4749-4786`, so `malformed_definition_sequences` stays empty and root inference continues.
-
-**Need.** A contained instance must not receive an identity world placement. The decoder must keep the member lists of rejected definitions for containment, or stop root inference when a definition leaves the admitted set, or record a loss that names each occurrence that it makes in this condition.
-
-**Conflict.** The Product structure section of `iges.md` gives the rule that root inference is all-or-nothing, because an unresolved member can be any instance. The removal of a rejected definition from `occurrence_definitions` removes its member list for the same reason, but root inference continues. A Type 308 definition that has a wrong depth field and contains one Type 408 instance of a second and valid definition thus emits a product occurrence for that instance at the identity world transform. The `entity.not-projected` loss names the rejected definition. No loss and no `product_occurrence_expansion` issue names the occurrence that the decoder made.
-
-**Note.** IGES 5.3 §2.2.4.4.9 gives the Subordinate Entity Switch, which has the values `01` and `03` for a physically dependent entity. `directory.rs:17-25` decodes this field as `Status::is_physically_dependent`. The structure, annotation, and drawing projectors use the field for other admission rules. Root selection does not use it. The change that removed DR-19 made the containment set smaller: before that change `contained_instances` came from every definition that parses, and an instance in a member list was never a root. Its witness has a top-level instance that points to a rejected definition. The witness does not cover an instance in the member list of a rejected definition.
-
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology

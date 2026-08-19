@@ -1467,6 +1467,88 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
 }
 
 #[test]
+fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
+    let rejected = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = rejected.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+
+    let admitted = IgesCodec
+        .decode(
+            &mut Cursor::new(admitted_containing_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        admitted.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+
+    let container_only = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_subfigure_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+}
+
+#[test]
+fn decode_does_not_promote_network_instance_in_rejected_definition() {
+    let rejected = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_network_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = rejected.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+
+    let admitted = IgesCodec
+        .decode(
+            &mut Cursor::new(admitted_containing_network_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        admitted.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+
+    let container_only = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_network_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+}
+
+#[test]
 fn container_only_preserves_raw_occurrence_expansion_without_structure_admission() {
     let result = IgesCodec
         .decode(

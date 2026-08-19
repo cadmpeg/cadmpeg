@@ -872,6 +872,88 @@ pub(crate) fn invalid_top_level_occurrence_structure_file() -> Vec<u8> {
     ])
 }
 
+fn containing_subfigure_file(containing_status: &'static str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000200",
+            parameters: "308,0,5HCHILD,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "CHILDINS".into(),
+            status: "00000000",
+            parameters: "408,1,10,20,30,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "CONTNR".into(),
+            status: containing_status,
+            parameters: "308,1,9HCONTAINER,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "CONTINS".into(),
+            status: "00000000",
+            parameters: "408,5,0,0,0,1;".into(),
+        },
+    ])
+}
+
+pub(crate) fn rejected_containing_subfigure_file() -> Vec<u8> {
+    containing_subfigure_file("00000100")
+}
+
+pub(crate) fn admitted_containing_subfigure_file() -> Vec<u8> {
+    containing_subfigure_file("00000200")
+}
+
+fn containing_network_file(containing_status: &'static str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000200",
+            parameters: "320,0,5HCHILD,0,0,3HREF,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "CHILDINS".into(),
+            status: "00000000",
+            parameters: "420,1,10,20,30,2,,,,5HCHILD,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "CONTNR".into(),
+            status: containing_status,
+            parameters: "320,1,9HCONTAINER,1,3,0,3HREF,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "CONTINS".into(),
+            status: "00000000",
+            parameters: "420,5,0,0,0,1,,,,6HCONTNR,0,0;".into(),
+        },
+    ])
+}
+
+pub(crate) fn rejected_containing_network_file() -> Vec<u8> {
+    containing_network_file("00000100")
+}
+
+pub(crate) fn admitted_containing_network_file() -> Vec<u8> {
+    containing_network_file("00000200")
+}
+
 pub(crate) fn network_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
