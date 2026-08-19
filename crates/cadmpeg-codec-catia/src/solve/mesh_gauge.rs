@@ -574,38 +574,6 @@ pub(crate) fn canonicalize_complete_endpoint_pairs(
         .collect()
 }
 
-pub(crate) fn canonicalize_coordinate_endpoint_pairs(
-    pairs: &[[usize; 2]],
-    gauge: MeshCandidateGauge<'_>,
-) -> Option<Vec<[usize; 2]>> {
-    let mut canonical = pairs
-        .iter()
-        .copied()
-        .map(|mut pair| {
-            pair.sort_unstable();
-            pair
-        })
-        .collect::<Vec<_>>();
-    let Some(coordinate_gauge) = gauge.coordinate_gauge else {
-        return Some(canonical);
-    };
-    for permutations in &coordinate_gauge.components {
-        let mut best = canonical.clone();
-        for permutation in permutations {
-            let candidate = canonical
-                .iter()
-                .copied()
-                .map(|pair| mapped_endpoint_pair(Some(pair), Some(permutation)))
-                .collect::<Option<Vec<_>>>()?;
-            if candidate < best {
-                best = candidate;
-            }
-        }
-        canonical = best;
-    }
-    Some(canonical)
-}
-
 fn canonicalize_mesh_edge_row_gauges(
     mut topology: StandardTopology,
     gauge: MeshCandidateGauge<'_>,

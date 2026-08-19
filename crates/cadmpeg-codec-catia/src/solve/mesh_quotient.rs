@@ -6,8 +6,8 @@ use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
-    canonicalize_coordinate_endpoint_pairs, canonicalize_endpoint_relation_state,
-    mesh_candidates_equivalent_with_context, MeshCandidateGauge,
+    canonicalize_endpoint_relation_state, mesh_candidates_equivalent_with_context,
+    MeshCandidateGauge,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -5837,15 +5837,25 @@ fn endpoint_configuration_for_assignment(
     Some(configuration)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MeshDirectionEnumerationError {
+    Invalid,
+    Overflow,
+}
+
 fn endpoint_configuration_boundary_directions(
     boundary: &[MeshBoundaryEdgeCandidate],
     pairs: &HashMap<usize, [usize; 2]>,
-) -> Option<Vec<Vec<bool>>> {
+) -> Result<Vec<Vec<bool>>, MeshDirectionEnumerationError> {
     if boundary.is_empty() {
-        return None;
+        return Err(MeshDirectionEnumerationError::Invalid);
     }
-    let first = boundary.first()?;
-    let first_pair = *pairs.get(&first.edge)?;
+    let first = boundary
+        .first()
+        .ok_or(MeshDirectionEnumerationError::Invalid)?;
+    let first_pair = *pairs
+        .get(&first.edge)
+        .ok_or(MeshDirectionEnumerationError::Invalid)?;
     let first_directions = if first_pair[0] == first_pair[1] {
         vec![false]
     } else {
@@ -5868,7 +5878,9 @@ fn endpoint_configuration_boundary_directions(
         })
         .collect::<Vec<_>>();
     for use_ in &boundary[1..] {
-        let pair = *pairs.get(&use_.edge)?;
+        let pair = *pairs
+            .get(&use_.edge)
+            .ok_or(MeshDirectionEnumerationError::Invalid)?;
         let mut next = Vec::new();
         for (start, current, directions) in states {
             for direction in [false, true] {
@@ -5884,30 +5896,37 @@ fn endpoint_configuration_boundary_directions(
                 directions.push(direction);
                 next.push((start, edge_end, directions));
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return None;
+                    return Err(MeshDirectionEnumerationError::Overflow);
                 }
             }
         }
         states = next;
         if states.is_empty() {
-            return Some(Vec::new());
+            return Ok(Vec::new());
         }
     }
-    Some(
-        states
-            .into_iter()
-            .filter_map(|(start, current, directions)| (start == current).then_some(directions))
-            .collect(),
-    )
+    let mut solutions = states
+        .into_iter()
+        .filter_map(|(start, current, directions)| (start == current).then_some(directions))
+        .collect::<Vec<_>>();
+    solutions.sort_unstable();
+    solutions.dedup();
+    if solutions.len() == 2 && boundary.iter().all(|use_| use_.reversed.is_none()) {
+        // An unresolved closed boundary has two traversal orientations. They
+        // are the boundary-reversal gauge; retain one deterministic member
+        // before combining independent boundaries.
+        solutions.truncate(1);
+    }
+    Ok(solutions)
 }
 
 fn endpoint_configuration_directions(
     assignment: &MeshFaceBoundaryAssignment,
     configuration: &MeshFaceEndpointConfiguration,
-) -> Option<MeshFaceDirectionOptions> {
+) -> Result<MeshFaceDirectionOptions, MeshDirectionEnumerationError> {
     let pairs = configuration.iter().copied().collect::<HashMap<_, _>>();
     if pairs.len() != configuration.len() {
-        return None;
+        return Err(MeshDirectionEnumerationError::Invalid);
     }
     let mut alternatives = vec![Vec::new()];
     for boundary in &assignment.boundaries {
@@ -5919,7 +5938,7 @@ fn endpoint_configuration_directions(
                 alternative.push(boundary_directions.clone());
                 next.push(alternative);
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return None;
+                    return Err(MeshDirectionEnumerationError::Overflow);
                 }
             }
         }
@@ -5928,7 +5947,7 @@ fn endpoint_configuration_directions(
             break;
         }
     }
-    Some(alternatives)
+    Ok(alternatives)
 }
 
 #[derive(Clone)]
@@ -6518,15 +6537,6 @@ where
         let Some(edge_pairs) = edge_pairs.into_iter().collect::<Option<Vec<_>>>() else {
             return false;
         };
-        if let Some(gauge) = candidate_gauge {
-            let Some(canonical_pairs) = canonicalize_coordinate_endpoint_pairs(&edge_pairs, gauge)
-            else {
-                return false;
-            };
-            if canonical_pairs != edge_pairs {
-                return false;
-            }
-        }
         let selections = domains
             .iter()
             .enumerate()
@@ -6944,18 +6954,37 @@ fn resolve_fixed_mesh_endpoint_pairs(
     let Ok(edge_pairs) = edge_pairs else {
         return MeshEndpointResolve::Rejected;
     };
-    let fixed_face_directions = selected
-        .iter()
-        .map(|assignment| {
-            let configuration = endpoint_configuration_for_assignment(assignment, &edge_pairs)?;
-            let directions = endpoint_configuration_directions(assignment, &configuration)?;
-            (!directions.is_empty()).then_some(Some(directions))
-        })
-        .collect::<Option<Vec<_>>>()
-        .ok_or(MeshEndpointResolve::Rejected);
-    let Ok(fixed_face_directions) = fixed_face_directions else {
-        return MeshEndpointResolve::Rejected;
-    };
+    let mut fixed_face_directions = Vec::with_capacity(selected.len());
+    let mut direction_overflow = false;
+    for assignment in selected {
+        let Some(configuration) = endpoint_configuration_for_assignment(assignment, &edge_pairs)
+        else {
+            return MeshEndpointResolve::Rejected;
+        };
+        let directions = match endpoint_configuration_directions(assignment, &configuration) {
+            Ok(directions) => directions,
+            Err(MeshDirectionEnumerationError::Overflow) => {
+                direction_overflow = true;
+                break;
+            }
+            Err(MeshDirectionEnumerationError::Invalid) => return MeshEndpointResolve::Rejected,
+        };
+        if directions.is_empty() {
+            return MeshEndpointResolve::Rejected;
+        }
+        fixed_face_directions.push(Some(directions));
+    }
+    let use_fixed_direction_search = !direction_overflow;
+    if direction_overflow {
+        let Ok(directions) = alloc_filled(
+            assignment_domains.len(),
+            None,
+            "catia_general_mesh_fixed_face_directions",
+        ) else {
+            return MeshEndpointResolve::Rejected;
+        };
+        fixed_face_directions = directions;
+    }
     let Ok(mut edge_has_fixed_direction) = alloc_filled(
         edge_candidates.len(),
         false,
@@ -7066,18 +7095,29 @@ fn resolve_fixed_mesh_endpoint_pairs(
         #[cfg(test)]
         possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
-        face_work: Vec::new(),
+        face_work: assignment_domains
+            .iter()
+            .map(|assignments| Some(assignments.len()))
+            .collect(),
         edge_candidates,
         edge_rows,
         vertex_points,
         candidate_gauge,
         port_identities: Some(port_identities),
         fixed_face_directions,
-        fixed_edge_orientations: edge_has_fixed_direction
-            .iter()
-            .map(|fixed| (!fixed).then_some(false))
-            .collect(),
-        edge_has_fixed_direction,
+        fixed_edge_orientations: if use_fixed_direction_search {
+            edge_has_fixed_direction
+                .iter()
+                .map(|fixed| (!fixed).then_some(false))
+                .collect()
+        } else {
+            Vec::new()
+        },
+        edge_has_fixed_direction: if use_fixed_direction_search {
+            edge_has_fixed_direction
+        } else {
+            Vec::new()
+        },
         selected: match alloc_filled(assignment_domains.len(), None, "catia_fixed_mesh_selection") {
             Ok(selected) => selected,
             Err(_) => return MeshEndpointResolve::Rejected,
@@ -7088,7 +7128,11 @@ fn resolve_fixed_mesh_endpoint_pairs(
         exhausted: false,
         face_equation_cache: RefCell::default(),
     };
-    search.search_fixed_direction_with_budget(&quotient, budget);
+    if use_fixed_direction_search {
+        search.search_fixed_direction_with_budget(&quotient, budget);
+    } else {
+        search.search_with_budget(&quotient, budget, budget);
+    }
     if search.exhausted {
         MeshEndpointResolve::Exhausted
     } else if search.ambiguous {
@@ -9780,6 +9824,51 @@ fn endpoint_configurations_do_not_duplicate_closed_point_transitions() {
 
     assert_eq!(configurations.len(), 1);
     assert!(!budget.exhausted());
+}
+
+#[test]
+fn endpoint_configuration_unresolved_boundary_reversal_is_a_gauge() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![
+            vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+            ],
+            vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 2,
+                    end: 3,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 3,
+                    start: 2,
+                    end: 3,
+                    reversed: None,
+                },
+            ],
+        ],
+    };
+    let configuration = vec![(0, [0, 1]), (1, [0, 1]), (2, [2, 3]), (3, [2, 3])];
+
+    let directions = endpoint_configuration_directions(&assignment, &configuration)
+        .expect("unresolved boundary directions should enumerate");
+
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].len(), 2);
+    assert_eq!(directions[0][0].len(), 2);
+    assert_eq!(directions[0][1].len(), 2);
 }
 
 #[test]
