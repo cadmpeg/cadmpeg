@@ -17,35 +17,6 @@ Each item has an identifier and these fields:
 
 ## 5. Design projection
 
-### DP-16. Sketch placement rotation admission
-
-**Question.** Which rotation admission rule applies to a sketch `Placement` or `AttachmentOffset`
-carrier: the settled placement rule, or a stricter sketch-only rule?
-
-**Known.** The specification gives one placement rotation rule for every carrier. `A` is the
-representation discriminator, a finite zero-length axis is valid and rotates about the positive Z
-axis, and every nonzero finite axis is normalized. `product.rs:999-1096` applies that rule;
-`attachment.rs` and `joint.rs` call the same function. `design.rs:1588-1653` keeps a second
-rotation decode for sketch `Placement` and `AttachmentOffset`; it now uses the positive Z fallback
-for a zero axis and normalizes every nonzero finite axis. `validate_sketch_placement` at
-`design.rs:1655-1683` still turns incomplete or invalid components into a malformed-document
-refusal. FreeCAD `Base::Rotation::setValue` keeps the positive Z axis for a null axis, and
-`Base::Vector3::Normalize` divides by every length that is not zero. FreeCAD's quaternion
-constructor normalizes its four components at `freecad/src/Base/Rotation.cpp:73-77,200-207,314-325`.
-
-**Need.** Use one rotation admission rule for every placement carrier, or state the sketch rule and
-its producer source in the specification. Show which documents each rule accepts and refuses.
-
-**Conflict.** A sketch `Placement` with `A=1.5707963`, `Ox=0`, `Oy=0`, and `Oz=0` is now admitted
-as a quarter turn about the positive Z axis, as the producer and `product.rs` require. An axis such
-as `Ox=1e-20` is also normalized by the producer and the decoder. A sketch quaternion with finite
-components but non-unit norm is normalized by FreeCAD and `product.rs`, while `design.rs` still
-applies the raw components. `design.rs:282-290` discards the error from the same function, so an
-object that is not transferred as a sketch can lose an extrusion profile normal in silence.
-
-**Note.** Partly settled by the DP-12 zero-axis closure. The remaining quaternion normalization
-and non-sketch caller behavior require a separate proof and design decision.
-
 ### DP-17. Design enumeration label selection
 
 **Question.** Which direct `Enum` sequence supplies a design enumeration label such as a hole thread

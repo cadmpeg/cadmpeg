@@ -289,13 +289,14 @@ pub(crate) fn transfer(
             };
             let profile_normal = profile_target(&owned)
                 .and_then(|(_, target)| objects.iter().find(|object| object.id == target))
-                .and_then(|profile_object| {
+                .map(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id.as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
-                    sketch_frame(profile_properties).ok().map(|frame| frame.1)
-                });
+                    sketch_frame(profile_properties).map(|frame| frame.1)
+                })
+                .transpose()?;
             extrusion_definition(
                 &object.type_name,
                 &owned,
@@ -1806,12 +1807,12 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
             component("Q3")?,
         ]
     };
-    if quaternion
+    let norm = quaternion
         .iter()
         .map(|component| component * component)
         .sum::<f64>()
-        <= f64::EPSILON
-    {
+        .sqrt();
+    if !norm.is_finite() || norm == 0.0 {
         return None;
     }
     Some((
@@ -1855,7 +1856,7 @@ fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), Codec
 fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
     let [x, y, z, w] = quaternion;
     let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if norm <= f64::EPSILON {
+    if !norm.is_finite() || norm == 0.0 {
         return Vector3::new(vector[0], vector[1], vector[2]);
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);

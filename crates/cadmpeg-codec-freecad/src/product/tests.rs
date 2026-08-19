@@ -485,6 +485,48 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
 }
 
 #[test]
+fn accepts_nonzero_quaternion_below_machine_epsilon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+ <Object type="Part::Feature" name="Feature" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="1e-20" Q2="0" Q3="1e-20"/></Property>
+ </Properties></Object>
+ <Object name="Feature"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="1e-16" Q2="0" Q3="1e-16"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nonzero source quaternion");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!(matrix[2][2].abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn rejects_ambiguous_link_placement_without_policy() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

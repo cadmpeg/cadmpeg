@@ -872,6 +872,23 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
 }
 
 #[test]
+fn refuses_malformed_non_sketch_profile_frame_before_design_transfer() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Part2DObjectPython" name="Profile"/><Object type="PartDesign::Pocket" name="Pocket"/></Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property></Properties></Object>
+ <Object name="Pocket"><Properties Count="3"><Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="5"/></Property><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("malformed non-sketch profile placement");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn transfers_part_extrusion_symmetric_direction_magnitude() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

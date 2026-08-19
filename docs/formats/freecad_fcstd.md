@@ -365,7 +365,12 @@ When a `Placement` or `AttachmentOffset` carrier is present, its runtime type is
 `Px`, `Py`, and `Pz` plus either finite `Q0` through `Q3` or finite `A`, `Ox`, `Oy`, and `Oz`
 components. When `A` is present, its finite axis-angle components are authoritative; a zero-length
 axis uses the positive Z fallback and a nonzero axis is normalized. When `A` is absent, finite
-quaternion components are authoritative; a zero quaternion is not a sketch frame.
+quaternion components are authoritative, their Euclidean norm must be finite and positive, and the
+components are normalized. A zero quaternion or non-finite quaternion norm is not a sketch frame.
+CADIR decision: this placement admission rule is shared by product, attachment, joint, and sketch
+carriers. A malformed present placement or attachment offset on a non-sketch profile refuses the
+document before design transfer; design transfer does not replace the failed frame with an
+unresolved profile normal.
 Sketch geometry dispatch uses exact runtime names. `Part::GeomLine` and `Part::GeomLineSegment`
 select lines; `Part::GeomCircle` selects circles; `Part::GeomArcOfCircle` selects bounded arcs;
 `Part::GeomEllipse` and `Part::GeomArcOfEllipse` select ellipses; `Part::GeomHyperbola` and
@@ -1303,8 +1308,10 @@ are validation metadata, not a replacement value.
 Each placement carrier is an `App::PropertyPlacement` property with at most one
 `PropertyPlacement` value. Its finite position components are `Px`, `Py`, and `Pz`. When `A` is
 present, finite `Ox`, `Oy`, `Oz`, and `A` are authoritative and a zero-length axis uses the
-positive Z fallback; when `A` is absent, finite `Q0` through `Q3` are required and authoritative.
-The non-selected representation is ignored. Duplicate carriers or values are malformed.
+positive Z fallback; when `A` is absent, finite `Q0` through `Q3` are required and authoritative,
+their Euclidean norm must be finite and positive, and the components are normalized before the
+rotation matrix is formed. The non-selected representation is ignored. Duplicate carriers or
+values, a zero quaternion, or a non-finite quaternion norm are malformed.
 
 Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
 identify text versus binary framing, the declared topology version, recursive carrier-family

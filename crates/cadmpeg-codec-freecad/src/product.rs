@@ -1101,7 +1101,7 @@ fn placement_components(values: &[f64]) -> Option<[[f64; 4]; 4]> {
         return None;
     }
     let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if !norm.is_finite() || norm <= f64::EPSILON {
+    if !norm.is_finite() || norm == 0.0 {
         return None;
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);

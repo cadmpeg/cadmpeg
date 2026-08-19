@@ -381,6 +381,34 @@ fn follows_freecad_null_axis_fallback_for_sketch_placements() {
 }
 
 #[test]
+fn accepts_nonzero_sketch_quaternion_below_machine_epsilon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="1e-20" Q2="0" Q3="1e-20"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nonzero sketch quaternion");
+    let (origin, normal, x_axis) = result.ir().model.sketches[0]
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+    assert!(normal.x > 1.0 - f64::EPSILON * 16.0);
+    assert!(normal.y.abs() < f64::EPSILON * 16.0);
+    assert!(normal.z.abs() < f64::EPSILON * 16.0);
+    assert!(x_axis.x.abs() < f64::EPSILON * 16.0);
+    assert!(x_axis.y.abs() < f64::EPSILON * 16.0);
+    assert!(x_axis.z < -1.0 + f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn rejects_malformed_constraint_operand_lists() {
     for document in [
         r#"<Document SchemaVersion="4" FileVersion="1">
