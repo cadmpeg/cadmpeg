@@ -21,8 +21,9 @@ use super::support_uv::{
     assign_ext11_support_uv_with_index,
     attach_completed_intersection_pcurves_for_stream_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
-    complete_support_uv_with_budget, invalidate_inconsistent_support_uv_with_validated_lanes,
-    linear_knots, support_uv_budget_exhausted, support_uv_completion_budget_limit,
+    complete_support_uv_with_budget_and_endpoint_witnesses,
+    invalidate_inconsistent_support_uv_with_validated_lanes, linear_knots,
+    support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
 };
 use super::{report_untransferred_streams, Counts, Scan};
@@ -918,13 +919,14 @@ pub(crate) fn try_decode_geometry(
             &completion_geometry_budget,
         );
         completion_geometry_budget.clear_blend_frame_cache();
-        invalidate_inconsistent_support_uv_with_validated_lanes(
-            &mut ir,
-            &pending_ext11_support_uv,
-            &validated_support_uv_lanes,
-            &support_uv_validation_budget,
-            &completion_geometry_budget,
-        );
+        let newly_validated_endpoint_witnesses =
+            invalidate_inconsistent_support_uv_with_validated_lanes(
+                &mut ir,
+                &pending_ext11_support_uv,
+                &validated_support_uv_lanes,
+                &support_uv_validation_budget,
+                &completion_geometry_budget,
+            );
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
             &mut ir,
@@ -934,20 +936,35 @@ pub(crate) fn try_decode_geometry(
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir);
-        support_uv_lane_geometry_exhausted |= complete_support_uv_with_budget(
-            &mut ir,
-            &pending_ext11_support_uv,
-            &support_budget,
-            &support_uv_geometry_budget,
-            &coupled_support_budget,
-            &coupled_support_uv_geometry_budget,
-        );
+        let mut completed_endpoint_witnesses = BTreeMap::new();
+        support_uv_lane_geometry_exhausted |=
+            complete_support_uv_with_budget_and_endpoint_witnesses(
+                &mut ir,
+                &pending_ext11_support_uv,
+                &support_budget,
+                &support_uv_geometry_budget,
+                &coupled_support_budget,
+                &coupled_support_uv_geometry_budget,
+                &mut completed_endpoint_witnesses,
+            );
         completion_geometry_budget.clear_blend_frame_cache();
-        let validated_endpoint_witnesses = validated_support_uv_endpoint_witnesses(
+        let mut validated_endpoint_witnesses = validated_support_uv_endpoint_witnesses(
             &ir,
             &pending_ext11_support_uv,
             &validated_support_uv_lanes,
         );
+        for (key, witness) in newly_validated_endpoint_witnesses {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witness);
+        }
+        for (key, witnesses) in completed_endpoint_witnesses {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witnesses);
+        }
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,

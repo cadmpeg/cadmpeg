@@ -299,6 +299,23 @@ pub(crate) type PendingExt11SupportUv = (
     [Option<Vec<[f64; 2]>>; 2],
 );
 
+pub(crate) type EndpointWitnesses =
+    BTreeMap<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], [Point3; 2])>>;
+
+pub(crate) fn endpoint_witness_for_candidate(
+    witnesses: &EndpointWitnesses,
+    key: &(CurveId, SurfaceId),
+    pcurve: &PcurveGeometry,
+    parameter_range: [f64; 2],
+) -> Option<[Point3; 2]> {
+    witnesses
+        .get(key)?
+        .iter()
+        .find_map(|(candidate, candidate_range, endpoints)| {
+            (candidate == pcurve && *candidate_range == parameter_range).then_some(*endpoints)
+        })
+}
+
 /// Return endpoint witnesses already certified by serialized support-UV lanes.
 /// The lane samples and the intersection parameter range use the same ordered
 /// parameter domain, so its first and last model-space samples are the
@@ -307,14 +324,14 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
-) -> BTreeMap<(CurveId, SurfaceId), [Point3; 2]> {
+) -> EndpointWitnesses {
     let procedural_by_id = ir
         .model
         .procedural_curves
         .iter()
         .map(|procedural| (&procedural.id, procedural))
         .collect::<BTreeMap<_, _>>();
-    let mut witnesses = BTreeMap::new();
+    let mut witnesses: EndpointWitnesses = BTreeMap::new();
     for (procedural_id, points, parameters, _, _) in pending {
         if points.len() < 2 || points.len() != parameters.len() {
             continue;
@@ -341,10 +358,17 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
             let Some(surface) = support.surface.clone() else {
                 continue;
             };
-            witnesses.insert(
-                (procedural.curve.clone(), surface),
-                [points[0], *points.last().expect("at least two points")],
-            );
+            let Some(pcurve) = support.pcurve.clone() else {
+                continue;
+            };
+            witnesses
+                .entry((procedural.curve.clone(), surface))
+                .or_default()
+                .push((
+                    pcurve,
+                    context.parameter_range,
+                    [points[0], *points.last().expect("at least two points")],
+                ));
         }
     }
     witnesses
@@ -512,6 +536,7 @@ pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
     );
 }
 
+#[cfg(test)]
 pub(super) fn complete_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
@@ -519,6 +544,27 @@ pub(super) fn complete_support_uv_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
+) -> bool {
+    let mut endpoint_witnesses = BTreeMap::new();
+    complete_support_uv_with_budget_and_endpoint_witnesses(
+        ir,
+        pending,
+        support_budget,
+        geometry_budget,
+        coupled_support_budget,
+        coupled_geometry_budget,
+        &mut endpoint_witnesses,
+    )
+}
+
+pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    support_budget: &SupportUvBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+    coupled_support_budget: &SupportUvBudget<'_>,
+    coupled_geometry_budget: &GeometryWorkBudget<'_>,
+    endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
     // A failed fit can become solvable when its opposite lane is filled by an
     // earlier wave. Keep that dependency as the retry key; repeating the same
@@ -540,6 +586,7 @@ pub(super) fn complete_support_uv_with_budget(
             coupled_support_budget,
             coupled_geometry_budget,
             &mut failed_attempts,
+            endpoint_witnesses,
         );
         let after = pending_support_lanes_requiring_completion(ir, pending);
         if after >= before || support_uv_budget_exhausted(support_budget) {
@@ -556,7 +603,7 @@ pub(crate) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    invalidate_inconsistent_support_uv_with_validated_lanes(
+    let _ = invalidate_inconsistent_support_uv_with_validated_lanes(
         ir,
         pending,
         &BTreeSet::new(),
@@ -565,16 +612,19 @@ pub(crate) fn invalidate_inconsistent_support_uv(
     );
 }
 
+/// Invalidate support lanes that disagree with their surface and retain
+/// endpoint witnesses only for lanes whose complete sample set was evaluated.
 pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
-    let invalid = {
+) -> EndpointWitnesses {
+    let (invalid, endpoint_witnesses) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut invalid = Vec::new();
+        let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         for (procedural_id, points, parameters, fit_tolerance, _) in pending {
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
@@ -605,11 +655,17 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
                 let tolerance =
                     blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance);
                 let mut inconsistent = false;
-                for (parameter, point) in parameters.iter().zip(points) {
+                let mut fully_validated =
+                    parameters.len() == points.len() && !parameters.is_empty();
+                let mut endpoints = [None, None];
+                for (sample_index, (parameter, point)) in parameters.iter().zip(points).enumerate()
+                {
                     if geometry_budget.exhausted() || !support_budget.charge() {
+                        fully_validated = false;
                         break;
                     }
                     let Some(uv) = pcurve_uv(pcurve, *parameter) else {
+                        fully_validated = false;
                         continue;
                     };
                     let Some(actual) = decoded_surface_point_with_geometry_and_budget(
@@ -621,19 +677,34 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
                         0,
                         geometry_budget,
                     ) else {
+                        fully_validated = false;
                         break;
                     };
+                    if sample_index == 0 {
+                        endpoints[0] = Some(actual);
+                    }
+                    if sample_index + 1 == parameters.len() {
+                        endpoints[1] = Some(actual);
+                    }
                     if point_distance(actual, *point) > tolerance {
                         inconsistent = true;
+                        fully_validated = false;
                         break;
                     }
                 }
                 if inconsistent {
                     invalid.push((procedural_id.clone(), side));
+                } else if fully_validated {
+                    if let [Some(first), Some(last)] = endpoints {
+                        endpoint_witnesses
+                            .entry((procedural.curve.clone(), surface.clone()))
+                            .or_default()
+                            .push((pcurve.clone(), context.parameter_range, [first, last]));
+                    }
                 }
             }
         }
-        invalid
+        (invalid, endpoint_witnesses)
     };
     for (procedural_id, side) in invalid {
         let Some(procedural) = ir
@@ -650,6 +721,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
         };
         context.sides[side].pcurve = None;
     }
+    endpoint_witnesses
 }
 
 pub(crate) fn pending_support_lanes_requiring_completion(
@@ -676,6 +748,9 @@ pub(crate) fn pending_support_lanes_requiring_completion(
         .sum()
 }
 
+// Keep independent work budgets, retry state, and the witness sink explicit at
+// this completion boundary.
+#[allow(clippy::too_many_arguments)]
 fn complete_support_uv_wave(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
@@ -684,6 +759,7 @@ fn complete_support_uv_wave(
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
+    endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
     let mut lane_geometry_exhausted = false;
     if !support_uv_budget_exhausted(support_budget) && !geometry_budget.exhausted() {
@@ -1006,32 +1082,85 @@ fn complete_support_uv_wave(
                         uv[index].u += turns * std::f64::consts::TAU;
                     }
                 }
-                let reproduces_chart = all_parameters_certified
-                    || uv.iter().zip(points).all(|(uv, point)| {
-                        decoded_surface_point_with_geometry_and_budget(
+                let mut endpoint_values = [None, None];
+                let reproduces_chart = if all_parameters_certified {
+                    true
+                } else {
+                    let mut reproduces = true;
+                    for (sample_index, (sample_uv, point)) in uv.iter().zip(points).enumerate() {
+                        let Some(actual) = decoded_surface_point_with_geometry_and_budget(
                             &model_index,
                             surface_id,
                             &surface.geometry,
-                            uv.u,
-                            uv.v,
+                            sample_uv.u,
+                            sample_uv.v,
                             0,
                             geometry_budget,
-                        )
-                        .is_some_and(|actual| {
-                            point_distance(actual, *point) <= effective_fit_tolerance
-                        })
-                    });
+                        ) else {
+                            reproduces = false;
+                            break;
+                        };
+                        if sample_index == 0 {
+                            endpoint_values[0] = Some(actual);
+                        }
+                        if sample_index + 1 == points.len() {
+                            endpoint_values[1] = Some(actual);
+                        }
+                        if point_distance(actual, *point) > effective_fit_tolerance {
+                            reproduces = false;
+                            break;
+                        }
+                    }
+                    reproduces
+                };
                 if reproduces_chart {
+                    if all_parameters_certified {
+                        endpoint_values = [
+                            uv.first().and_then(|sample_uv| {
+                                decoded_surface_point_with_geometry_and_budget(
+                                    &model_index,
+                                    surface_id,
+                                    &surface.geometry,
+                                    sample_uv.u,
+                                    sample_uv.v,
+                                    0,
+                                    geometry_budget,
+                                )
+                            }),
+                            uv.last().and_then(|sample_uv| {
+                                decoded_surface_point_with_geometry_and_budget(
+                                    &model_index,
+                                    surface_id,
+                                    &surface.geometry,
+                                    sample_uv.u,
+                                    sample_uv.v,
+                                    0,
+                                    geometry_budget,
+                                )
+                            }),
+                        ];
+                    }
+                    let parameter_range = [
+                        parameters[0],
+                        *parameters.last().expect("non-empty chart parameters"),
+                    ];
+                    let pcurve = PcurveGeometry::Nurbs {
+                        degree: 1,
+                        knots: linear_knots(parameters),
+                        control_points: uv,
+                        weights: None,
+                        periodic: false,
+                    };
+                    if let [Some(first), Some(last)] = endpoint_values {
+                        endpoint_witnesses
+                            .entry((procedural.curve.clone(), surface_id.clone()))
+                            .or_default()
+                            .push((pcurve.clone(), parameter_range, [first, last]));
+                    }
                     replacements.push((
                         procedural_id.clone(),
                         side,
-                        PcurveGeometry::Nurbs {
-                            degree: 1,
-                            knots: linear_knots(parameters),
-                            control_points: uv,
-                            weights: None,
-                            periodic: false,
-                        },
+                        pcurve,
                         effective_fit_tolerance,
                     ));
                 } else {
@@ -1086,6 +1215,7 @@ fn complete_support_uv_wave(
             pending,
             coupled_support_budget,
             coupled_geometry_budget,
+            endpoint_witnesses,
         );
     }
     lane_geometry_exhausted
@@ -1174,6 +1304,7 @@ fn complete_coupled_support_uv(
     pending: &[PendingExt11SupportUv],
     coupled_support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
     if geometry_budget.exhausted() {
         return false;
@@ -1266,26 +1397,64 @@ fn complete_coupled_support_uv(
                 &mut blend_parameter_grids,
             )
         });
-        lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-        let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
         let Some(lanes) = lanes else {
+            lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+            let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
             continue;
         };
         for side in 0..2 {
             if missing[side] {
-                replacements.push((
-                    procedural_id.clone(),
-                    side,
-                    PcurveGeometry::Nurbs {
-                        degree: 1,
-                        knots: linear_knots(parameters),
-                        control_points: lanes[side].clone(),
-                        weights: None,
-                        periodic: false,
-                    },
-                ));
+                let endpoint_values =
+                    model_index
+                        .surfaces(surfaces[side].0.as_str())
+                        .map(|surface| {
+                            [
+                                lanes[side].first().and_then(|parameters| {
+                                    decoded_surface_point_with_geometry_and_budget(
+                                        &model_index,
+                                        surfaces[side],
+                                        &surface.geometry,
+                                        parameters.u,
+                                        parameters.v,
+                                        0,
+                                        geometry_budget,
+                                    )
+                                }),
+                                lanes[side].last().and_then(|parameters| {
+                                    decoded_surface_point_with_geometry_and_budget(
+                                        &model_index,
+                                        surfaces[side],
+                                        &surface.geometry,
+                                        parameters.u,
+                                        parameters.v,
+                                        0,
+                                        geometry_budget,
+                                    )
+                                }),
+                            ]
+                        });
+                let parameter_range = [
+                    parameters[0],
+                    *parameters.last().expect("non-empty chart parameters"),
+                ];
+                let pcurve = PcurveGeometry::Nurbs {
+                    degree: 1,
+                    knots: linear_knots(parameters),
+                    control_points: lanes[side].clone(),
+                    weights: None,
+                    periodic: false,
+                };
+                if let Some([Some(first), Some(last)]) = endpoint_values {
+                    endpoint_witnesses
+                        .entry((procedural.curve.clone(), surfaces[side].clone()))
+                        .or_default()
+                        .push((pcurve.clone(), parameter_range, [first, last]));
+                }
+                replacements.push((procedural_id.clone(), side, pcurve));
             }
         }
+        lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+        let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
     }
     drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
@@ -1315,7 +1484,13 @@ pub(super) fn complete_coupled_support_uv_for_test(
 ) {
     let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    complete_coupled_support_uv(ir, pending, &coupled_support_budget, &geometry_budget);
+    complete_coupled_support_uv(
+        ir,
+        pending,
+        &coupled_support_budget,
+        &geometry_budget,
+        &mut BTreeMap::new(),
+    );
 }
 
 pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
@@ -1497,7 +1672,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     procedural_start: usize,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
-    validated_endpoint_witnesses: &BTreeMap<(CurveId, SurfaceId), [Point3; 2]>,
+    validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     let loop_faces = ir
@@ -1616,51 +1791,84 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
                 .then_some(key)
             })
             .collect::<BTreeSet<_>>();
-        let candidate_endpoints = candidates
+        let mut witnessed_keys = BTreeSet::new();
+        let mut candidate_endpoints = candidates
             .iter()
             .filter(|(key, _)| endpoint_admissible_keys.contains(key))
             .filter_map(|(key, values)| {
                 let [candidate] = values.as_slice() else {
                     return None;
                 };
-                Some((
-                    key.clone(),
-                    validated_endpoint_witnesses.get(key).copied().or_else(|| {
-                        pcurve_surface_endpoints_with_index_and_budget(
-                            &model_index,
-                            &key.1,
-                            &candidate.0,
-                            None,
-                            geometry_budget,
-                        )
-                    }),
-                ))
+                let witness = endpoint_witness_for_candidate(
+                    validated_endpoint_witnesses,
+                    key,
+                    &candidate.0,
+                    candidate.1,
+                );
+                if witness.is_some() {
+                    witnessed_keys.insert(key.clone());
+                }
+                let endpoints = witness.or_else(|| {
+                    pcurve_surface_endpoints_with_index_and_budget(
+                        &model_index,
+                        &key.1,
+                        &candidate.0,
+                        None,
+                        geometry_budget,
+                    )
+                });
+                Some((key.clone(), endpoints))
             })
             .collect::<BTreeMap<_, _>>();
-        coedge_candidates
+        let replacements = coedge_candidates
             .into_iter()
             .filter_map(|(coedge_id, edge_id, curve, surface, edge_tolerance)| {
-                let [candidate] = candidates
-                    .get(&(curve.clone(), surface.clone()))?
-                    .as_slice()
-                else {
+                let key = (curve.clone(), surface.clone());
+                let [candidate] = candidates.get(&key)?.as_slice() else {
                     return None;
                 };
-                let coincident_surface = candidate_endpoints
-                    .get(&(curve, surface.clone()))?
-                    .as_ref()?;
                 let (edge_endpoints, edge_allowance) =
                     edge_endpoint_contracts.get(&edge_id).copied()?;
                 let fit_tolerance = candidate.2.or(edge_tolerance);
-                pcurve_matches_edge_endpoint_contract(
-                    *coincident_surface,
-                    edge_endpoints,
-                    edge_allowance,
-                    fit_tolerance,
-                )
-                .then(|| (coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
+                let matches = {
+                    let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                    pcurve_matches_edge_endpoint_contract(
+                        *coincident_surface,
+                        edge_endpoints,
+                        edge_allowance,
+                        fit_tolerance,
+                    )
+                };
+                if !matches {
+                    if !witnessed_keys.remove(&key) {
+                        return None;
+                    }
+                    // A witness from another geometry phase is a shortcut,
+                    // not a new admission rule. Preserve the established
+                    // endpoint evaluator whenever the downstream contract
+                    // disagrees with the cached proof.
+                    let fallback = pcurve_surface_endpoints_with_index_and_budget(
+                        &model_index,
+                        &key.1,
+                        &candidate.0,
+                        None,
+                        geometry_budget,
+                    );
+                    candidate_endpoints.insert(key.clone(), fallback);
+                    let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                    if !pcurve_matches_edge_endpoint_contract(
+                        *coincident_surface,
+                        edge_endpoints,
+                        edge_allowance,
+                        fit_tolerance,
+                    ) {
+                        return None;
+                    }
+                }
+                Some((coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        replacements
     };
     for (coedge_id, (geometry, parameter_range, fit_tolerance)) in replacements {
         let Some(fin_xmt) = coedge_id
