@@ -2173,6 +2173,18 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
     })
 }
 
+/// The result of applying one deltas stream to one partition image.
+pub(crate) struct MergeFullRecordsResult {
+    pub(crate) merged: Vec<u8>,
+    pub(crate) unmatched_tombstones: BTreeMap<&'static str, usize>,
+}
+
+#[derive(Clone, Copy)]
+enum MergeEvent {
+    Full { offset: usize },
+    Tombstone { offset: usize },
+}
+
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
@@ -2180,10 +2192,21 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
 /// envelopes are present, only records in the current interval of each body
 /// sequence contribute to the current image. Raw current-revision deltas bytes
 /// remain available to independent procedural decoders.
+#[cfg(test)]
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
-    let current_scopes = current_revision_scopes(&census, deltas.len());
+    merge_full_records_with_census(partition, deltas, &census, false).merged
+}
+
+pub(crate) fn merge_full_records_with_census(
+    partition: &[u8],
+    deltas: &[u8],
+    census: &Census,
+    collect_unmatched_tombstones: bool,
+) -> MergeFullRecordsResult {
+    let current_scopes = current_revision_scopes(census, deltas.len());
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
+    let mut unmatched_events = collect_unmatched_tombstones.then(BTreeMap::new);
     for record in census
         .records
         .iter()
@@ -2194,6 +2217,14 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         };
         if mergeable_record(record, kind) {
             replacements.insert((kind, record.xmt), record);
+            if let Some(events) = &mut unmatched_events {
+                events
+                    .entry((kind, record.xmt))
+                    .or_insert_with(Vec::new)
+                    .push(MergeEvent::Full {
+                        offset: record.offset,
+                    });
+            }
         }
     }
 
@@ -2205,10 +2236,21 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
             tombstones.insert((kind, tombstone.xmt), tombstone);
+            if let Some(events) = &mut unmatched_events {
+                events
+                    .entry((kind, tombstone.xmt))
+                    .or_insert_with(Vec::new)
+                    .push(MergeEvent::Tombstone {
+                        offset: tombstone.offset,
+                    });
+            }
         }
     }
 
     let graph = crate::topology::Graph::parse(partition);
+    let unmatched_tombstones = unmatched_events
+        .map(|events| count_unmatched_events(events, &graph))
+        .unwrap_or_default();
     let topology_carriers = graph.referenced_carrier_xmts();
     replacements.retain(|key, record| {
         tombstones
@@ -2243,7 +2285,10 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         merged
     };
     if !graph.body_shape_shells().is_empty() {
-        return build(false);
+        return MergeFullRecordsResult {
+            merged: build(false),
+            unmatched_tombstones,
+        };
     }
     let merged = build(true);
     let merged_graph = crate::topology::Graph::parse(&merged);
@@ -2257,9 +2302,15 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
             .saturating_add(deleted_faces)
             < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
-        build(false)
+        MergeFullRecordsResult {
+            merged: build(false),
+            unmatched_tombstones,
+        }
     } else {
-        merged
+        MergeFullRecordsResult {
+            merged,
+            unmatched_tombstones,
+        }
     }
 }
 
@@ -2280,37 +2331,38 @@ pub fn unmatched_terminal_tombstones_by_family(
     partition: &[u8],
     deltas: &[u8],
 ) -> BTreeMap<&'static str, usize> {
-    #[derive(Clone, Copy)]
-    enum Event {
-        Full { offset: usize },
-        Tombstone { offset: usize },
-    }
-
     let census = walk(deltas);
-    let current_scopes = current_revision_scopes(&census, deltas.len());
     let graph = crate::topology::Graph::parse(partition);
-    let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
+    count_unmatched_events(collect_unmatched_events(&census, deltas.len()), &graph)
+}
+
+fn collect_unmatched_events(
+    census: &Census,
+    stream_len: usize,
+) -> BTreeMap<(u8, u32), Vec<MergeEvent>> {
+    let current_scopes = current_revision_scopes(census, stream_len);
+    let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
     for record in census
         .records
-        .into_iter()
+        .iter()
         .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if !mergeable_record(&record, kind) {
+        if !mergeable_record(record, kind) {
             continue;
         }
         events
             .entry((kind, record.xmt))
             .or_default()
-            .push(Event::Full {
+            .push(MergeEvent::Full {
                 offset: record.offset,
             });
     }
     for tombstone in census
         .tombstones
-        .into_iter()
+        .iter()
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let Ok(kind) = u8::try_from(tombstone.kind) else {
@@ -2319,28 +2371,34 @@ pub fn unmatched_terminal_tombstones_by_family(
         events
             .entry((kind, tombstone.xmt))
             .or_default()
-            .push(Event::Tombstone {
+            .push(MergeEvent::Tombstone {
                 offset: tombstone.offset,
             });
     }
+    events
+}
 
+fn count_unmatched_events(
+    events: BTreeMap<(u8, u32), Vec<MergeEvent>>,
+    graph: &crate::topology::Graph,
+) -> BTreeMap<&'static str, usize> {
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
         events.sort_by_key(|event| match event {
-            Event::Full { offset } | Event::Tombstone { offset } => *offset,
+            MergeEvent::Full { offset } | MergeEvent::Tombstone { offset } => *offset,
         });
-        let Some(Event::Tombstone { offset }) = events.last().copied() else {
+        let Some(MergeEvent::Tombstone { offset }) = events.last().copied() else {
             continue;
         };
         if graph.get(kind, xmt).is_none()
-                && !events.iter().any(|event| {
-                    matches!(event, Event::Full { offset: full_offset } if full_offset < &offset)
-                })
-            {
-                let name = family_name(u16::from(kind))
-                    .expect("event families originate from the accepted deltas census");
-                *unmatched.entry(name).or_default() += 1;
-            }
+            && !events.iter().any(|event| {
+                matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
+            })
+        {
+            let name = family_name(u16::from(kind))
+                .expect("event families originate from the accepted deltas census");
+            *unmatched.entry(name).or_default() += 1;
+        }
     }
     unmatched
 }

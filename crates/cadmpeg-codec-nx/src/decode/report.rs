@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
-use super::build::unmatched_delta_tombstone_counts;
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, body_selection_is_incomplete,
     body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
@@ -63,6 +62,7 @@ pub(crate) struct CompletionBudgetStatus {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_geometry_report(
     scan: &Scan,
+    unmatched_delta_tombstone_counts: &BTreeMap<&'static str, usize>,
     ir: &CadIr,
     counts: &Counts,
     has_topology: bool,
@@ -212,9 +212,8 @@ pub(crate) fn build_geometry_report(
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
-        let unmatched_tombstone_counts = unmatched_delta_tombstone_counts(scan);
-        let unmatched_tombstones = unmatched_tombstone_counts.values().sum::<usize>();
-        let unmatched_tombstone_detail = unmatched_tombstone_counts
+        let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
+        let unmatched_tombstone_detail = unmatched_delta_tombstone_counts
             .iter()
             .map(|(family, count)| format!("{family} {count}"))
             .collect::<Vec<_>>()

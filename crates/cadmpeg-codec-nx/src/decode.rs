@@ -120,7 +120,7 @@ pub(crate) use build::{
     prune_inactive_geometry, prune_inactive_topology, prune_unreferenced_unknown_carriers,
     retain_live_annotations, retain_live_unknown_links, rmfastload_selected_bodies,
     rmfastload_stream_indices, select_active_body, select_terminal_feature_bodies,
-    topology_body_node_ids, try_decode_geometry, unmatched_delta_tombstone_counts, GeometryDecode,
+    topology_body_node_ids, try_decode_geometry, GeometryDecode,
 };
 
 mod support_uv;

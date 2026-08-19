@@ -32,7 +32,7 @@ pub(crate) mod vector;
 
 pub(crate) use model::{extract_segment_lineage, terminal_feature_body_ids, NativeModel};
 pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
-pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
+pub(crate) use substrate::{topology_streams, ParsedStreams};
 pub(crate) use toggle::has_complete_saved_toggle_stream;
 
 /// Attach a pre-extracted [`NativeModel`] to `ir`: annotations, namespace arenas,

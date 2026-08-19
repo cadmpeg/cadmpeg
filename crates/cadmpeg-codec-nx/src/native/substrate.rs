@@ -15,11 +15,27 @@ use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
 
+struct TopologyPreparation<'a> {
+    streams: Vec<Cow<'a, [u8]>>,
+    unmatched_tombstone_counts: BTreeMap<&'static str, usize>,
+}
+
 /// The topology-merged bytes per stream: each stream's inflated bytes with delta
 /// full-record merges applied. Unpaired delta streams that carry records or tombstones
 /// are merged against an empty partition; paired delta streams are merged into their
 /// partition and then cleared.
 pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
+    prepare_topology_streams(scan, false).streams
+}
+
+fn topology_streams_with_unmatched_tombstones<'a>(scan: &'a Scan<'_>) -> TopologyPreparation<'a> {
+    prepare_topology_streams(scan, true)
+}
+
+fn prepare_topology_streams<'a>(
+    scan: &'a Scan<'_>,
+    collect_unmatched_tombstones: bool,
+) -> TopologyPreparation<'a> {
     let mut semantic = scan
         .streams
         .iter()
@@ -27,25 +43,48 @@ pub(crate) fn topology_streams<'a>(scan: &'a Scan<'_>) -> Vec<Cow<'a, [u8]>> {
         .collect::<Vec<_>>();
     let pairs = paired_delta_streams(scan);
     let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    let mut unmatched_tombstone_counts = BTreeMap::new();
+    let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
+        if !collect_unmatched_tombstones {
+            return;
+        }
+        for (family, count) in counts {
+            *unmatched_tombstone_counts.entry(family).or_default() += count;
+        }
+    };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
             let census = crate::deltas::walk(&stream.inflated);
             if !census.records.is_empty() || !census.tombstones.is_empty() {
-                semantic[delta] =
-                    Cow::Owned(crate::deltas::merge_full_records(&[], &stream.inflated));
+                let merged = crate::deltas::merge_full_records_with_census(
+                    &[],
+                    &stream.inflated,
+                    &census,
+                    collect_unmatched_tombstones,
+                );
+                add_counts(merged.unmatched_tombstones);
+                semantic[delta] = Cow::Owned(merged.merged);
             }
         }
     }
     for (partition, deltas) in pairs {
         for delta in deltas {
-            semantic[partition] = Cow::Owned(crate::deltas::merge_full_records(
+            let census = crate::deltas::walk(&semantic[delta]);
+            let merged = crate::deltas::merge_full_records_with_census(
                 &semantic[partition],
                 &semantic[delta],
-            ));
+                &census,
+                collect_unmatched_tombstones,
+            );
+            add_counts(merged.unmatched_tombstones);
+            semantic[partition] = Cow::Owned(merged.merged);
             semantic[delta] = Cow::Borrowed(&[]);
         }
     }
-    semantic
+    TopologyPreparation {
+        streams: semantic,
+        unmatched_tombstone_counts,
+    }
 }
 
 /// Map each partition stream ordinal to the delta stream ordinals that pair with it,
@@ -212,6 +251,7 @@ impl StreamParses {
 pub(crate) struct ParsedStreams<'a> {
     per_stream: Vec<StreamParses>,
     semantic_streams: Vec<Cow<'a, [u8]>>,
+    unmatched_tombstone_counts: BTreeMap<&'static str, usize>,
     nurbs: Vec<Option<crate::nurbs::Parsed>>,
     nurbs_graphs: Vec<Rc<Graph>>,
 }
@@ -224,7 +264,9 @@ impl<'a> ParsedStreams<'a> {
     /// auxiliary-replacement deltas; only that shared view needs NURBS geometry. NURBS parsing
     /// is deferred until a geometry consumer takes the selected stream's cache.
     pub(crate) fn parse(scan: &'a Scan) -> Self {
-        let topology_streams = topology_streams(scan);
+        let topology = topology_streams_with_unmatched_tombstones(scan);
+        let topology_streams = topology.streams;
+        let unmatched_tombstone_counts = topology.unmatched_tombstone_counts;
         let delta_pairs = paired_delta_streams(scan);
         let paired_deltas = delta_pairs
             .values()
@@ -298,9 +340,14 @@ impl<'a> ParsedStreams<'a> {
         ParsedStreams {
             per_stream,
             semantic_streams,
+            unmatched_tombstone_counts,
             nurbs,
             nurbs_graphs,
         }
+    }
+
+    pub(crate) fn unmatched_tombstone_counts(&self) -> &BTreeMap<&'static str, usize> {
+        &self.unmatched_tombstone_counts
     }
 
     /// The cached parses of the stream at `ordinal`.

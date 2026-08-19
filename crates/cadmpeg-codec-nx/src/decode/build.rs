@@ -27,7 +27,6 @@ use super::support_uv::{
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
-use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -1026,6 +1025,7 @@ pub(crate) fn try_decode_geometry(
     };
     let mut report = build_geometry_report(
         scan,
+        parsed.unmatched_tombstone_counts(),
         &ir,
         &counts,
         !ir.model.faces.is_empty(),
@@ -1100,43 +1100,6 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     ir.model.curves.retain(|curve| {
         !matches!(curve.geometry, CurveGeometry::Unknown { .. }) || used_curves.contains(&curve.id)
     });
-}
-
-pub(crate) fn unmatched_delta_tombstone_counts(scan: &Scan) -> BTreeMap<&'static str, usize> {
-    let pairs = crate::native::paired_delta_streams(scan);
-    let mut current = pairs
-        .keys()
-        .map(|partition| (*partition, scan.streams[*partition].inflated.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut unmatched = BTreeMap::new();
-    let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
-        for (family, count) in counts {
-            *unmatched.entry(family).or_default() += count;
-        }
-    };
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
-                &[],
-                &stream.inflated,
-            ));
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            let delta_bytes = &scan.streams[delta].inflated;
-            let partition_bytes = current
-                .get_mut(&partition)
-                .expect("paired partition was initialized");
-            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
-                partition_bytes,
-                delta_bytes,
-            ));
-            *partition_bytes = crate::deltas::merge_full_records(partition_bytes, delta_bytes);
-        }
-    }
-    unmatched
 }
 
 pub(crate) fn retain_live_annotations(

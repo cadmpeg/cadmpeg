@@ -1658,6 +1658,38 @@ fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
 }
 
 #[test]
+fn merged_result_preserves_tombstone_accounting() {
+    let partition = topology_partition_stream();
+    let known = [0, 29, 0, 11, 0, 1];
+    let unknown = [0, 29, 0, 99, 0, 1];
+    let mut full = status_framed_deltas_point_stream();
+    full[2..4].copy_from_slice(&99u16.to_be_bytes());
+    let mut add_then_delete = full.clone();
+    add_then_delete.extend_from_slice(&unknown);
+    let mut delete_then_add = unknown.to_vec();
+    delete_then_add.extend_from_slice(&full);
+
+    for deltas in [
+        known.as_slice(),
+        unknown.as_slice(),
+        &add_then_delete,
+        &delete_then_add,
+    ] {
+        let census = crate::deltas::walk(deltas);
+        let result =
+            crate::deltas::merge_full_records_with_census(&partition, deltas, &census, true);
+        assert_eq!(
+            result.unmatched_tombstones,
+            crate::deltas::unmatched_terminal_tombstones_by_family(&partition, deltas)
+        );
+        assert_eq!(
+            result.merged,
+            crate::deltas::merge_full_records(&partition, deltas)
+        );
+    }
+}
+
+#[test]
 fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
     let compact = [0, 29, 0, 11, 0, 1];
     let extended = [0, 29, 0xe3, 0xbf, 0, 1];
