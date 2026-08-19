@@ -16,7 +16,10 @@ use super::{
     parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
-use crate::records::DesignParameterKind;
+use crate::records::{
+    ConstructionRecipe, ConstructionRecipeKind, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner,
+};
 use crate::test_support::*;
 
 fn compact_owned_parameter_record(
@@ -867,4 +870,90 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     })
     .expect_err("an owner-shaped prefix must not shorten the exact frame");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn parameter_companion_orders_recipes_by_payload_byte_offset() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let parameter = DesignParameter {
+        id: format!("{stream}:design-parameter#20"),
+        byte_offset: 1,
+        class_tag: "305".into(),
+        record_index: 20,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal: 0,
+        owner_record_index: Some(21),
+        expression: "distance".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-1".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 2.0,
+        evaluated_value_offset: 0,
+    };
+    let owner = DesignParameterOwner {
+        id: format!("{stream}:design-parameter-owner#21"),
+        byte_offset: 0,
+        frame_length: 104,
+        class_tag: "292".into(),
+        record_index: 21,
+        scope_record_index: 10,
+        local_ordinal: 0,
+        evaluated_value: 2.0,
+        evaluated_value_offset: 0,
+        parameter_record_index: 20,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 22,
+    };
+    let mut companion = DesignParameterCompanion {
+        id: format!("{stream}:design-parameter-companion#22"),
+        byte_offset: 10,
+        class_tag: "408".into(),
+        record_index: 22,
+        owner_record_index: 21,
+        timestamp_micros: 1,
+        timestamp_micros_offset: 50,
+        payload_byte_offset: 0,
+        payload_byte_length: 0,
+        owned_recipe_ids: Vec::new(),
+    };
+    let recipe = |record_index, byte_offset| ConstructionRecipe {
+        id: format!("{stream}:construction-recipe#{record_index}"),
+        byte_offset,
+        record_index_offset: None,
+        kind: ConstructionRecipeKind::Edge,
+        design_id: None,
+        design_id_offset: None,
+        design_selector: None,
+        recipe_index: 0,
+        record_index,
+    };
+    let recipes = [recipe(31, 100), recipe(30, 80)];
+
+    super::bind_parameter_companion_payloads(
+        std::slice::from_mut(&mut companion),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&owner),
+        &[],
+        &[],
+        &[],
+        &recipes,
+        &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+    );
+
+    assert_eq!(companion.payload_byte_offset, 68);
+    assert_eq!(companion.payload_byte_length, 132);
+    assert_eq!(
+        companion.owned_recipe_ids,
+        [
+            format!("{stream}:construction-recipe#30"),
+            format!("{stream}:construction-recipe#31"),
+        ]
+    );
 }
