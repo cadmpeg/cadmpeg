@@ -448,6 +448,26 @@ mod relation_records_tests {
             &line_tagged
         ));
 
+        for tag in [0x8138, 0x80ac] {
+            let point_distance_tagged = operand_pair(FeatureInputOperandKind::Native(tag));
+            assert!(relation_signature(
+                FeatureInputRelationFamily::PointPointDistance,
+                &point_distance_tagged
+            ));
+            assert!(!relation_signature(
+                FeatureInputRelationFamily::PointPointHorizontalDistance,
+                &point_distance_tagged
+            ));
+            assert!(!relation_signature(
+                FeatureInputRelationFamily::PointPointVerticalDistance,
+                &point_distance_tagged
+            ));
+            assert!(!relation_signature(
+                FeatureInputRelationFamily::Angle,
+                &point_distance_tagged
+            ));
+        }
+
         assert!(!relation_signature(
             FeatureInputRelationFamily::PointPointDistance,
             &line_tagged
@@ -962,8 +982,9 @@ pub(super) fn relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
-    // `80d5` and `810f` are class-scoped relation cells. Keep them behind the
-    // declared family instead of treating either tag as a global marker kind.
+    // `80d5`, `8138`, `80ac`, and `810f` are class-scoped relation cells. Keep
+    // them behind the declared family instead of treating them as global
+    // marker kinds.
     use FeatureInputOperandKind::{Native, D6, E1};
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
@@ -985,6 +1006,8 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x81b2) && second.kind == Native(0x81b2))
                 || (first.kind == Native(0x8152) && second.kind == Native(0x8152))
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
+                || (first.kind == Native(0x8138) && second.kind == Native(0x8138))
+                || (first.kind == Native(0x80ac) && second.kind == Native(0x80ac))
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
         }
