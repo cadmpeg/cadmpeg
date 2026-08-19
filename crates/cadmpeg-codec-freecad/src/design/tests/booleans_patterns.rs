@@ -226,7 +226,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
-  <Property name="Occurrences2" type="App::PropertyInteger"><Integer value="1"/></Property>
+  <Property name="Occurrences2" type="App::PropertyIntegerConstraint"><Integer value="1"/></Property>
  </Properties></Object>
  <Object name="Custom"><Properties Count="6">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
@@ -246,7 +246,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
   <Property name="Reversed2" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode2" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Offset2" type="App::PropertyLength"><Float value="3"/></Property>
-  <Property name="Occurrences2" type="App::PropertyInteger"><Integer value="3"/></Property>
+  <Property name="Occurrences2" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>
   <Property name="SpacingPattern2" type="App::PropertyFloatList"><FloatList file="TwoAxisSpacingPattern2"/></Property>
  </Properties></Object>
  <Object name="PolarCustom"><Properties Count="7">
@@ -435,7 +435,7 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
  <Object name="Seed"><Properties Count="0"/></Object>
  <Object name="Linear"><Properties Count="{linear_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="8"/></Property><Property name="Offset" type="App::PropertyLength"><Float value="3"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>{linear_mode}</Properties></Object>
  <Object name="Polar"><Properties Count="{polar_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property><Property name="Offset" type="App::PropertyAngle"><Float value="45"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>{polar_mode}</Properties></Object>
- <Object name="TwoAxis"><Properties Count="{two_axis_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property><Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="8"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property><Property name="Direction2" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property><Property name="Length2" type="App::PropertyLength"><Float value="6"/></Property><Property name="Occurrences2" type="App::PropertyInteger"><Integer value="2"/></Property>{mode2}</Properties></Object>
+ <Object name="TwoAxis"><Properties Count="{two_axis_count}"><Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property><Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Length" type="App::PropertyLength"><Float value="8"/></Property><Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property><Property name="Direction2" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property><Property name="Length2" type="App::PropertyLength"><Float value="6"/></Property><Property name="Occurrences2" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>{mode2}</Properties></Object>
 </ObjectData></Document>"#
         )
     };
@@ -551,6 +551,554 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
                     && loss.severity == cadmpeg_ir::Severity::Blocking
             }));
         }
+    }
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers() {
+    fn property_fragment(
+        object: &str,
+        name: &str,
+        normal: &str,
+        mutation: Option<(&str, &str, Option<&str>)>,
+    ) -> String {
+        match mutation {
+            Some((target_object, target_name, replacement))
+                if target_object == object && target_name == name =>
+            {
+                replacement.unwrap_or_default().to_owned()
+            }
+            _ => normal.to_owned(),
+        }
+    }
+
+    fn object_fragment(name: &str, type_name: &str, properties: Vec<String>) -> String {
+        let properties = properties
+            .into_iter()
+            .filter(|property| !property.is_empty())
+            .collect::<String>();
+        let count = properties.matches("<Property ").count();
+        format!(
+            r#"<Object name="{name}"><Properties Count="{count}">{properties}</Properties></Object>"#
+        )
+        .replace("><Properties", &format!(" type=\"{type_name}\"><Properties"))
+    }
+
+    fn pattern_document(mutation: Option<(&str, &str, Option<&str>)>) -> String {
+        let originals = r#"<Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>"#;
+        let direction = r#"<Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property>"#;
+        let direction2 = r#"<Property name="Direction2" type="App::PropertyVector"><PropertyVector valueX="0" valueY="1" valueZ="0"/></Property>"#;
+        let axis = r#"<Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>"#;
+        let mode = r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#;
+        let mode2 = r#"<Property name="Mode2" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#;
+        let length =
+            r#"<Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>"#;
+        let length2 =
+            r#"<Property name="Length2" type="App::PropertyLength"><Float value="6"/></Property>"#;
+        let offset =
+            r#"<Property name="Offset" type="App::PropertyLength"><Float value="3"/></Property>"#;
+        let offset2 =
+            r#"<Property name="Offset2" type="App::PropertyLength"><Float value="2"/></Property>"#;
+        let angle =
+            r#"<Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>"#;
+        let angular_offset =
+            r#"<Property name="Offset" type="App::PropertyAngle"><Float value="45"/></Property>"#;
+        let factor =
+            r#"<Property name="Factor" type="App::PropertyFloat"><Float value="1.5"/></Property>"#;
+
+        let linear = object_fragment(
+            "Linear",
+            "PartDesign::LinearPattern",
+            vec![
+                originals.to_owned(),
+                direction.to_owned(),
+                mode.to_owned(),
+                length.to_owned(),
+                offset.to_owned(),
+                property_fragment(
+                    "Linear",
+                    "Occurrences",
+                    r#"<Property name="Occurrences" type="App::PropertyIntegerConstraint"><Integer value="4"/></Property>"#,
+                    mutation,
+                ),
+                property_fragment(
+                    "Linear",
+                    "Reversed",
+                    r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+                    mutation,
+                ),
+            ],
+        );
+        let legacy_linear = object_fragment(
+            "LegacyLinear",
+            "PartDesign::LinearPattern",
+            vec![
+                originals.to_owned(),
+                direction.to_owned(),
+                mode.to_owned(),
+                length.to_owned(),
+                r#"<Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>"#.to_owned(),
+                r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#.to_owned(),
+            ],
+        );
+        let polar = object_fragment(
+            "Polar",
+            "PartDesign::PolarPattern",
+            vec![
+                originals.to_owned(),
+                axis.to_owned(),
+                mode.to_owned(),
+                angle.to_owned(),
+                angular_offset.to_owned(),
+                property_fragment(
+                    "Polar",
+                    "Occurrences",
+                    r#"<Property name="Occurrences" type="App::PropertyIntegerConstraint"><Integer value="4"/></Property>"#,
+                    mutation,
+                ),
+                property_fragment(
+                    "Polar",
+                    "Reversed",
+                    r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+                    mutation,
+                ),
+            ],
+        );
+        let two_axis = object_fragment(
+            "TwoAxis",
+            "PartDesign::LinearPattern",
+            vec![
+                originals.to_owned(),
+                direction.to_owned(),
+                mode.to_owned(),
+                length.to_owned(),
+                r#"<Property name="Occurrences" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>"#.to_owned(),
+                r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#.to_owned(),
+                direction2.to_owned(),
+                mode2.to_owned(),
+                length2.to_owned(),
+                offset2.to_owned(),
+                property_fragment(
+                    "TwoAxis",
+                    "Occurrences2",
+                    r#"<Property name="Occurrences2" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>"#,
+                    mutation,
+                ),
+                property_fragment(
+                    "TwoAxis",
+                    "Reversed2",
+                    r#"<Property name="Reversed2" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+                    mutation,
+                ),
+            ],
+        );
+        let inactive_two_axis = object_fragment(
+            "InactiveTwoAxis",
+            "PartDesign::LinearPattern",
+            vec![
+                originals.to_owned(),
+                direction.to_owned(),
+                mode.to_owned(),
+                length.to_owned(),
+                r#"<Property name="Occurrences" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>"#.to_owned(),
+                r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#.to_owned(),
+                direction2.to_owned(),
+                mode2.to_owned(),
+                length2.to_owned(),
+                property_fragment(
+                    "InactiveTwoAxis",
+                    "Occurrences2",
+                    r#"<Property name="Occurrences2" type="App::PropertyIntegerConstraint"><Integer value="1"/></Property>"#,
+                    mutation,
+                ),
+                property_fragment(
+                    "InactiveTwoAxis",
+                    "Reversed2",
+                    r#"<Property name="Reversed2" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                    mutation,
+                ),
+            ],
+        );
+        let scaled = object_fragment(
+            "Scaled",
+            "PartDesign::Scaled",
+            vec![
+                originals.to_owned(),
+                factor.to_owned(),
+                property_fragment(
+                    "Scaled",
+                    "Occurrences",
+                    r#"<Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>"#,
+                    mutation,
+                ),
+            ],
+        );
+
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="7">
+ <Object type="PartDesign::Feature" name="Seed" id="1"/>
+ <Object type="PartDesign::LinearPattern" name="Linear" id="2"/>
+ <Object type="PartDesign::LinearPattern" name="LegacyLinear" id="3"/>
+ <Object type="PartDesign::PolarPattern" name="Polar" id="4"/>
+ <Object type="PartDesign::LinearPattern" name="TwoAxis" id="5"/>
+ <Object type="PartDesign::LinearPattern" name="InactiveTwoAxis" id="6"/>
+ <Object type="PartDesign::Scaled" name="Scaled" id="7"/>
+</Objects>
+<ObjectData Count="7">
+ <Object name="Seed"><Properties Count="0"/></Object>
+ {linear}
+ {legacy_linear}
+ {polar}
+ {two_axis}
+ {inactive_two_axis}
+ {scaled}
+</ObjectData></Document>"#
+        )
+    }
+
+    fn decode(document: &str) -> cadmpeg_ir::codec::DecodeResult {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("pattern carrier document")
+    }
+
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {
+        let actual = definition(result, name);
+        assert!(
+            matches!(
+                actual,
+                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            ),
+            "{name}: {actual:?}"
+        );
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    }
+
+    let selected = decode(&pattern_document(None));
+    assert!(matches!(
+        definition(&selected, "Linear"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear {
+                direction: Some(direction),
+                count: 4,
+                ..
+            },
+            ..
+        } if *direction == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+    ));
+    assert!(matches!(
+        definition(&selected, "LegacyLinear"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear { count: 4, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&selected, "Polar"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Circular {
+                axis_dir,
+                angle: Angle(angle),
+                count: 4,
+                ..
+            },
+            ..
+        } if *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+            && (*angle - std::f64::consts::PI).abs() < EPS_PATTERN_ANGLE
+    ));
+    let FeatureDefinition::Pattern {
+        pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
+        ..
+    } = definition(&selected, "TwoAxis")
+    else {
+        panic!("selected two-axis pattern");
+    };
+    assert_eq!(stages.len(), 2);
+    assert!(matches!(
+        &*stages[0].pattern,
+        cadmpeg_ir::features::PatternKind::Linear { count: 3, .. }
+    ));
+    assert!(matches!(
+        &*stages[1].pattern,
+        cadmpeg_ir::features::PatternKind::Linear {
+            direction: Some(direction),
+            count: 3,
+            ..
+        } if *direction == cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
+    ));
+    assert!(matches!(
+        definition(&selected, "Scaled"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Scale { count: 4, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&selected, "InactiveTwoAxis"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear { count: 3, .. },
+            ..
+        }
+    ));
+    assert!(selected.report().losses.is_empty());
+
+    let absent = [
+        ("Linear", "Reversed", None),
+        ("Linear", "Occurrences", None),
+        ("Polar", "Reversed", None),
+        ("Polar", "Occurrences", None),
+        ("TwoAxis", "Reversed2", None),
+        ("TwoAxis", "Occurrences2", None),
+        ("Scaled", "Occurrences", None),
+    ];
+    for (object, name, replacement) in absent {
+        let result = decode(&pattern_document(Some((object, name, replacement))));
+        assert!(result.report().losses.is_empty(), "{object}.{name}");
+        match (object, name) {
+            ("Linear", "Reversed") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Linear {
+                        direction: Some(direction),
+                        count: 4,
+                        ..
+                    },
+                    ..
+                } if *direction == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            )),
+            ("Linear", "Occurrences") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Linear { count: 2, .. },
+                    ..
+                }
+            )),
+            ("Polar", "Reversed") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Circular {
+                        axis_dir,
+                        count: 4,
+                        ..
+                    },
+                    ..
+                } if *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            )),
+            ("Polar", "Occurrences") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Circular {
+                        count: 3,
+                        axis_dir,
+                        ..
+                    },
+                    ..
+                } if *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+            )),
+            ("TwoAxis", "Reversed2") => {
+                let FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
+                    ..
+                } = definition(&result, object)
+                else {
+                    panic!("absent second reversal");
+                };
+                assert!(matches!(
+                    &*stages[1].pattern,
+                    cadmpeg_ir::features::PatternKind::Linear {
+                        direction: Some(direction),
+                        count: 3,
+                        ..
+                    } if *direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                ));
+            }
+            ("TwoAxis", "Occurrences2") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Linear { count: 3, .. },
+                    ..
+                }
+            )),
+            ("Scaled", "Occurrences") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Pattern {
+                    pattern: cadmpeg_ir::features::PatternKind::Scale { count: 2, .. },
+                    ..
+                }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let inactive_reversal = decode(&pattern_document(Some((
+        "InactiveTwoAxis",
+        "Reversed2",
+        Some(
+            r#"<Property name="Reversed2" type="App::PropertyString"><String value="true"/></Property>"#,
+        ),
+    ))));
+    assert!(matches!(
+        definition(&inactive_reversal, "InactiveTwoAxis"),
+        FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Linear { count: 3, .. },
+            ..
+        }
+    ));
+    assert!(inactive_reversal.report().losses.is_empty());
+
+    let boolean_variants = [
+        ("App::PropertyString", r#"<String value="true"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="1"/>"#),
+        ("App::PropertyBool", r#"<Bool value="1"/>"#),
+        (
+            "App::PropertyBool",
+            r#"<Wrapper><Bool value="true"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyBool",
+            r#"<Bool value="true"/><Bool value="false"/>"#,
+        ),
+    ];
+    for (object, name) in [
+        ("Linear", "Reversed"),
+        ("Polar", "Reversed"),
+        ("TwoAxis", "Reversed2"),
+    ] {
+        for (type_name, value) in boolean_variants {
+            let replacement =
+                format!(r#"<Property name="{name}" type="{type_name}">{value}</Property>"#);
+            let result = decode(&pattern_document(Some((
+                object,
+                name,
+                Some(replacement.as_str()),
+            ))));
+            assert_native(
+                &result,
+                object,
+                if object == "Polar" {
+                    "PartDesign::PolarPattern"
+                } else {
+                    "PartDesign::LinearPattern"
+                },
+            );
+        }
+    }
+
+    let constrained_variants = [
+        ("App::PropertyFloat", r#"<Float value="4"/>"#),
+        ("App::PropertyEnumeration", r#"<Integer value="4"/>"#),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Integer value="bad"/>"#,
+        ),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Wrapper><Integer value="4"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Integer value="4"/><Integer value="4"/>"#,
+        ),
+        ("App::PropertyIntegerConstraint", r#"<Integer value="-1"/>"#),
+        ("App::PropertyIntegerConstraint", r#"<Integer value="0"/>"#),
+    ];
+    for object in ["Linear", "Polar"] {
+        for (type_name, value) in constrained_variants {
+            let replacement =
+                format!(r#"<Property name="Occurrences" type="{type_name}">{value}</Property>"#);
+            let result = decode(&pattern_document(Some((
+                object,
+                "Occurrences",
+                Some(replacement.as_str()),
+            ))));
+            assert_native(
+                &result,
+                object,
+                if object == "Polar" {
+                    "PartDesign::PolarPattern"
+                } else {
+                    "PartDesign::LinearPattern"
+                },
+            );
+        }
+    }
+
+    let second_occurrence_variants = [
+        ("App::PropertyInteger", r#"<Integer value="3"/>"#),
+        ("App::PropertyFloat", r#"<Float value="3"/>"#),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Integer value="bad"/>"#,
+        ),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Wrapper><Integer value="3"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyIntegerConstraint",
+            r#"<Integer value="3"/><Integer value="3"/>"#,
+        ),
+        ("App::PropertyIntegerConstraint", r#"<Integer value="-1"/>"#),
+        ("App::PropertyIntegerConstraint", r#"<Integer value="0"/>"#),
+    ];
+    for (type_name, value) in second_occurrence_variants {
+        let replacement =
+            format!(r#"<Property name="Occurrences2" type="{type_name}">{value}</Property>"#);
+        let result = decode(&pattern_document(Some((
+            "TwoAxis",
+            "Occurrences2",
+            Some(replacement.as_str()),
+        ))));
+        assert_native(&result, "TwoAxis", "PartDesign::LinearPattern");
+    }
+
+    let scaled_occurrence_variants = [
+        ("App::PropertyIntegerConstraint", r#"<Integer value="4"/>"#),
+        ("App::PropertyFloat", r#"<Float value="4"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="bad"/>"#),
+        (
+            "App::PropertyInteger",
+            r#"<Wrapper><Integer value="4"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyInteger",
+            r#"<Integer value="4"/><Integer value="4"/>"#,
+        ),
+        ("App::PropertyInteger", r#"<Integer value="-1"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="0"/>"#),
+    ];
+    for (type_name, value) in scaled_occurrence_variants {
+        let replacement =
+            format!(r#"<Property name="Occurrences" type="{type_name}">{value}</Property>"#);
+        let result = decode(&pattern_document(Some((
+            "Scaled",
+            "Occurrences",
+            Some(replacement.as_str()),
+        ))));
+        assert_native(&result, "Scaled", "PartDesign::Scaled");
     }
 }
 

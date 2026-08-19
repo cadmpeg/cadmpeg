@@ -5444,7 +5444,12 @@ fn pattern_kind(
         );
     }
 
-    let count = integer_property(properties, "Occurrences")?;
+    let count = if kind.ends_with("Scaled") {
+        integer_selector(properties, "Occurrences", 2)?
+    } else {
+        let absent_default = if kind.ends_with("PolarPattern") { 3 } else { 2 };
+        integer_constraint_selector(properties, "Occurrences", absent_default, true)?
+    };
     if count == 0 || count > MAX_SKETCH_RECORDS as u64 {
         return None;
     }
@@ -5472,8 +5477,8 @@ fn pattern_kind(
             properties_by_owner,
             entries,
         )?;
-        let count2 = integer_property(properties, "Occurrences2").unwrap_or(1);
-        if count2 > MAX_SKETCH_RECORDS as u64 {
+        let count2 = integer_constraint_selector(properties, "Occurrences2", 1, false)?;
+        if count2 == 0 || count2 > MAX_SKETCH_RECORDS as u64 {
             return None;
         }
         if count2 > 1 {
@@ -5505,7 +5510,7 @@ fn pattern_kind(
     } else if kind.ends_with("PolarPattern") {
         let (axis_origin, mut axis_dir) =
             axis_reference(properties, "Axis", objects, properties_by_owner)?;
-        if bool_property(properties, "Reversed").unwrap_or(false) {
+        if bool_selector(properties, "Reversed", false)? {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
         let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
@@ -5545,7 +5550,7 @@ fn linear_pattern_axis(
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
             .map(|(_, direction)| direction);
-    if bool_property(properties, &name("Reversed")).unwrap_or(false) {
+    if bool_selector(properties, &name("Reversed"), false)? {
         direction =
             direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
     }
@@ -5796,6 +5801,27 @@ fn integer_selector(
         return Some(absent_default);
     };
     if property.type_name != "App::PropertyInteger" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Integer")?
+        .get("value")?
+        .parse::<i64>()
+        .ok()?;
+    u64::try_from(value).ok()
+}
+
+fn integer_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+    accept_legacy_integer: bool,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyIntegerConstraint"
+        && !(accept_legacy_integer && property.type_name == "App::PropertyInteger")
+    {
         return None;
     }
     let value = direct_root_attributes(property, "Integer")?

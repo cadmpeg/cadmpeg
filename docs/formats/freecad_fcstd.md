@@ -731,10 +731,21 @@ indices for its second direction. Extent divides the total `Length` or `Angle` a
 Spacing uses each explicit per-gap value, then a repeating multi-value `SpacingPattern`, then
 the `Offset` fallback. The suffixed properties provide the same rules for the second linear
 direction. An absent `Mode` means Extent. An absent `Mode2` means Extent when `Occurrences2` is
-greater than one; a persisted Mode2 has no effect when that occurrence count is one. CADIR
-decision: a present selected `Mode` or active `Mode2` with another runtime type, without exactly
-one direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index
-does not select a neutral pattern; the operation remains native.
+greater than one; a persisted Mode2 has no effect when that occurrence count is one. Linear and
+polar `Occurrences` use an `App::PropertyIntegerConstraint` carrier with direct `Integer` values
+and absent defaults `2` and `3`, respectively. Their `Reversed` carrier is an
+`App::PropertyBool` with absent default `false`; `true` reverses the corresponding pattern axis.
+Linear `Occurrences2` uses the same constrained-integer carrier with absent default `1`, and
+`Reversed2` is the same Boolean carrier with absent default `false`. `Reversed2` has no effect
+when `Occurrences2` is one. Older PartDesign linear and polar files may use a direct
+`App::PropertyInteger` carrier for `Occurrences`; that carrier is restored as the same occurrence
+value. PartDesign `Scaled` uses a direct `App::PropertyInteger` `Occurrences` carrier with
+absent default `2` and has no second-direction occurrence or reversal carriers. CADIR decision:
+a present selected Mode, active second-direction Mode2 or Reversed2, occurrence carrier, or
+reversal carrier with another runtime type, without exactly one direct scalar value, with an
+invalid Boolean, a non-positive occurrence count, a duplicate or nested value, or an unsupported
+index does not select a neutral pattern; the operation remains native. An inactive second
+direction with `Occurrences2` equal to one ignores its Mode2 and Reversed2 carriers.
 PartDesign `Hole` enumeration carriers use these indices: `ThreadType` `0` None, `1` ISO metric,
 `2` ISO metric fine, `3` UNC, `4` UNF, `5` UNEF, `6` NPT, `7` BSP, `8` BSW, `9` BSF, and `10`
 ISO tyre; `HoleCutType` `0` None, `1` Counterbore, `2` Countersink, and `3` Counterdrill;
