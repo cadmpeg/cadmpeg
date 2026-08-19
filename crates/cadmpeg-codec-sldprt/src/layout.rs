@@ -2788,7 +2788,7 @@ pub(crate) mod draft_extended_direction_frame {
 /// Spec §2. Record length 96 B.
 ///
 /// ```text
-/// The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator.
+/// The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
 /// ```
 pub(crate) mod current_indexed_spatial_xyz_point_prefix {
     /// Record length in bytes. Spec §2.
@@ -2821,6 +2821,86 @@ pub(crate) mod current_indexed_spatial_xyz_point_prefix {
     pub(crate) const TAIL_ZERO: usize = 86;
     /// Offset of `terminator` (`bytes[4]`). Spec §2.
     pub(crate) const TERMINATOR: usize = 92;
+}
+
+/// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_short` record.
+///
+/// Spec §2. Record length 330 B.
+///
+/// ```text
+/// The terminal prefix starts after the relation terminator. Its ten-byte alignment suffix places the table header at marker +232; the variable reference-table body follows the fixed control sequence.
+/// ```
+pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 330;
+    /// Offset of `tail_word_0` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_0: usize = 82;
+    /// Offset of `tail_word_1` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_1: usize = 84;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 92;
+    /// Offset of `zero_after_terminator` (`bytes[124]`). Spec §2.
+    pub(crate) const ZERO_AFTER_TERMINATOR: usize = 96;
+    /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 220;
+    /// Offset of `zero_alignment_suffix` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_ALIGNMENT_SUFFIX: usize = 222;
+    /// Offset of `table_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TABLE_HEADER: usize = 232;
+    /// Offset of `first_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const FIRST_COUNT: usize = 236;
+    /// Offset of `second_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const SECOND_COUNT: usize = 240;
+    /// Offset of `one_run` (`bytes[48]`). Spec §2.
+    pub(crate) const ONE_RUN: usize = 244;
+    /// Offset of `zero_after_one_run` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_AFTER_ONE_RUN: usize = 292;
+    /// Offset of `one_after_zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_AFTER_ZERO: usize = 296;
+    /// Offset of `zero_before_control` (`bytes[6]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_CONTROL: usize = 300;
+    /// Offset of `control_sequence` (`bytes[24]`). Spec §2.
+    pub(crate) const CONTROL_SEQUENCE: usize = 306;
+}
+
+/// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_long` record.
+///
+/// Spec §2. Record length 334 B.
+///
+/// ```text
+/// The terminal prefix starts after the relation terminator. Its fourteen-byte alignment suffix places the table header at marker +236; the variable reference-table body follows the fixed control sequence.
+/// ```
+pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_long {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 334;
+    /// Offset of `tail_word_0` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_0: usize = 82;
+    /// Offset of `tail_word_1` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_1: usize = 84;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 92;
+    /// Offset of `zero_after_terminator` (`bytes[124]`). Spec §2.
+    pub(crate) const ZERO_AFTER_TERMINATOR: usize = 96;
+    /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 220;
+    /// Offset of `zero_alignment_suffix` (`bytes[14]`). Spec §2.
+    pub(crate) const ZERO_ALIGNMENT_SUFFIX: usize = 222;
+    /// Offset of `table_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TABLE_HEADER: usize = 236;
+    /// Offset of `first_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const FIRST_COUNT: usize = 240;
+    /// Offset of `second_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const SECOND_COUNT: usize = 244;
+    /// Offset of `one_run` (`bytes[48]`). Spec §2.
+    pub(crate) const ONE_RUN: usize = 248;
+    /// Offset of `zero_after_one_run` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_AFTER_ONE_RUN: usize = 296;
+    /// Offset of `one_after_zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_AFTER_ZERO: usize = 300;
+    /// Offset of `zero_before_control` (`bytes[6]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_CONTROL: usize = 304;
+    /// Offset of `control_sequence` (`bytes[24]`). Spec §2.
+    pub(crate) const CONTROL_SEQUENCE: usize = 310;
 }
 
 /// Byte offsets for the `compact_current_spatial_marker_point` record.

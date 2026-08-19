@@ -41,6 +41,8 @@ use crate::layout::compact_legacy_code_two_profile_point as code_two;
 use crate::layout::current_geometry_locus_arc_handle_point as current_arc_handle;
 use crate::layout::current_geometry_locus_arc_handle_point_terminal as current_arc_handle_terminal;
 use crate::layout::current_indexed_spatial_xyz_point_prefix as spatial_xyz;
+use crate::layout::current_indexed_spatial_xyz_terminal_reference_prefix_long as spatial_xyz_terminal_long;
+use crate::layout::current_indexed_spatial_xyz_terminal_reference_prefix_short as spatial_xyz_terminal_short;
 use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
@@ -436,14 +438,29 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
 fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
     const NEXT_MARKER_OFFSETS: [usize; 2] = [158, 162];
 
+    let kind_locus = matches!(
+        (
+            View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND),
+            payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE),
+        ),
+        (Some(0 | 1), Some([0x04, 0x00, 0x02, 0x00])) | (Some(0), Some([0x05, 0x00, 0x01, 0x00]))
+    );
+    let terminal_geometry_locus = View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND)
+        == Some(0)
+        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
+            == Some(&[0x05, 0x00, 0x01, 0x00]);
+    let continuation_tail = View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(1);
+    let terminal_tail = terminal_geometry_locus
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(1)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(0);
+
     payload.get(offset..offset + spatial_xyz::HEADER) == Some(SKETCH_MARKER)
         && payload.get(offset + spatial_xyz::HEADER..offset + spatial_xyz::SENTINEL)
             == Some(&[0xff; 8])
         && payload.get(offset + spatial_xyz::SENTINEL..offset + spatial_xyz::NATIVE_KIND)
             == Some(&(-1.0f32).to_le_bytes())
-        && View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND) == Some(0)
-        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
-            == Some(&[0x04, 0x00, 0x02, 0x00])
+        && kind_locus
         && View::u16_le_at(payload, offset + spatial_xyz::PROFILE_ROLE) == Some(1)
         && payload.get(offset + spatial_xyz::PROFILE_ROLE + 2..offset + spatial_xyz::SELECTOR)
             == Some(&[0; 2])
@@ -454,18 +471,93 @@ fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
         && View::f64_le_at(payload, offset + spatial_xyz::STATE_VALUE) == Some(1.0)
         && payload.get(offset + spatial_xyz::COORDINATE_TAG..offset + spatial_xyz::COORDINATES)
             == Some(&[0x0e, 0x00])
-        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
-        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(1)
+        && (continuation_tail || terminal_tail)
         && payload.get(offset + spatial_xyz::TAIL_ZERO..offset + spatial_xyz::TERMINATOR)
             == Some(&[0; 6])
         && payload.get(offset + spatial_xyz::TERMINATOR..offset + spatial_xyz::TERMINATOR + 4)
             == Some(&[0xfe, 0xff, 0xff, 0xff])
         && marker_object_index(payload, offset).is_some()
-        && NEXT_MARKER_OFFSETS.iter().any(|relative| {
-            offset
-                .checked_add(*relative)
-                .is_some_and(|next| sketch_marker_prefix_at(payload, next))
-        })
+        && ((continuation_tail
+            && NEXT_MARKER_OFFSETS.iter().any(|relative| {
+                offset
+                    .checked_add(*relative)
+                    .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+            }))
+            || (terminal_tail && current_indexed_spatial_xyz_terminal_tail(payload, offset)))
+}
+
+fn current_indexed_spatial_xyz_terminal_tail(payload: &[u8], offset: usize) -> bool {
+    const CONTROL_SEQUENCE: [u8; 24] = [
+        0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf, 0xff, 0xff, 0xff,
+        0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+    ];
+
+    [
+        (
+            spatial_xyz_terminal_short::TERMINAL_TAG,
+            spatial_xyz_terminal_short::ZERO_ALIGNMENT_SUFFIX,
+            spatial_xyz_terminal_short::TABLE_HEADER,
+            spatial_xyz_terminal_short::FIRST_COUNT,
+            spatial_xyz_terminal_short::SECOND_COUNT,
+            spatial_xyz_terminal_short::ONE_RUN,
+            spatial_xyz_terminal_short::ZERO_AFTER_ONE_RUN,
+            spatial_xyz_terminal_short::ONE_AFTER_ZERO,
+            spatial_xyz_terminal_short::ZERO_BEFORE_CONTROL,
+            spatial_xyz_terminal_short::CONTROL_SEQUENCE,
+        ),
+        (
+            spatial_xyz_terminal_long::TERMINAL_TAG,
+            spatial_xyz_terminal_long::ZERO_ALIGNMENT_SUFFIX,
+            spatial_xyz_terminal_long::TABLE_HEADER,
+            spatial_xyz_terminal_long::FIRST_COUNT,
+            spatial_xyz_terminal_long::SECOND_COUNT,
+            spatial_xyz_terminal_long::ONE_RUN,
+            spatial_xyz_terminal_long::ZERO_AFTER_ONE_RUN,
+            spatial_xyz_terminal_long::ONE_AFTER_ZERO,
+            spatial_xyz_terminal_long::ZERO_BEFORE_CONTROL,
+            spatial_xyz_terminal_long::CONTROL_SEQUENCE,
+        ),
+    ]
+    .into_iter()
+    .any(
+        |(
+            terminal_tag,
+            zero_alignment_suffix,
+            table_header,
+            first_count,
+            second_count,
+            one_run,
+            zero_after_one_run,
+            one_after_zero,
+            zero_before_control,
+            control_sequence,
+        )| {
+            payload.get(offset + spatial_xyz::TERMINATOR + 4..offset + terminal_tag)
+                == Some(&[0; 124])
+                && payload.get(offset + terminal_tag..offset + terminal_tag + 2)
+                    == Some(&[0x08, 0x80])
+                && payload
+                    .get(offset + zero_alignment_suffix..offset + table_header)
+                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                && payload.get(offset + table_header..offset + table_header + 4)
+                    == Some(&[0x01, 0x00, 0x01, 0x00])
+                && View::u32_le_at(payload, offset + first_count) == Some(1)
+                && View::u32_le_at(payload, offset + second_count) == Some(2)
+                && payload
+                    .get(offset + one_run..offset + zero_after_one_run)
+                    .is_some_and(|values| {
+                        values
+                            .chunks_exact(4)
+                            .all(|value| value == [0x01, 0x00, 0x00, 0x00])
+                    })
+                && View::u32_le_at(payload, offset + zero_after_one_run) == Some(0)
+                && View::u32_le_at(payload, offset + one_after_zero) == Some(1)
+                && payload.get(offset + zero_before_control..offset + control_sequence)
+                    == Some(&[0; 6])
+                && payload.get(offset + control_sequence..offset + control_sequence + 24)
+                    == Some(&CONTROL_SEQUENCE)
+        },
+    )
 }
 
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {

@@ -2038,14 +2038,14 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 96 B
 
-The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator.
+The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 5 | `marker` | `bytes[5]` | little | spec | An object-indexed current-prefix profile-locus kind-0 spatial point |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix indexed XYZ spatial point |
 | 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
 | 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
-| 17 | 4 | `native_kind` | `u32` | little | spec | profile-locus kind-0 spatial point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | admitted native-kind/locus pairs |
 | 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
 | 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
 | 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
@@ -2062,6 +2062,62 @@ Unstated regions:
 - `21..23` (2 B): Reserved bytes before the profile locus.
 - `29..31` (2 B): Zero state prefix.
 - `39..48` (9 B): Reserved bytes before the state value.
+
+## `current_indexed_spatial_xyz_terminal_reference_prefix_short`
+
+Spec §2 · layout: byte offsets · size: 330 B
+
+The terminal prefix starts after the relation terminator. Its ten-byte alignment suffix places the table header at marker +232; the variable reference-table body follows the fixed control sequence.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `1` at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `0` at marker +84 |
+| 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
+| 96 | 124 | `zero_after_terminator` | `bytes[124]` | little | spec | zero bytes from marker +96 through +219 |
+| 220 | 2 | `terminal_tag` | `bytes[2]` | little | spec | `08 80` at marker +220 |
+| 222 | 10 | `zero_alignment_suffix` | `bytes[10]` | little | spec | short alignment form has ten zero alignment bytes |
+| 232 | 4 | `table_header` | `bytes[4]` | little | spec | `01 00 01 00` |
+| 236 | 4 | `first_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 240 | 4 | `second_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 244 | 48 | `one_run` | `bytes[48]` | little | spec | twelve u32 values `1` |
+| 292 | 4 | `zero_after_one_run` | `u32` | little | spec | u32 `0`, u32 `1` |
+| 296 | 4 | `one_after_zero` | `u32` | little | spec | u32 `1`, u32 `0` |
+| 300 | 6 | `zero_before_control` | `bytes[6]` | little | spec | u32 `0`, two zero bytes |
+| 306 | 24 | `control_sequence` | `bytes[24]` | little | spec | fixed terminal control sequence |
+
+Unstated regions:
+
+- `0..82` (82 B): The shared indexed XYZ point prefix ends after the xyz coordinates.
+- `86..92` (6 B): Six zero bytes follow the terminal tail words.
+
+## `current_indexed_spatial_xyz_terminal_reference_prefix_long`
+
+Spec §2 · layout: byte offsets · size: 334 B
+
+The terminal prefix starts after the relation terminator. Its fourteen-byte alignment suffix places the table header at marker +236; the variable reference-table body follows the fixed control sequence.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `1` at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `0` at marker +84 |
+| 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
+| 96 | 124 | `zero_after_terminator` | `bytes[124]` | little | spec | zero bytes from marker +96 through +219 |
+| 220 | 2 | `terminal_tag` | `bytes[2]` | little | spec | `08 80` at marker +220 |
+| 222 | 14 | `zero_alignment_suffix` | `bytes[14]` | little | spec | long form has fourteen zero alignment bytes |
+| 236 | 4 | `table_header` | `bytes[4]` | little | spec | `01 00 01 00` |
+| 240 | 4 | `first_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 244 | 4 | `second_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 248 | 48 | `one_run` | `bytes[48]` | little | spec | twelve u32 values `1` |
+| 296 | 4 | `zero_after_one_run` | `u32` | little | spec | u32 `0`, u32 `1` |
+| 300 | 4 | `one_after_zero` | `u32` | little | spec | u32 `1`, u32 `0` |
+| 304 | 6 | `zero_before_control` | `bytes[6]` | little | spec | u32 `0`, two zero bytes |
+| 310 | 24 | `control_sequence` | `bytes[24]` | little | spec | fixed terminal control sequence |
+
+Unstated regions:
+
+- `0..82` (82 B): The shared indexed XYZ point prefix ends after the xyz coordinates.
+- `86..92` (6 B): Six zero bytes follow the terminal tail words.
 
 ## `compact_current_spatial_marker_point`
 
