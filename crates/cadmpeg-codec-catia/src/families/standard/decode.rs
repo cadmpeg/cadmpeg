@@ -3032,6 +3032,8 @@ fn attach_standard_topology(
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment);
     };
+    let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+        .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
@@ -3398,9 +3400,9 @@ fn attach_standard_topology(
                 break 'edges;
             }
         }
-        if let Some(completed) =
-            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces)
-        {
+        let completed =
+            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces);
+        if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
                 if support.faces == *faces {
@@ -3424,6 +3426,13 @@ fn attach_standard_topology(
                 if options[edge].is_empty() {
                     return Err(StandardTopologyFailure::EmptyEndpointDomain);
                 }
+            }
+        } else {
+            for (edge, faces) in edge_faces.iter().enumerate() {
+                deferred_port_edges[edge] = faces[0] == faces[1]
+                    && allowed_faces
+                        .get(edge)
+                        .is_some_and(|faces| !faces.is_empty());
             }
         }
     }
@@ -3549,7 +3558,7 @@ fn attach_standard_topology(
             pairs.sort_unstable();
             pairs.dedup();
         }
-        for (candidates, options) in endpoint_candidates.iter_mut().zip(options) {
+        for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
             for point in options.iter().flatten() {
                 if !candidates.contains(point) {
                     candidates.push(*point);
@@ -3664,7 +3673,16 @@ fn attach_standard_topology(
         constrained_endpoint_options.as_mut(),
         missing_edge::standard_mesh_edge_ports(spine),
     ) {
-        if let Some(pruned) = fbb::prune_edge_candidates_by_port_domains(&ports, options) {
+        let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
+            fbb::prune_edge_candidates_by_port_domains_with_deferred(
+                &ports,
+                options,
+                &deferred_port_edges,
+            )
+        } else {
+            fbb::prune_edge_candidates_by_port_domains(&ports, options)
+        };
+        if let Some(pruned) = pruned {
             *options = pruned;
         }
     }

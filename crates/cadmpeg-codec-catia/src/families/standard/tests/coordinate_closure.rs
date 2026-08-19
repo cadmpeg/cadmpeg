@@ -198,6 +198,25 @@ fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
 }
 
 #[test]
+fn deferred_port_rows_do_not_constrain_open_face_components() {
+    let ports = [[10, 11], [11, 12], [12, 13]];
+    let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]];
+
+    assert_eq!(
+        prune_edge_candidates_by_port_domains(&ports, &candidates),
+        None
+    );
+    assert_eq!(
+        prune_edge_candidates_by_port_domains_with_deferred(
+            &ports,
+            &candidates,
+            &[false, true, true],
+        ),
+        Some(candidates.to_vec())
+    );
+}
+
+#[test]
 fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
     assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
     assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));

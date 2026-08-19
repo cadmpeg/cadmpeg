@@ -215,12 +215,39 @@ pub fn prune_edge_candidates_by_port_domains(
     edge_ports: &[[u32; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<Vec<[usize; 2]>>> {
+    prune_edge_candidates_by_port_domains_with_deferred(edge_ports, edge_candidates, &[])
+}
+
+/// Apply trim-port equality to endpoint candidates whose duplicate face slot
+/// is settled. Rows with an open duplicate-face domain do not contribute their
+/// candidate set to port-domain propagation; their candidates are filtered by
+/// the settled neighbouring ports after that propagation completes.
+#[must_use]
+pub fn prune_edge_candidates_by_port_domains_with_deferred(
+    edge_ports: &[[u32; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    deferred_edges: &[bool],
+) -> Option<Vec<Vec<[usize; 2]>>> {
     if edge_ports.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
         return None;
     }
+    if !deferred_edges.is_empty() && deferred_edges.len() != edge_candidates.len() {
+        return None;
+    }
+    let is_deferred = |edge: usize| deferred_edges.get(edge).copied().unwrap_or(false);
+    let all_points = edge_candidates
+        .iter()
+        .flatten()
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>();
     let mut domains = Vec::with_capacity(edge_candidates.len() * 2);
-    for candidates in edge_candidates {
-        let domain = Arc::new(candidates.iter().flatten().copied().collect::<HashSet<_>>());
+    for (edge, candidates) in edge_candidates.iter().enumerate() {
+        let domain = Arc::new(if is_deferred(edge) {
+            all_points.clone()
+        } else {
+            candidates.iter().flatten().copied().collect::<HashSet<_>>()
+        });
         domains.push(domain.clone());
         domains.push(domain);
     }
@@ -242,7 +269,13 @@ pub fn prune_edge_candidates_by_port_domains(
             }
         }
     }
-    if !quotient.edge_domains_viable(edge_candidates) {
+    let mut constrained_candidates = edge_candidates.to_vec();
+    for (edge, candidates) in constrained_candidates.iter_mut().enumerate() {
+        if is_deferred(edge) {
+            candidates.clear();
+        }
+    }
+    if !quotient.edge_domains_viable(&constrained_candidates) {
         return None;
     }
     edge_candidates
