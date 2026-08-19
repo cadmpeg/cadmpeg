@@ -1001,6 +1001,22 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             return Some(parameters);
         }
     }
+    // The target-space coarse seed evaluates the offset carrier directly. Try
+    // its certified Newton refinement before the more expensive support-wide
+    // inverse, while retaining the global route for a missed branch.
+    if fit_tolerance.is_some() {
+        add_start(
+            &mut starts,
+            domain.and_then(|domain| {
+                coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
+            }),
+        );
+        for parameters in starts.drain(..) {
+            if let Some(parameters) = process_start(parameters) {
+                return Some(parameters);
+            }
+        }
+    }
     add_start(
         &mut starts,
         initial_surface_parameters_with_index_and_budget(
@@ -1012,12 +1028,14 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             geometry_budget,
         ),
     );
-    add_start(
-        &mut starts,
-        domain.and_then(|domain| {
-            coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
-        }),
-    );
+    if fit_tolerance.is_none() {
+        add_start(
+            &mut starts,
+            domain.and_then(|domain| {
+                coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)
+            }),
+        );
+    }
     for parameters in starts {
         if let Some(parameters) = process_start(parameters) {
             return Some(parameters);
