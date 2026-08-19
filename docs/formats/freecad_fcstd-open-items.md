@@ -13,31 +13,6 @@ Each item has an identifier and these fields:
 
 ## 3. Persistent topology identity
 
-### PT-06. Element-map compatibility-marker admission
-
-**Question.** Must a non-empty `ElementMap2` carrier have the compatibility `ElementMap` marker
-immediately before it, and what is the malformed result when that marker is absent?
-
-**Known.** The specification requires one compatibility `ElementMap` marker followed by one
-`ElementMap2` carrier for non-empty metadata, while an empty map uses the marker alone. The
-element-map transfer at `element_map.rs:340-387` selects one direct `Part`, one direct marker, and
-one direct `ElementMap2`, and requires the marker to carry `new` and to stand immediately before the
-carrier.
-
-**Need.** Bind the map to the direct shape property and require the marker-plus-carrier sequence
-for non-empty maps. Reject or retain a nested, missing, or non-adjacent marker without assigning
-the map to neutral topology.
-
-**Conflict.** A property containing `<Part .../><ElementMap2 ...>` must not supply persistent
-topology names when the required compatibility marker is absent. Adding or removing that marker
-must not change neutral identity without a refusal or loss.
-
-**Note.** Reopened. The closing commit changes no production code. Its `element_map.rs` change is
-one test, and that test passes at the parent commit through the adjacency rule the earlier
-element-map commit added. The closure also writes that a direct `ElementMap` alone is an empty map.
-`ComplexGeoData::Restore` reads the `file` and `count` attributes of that same marker when `new` is
-absent, so a marker alone can carry a non-empty map. `PT-07` records that gap.
-
 ### PT-07. Legacy element-map carrier admission
 
 **Question.** Which carrier supplies a non-empty element map when the compatibility marker has no
