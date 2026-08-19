@@ -486,6 +486,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// 5.
 /// Type 182 Form 0 has four fixed primary fields, so its groups start at token
 /// 5.
+/// Type 186 Form 0 puts the void-shell count at index 3 and stores one
+/// `(VOID, VOF)` pair per void shell, so its groups start at token `4 + 2*N`.
 /// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
 /// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
@@ -551,6 +553,7 @@ pub(crate) fn entity_primary_end(
         (120, 0) => Some(fixed_primary_end(record, 5)),
         (122, 0) => Some(fixed_primary_end(record, 5)),
         (182, 0) => Some(fixed_primary_end(record, 5)),
+        (186, 0) => Some(manifold_solid_primary_end(record)),
         (312, 0..=1) => Some(fixed_primary_end(record, 11)),
         (314, 0) => Some(fixed_primary_end(record, 5)),
         (304, 1) => Some(fixed_primary_end(record, 5)),
@@ -1116,6 +1119,17 @@ fn solid_assembly_primary_end(record: &ParameterRecord) -> usize {
     item_count
         .checked_mul(2)
         .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn manifold_solid_primary_end(record: &ParameterRecord) -> usize {
+    let Some(void_count) = record.count_with_stride(3, 2) else {
+        return record.tokens.len();
+    };
+    void_count
+        .checked_mul(2)
+        .and_then(|span| span.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
