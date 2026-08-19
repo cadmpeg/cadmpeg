@@ -408,7 +408,11 @@ where
         options.sort_unstable();
         options.dedup();
         match options.as_slice() {
-            [] => return None,
+            // An empty alternate-face domain means that no distinct face is
+            // admitted for this repeated slot. Keep the serialized same-face
+            // incidence as an unresolved wildcard; the joint validator still
+            // decides whether that incidence closes the trim mesh.
+            [] => {}
             [face] => assignment[edge][1] = *face,
             _ => branches.push((edge, options)),
         }

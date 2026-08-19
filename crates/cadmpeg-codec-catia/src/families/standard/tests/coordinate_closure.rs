@@ -1290,6 +1290,19 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
 }
 
 #[test]
+fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
+    let serialized = [[0, 0], [0, 0]];
+    let allowed = [Vec::new(), vec![1]];
+
+    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
+        faces == [[0, 0], [0, 1]]
+    })
+    .expect("the unresolved same-face slot remains in the joint assignment");
+
+    assert_eq!(resolved, [[0, 0], [0, 1]]);
+}
+
+#[test]
 fn duplicate_face_slots_do_not_budget_forced_assignments() {
     const EDGE_COUNT: usize = 5_000;
     let serialized = vec![[0, 0]; EDGE_COUNT];
