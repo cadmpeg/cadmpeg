@@ -115,6 +115,39 @@ retains `Part::Scale` natively with one blocking loss. The owner tests
 cases. `design.rs:3883-4008` now scopes these carriers to their producer kinds, applies the
 restore defaults only when absent, and applies the old-version chamfer inversion.
 
+Part `Loft` declares `Solid=true`, `Ruled=false`, `Closed=false`, and `Linearize=false` in
+`PartFeatures.cpp:177-194`; its executor passes the first three to `makeElementLoft` and applies
+linearization when selected at `:224-245`. PartDesign loft declares `Ruled=false` and
+`Closed=false` at `FeatureLoft.cpp:45-52`, inherits `AllowMultiFace=false` from
+`FeatureSketchBased.cpp:72-110`, and is always built as a solid at `FeatureLoft.cpp:211-230`.
+`ProfileBased::setupObject()` changes `AllowMultiFace` only for a newly created object at
+`FeatureSketchBased.cpp:123-126`; `PropertyContainer.cpp:324-404` leaves an omitted carrier at
+the constructor value during restore. `PropertyStandard.cpp:2258-2277` writes and restores the
+direct Bool roots.
+
+Part `Sweep` declares `Solid=true`, `Frenet=true`, `Transition=1`, and `Linearize=false` at
+`PartFeatures.cpp:256-275`; its executor consumes the two booleans and applies linearization at
+`:331-347`. PartDesign `Pipe` declares `SpineTangent=false`, `AuxiliarySpineTangent=false`,
+`AuxiliaryCurvilinear=true`, and `AllowMultiFace=false` at `FeaturePipe.cpp:61-107`; its
+orientation executor consumes `AuxiliaryCurvilinear` for auxiliary mode at `:638-655`, and the
+profile path carries the primary and auxiliary selectors at `FeaturePipe.cpp:675-730`. The
+current source declares the tangent flags and preserves them in the document, while the
+continuous-edge call remains disabled in `buildPipePath`; the neutral record retains their
+stored values without inventing additional path selectors.
+
+The producer witness `dp15_loft_sweep_flag_witness.py` records the default and selected values in
+`dp15-loft-sweep-flag-witness.log`; extracted `dp15-loft-sweep-flags-default.Document.xml` and
+`dp15-loft-sweep-flags-selected.Document.xml` contain the direct Bool roots and selected values.
+`dp15_loft_sweep_flag_restore_probe.py` removes all target carriers and records constructor
+defaults in `dp15-loft-sweep-flag-restore.log`. The hostile batch from
+`dp15_loft_sweep_flag_hostile_mutations.py` covers wrong-runtime, integer-runtime, invalid,
+nested, and duplicate direct-root forms for every settled carrier. After rebuilding the CLI,
+every source, selected, and absent file dumps and checks successfully. Every malformed PartDesign
+pipe and standalone sweep reports one blocking native loss; malformed lofts with cached shapes
+use `StoredGeometry` and report no loss. The owner test
+`distinguishes_absent_and_malformed_loft_sweep_boolean_flags` covers the same absent, valid, and
+malformed admissions without cached shapes.
+
 Part::Extrusion `DirMode` is an `App::PropertyEnumeration` with constructor default `0`.
 Indices `0`, `1`, and `2` mean Custom, Edge, and Normal; they select `Dir`, `DirLink`, and the
 base-shape normal respectively. A present selected carrier requires one direct `Integer` value;
@@ -234,25 +267,29 @@ integer-runtime, invalid-value, nested, and duplicate carriers.
 
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
-absent. Pad, Pocket, Revolution, Groove, dress-up, Scale, and `CosmeticThread` boolean flags are
-settled above.
+absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale, and
+`CosmeticThread` boolean flags are settled above. The standalone loft `Linearize` carrier and
+the legacy `CheckCompatibility` carrier still need a neutral representation or a traced
+retention decision.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. Remaining loft, sweep, helix, ShapeBinder,
-and pattern flags still require their own writer and restore evidence before the generic fallback
-sites can change.
+neutral semantics or discard a valid legacy default. The remaining `Linearize`/compatibility,
+helix, ShapeBinder, and pattern flags still require their own writer and restore evidence before
+the generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
 `AllowMultiFace`, Part `DirMode` and `Solid`/`Reversed`/`Symmetric` flags, shell/offset
 `Mode` and `Join`, `ProjectOnSurface.Mode`,
 and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the specification and
-exact-carrier decoder rule. Revolution and Groove boolean flags, dress-up `UseAllEdges` and
+exact-carrier decoder rule. Revolution and Groove boolean flags, loft and sweep boolean flags,
+dress-up `UseAllEdges` and
 `FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
 modes, Hole boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are
-covered; the remaining design operation flags stay open.
+covered; standalone loft `Linearize`, legacy loft compatibility, and the remaining design
+operation flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

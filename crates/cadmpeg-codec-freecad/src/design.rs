@@ -4684,6 +4684,12 @@ fn loft_definition(
     } else {
         None
     };
+    let part_design = kind.starts_with("PartDesign::");
+    let check_compatibility = if property(properties, "CheckCompatibility").is_some() {
+        Some(bool_property(properties, "CheckCompatibility")?)
+    } else {
+        None
+    };
     Some(FeatureDefinition::Loft {
         sections: profiles
             .into_iter()
@@ -4692,18 +4698,17 @@ fn loft_definition(
         guides: Vec::new(),
         centerline: None,
         op: operation_boolean(kind),
-        closed: bool_property(properties, "Closed").unwrap_or(false),
-        solid: kind.starts_with("PartDesign::")
-            || bool_property(properties, "Solid").unwrap_or(true),
-        ruled: bool_property(properties, "Ruled").unwrap_or(false),
-        max_degree,
-        check_compatibility: if property(properties, "CheckCompatibility").is_some() {
-            Some(bool_property(properties, "CheckCompatibility")?)
+        closed: bool_selector(properties, "Closed", false)?,
+        solid: if part_design {
+            true
         } else {
-            None
+            bool_selector(properties, "Solid", true)?
         },
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
+        ruled: bool_selector(properties, "Ruled", false)?,
+        max_degree,
+        check_compatibility,
+        allow_multi_profile_faces: if part_design {
+            Some(bool_selector(properties, "AllowMultiFace", false)?)
         } else {
             None
         },
@@ -4736,8 +4741,27 @@ fn sweep_definition(
     let path_property = property(properties, "Spine")
         .or_else(|| property(properties, "Path"))
         .filter(|property| singular_operand(properties, &property.name).is_some())?;
-    let solid =
-        kind.starts_with("PartDesign::") || bool_property(properties, "Solid").unwrap_or(false);
+    let part_design = kind.starts_with("PartDesign::");
+    let solid = if part_design {
+        true
+    } else {
+        bool_selector(properties, "Solid", true)?
+    };
+    let path_tangent = if part_design {
+        bool_selector(properties, "SpineTangent", false)?
+    } else {
+        false
+    };
+    let auxiliary_spine_tangent = if part_design {
+        bool_selector(properties, "AuxiliarySpineTangent", false)?
+    } else {
+        false
+    };
+    let auxiliary_curvilinear = if part_design {
+        bool_selector(properties, "AuxiliaryCurvilinear", true)?
+    } else {
+        true
+    };
     let transition = match integer_property(properties, "Transition")
         .unwrap_or(u64::from(kind == "Part::Sweep"))
     {
@@ -4747,7 +4771,7 @@ fn sweep_definition(
         _ => return None,
     };
     let orientation = if kind == "Part::Sweep" {
-        if bool_property(properties, "Frenet").unwrap_or(true) {
+        if bool_selector(properties, "Frenet", true)? {
             SweepOrientation::Frenet
         } else {
             SweepOrientation::CorrectedFrenet
@@ -4762,8 +4786,8 @@ fn sweep_definition(
                 singular_operand(properties, "AuxiliarySpine")?;
                 SweepOrientation::Auxiliary {
                     path: PathRef::Native(auxiliary.id.clone()),
-                    tangent: bool_property(properties, "AuxiliarySpineTangent").unwrap_or(false),
-                    curvilinear: bool_property(properties, "AuxiliaryCurvilinear").unwrap_or(true),
+                    tangent: auxiliary_spine_tangent,
+                    curvilinear: auxiliary_curvilinear,
                 }
             }
             4 => SweepOrientation::Binormal {
@@ -4801,15 +4825,19 @@ fn sweep_definition(
         orientation: Some(orientation),
         transition: Some(transition),
         transformation: Some(transformation),
-        path_tangent: bool_property(properties, "SpineTangent").unwrap_or(false),
-        linearize: bool_property(properties, "Linearize").unwrap_or(false),
+        path_tangent,
+        linearize: if kind == "Part::Sweep" {
+            bool_selector(properties, "Linearize", false)?
+        } else {
+            false
+        },
         twist: None,
         path_extent: None,
         guide_rail: None,
         taper: None,
         scale: None,
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
+        allow_multi_profile_faces: if part_design {
+            Some(bool_selector(properties, "AllowMultiFace", false)?)
         } else {
             None
         },

@@ -1411,18 +1411,29 @@ property, including its ordered subelement selectors. Standalone sweeps distingu
 solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
 
-Lofts additionally retain whether adjacent sections use ruled spans and whether a standalone Part
-loft produces a solid or sheet result. When carried, the interpolation degree limit and section
-compatibility policy remain explicit. PartDesign lofts are solid and explicitly join or cut;
-standalone lofts create a new result body without fabricating a Boolean relationship.
+Loft `Ruled` and `Closed` are exact `App::PropertyBool` carriers with absent defaults `false`.
+Standalone loft `Solid` is an exact `App::PropertyBool` carrier with absent default `true`;
+PartDesign lofts are solid and have no selectable `Solid` carrier. PartDesign loft
+`AllowMultiFace` is an exact `App::PropertyBool` carrier with absent default `false`; standalone
+lofts do not own that carrier. A present carrier with another runtime type, without exactly one
+direct `Bool`, or with another value does not select a neutral loft. A malformed standalone loft
+uses its cached `Shape` as `StoredGeometry` when that shape is present; a malformed PartDesign
+loft remains native when no cached shape is available. When carried, the interpolation degree
+limit and section compatibility policy remain explicit. Standalone lofts create a new result body
+without fabricating a Boolean relationship.
 
 Sweeps retain the primary and additional ordered sections, primary path and tangent-edge
 extension, corrected-Frenet, fixed, Frenet, auxiliary-path, or fixed-binormal orientation,
 transformed, sharp, or rounded corner transition, and constant, multisection, linear, S-shaped, or
 smooth-interpolation section transformation. Auxiliary orientation additionally retains its path,
 tangent-edge extension, and curvilinear correspondence flag. Standalone sweep linearization and
-solid-versus-sheet result remain explicit. Invalid enumeration values, a zero binormal, or a
-missing auxiliary path leave the operation attributable and native.
+solid-versus-sheet result remain explicit. Standalone sweep `Solid`, `Frenet`, and `Linearize` are
+exact `App::PropertyBool` carriers with absent defaults `true`, `true`, and `false`. PartDesign
+pipe `SpineTangent`, `AuxiliarySpineTangent`, `AuxiliaryCurvilinear`, and `AllowMultiFace` are
+exact `App::PropertyBool` carriers with absent defaults `false`, `false`, `true`, and `false`;
+PartDesign pipes are always solid. A present carrier with another runtime type, without exactly
+one direct `Bool`, or with another value does not select a neutral sweep. Invalid enumeration
+values, a zero binormal, or a missing auxiliary path leave the operation attributable and native.
 
 PartDesign ShapeBinder and SubShapeBinder operations retain their ordered support links and
 subelement selectors. A SubShapeBinder `Context` property is optional and, when present, is one

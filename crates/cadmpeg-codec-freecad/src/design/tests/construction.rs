@@ -1027,6 +1027,207 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="15">
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Section" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Path" id="3"/>
+ <Object type="Part::Loft" name="LoftAbsent" id="4"/>
+ <Object type="PartDesign::AdditiveLoft" name="LoftValid" id="5"/>
+ <Object type="Part::Sweep" name="SweepAbsent" id="6"/>
+ <Object type="Part::Sweep" name="SweepValid" id="7"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeAbsent" id="8"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeValid" id="9"/>
+ <Object type="Part::Loft" name="LoftBadSolid" id="10"/>
+ <Object type="PartDesign::AdditiveLoft" name="LoftBadAllow" id="11"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeBadSpine" id="12"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeBadAux" id="13"/>
+ <Object type="Part::Sweep" name="SweepBadSolid" id="14"/>
+ <Object type="Part::Sweep" name="SweepBadFrenet" id="15"/>
+</Objects>
+<ObjectData Count="15">
+ <Object name="Profile"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Section"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="LoftAbsent"><Properties Count="1">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="LoftValid"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Section" sub=""/></LinkSubList></Property>
+  <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+ <Object name="SweepAbsent"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="SweepValid"><Properties Count="6">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+ </Properties></Object>
+ <Object name="PipeAbsent"><Properties Count="2">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="PipeValid"><Properties Count="9">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="SpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
+  <Property name="AuxiliarySpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliaryCurvilinear" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadSolid"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Solid" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadAllow"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Section" sub=""/></LinkSubList></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Wrapper><Bool value="true"/></Wrapper></Property>
+ </Properties></Object>
+ <Object name="PipeBadSpine"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="SpineTangent" type="App::PropertyBool"><Bool value="1"/></Property>
+ </Properties></Object>
+ <Object name="PipeBadAux"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="AuxiliaryCurvilinear" type="App::PropertyInteger"><Integer value="1"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+ <Object name="SweepBadSolid"><Properties Count="3">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Solid" type="App::PropertyString"><String value="true"/></Property>
+ </Properties></Object>
+ <Object name="SweepBadFrenet"><Properties Count="3">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("loft and sweep flags");
+
+    assert!(matches!(
+        definition(&result, "LoftAbsent"),
+        FeatureDefinition::Loft {
+            closed: false,
+            solid: true,
+            ruled: false,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "LoftValid"),
+        FeatureDefinition::Loft {
+            closed: true,
+            solid: true,
+            ruled: true,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "SweepAbsent"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            orientation: Some(SweepOrientation::Frenet),
+            path_tangent: false,
+            linearize: false,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "SweepValid"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Surface,
+            orientation: Some(SweepOrientation::CorrectedFrenet),
+            path_tangent: false,
+            linearize: true,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "PipeAbsent"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            orientation: Some(SweepOrientation::CorrectedFrenet),
+            path_tangent: false,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "PipeValid"),
+        FeatureDefinition::Sweep {
+            orientation: Some(SweepOrientation::Auxiliary {
+                tangent: true,
+                curvilinear: false,
+                ..
+            }),
+            path_tangent: true,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    for (name, kind) in [
+        ("LoftBadSolid", "Part::Loft"),
+        ("LoftBadAllow", "PartDesign::AdditiveLoft"),
+        ("PipeBadSpine", "PartDesign::AdditivePipe"),
+        ("PipeBadAux", "PartDesign::AdditivePipe"),
+        ("SweepBadSolid", "Part::Sweep"),
+        ("SweepBadFrenet", "Part::Sweep"),
+    ] {
+        assert!(matches!(
+            definition(&result, name),
+            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 6);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+}
+
+#[test]
 fn preserves_cached_loft_and_chamfer_without_construction_inputs() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
