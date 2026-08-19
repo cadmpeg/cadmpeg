@@ -287,6 +287,7 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
         && payload
             .get(offset + compact_spatial::COORDINATE_TAG..offset + compact_spatial::COORDINATES)
             == Some(&[0x0e, 0x00])
+        && compact_spatial_point_boundary(payload, offset)
     {
         return offset.checked_add(compact_spatial::COORDINATES);
     }
@@ -306,7 +307,8 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                 if prefix == SKETCH_MARKER
                     && marker_native_code(payload, offset) == Some(0)
                     && locus == [0x05, 0x00, 0x01, 0x00]
-                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00])
+                    && compact_spatial_point_boundary(payload, offset) =>
             {
                 (offset.checked_add(58)?, true)
             }
@@ -324,7 +326,8 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
                     && payload.get(
                         offset + compact_spatial::COORDINATE_TAG
                             ..offset + compact_spatial::COORDINATE_TAG + 2,
-                    ) == Some(&[0x0e, 0x00]) =>
+                    ) == Some(&[0x0e, 0x00])
+                    && compact_spatial_point_boundary(payload, offset) =>
             {
                 (offset.checked_add(compact_spatial::COORDINATES)?, true)
             }
@@ -736,6 +739,17 @@ pub(super) fn sketch_marker_prefix_at(payload: &[u8], offset: usize) -> bool {
     marker == Some(SKETCH_MARKER)
         || marker == Some(LEGACY_SKETCH_MARKER)
         || marker == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+}
+
+fn compact_spatial_point_boundary(payload: &[u8], offset: usize) -> bool {
+    let Some(end) = offset.checked_add(compact_spatial::LEN) else {
+        return false;
+    };
+    end == payload.len()
+        || sketch_marker_prefix_at(payload, end)
+        || end
+            .checked_add(4)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next))
 }
 
 /// Recognize the short current-prefix point that declares an embedded

@@ -2691,7 +2691,7 @@ pub(crate) mod draft_extended_direction_frame {
 /// Spec §2. Record length 82 B.
 ///
 /// ```text
-/// The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix.
+/// The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end.
 /// ```
 pub(crate) mod compact_current_spatial_marker_point {
     /// Record length in bytes. Spec §2.

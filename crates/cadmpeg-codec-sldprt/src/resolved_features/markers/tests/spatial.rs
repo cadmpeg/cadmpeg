@@ -6,6 +6,10 @@ use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::super::*;
+use crate::layout::{
+    compact_current_spatial_marker_point as compact_spatial,
+    wide_spatial_marker_coordinate_prefix as wide_spatial,
+};
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
@@ -206,8 +210,21 @@ fn packed_legacy_spatial_point_uses_compact_coordinate_offset() {
 
 #[test]
 fn current_spatial_point_variants_decode_model_coordinates() {
-    for (kind, marker, coordinates) in [(0_u32, 56, 58), (1_u32, 64, 66)] {
-        let mut payload = vec![0; 90];
+    for (kind, marker, coordinates, length) in [
+        (
+            0_u32,
+            compact_spatial::COORDINATE_TAG,
+            compact_spatial::COORDINATES,
+            compact_spatial::LEN,
+        ),
+        (
+            1_u32,
+            wide_spatial::COORDINATE_TAG,
+            wide_spatial::COORDINATES,
+            wide_spatial::LEN,
+        ),
+    ] {
+        let mut payload = vec![0; length];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);

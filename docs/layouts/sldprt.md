@@ -1981,7 +1981,7 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 82 B
 
-The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix.
+The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

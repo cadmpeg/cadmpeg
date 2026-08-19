@@ -7472,7 +7472,7 @@ section = "2"
 anchor = "A current-prefix compact profile-locus spatial point has native kind u32 `0` or `1`"
 size = 82
 endianness = "little"
-note = "The fixed point prefix ends after the third coordinate; any marker-specific trailer follows outside this prefix."
+note = "The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end."
 
 [[record.field]]
 name = "marker"
