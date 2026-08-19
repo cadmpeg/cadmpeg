@@ -21,8 +21,8 @@ use super::offset::{
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
-    pcurve_edge_endpoint_contract_with_index, pcurve_matches_edge_endpoint_contract,
-    pcurve_surface_endpoints_with_index_and_budget,
+    linear_nurbs_curve_endpoint_witness_with_index, pcurve_edge_endpoint_contract_with_index,
+    pcurve_matches_edge_endpoint_contract, pcurve_surface_endpoints_with_index_and_budget,
     surface_parameters_for_fit_with_index_and_budget,
 };
 use super::MISSING_TOLERANCE;
@@ -1523,8 +1523,36 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
                     .map(|contract| (edge_id, contract))
             })
             .collect::<BTreeMap<_, _>>();
+        // A chart carrier's serialized endpoint witnesses are a necessary
+        // edge-incidence condition. Keep full face-surface evaluation for
+        // every surviving key.
+        let endpoint_admissible_keys = coedge_candidates
+            .iter()
+            .filter_map(|(_, edge_id, curve, surface, edge_tolerance)| {
+                let key = (curve.clone(), surface.clone());
+                let [candidate] = candidates.get(&key)?.as_slice() else {
+                    return None;
+                };
+                let Some(witness) =
+                    linear_nurbs_curve_endpoint_witness_with_index(&model_index, curve)
+                else {
+                    return Some(key);
+                };
+                let (edge_endpoints, edge_allowance) =
+                    edge_endpoint_contracts.get(edge_id).copied()?;
+                let fit_tolerance = candidate.2.or(*edge_tolerance);
+                pcurve_matches_edge_endpoint_contract(
+                    witness,
+                    edge_endpoints,
+                    edge_allowance,
+                    fit_tolerance,
+                )
+                .then_some(key)
+            })
+            .collect::<BTreeSet<_>>();
         let candidate_endpoints = candidates
             .iter()
+            .filter(|(key, _)| endpoint_admissible_keys.contains(key))
             .filter_map(|(key, values)| {
                 let [candidate] = values.as_slice() else {
                     return None;

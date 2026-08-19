@@ -3374,6 +3374,38 @@ pub(crate) fn pcurve_edge_endpoint_contract_with_index(
     Some(([start, end], allowance))
 }
 
+/// Return the serialized endpoint witnesses of a charted linear intersection
+/// carrier. Other curve forms do not provide this prefilter proof.
+pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    curve_id: &CurveId,
+) -> Option<[Point3; 2]> {
+    let curve = index.curves(curve_id.0.as_str())?;
+    let CurveGeometry::Nurbs(curve) = &curve.geometry else {
+        return None;
+    };
+    if curve.degree != 1
+        || curve.periodic
+        || curve.weights.is_some()
+        || curve.control_points.len() < 2
+        || curve.knots.len() != curve.control_points.len() + 2
+        || curve
+            .knots
+            .windows(2)
+            .any(|pair| !pair[0].is_finite() || !pair[1].is_finite() || pair[0] > pair[1])
+        || curve.knots.first()?.to_bits() != curve.knots[1].to_bits()
+        || curve.knots[curve.knots.len() - 2].to_bits() != curve.knots.last()?.to_bits()
+    {
+        return None;
+    }
+    let first = *curve.control_points.first()?;
+    let last = *curve.control_points.last()?;
+    [first, last]
+        .into_iter()
+        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        .then_some([first, last])
+}
+
 pub(crate) fn pcurve_matches_edge_endpoint_contract(
     coincident_surface: [Point3; 2],
     edge_endpoints: [Point3; 2],

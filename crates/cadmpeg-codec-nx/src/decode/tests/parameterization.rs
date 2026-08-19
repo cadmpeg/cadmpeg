@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
@@ -1121,6 +1121,44 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .pcurves
         .iter()
         .any(|pcurve| pcurve.pcurve == completed.id)));
+}
+
+#[test]
+fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
+    let curve_id = cadmpeg_ir::ids::CurveId("synthetic:intersection:curve#0".into());
+    let first = Point3::new(1.0, 2.0, 3.0);
+    let last = Point3::new(4.0, 5.0, 6.0);
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![first, last],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+
+    assert_eq!(
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id),
+        Some([first, last])
+    );
+
+    ir.model.curves[0].geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.5, 1.0, 1.0],
+        control_points: vec![first, last],
+        weights: None,
+        periodic: false,
+    });
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    assert!(
+        crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
+            .is_none()
+    );
 }
 
 #[test]
