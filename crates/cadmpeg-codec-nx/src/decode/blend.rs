@@ -12,8 +12,6 @@ use super::offset::{
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 #[cfg(test)]
-use cadmpeg_core::decode::WorkBudget;
-#[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::{
@@ -28,6 +26,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use std::collections::VecDeque;
 
 const BLEND_SECTION_CANONICAL_DOMAIN: [f64; 2] = [0.0, 1.0];
 // A source intersection chart can continue across either finite blend rail.
@@ -67,11 +66,36 @@ impl BlendSectionDomain {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlendContactSeed, BlendContactSeedCache, BlendSectionDomain,
+        BlendContactSeed, BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
         BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_CONTACT_SEEDS,
+        MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES,
     };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
-    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    #[test]
+    fn blend_surface_frame_cache_evicts_old_entries_at_its_bound() {
+        let mut cache = BlendSurfaceFrameCache::default();
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        );
+        for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
+            let surface = SurfaceId(format!("surface-{index}"));
+            cache.remember(&surface, index as f64, false, frame);
+        }
+        let first = SurfaceId("surface-0".into());
+        assert_eq!(cache.get(&first, 0.0, false), Some(frame));
+
+        let newest = SurfaceId("surface-newest".into());
+        cache.remember(&newest, 0.0, false, frame);
+        assert!(cache.get(&first, 0.0, false).is_none());
+        assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
+        assert!(cache.get(&newest, -0.0, false).is_none());
+    }
 
     #[test]
     fn blend_section_boundary_clamps_only_nearby_roundoff() {
@@ -180,7 +204,7 @@ pub(crate) fn blend_surface_parameters(
     seed: Option<Point2>,
 ) -> Option<Point2> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_inner(
         &index,
         surface,
@@ -230,7 +254,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid(
     fit_tolerance: f64,
     grid: BlendParameterGrid<'_>,
 ) -> Option<Point2> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_for_fit_with_grid_and_budget(
         index,
         surface,
@@ -546,7 +570,7 @@ pub(crate) fn coarse_blend_surface_parameters(
     depth: usize,
 ) -> Option<Point2> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coarse_blend_surface_parameters_with_index_and_budget(
         &index,
         surface,
@@ -719,7 +743,7 @@ pub(crate) fn refine_blend_surface_parameters(
     depth: usize,
 ) -> Option<Point2> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     refine_blend_surface_parameters_with_section_domain_and_budget(
         &index,
         surface,
@@ -896,7 +920,7 @@ pub(crate) fn blend_surface_point_inner(
     depth: usize,
 ) -> Option<Point3> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
@@ -955,6 +979,81 @@ pub(crate) fn blend_surface_point_inner_with_index_and_budget(
 }
 
 pub(crate) type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
+
+const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
+
+#[derive(Clone)]
+struct BlendSurfaceFrameCacheEntry {
+    surface: SurfaceId,
+    parameter_bits: u64,
+    allow_offset_contact: bool,
+    frame: BlendSurfaceFrame,
+}
+
+/// Bounded certificates for deterministic blend-frame evaluations.
+///
+/// Entries belong to one [`GeometryWorkBudget`] and are valid only while its
+/// model index is unchanged. Failed evaluations are not retained because a
+/// later contact seed or route may produce a valid witness.
+pub(crate) struct BlendSurfaceFrameCache {
+    entries: VecDeque<BlendSurfaceFrameCacheEntry>,
+}
+
+impl Default for BlendSurfaceFrameCache {
+    fn default() -> Self {
+        Self {
+            entries: VecDeque::with_capacity(MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES),
+        }
+    }
+}
+
+impl BlendSurfaceFrameCache {
+    fn get(
+        &self,
+        surface: &SurfaceId,
+        parameter: f64,
+        allow_offset_contact: bool,
+    ) -> Option<BlendSurfaceFrame> {
+        self.entries
+            .iter()
+            .find(|entry| {
+                entry.surface == *surface
+                    && entry.parameter_bits == parameter.to_bits()
+                    && entry.allow_offset_contact == allow_offset_contact
+            })
+            .map(|entry| entry.frame)
+    }
+
+    fn remember(
+        &mut self,
+        surface: &SurfaceId,
+        parameter: f64,
+        allow_offset_contact: bool,
+        frame: BlendSurfaceFrame,
+    ) {
+        if let Some(entry) = self.entries.iter_mut().find(|entry| {
+            entry.surface == *surface
+                && entry.parameter_bits == parameter.to_bits()
+                && entry.allow_offset_contact == allow_offset_contact
+        }) {
+            entry.frame = frame;
+            return;
+        }
+        if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(BlendSurfaceFrameCacheEntry {
+            surface: surface.clone(),
+            parameter_bits: parameter.to_bits(),
+            allow_offset_contact,
+            frame,
+        });
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
 
 const MAX_BLEND_CONTACT_SEEDS: usize = 8;
 
@@ -1060,7 +1159,7 @@ pub(crate) fn blend_surface_u_derivative(
     depth: usize,
 ) -> Option<Vector3> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
@@ -1271,56 +1370,77 @@ fn blend_surface_frame_with_index_and_budget_and_options(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<BlendSurfaceFrame> {
     (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    let center = model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?;
-    let tangent = model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?;
-    let first = spine_contact_direction_with_index_and_budget_and_options(
-        index,
-        &supports[0],
-        &spine,
-        u,
-        center,
-        radius,
-        depth + 1,
-        allow_offset_contact,
-        contact_seeds,
-        geometry_budget,
-    )
-    .or_else(|| {
-        surface_contact_direction_with_index_and_budget(
+    if !allow_offset_contact {
+        if let Some(frame) =
+            geometry_budget
+                .blend_frame_cache()
+                .borrow()
+                .get(surface, u, allow_offset_contact)
+        {
+            return geometry_budget.charge().then_some(frame);
+        }
+    }
+    let frame = (|| {
+        let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
+        let center = model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?;
+        let tangent = model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?;
+        let first = spine_contact_direction_with_index_and_budget_and_options(
             index,
             &supports[0],
+            &spine,
+            u,
             center,
             radius,
             depth + 1,
+            allow_offset_contact,
+            contact_seeds,
             geometry_budget,
         )
-    });
-    let first = first?;
-    let second = spine_contact_direction_with_index_and_budget_and_options(
-        index,
-        &supports[1],
-        &spine,
-        u,
-        center,
-        radius,
-        depth + 1,
-        allow_offset_contact,
-        contact_seeds,
-        geometry_budget,
-    )
-    .or_else(|| {
-        surface_contact_direction_with_index_and_budget(
+        .or_else(|| {
+            surface_contact_direction_with_index_and_budget(
+                index,
+                &supports[0],
+                center,
+                radius,
+                depth + 1,
+                geometry_budget,
+            )
+        })?;
+        let second = spine_contact_direction_with_index_and_budget_and_options(
             index,
             &supports[1],
+            &spine,
+            u,
             center,
             radius,
             depth + 1,
+            allow_offset_contact,
+            contact_seeds,
             geometry_budget,
         )
-    });
-    let second = second?;
-    Some((center, tangent, first, second, radius))
+        .or_else(|| {
+            surface_contact_direction_with_index_and_budget(
+                index,
+                &supports[1],
+                center,
+                radius,
+                depth + 1,
+                geometry_budget,
+            )
+        })?;
+        Some((center, tangent, first, second, radius))
+    })();
+    if !allow_offset_contact {
+        if let Some(frame) = frame {
+            geometry_budget.blend_frame_cache().borrow_mut().remember(
+                surface,
+                u,
+                allow_offset_contact,
+                frame,
+            );
+        }
+    }
+    frame
 }
 
 // Keep the frame inputs, recursion depth, contact policy, seed cache, and
@@ -1903,7 +2023,7 @@ pub(crate) fn closest_pcurve_parameters(
     let homogeneous =
         homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
     let candidates = if degree != 1 || weights.is_some() {
-        let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
         closest_parameter_candidates(
             stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?,
             search_seed,
@@ -3088,7 +3208,7 @@ pub(crate) fn surface_contact_direction_with_index(
     radius: f64,
     depth: usize,
 ) -> Option<Vector3> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     surface_contact_direction_with_index_and_budget(
         index,
         surface,
@@ -3251,7 +3371,7 @@ pub(crate) fn closest_spine_parameter(
     seed: Option<f64>,
 ) -> Option<f64> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
 }
 
@@ -3503,7 +3623,7 @@ pub(crate) fn closest_nurbs_curve_parameter(
     point: Point3,
     seed: Option<f64>,
 ) -> Option<f64> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_nurbs_curve_parameter_with_budget(curve, point, seed, &geometry_budget)
 }
 

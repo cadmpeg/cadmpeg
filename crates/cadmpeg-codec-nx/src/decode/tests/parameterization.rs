@@ -147,7 +147,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     assert_eq!(actual, seed);
 
     let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
-    let geometry_budget = WorkBudget::new(256);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(256);
     let local = crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
         &index,
         &surface,
@@ -1343,7 +1343,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         ],
     )];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
-    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(64);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(64);
     let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
 
     crate::decode::support_uv::complete_support_uv_with_budget(
@@ -1693,7 +1693,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         ),
     ];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
-    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
     );
     let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(10);

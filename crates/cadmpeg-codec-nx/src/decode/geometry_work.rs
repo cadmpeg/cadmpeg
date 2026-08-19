@@ -2,6 +2,9 @@
 //! Shared work accounting for adaptive geometry certification.
 
 use cadmpeg_core::decode::WorkBudget;
+use std::cell::RefCell;
+use std::ops::Deref;
+use std::rc::Rc;
 
 /// Maximum adaptive geometry work admitted for one decoded model.
 pub(crate) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
@@ -27,4 +30,48 @@ pub(crate) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 /// surface-intersection support lanes for one decoded model.
 pub(crate) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
-pub(crate) type GeometryWorkBudget<'a> = WorkBudget<'a>;
+/// Geometry work accounting plus the cache of successful blend-frame
+/// certificates earned within the same accounting scope.
+pub(crate) struct GeometryWorkBudget<'a> {
+    work: WorkBudget<'a>,
+    blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
+}
+
+impl<'a> GeometryWorkBudget<'a> {
+    #[cfg(test)]
+    pub(crate) fn new(limit: usize) -> Self {
+        Self::from_work_budget(WorkBudget::new(limit))
+    }
+
+    pub(crate) fn from_work_budget(work: WorkBudget<'a>) -> Self {
+        Self {
+            work,
+            blend_frame_cache: Rc::new(RefCell::new(
+                super::blend::BlendSurfaceFrameCache::default(),
+            )),
+        }
+    }
+
+    pub(crate) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'static> {
+        GeometryWorkBudget {
+            work: self.work.child_slice(limit),
+            blend_frame_cache: Rc::clone(&self.blend_frame_cache),
+        }
+    }
+
+    pub(crate) fn clear_blend_frame_cache(&self) {
+        self.blend_frame_cache.borrow_mut().clear();
+    }
+
+    pub(crate) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
+        self.blend_frame_cache.as_ref()
+    }
+}
+
+impl<'a> Deref for GeometryWorkBudget<'a> {
+    type Target = WorkBudget<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.work
+    }
+}

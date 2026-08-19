@@ -223,7 +223,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     lanes: &[Option<Vec<[f64; 2]>>; 2],
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     assign_ext11_support_uv_to_surfaces_with_index(
         &index,
         surfaces,
@@ -351,7 +351,7 @@ fn serialized_support_uv_seed_candidates(
 
 #[cfg(test)]
 pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget);
 }
 
@@ -450,7 +450,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let support_budget = new_support_uv_budget();
     let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_support_uv_with_budget(
         ir,
         pending,
@@ -479,6 +479,8 @@ pub(super) fn complete_support_uv_with_budget(
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
+        geometry_budget.clear_blend_frame_cache();
+        coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_support_uv_wave(
             ir,
             pending,
@@ -501,7 +503,7 @@ pub(crate) fn invalidate_inconsistent_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) {
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
     invalidate_inconsistent_support_uv_with_validated_lanes(
         ir,
@@ -1027,6 +1029,7 @@ fn complete_support_uv_wave(
     // coupled continuation only after this wave has had a chance to fill the
     // same lanes, so difficult nested supports are reserved for residuals.
     if !coupled_geometry_budget.exhausted() {
+        coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_coupled_support_uv(
             ir,
             pending,
@@ -1090,8 +1093,8 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         Vec::with_capacity(points.len()),
     ];
     for point in points {
-        let blend_seed = seeds[blend_side].or_else(|| lanes[blend_side].last().copied());
-        let support_seed = seeds[support_side].or_else(|| lanes[support_side].last().copied());
+        let blend_seed = lanes[blend_side].last().copied().or(seeds[blend_side]);
+        let support_seed = lanes[support_side].last().copied().or(seeds[support_side]);
         let blend_parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
             index,
             surfaces[blend_side],
@@ -1260,7 +1263,7 @@ pub(super) fn complete_coupled_support_uv_for_test(
     pending: &[PendingExt11SupportUv],
 ) {
     let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_coupled_support_uv(ir, pending, &coupled_support_budget, &geometry_budget);
 }
 
@@ -1400,7 +1403,7 @@ pub(crate) fn attach_completed_intersection_pcurves(
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     attach_completed_intersection_pcurves_with_budget(
         ir,
         graph,
@@ -1668,7 +1671,7 @@ mod tests {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
         let values = vec![[0.0, 0.0]; MAX_SUPPORT_UV_SAMPLES + 1];
-        let geometry_budget = WorkBudget::new(1);
+        let geometry_budget = GeometryWorkBudget::new(1);
 
         assert!(!support_uv_lane_matches_surface_with_budget(
             &index,

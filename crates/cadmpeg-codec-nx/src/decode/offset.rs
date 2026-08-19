@@ -11,8 +11,6 @@ use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
-#[cfg(test)]
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, model_surface_partials_by_id_with_budget,
@@ -140,7 +138,7 @@ pub(crate) fn certified_offset_cache_fit(
     distance: f64,
     tolerance: f64,
 ) -> Option<f64> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     certified_offset_cache_fit_with_budget(
         support,
         candidate,
@@ -881,7 +879,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
 ) -> Option<Point2> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     offset_surface_parameters_with_tolerance_with_index_and_budget(
         index,
         surface,
@@ -947,11 +945,11 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             if !geometry_budget.charge() {
                 break;
             }
-            let Some(position) = model_surface_point_by_id_with_budget(
+            let Some((position, du, dv)) = model_surface_point_and_derivatives(
                 index,
                 surface,
-                parameters.u,
-                parameters.v,
+                parameters,
+                domain,
                 geometry_budget,
             ) else {
                 break;
@@ -966,32 +964,6 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             {
                 return Some(parameters);
             }
-            let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
-            let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-            let Some(du) = model_surface_derivative(
-                index,
-                surface,
-                parameters,
-                u_step,
-                true,
-                domain,
-                [None, None],
-                geometry_budget,
-            ) else {
-                break;
-            };
-            let Some(dv) = model_surface_derivative(
-                index,
-                surface,
-                parameters,
-                v_step,
-                false,
-                domain,
-                [None, None],
-                geometry_budget,
-            ) else {
-                break;
-            };
             let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
                 break;
             };
@@ -1109,11 +1081,11 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
         dot_vector(delta, delta)
     };
     for _ in 0..OFFSET_NEWTON_ITERATIONS {
-        let position = model_surface_point_by_id_with_budget(
+        let (position, du, dv) = model_surface_point_and_derivatives(
             index,
             surface,
-            parameters.u,
-            parameters.v,
+            parameters,
+            domain,
             geometry_budget,
         )?;
         let current_distance = squared_distance(position);
@@ -1122,28 +1094,6 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
             position.y - point.y,
             position.z - point.z,
         );
-        let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
-        let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
-        let du = model_surface_derivative(
-            index,
-            surface,
-            parameters,
-            u_step,
-            true,
-            domain,
-            [None, None],
-            geometry_budget,
-        )?;
-        let dv = model_surface_derivative(
-            index,
-            surface,
-            parameters,
-            v_step,
-            false,
-            domain,
-            [None, None],
-            geometry_budget,
-        )?;
         let (step_u, step_v) = least_squares_step(du, dv, residual)?;
         let mut accepted = None;
         let mut scale = 1.0;
@@ -1416,6 +1366,54 @@ pub(crate) fn model_surface_derivative(
     ))
 }
 
+fn model_surface_point_and_derivatives(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    parameters: Point2,
+    domain: Option<([f64; 2], [f64; 2])>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<(Point3, Vector3, Vector3)> {
+    if let Some(partials) = model_surface_partials_by_id_with_budget(
+        index,
+        surface,
+        parameters.u,
+        parameters.v,
+        geometry_budget,
+    ) {
+        return Some((partials.point, partials.du, partials.dv));
+    }
+    let position = model_surface_point_by_id_with_budget(
+        index,
+        surface,
+        parameters.u,
+        parameters.v,
+        geometry_budget,
+    )?;
+    let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
+    let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
+    let du = model_surface_derivative(
+        index,
+        surface,
+        parameters,
+        u_step,
+        true,
+        domain,
+        [None, None],
+        geometry_budget,
+    )?;
+    let dv = model_surface_derivative(
+        index,
+        surface,
+        parameters,
+        v_step,
+        false,
+        domain,
+        [None, None],
+        geometry_budget,
+    )?;
+    Some((position, du, dv))
+}
+
 /// Continue one chart-selected surface-intersection branch in both support
 /// parameter spaces. The chart seeds and orders the branch; corrected points
 /// satisfy the two support surfaces rather than interpolating chart samples.
@@ -1443,7 +1441,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
 ) -> Option<[Vec<Point2>; 2]> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
         &index,
@@ -2201,7 +2199,7 @@ mod tests {
         candidate.control_points[4].z += 1.0;
         let support = SurfaceGeometry::Nurbs(support);
         let candidate = SurfaceGeometry::Nurbs(candidate);
-        let budget = WorkBudget::new(200);
+        let budget = GeometryWorkBudget::new(200);
 
         assert!(
             certified_offset_cache_fit_with_budget(&support, &candidate, 0.0, 0.01, &budget,)

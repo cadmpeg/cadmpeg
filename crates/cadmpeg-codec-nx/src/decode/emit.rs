@@ -960,8 +960,7 @@ pub(crate) fn orient_edge_range(
     end: &VertexId,
     edge_tolerance: Option<f64>,
 ) -> Option<([f64; 2], bool)> {
-    let geometry_budget =
-        cadmpeg_core::decode::WorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_edge_range_with_budget(
         ir,
         curve,
@@ -1368,7 +1367,7 @@ mod tests {
             weights: None,
             periodic: false,
         });
-        let geometry_budget = cadmpeg_core::decode::WorkBudget::new(1024);
+        let geometry_budget = GeometryWorkBudget::new(1024);
         let mut cache = CurvePointCache::default();
 
         let first = cache

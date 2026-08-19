@@ -71,7 +71,9 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     ];
     let validated_lanes = BTreeSet::from([(validated_id.clone(), 0)]);
     let support_budget = WorkBudget::new(10);
-    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
 
     crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes(
         &mut result.ir_mut(),

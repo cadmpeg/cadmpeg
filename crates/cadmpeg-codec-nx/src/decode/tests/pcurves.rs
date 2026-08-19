@@ -276,13 +276,14 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
     let procedural_start = ir.model.procedural_curves.len();
     let mut annotations = AnnotationBuilder::new();
-    let budget = WorkBudget::new(usize::MAX);
+    let transfer_budget = WorkBudget::new(usize::MAX);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
         &mut ir,
         &mut annotations,
         procedural_start,
-        &budget,
-        &budget,
+        &transfer_budget,
+        &geometry_budget,
     );
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization, ..
@@ -295,8 +296,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         &mut ir,
         &mut annotations,
         0,
-        &budget,
-        &budget,
+        &transfer_budget,
+        &geometry_budget,
     );
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
@@ -559,7 +560,7 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
     let SurfaceGeometry::Nurbs(support) = &support else {
         unreachable!();
     };
-    let budget = WorkBudget::new(0);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
 
     assert!(
         crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
@@ -572,7 +573,7 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
-    let budget = WorkBudget::new(0);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
     let span = crate::decode::blend::ScalarBezierSpan {
         domain: [0.0, 1.0],
         controls: vec![-1.0, 1.0],
@@ -633,7 +634,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         tolerance: Some(0.0),
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let budget = WorkBudget::new(0);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
     let pcurve = PcurveGeometry::Line {
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(1.0, 0.0),

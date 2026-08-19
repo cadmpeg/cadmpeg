@@ -825,7 +825,7 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
         crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
     );
-    let geometry_budget = cadmpeg_core::decode::WorkBudget::new(
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
     );
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(

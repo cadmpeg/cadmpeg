@@ -17,7 +17,8 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index_and_budget,
-    point_distance, surface_parameter_domain_with_index, surface_parameter_periods_with_index,
+    point_distance, refine_offset_surface_parameters_with_index_and_budget,
+    surface_parameter_domain_with_index, surface_parameter_periods_with_index,
 };
 use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
@@ -312,7 +313,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
         ir,
         serialized,
@@ -568,7 +569,7 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_tolerant_intersection_pcurve_with_index_and_budget(
         &index,
         curve,
@@ -977,7 +978,7 @@ pub(crate) fn reverse_pcurve_over_range(
 #[cfg(test)]
 pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr) {
     let transfer_budget = new_transfer_budget();
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_intersection_pcurves_from_opposite_charts_with_budget(
         ir,
         0,
@@ -1203,7 +1204,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     annotations: &mut AnnotationBuilder,
 ) {
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_exact_boundary_intersection_pcurves_with_budget(
         ir,
         annotations,
@@ -1460,7 +1461,7 @@ pub(crate) fn exact_boundary_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_boundary_pcurve_with_index(
         &index,
         curve,
@@ -1788,7 +1789,7 @@ pub(crate) fn exact_analytic_isocurve_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_analytic_isocurve_pcurve_with_index_and_budget(
         &index,
         curve,
@@ -1923,7 +1924,7 @@ pub(crate) fn coincident_pcurve_pair(
     tolerance: f64,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coincident_pcurve_pair_with_index(
         &index,
         surfaces,
@@ -2632,7 +2633,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Option<Point2> {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_boundary_parameter_from_support_spine_with_index_and_budget(
         index,
         blend,
@@ -2786,36 +2787,45 @@ fn append_transferred_pcurve_segment_with_budget(
             first.1.u + fraction * (last.1.u - first.1.u),
             first.1.v + fraction * (last.1.v - first.1.v),
         );
-        let Some(source_uv) = pcurve_uv(source_pcurve, parameter) else {
-            return false;
-        };
-        let Some(source_point) = source_geometry
-            .and_then(|geometry| {
-                decoded_surface_point_with_geometry_and_budget(
-                    index,
-                    source_surface,
-                    geometry,
-                    source_uv.u,
-                    source_uv.v,
-                    0,
-                    geometry_budget,
-                )
-            })
-            .or_else(|| {
-                decoded_surface_point_inner_with_budget(
-                    index,
-                    source_surface,
-                    source_uv.u,
-                    source_uv.v,
-                    0,
-                    geometry_budget,
-                )
-            })
-            .or_else(|| {
-                model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
-            })
-        else {
-            return false;
+        let source_point = if fraction == 0.5 {
+            // `midpoint` was already forward-evaluated while constructing the
+            // adaptive witness. Reuse that exact source point; the check below
+            // still evaluates the interpolated target chart at the midpoint,
+            // which is the independent chord-fit condition.
+            midpoint.2
+        } else {
+            let Some(source_uv) = pcurve_uv(source_pcurve, parameter) else {
+                return false;
+            };
+            let Some(source_point) = source_geometry
+                .and_then(|geometry| {
+                    decoded_surface_point_with_geometry_and_budget(
+                        index,
+                        source_surface,
+                        geometry,
+                        source_uv.u,
+                        source_uv.v,
+                        0,
+                        geometry_budget,
+                    )
+                })
+                .or_else(|| {
+                    decoded_surface_point_inner_with_budget(
+                        index,
+                        source_surface,
+                        source_uv.u,
+                        source_uv.v,
+                        0,
+                        geometry_budget,
+                    )
+                })
+                .or_else(|| {
+                    model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+                })
+            else {
+                return false;
+            };
+            source_point
         };
         blend_contact.is_some_and(|contact| {
             uv.v.to_bits() == (contact.boundary as f64).to_bits()
@@ -2938,38 +2948,62 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
             geometry_budget,
         ),
         SurfaceGeometry::Procedural { .. } => {
-            offset_surface_parameters_with_tolerance_with_index_and_budget(
-                index,
-                surface,
-                point,
-                seed,
-                Some(tolerance),
-                geometry_budget,
-            )
-            .or_else(|| {
-                let grid = blend_parameter_grids
-                    .entry(surface.clone())
-                    .or_insert_with(|| {
-                        blend_surface_parameter_grid_with_index_and_budget(
-                            index,
-                            surface,
-                            0,
-                            geometry_budget,
-                        )
-                    });
-                let grid = grid
-                    .as_deref()
-                    .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
-                blend_surface_parameters_for_fit_with_grid_and_budget(
+            let offset = match seed {
+                // Continuation samples start with the previous branch-local
+                // parameter. Retain the established global admission fallback
+                // when that seed cannot be certified locally.
+                Some(seed) => refine_offset_surface_parameters_with_index_and_budget(
                     index,
                     surface,
                     point,
                     seed,
                     tolerance,
-                    grid,
                     geometry_budget,
                 )
-            })
+                .or_else(|| {
+                    offset_surface_parameters_with_tolerance_with_index_and_budget(
+                        index,
+                        surface,
+                        point,
+                        Some(seed),
+                        Some(tolerance),
+                        geometry_budget,
+                    )
+                }),
+                None => offset_surface_parameters_with_tolerance_with_index_and_budget(
+                    index,
+                    surface,
+                    point,
+                    None,
+                    Some(tolerance),
+                    geometry_budget,
+                ),
+            };
+            if offset.is_some() {
+                return offset;
+            }
+            let grid = blend_parameter_grids
+                .entry(surface.clone())
+                .or_insert_with(|| {
+                    blend_surface_parameter_grid_with_index_and_budget(
+                        index,
+                        surface,
+                        0,
+                        geometry_budget,
+                    )
+                });
+            let grid = grid
+                .as_deref()
+                .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
+            blend_surface_parameters_for_fit_with_grid_and_budget(
+                index,
+                surface,
+                point,
+                seed,
+                tolerance,
+                grid,
+                geometry_budget,
+            )
         }
         geometry => analytic_surface_parameters(geometry, point),
     }
@@ -3038,7 +3072,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
     source_stream: cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     attach_tolerant_edge_intersections_with_budget(
         ir,
         graph,
@@ -3269,7 +3303,7 @@ pub(crate) fn pcurve_matches_edge_range(
     fit_tolerance: Option<f64>,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = WorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     pcurve_matches_edge_range_with_index_and_budget(
         &index,
         edge_id,

@@ -7,7 +7,7 @@ use super::emit::{
     unknown_stream_metadata,
 };
 use super::geometry_work::{
-    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+    GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
     MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
     MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
 };
@@ -214,14 +214,20 @@ pub(crate) fn try_decode_geometry(
     let support_uv_validation_budget = ctx.work_budget(support_uv_limit as u64);
     let support_budget = ctx.work_budget(support_uv_limit as u64);
     let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
-    let adaptive_geometry_budget = ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64);
-    let completion_geometry_budget = ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64);
-    let support_uv_geometry_budget =
-        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64);
-    let coupled_support_uv_geometry_budget =
-        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
-    let serialized_support_uv_geometry_budget =
-        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
+    let adaptive_geometry_budget =
+        GeometryWorkBudget::from_work_budget(ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64));
+    let completion_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64),
+    );
+    let support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64),
+    );
+    let coupled_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64),
+    );
+    let serialized_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64),
+    );
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
 
@@ -229,6 +235,11 @@ pub(crate) fn try_decode_geometry(
         if !stream.kind.is_parasolid() {
             continue;
         }
+        adaptive_geometry_budget.clear_blend_frame_cache();
+        completion_geometry_budget.clear_blend_frame_cache();
+        support_uv_geometry_budget.clear_blend_frame_cache();
+        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         if preselection
             .as_ref()
             .is_some_and(|(_, selected, _)| !selected.contains(&si))
@@ -884,6 +895,8 @@ pub(crate) fn try_decode_geometry(
             pcurves: ir.model.pcurves.len(),
             procedural_curves: procedural_start,
         };
+        adaptive_geometry_budget.clear_blend_frame_cache();
+        completion_geometry_budget.clear_blend_frame_cache();
         emit_topology(
             &mut ir,
             si,
@@ -904,6 +917,7 @@ pub(crate) fn try_decode_geometry(
             &adaptive_geometry_budget,
             &completion_geometry_budget,
         );
+        completion_geometry_budget.clear_blend_frame_cache();
         invalidate_inconsistent_support_uv_with_validated_lanes(
             &mut ir,
             &pending_ext11_support_uv,
@@ -911,11 +925,14 @@ pub(crate) fn try_decode_geometry(
             &support_uv_validation_budget,
             &completion_geometry_budget,
         );
+        serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
             &mut ir,
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
         );
+        support_uv_geometry_budget.clear_blend_frame_cache();
+        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir);
         support_uv_lane_geometry_exhausted |= complete_support_uv_with_budget(
             &mut ir,
@@ -925,6 +942,7 @@ pub(crate) fn try_decode_geometry(
             &coupled_support_budget,
             &coupled_support_uv_geometry_budget,
         );
+        completion_geometry_budget.clear_blend_frame_cache();
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,

@@ -966,7 +966,9 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     let expected = Point2::new(parameter, 0.0);
     let point = Point3::new(0.0, 0.0, parameter);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
     let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
     let actual =
         crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
@@ -1214,7 +1216,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let outside_parameters =
         crate::decode::blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
     assert!(outside_parameters.is_none());
-    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
     let continuation_parameters =
         crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
@@ -1229,8 +1233,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
     assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
 
-    let direct_geometry_budget =
-        WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
     let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
     let direct_parameters =
         crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
@@ -1536,7 +1541,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .map(|surface| &surface.geometry)
         .unwrap();
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let geometry_budget = WorkBudget::new(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
     let evaluated = crate::decode::blend::decoded_surface_point_with_geometry_and_budget(
         &index,
         &outer,
