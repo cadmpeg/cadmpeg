@@ -67,6 +67,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             f3d_with_smbh_and_protein_with_generated_base_feature(&synthetic_geometry_smbh()),
         ),
         (
+            "design_base_flange",
+            f3d_with_smbh_and_protein_with_generated_base_flange(&synthetic_geometry_smbh()),
+        ),
+        (
             "design_remove_body",
             f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh()),
         ),

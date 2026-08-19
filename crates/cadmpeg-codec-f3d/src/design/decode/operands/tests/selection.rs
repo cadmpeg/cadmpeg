@@ -129,6 +129,49 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
 }
 
 #[test]
+fn generated_base_flange_profile_frame_resolves() {
+    let (bytes, _) = crate::test_support::generated_design_base_flange_bulkstream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let profile_offset = records
+        .offsets(1501)
+        .first()
+        .copied()
+        .expect("generated BaseFlange profile");
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#1501".into(),
+        byte_offset: profile_offset as u64,
+        class_tag: "377".into(),
+        record_index: 1501,
+    };
+    let entity = DesignEntityHeader {
+        id: "f3d:Design/BulkStream.dat:entity#800".into(),
+        byte_offset: 0,
+        entity_suffix: 800,
+        entity_id: "Sketch_800".into(),
+        class_tag: "365".into(),
+        optional_slot_present: false,
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
+        record_reference: None,
+        record_reference_offset: None,
+        declared_reference_count: None,
+        reference_indices: Vec::new(),
+        reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
+    };
+    let profile = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        1,
+        &header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("generated BaseFlange profile operand");
+    assert_eq!(profile.entity_id, "Sketch_800");
+    assert_eq!(profile.entity_suffix, 800);
+}
+
+#[test]
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());

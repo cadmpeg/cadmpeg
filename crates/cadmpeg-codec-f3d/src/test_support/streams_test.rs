@@ -92,6 +92,13 @@ pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -
     )
 }
 
+pub(crate) fn generated_design_base_flange_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(
+        records,
+        GeneratedDesignMetastreamVariant::BaseFlange,
+    )
+}
+
 pub(crate) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
@@ -129,6 +136,7 @@ enum GeneratedDesignMetastreamVariant {
     Base,
     SketchDimension,
     BaseFeature,
+    BaseFlange,
     RemoveBody,
     SurfaceStitch,
     CopyPaste,
@@ -141,10 +149,12 @@ fn generated_design_metastream_with_sketch_types(
     variant: GeneratedDesignMetastreamVariant,
 ) -> Vec<u8> {
     let include_sketch_types = matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
-    let include_dimension_types = include_sketch_types;
+    let include_dimension_types =
+        matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
     let include_feature_types = matches!(
         variant,
         GeneratedDesignMetastreamVariant::BaseFeature
+            | GeneratedDesignMetastreamVariant::BaseFlange
             | GeneratedDesignMetastreamVariant::RemoveBody
             | GeneratedDesignMetastreamVariant::SurfaceStitch
             | GeneratedDesignMetastreamVariant::CopyPaste
@@ -996,6 +1006,163 @@ pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     out.extend_from_slice(b"261");
     out.extend_from_slice(&placement_record.to_le_bytes());
     records.push((u64::from(placement_record), placement_offset));
+
+    (out, records)
+}
+
+/// Add a typed `BaseFlange` scope, its profile group, and the sketch-profile
+/// placement join to the generated Design stream.
+pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
+        bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(class_tag);
+        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn append_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
+        let units: Vec<u16> = value.encode_utf16().collect();
+        bytes[at..at + 4].copy_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        for (ordinal, unit) in units.into_iter().enumerate() {
+            let offset = at + 4 + ordinal * 2;
+            bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn local_reference(bytes: &mut Vec<u8>, record_index: u64) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+
+    let (mut out, mut records) = generated_design_bulkstream();
+    let scope_record = 1_400_u32;
+    let profile_group_record = 2_000_u32;
+    let profile_record = 1_501_u32;
+    let thickness_record = 1_502_u32;
+    let settings_record = 1_503_u32;
+
+    let placement_head_record = 2_100_u32;
+    append_header(&mut out, b"261", 800);
+    out.extend_from_slice(&[0; 8]);
+    out.push(1);
+    out.extend_from_slice(&placement_head_record.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    let mut placement_head = Vec::new();
+    append_header(&mut placement_head, b"264", placement_head_record);
+    placement_head.extend_from_slice(&[0; 10]);
+    placement_head.extend_from_slice(&[1, 0, 1]);
+    placement_head.extend_from_slice(&[0; 4]);
+    placement_head.extend_from_slice(&[0; 6]);
+    assert_eq!(placement_head.len(), 34);
+    out.extend_from_slice(&placement_head);
+
+    let scope_offset = u64::try_from(out.len()).expect("synthetic BaseFlange scope offset");
+    let mut scope = vec![0_u8; 416];
+    header(&mut scope, b"268", scope_record);
+    scope[73..77].copy_from_slice(&1_u32.to_le_bytes());
+    scope[81] = 1;
+    scope[82..86].copy_from_slice(&settings_record.to_le_bytes());
+    scope[92..96].copy_from_slice(&1_u32.to_le_bytes());
+    scope[112] = 1;
+    scope[113..117].copy_from_slice(&thickness_record.to_le_bytes());
+    scope[123..131].copy_from_slice(&0.2_f64.to_le_bytes());
+    scope[141..145].copy_from_slice(&1_u32.to_le_bytes());
+    scope[145] = 1;
+    scope[146..150].copy_from_slice(&profile_group_record.to_le_bytes());
+    scope[258..262].copy_from_slice(&4_u32.to_le_bytes());
+    for (ordinal, record_index) in [
+        profile_group_record,
+        profile_record,
+        thickness_record,
+        settings_record,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        marked_reference(&mut scope, 262 + ordinal * 11, record_index);
+    }
+    scope[306..310].copy_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut scope, 310, "BaseFlange");
+    scope[334..338].copy_from_slice(&1_u32.to_le_bytes());
+    append_header(&mut scope, b"261", scope_record);
+    assert_eq!(scope.len(), 427);
+    out.extend_from_slice(&scope);
+    records.push((u64::from(scope_record), scope_offset));
+
+    let mut group = Vec::new();
+    append_header(&mut group, b"264", profile_group_record);
+    group.extend_from_slice(&[0; 8]);
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&u64::from(profile_record).to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&0_u32.to_le_bytes());
+    group.extend_from_slice(&0x0000_0041_0000_0000_u64.to_le_bytes());
+    group.extend_from_slice(&[0; 10]);
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.extend_from_slice(&1.0_f64.to_le_bytes());
+    group.extend_from_slice(&1_u32.to_le_bytes());
+    group.push(1);
+    group.extend_from_slice(&u64::from(profile_group_record + 2).to_le_bytes());
+    group.extend_from_slice(&[0, 0]);
+    group.extend_from_slice(&[0, 0]);
+    local_reference(&mut group, u64::from(profile_group_record + 1));
+    group.push(0);
+    local_reference(&mut group, u64::from(scope_record));
+    append_header(&mut group, b"259", profile_group_record);
+    out.extend_from_slice(&group);
+
+    let mut profile = Vec::new();
+    append_header(&mut profile, b"377", profile_record);
+    profile.extend_from_slice(&[0; 10]);
+    profile.push(1);
+    profile.extend_from_slice(&(profile_record + 3).to_le_bytes());
+    profile.extend_from_slice(&[0; 6]);
+    profile.extend_from_slice(&1_u32.to_le_bytes());
+    let asset = "11111111-2222-3333-4444-555555555555";
+    let asset_units: Vec<u16> = asset.encode_utf16().collect();
+    profile.extend_from_slice(&u32::try_from(asset_units.len()).unwrap().to_le_bytes());
+    for unit in asset_units {
+        profile.extend_from_slice(&unit.to_le_bytes());
+    }
+    let suffix_units: Vec<u16> = "800".encode_utf16().collect();
+    profile.extend_from_slice(&u32::try_from(suffix_units.len()).unwrap().to_le_bytes());
+    for unit in suffix_units {
+        profile.extend_from_slice(&unit.to_le_bytes());
+    }
+    let tail_offset = profile.len();
+    let tail = vec![0_u8; 94];
+    profile.extend_from_slice(&tail);
+    append_header(&mut profile, b"264", profile_record);
+    assert_eq!(tail_offset + 94, profile.len() - 11);
+    out.extend_from_slice(&profile);
+
+    let mut thickness = vec![0_u8; 100];
+    header(&mut thickness, b"270", thickness_record);
+    thickness[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+    thickness[24] = 1;
+    thickness[25..29].copy_from_slice(&scope_record.to_le_bytes());
+    thickness[40..48].copy_from_slice(&0.2_f64.to_le_bytes());
+    append_header(&mut thickness, b"270", thickness_record);
+    out.extend_from_slice(&thickness);
+
+    let mut settings = Vec::new();
+    append_header(&mut settings, b"271", settings_record);
+    settings.extend_from_slice(&[0; 20]);
+    out.extend_from_slice(&settings);
 
     (out, records)
 }
