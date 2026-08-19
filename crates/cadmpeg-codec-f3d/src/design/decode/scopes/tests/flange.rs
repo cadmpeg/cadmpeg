@@ -295,37 +295,39 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240, 243, 246,
     ];
     let frame = legacy_class325_two_sided_per_edge_flange_frame();
-    let operation = crate::design::decode::scopes::exact_edge_flange_operation(
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        "325",
-        "258",
-        &references,
-    )
-    .expect("legacy class-325 two-sided per-edge EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [201, 213]);
-    assert_eq!(operation.edge_group_record_indices, [204, 216]);
-    assert_eq!(operation.edge_operand_record_indices, [207, 219]);
-    assert_eq!(operation.aggregate_group_record_index, 231);
-    assert_eq!(operation.aggregate_operand_record_indices, [243, 246]);
-    assert_eq!(
-        operation.width_distance_owner_record_indices,
-        [210, 222, 234, 237]
-    );
-    assert_eq!(
-        operation.width_distance_owner_record_indices_by_edge,
-        [[210, 222], [234, 237]]
-    );
-    assert_eq!(operation.height_owner_record_index, 225);
-    assert_eq!(operation.angle_owner_record_index, 228);
-    assert_eq!(operation.settings_record_index, 240);
-    assert_eq!(
-        operation.edge_width_mode(),
-        crate::records::DesignEdgeWidthMode::TwoSidesPerEdge
-    );
-    assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
-    assert_eq!(operation.bend_radius_offset, 169);
+    for (class_tag, paired_class_tag) in [("325", "258"), ("334", "257")] {
+        let operation = crate::design::decode::scopes::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            class_tag,
+            paired_class_tag,
+            &references,
+        )
+        .expect("legacy two-sided per-edge EdgeFlange operation");
+        assert_eq!(operation.edge_wrapper_record_indices, [201, 213]);
+        assert_eq!(operation.edge_group_record_indices, [204, 216]);
+        assert_eq!(operation.edge_operand_record_indices, [207, 219]);
+        assert_eq!(operation.aggregate_group_record_index, 231);
+        assert_eq!(operation.aggregate_operand_record_indices, [243, 246]);
+        assert_eq!(
+            operation.width_distance_owner_record_indices,
+            [210, 222, 234, 237]
+        );
+        assert_eq!(
+            operation.width_distance_owner_record_indices_by_edge,
+            [[210, 222], [234, 237]]
+        );
+        assert_eq!(operation.height_owner_record_index, 225);
+        assert_eq!(operation.angle_owner_record_index, 228);
+        assert_eq!(operation.settings_record_index, 240);
+        assert_eq!(
+            operation.edge_width_mode(),
+            crate::records::DesignEdgeWidthMode::TwoSidesPerEdge
+        );
+        assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+        assert_eq!(operation.bend_radius_offset, 169);
+    }
 }
 
 #[test]
