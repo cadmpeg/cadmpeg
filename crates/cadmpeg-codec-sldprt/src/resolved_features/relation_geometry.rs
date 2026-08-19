@@ -1,5 +1,6 @@
 //! Relation point and solved geometry projection.
 
+use super::curves::slot_curve_and_center_indices;
 use super::endpoints::legacy_undetailed_profile_line;
 use super::markers::marker_is_geometry_locus;
 use super::names::operand_kind_name;
@@ -24,6 +25,7 @@ use crate::records::{
     FeatureInputRelationInstance, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
     SketchRelationKind,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
@@ -858,6 +860,132 @@ pub(super) fn declared_entity_handle_owner<'a>(
     } else {
         DeclaredEntityHandleOwner::Unique(lane)
     }
+}
+
+/// Resolve the circular-dimension center carried by a slot handle.
+///
+/// A slot is an aggregate boundary descriptor, not an independent circle. Its
+/// radial dimension handle therefore identifies the slot marker first and a
+/// selected center point second. The two exact `sgSlotHandle` reference cells
+/// are required so a slot's center cannot be guessed from its radius or from
+/// the slot's boundary roster alone.
+pub(super) fn declared_slot_handle_dimension_center<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+) -> Option<(&'a SketchInputEntity, &'a SketchInputEntity)> {
+    let entity_ref = operand.entity_ref.as_deref()?;
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let marker = lane.sketch_entities.iter().find(|marker| {
+        marker.id == entity_ref
+            && marker.feature_ref.as_deref() == Some(feature)
+            && matches!(marker.kind, SketchInputKind::Native(_))
+    })?;
+    let marker_offset = usize::try_from(marker.offset).ok()?;
+    let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
+
+    let entity_class = lane
+        .references
+        .iter()
+        .find(|reference| reference.id == operand.reference_ref)
+        .and_then(|reference| reference.class_ref.as_deref())
+        .and_then(|class_ref| lane.classes.iter().find(|class| class.id == class_ref))
+        .filter(|class| class.name == "sgEntHandle")?;
+    let mut slot_classes = lane
+        .classes
+        .iter()
+        .filter(|class| {
+            class.name == "sgSlotHandle"
+                && class.offset > entity_class.offset
+                && class.offset < marker.offset
+        })
+        .collect::<Vec<_>>();
+    if slot_classes.len() != 1 {
+        return None;
+    }
+    let slot_class = slot_classes.pop().expect("one slot handle class");
+    let class_end = lane
+        .classes
+        .iter()
+        .filter(|class| class.offset > slot_class.offset)
+        .map(|class| class.offset)
+        .min()
+        .unwrap_or_else(|| u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX))
+        .min(marker.offset);
+    let class_start = usize::try_from(slot_class.offset).ok()?;
+    let class_end = usize::try_from(class_end)
+        .ok()?
+        .min(lane.native_payload.len());
+    if class_start >= class_end {
+        return None;
+    }
+    let reference_indices = (class_start..class_end)
+        .filter_map(|offset| {
+            let cell_end = offset.checked_add(12)?;
+            if cell_end > class_end {
+                return None;
+            }
+            let cell = lane.native_payload.get(offset..cell_end)?;
+            if cell.get(..2) != Some(&[0xe7, 0x88])
+                || cell.get(4..8) != Some(&[0xff; 4])
+                || cell.get(8..12) != Some(&[0; 4])
+            {
+                return None;
+            }
+            Some(usize::from(View::u16_le_at(
+                &lane.native_payload,
+                offset + 2,
+            )?))
+        })
+        .collect::<Vec<_>>();
+    if reference_indices.len() != 2 {
+        return None;
+    }
+    let [slot_index, center_index] = reference_indices.as_slice() else {
+        unreachable!("two slot-handle references were required above")
+    };
+    let slot_index = u32::try_from(*slot_index).ok()?;
+    let center_index = u32::try_from(*center_index).ok()?;
+    if slot_index != u32::from(operand.entity_index) || marker.local_id != Some(slot_index) {
+        return None;
+    }
+
+    let mut points = lane
+        .sketch_entities
+        .iter()
+        .filter(|candidate| candidate.feature_ref.as_deref() == Some(feature))
+        .filter(|candidate| candidate.coordinates_m.is_some())
+        .filter(|candidate| {
+            matches!(
+                candidate.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|candidate| candidate.offset);
+    let centers = center_indices
+        .map(|index| points.get(index).copied())
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = centers.as_slice() else {
+        unreachable!("slot descriptor has two center indices")
+    };
+    let center = match (
+        first.local_id == Some(center_index),
+        second.local_id == Some(center_index),
+    ) {
+        (true, false) => *first,
+        (false, true) => *second,
+        _ => return None,
+    };
+    let coordinates = center.coordinates_m?;
+    coordinates
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some((marker, center))
 }
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(

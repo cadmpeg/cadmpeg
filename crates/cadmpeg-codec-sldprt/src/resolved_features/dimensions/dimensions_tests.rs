@@ -288,6 +288,219 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
 }
 
 #[test]
+fn declared_slot_handle_selects_indexed_dimension_center() {
+    let kind = FeatureInputOperandKind::Native(0x88e7);
+    let operand = FeatureInputOperand {
+        offset: 150,
+        reference_ref: "reference".into(),
+        kind,
+        entity_index: 1,
+        entity_ref: Some("slot".into()),
+    };
+    let slot_offset = 300_usize;
+    let mut payload = vec![0_u8; 600];
+    let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
+    payload[slot_offset - declaration.len()..slot_offset].copy_from_slice(declaration);
+    payload[slot_offset..slot_offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[slot_offset + 5..slot_offset + 13].fill(0xff);
+    payload[slot_offset + 13..slot_offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[slot_offset + 17..slot_offset + 21].copy_from_slice(&0_u32.to_le_bytes());
+    payload[slot_offset + 23..slot_offset + 29]
+        .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[slot_offset + 31..slot_offset + 39]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[slot_offset + 48..slot_offset + 56].copy_from_slice(&1.0_f64.to_le_bytes());
+    for (index, (selector, id)) in [
+        (0x8301_u16, 0_u16),
+        (0x82f7, 4),
+        (0x8301, 1),
+        (0x8301, 2),
+        (0x88e7, 0),
+        (0x88e7, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = slot_offset + 72 + index * 12;
+        payload[offset..offset + 2].copy_from_slice(&selector.to_le_bytes());
+        payload[offset + 2..offset + 4].copy_from_slice(&id.to_le_bytes());
+        payload[offset + 4..offset + 8].fill(0xff);
+        payload[offset + 8..offset + 12].fill(0);
+    }
+    for (offset, index) in [(200, 1_u16), (212, 3_u16)] {
+        payload[offset..offset + 2].copy_from_slice(&0x88e7_u16.to_le_bytes());
+        payload[offset + 2..offset + 4].copy_from_slice(&index.to_le_bytes());
+        payload[offset + 4..offset + 8].fill(0xff);
+        payload[offset + 8..offset + 12].fill(0);
+    }
+    let marker =
+        |id: &str, offset, kind, object_index, local_id, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: u32::try_from(offset).unwrap(),
+            offset,
+            object_index,
+            local_id,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![
+            FeatureInputClass {
+                id: "entity-class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 100,
+                name: "sgEntHandle".into(),
+                role: FeatureInputClassRole::SketchEntity,
+            },
+            FeatureInputClass {
+                id: "slot-class".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 180,
+                name: "sgSlotHandle".into(),
+                role: FeatureInputClassRole::Native,
+            },
+            FeatureInputClass {
+                id: "end-class".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 250,
+                name: "next".into(),
+                role: FeatureInputClassRole::Native,
+            },
+        ],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: vec![FeatureInputReference {
+            id: "reference".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: operand.offset,
+            kind,
+            class_ref: Some("entity-class".into()),
+            object_index: 1,
+        }],
+        sketch_entities: vec![
+            marker(
+                "center-left",
+                10,
+                SketchInputKind::Point,
+                Some(2),
+                Some(2),
+                Some([0.010, 0.020]),
+            ),
+            marker(
+                "center-right",
+                20,
+                SketchInputKind::Point,
+                Some(99),
+                Some(3),
+                Some([0.016, 0.020]),
+            ),
+            marker(
+                "slot",
+                slot_offset as u64,
+                SketchInputKind::Native(1),
+                Some(1),
+                Some(1),
+                None,
+            ),
+        ],
+    };
+    let markers_by_id = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let carrier = dimensioned_relation_carrier(
+        std::slice::from_ref(&lane),
+        &markers_by_id,
+        "feature",
+        &operand,
+        7.0,
+    )
+    .expect("slot handle dimension carrier");
+    assert_eq!(carrier.marker.id, "slot");
+    assert_eq!(carrier.center, [0.016, 0.020]);
+    assert!(carrier.curve.is_none());
+    assert_eq!(carrier.construction, Some(true));
+
+    let mut ambiguous_lane = lane.clone();
+    ambiguous_lane.classes.insert(
+        2,
+        FeatureInputClass {
+            id: "second-slot-class".into(),
+            parent: "lane".into(),
+            ordinal: 2,
+            offset: 240,
+            name: "sgSlotHandle".into(),
+            role: FeatureInputClassRole::Native,
+        },
+    );
+    let ambiguous_markers = ambiguous_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&ambiguous_lane),
+        &ambiguous_markers,
+        "feature",
+        &operand,
+        7.0,
+    )
+    .is_none());
+
+    let mut mismatched_center_lane = lane.clone();
+    mismatched_center_lane.native_payload[214..216].copy_from_slice(&4_u16.to_le_bytes());
+    let mismatched_center_markers = mismatched_center_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&mismatched_center_lane),
+        &mismatched_center_markers,
+        "feature",
+        &operand,
+        7.0,
+    )
+    .is_none());
+
+    let mut mismatched_slot_lane = lane;
+    mismatched_slot_lane.native_payload[202..204].copy_from_slice(&2_u16.to_le_bytes());
+    let mismatched_slot_markers = mismatched_slot_lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert!(dimensioned_relation_carrier(
+        std::slice::from_ref(&mismatched_slot_lane),
+        &mismatched_slot_markers,
+        "feature",
+        &operand,
+        7.0,
+    )
+    .is_none());
+}
+
+#[test]
 fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
     use crate::layout::current_geometry_locus_arc_handle_point as arc_handle;
 

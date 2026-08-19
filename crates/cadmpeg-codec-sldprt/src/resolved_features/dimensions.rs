@@ -9,8 +9,8 @@ use super::markers::{
 };
 use super::relation_geometry::{
     declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
-    declared_entity_handle_owner, implicit_circle_marker, owned_relation_parameters,
-    DeclaredEntityHandleOwner,
+    declared_entity_handle_owner, declared_slot_handle_dimension_center, implicit_circle_marker,
+    owned_relation_parameters, DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -298,6 +298,14 @@ fn dimensioned_relation_carrier<'a>(
         .entity_ref
         .as_deref()
         .and_then(|id| markers_by_id.get(id).copied());
+    if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
+        return Some(DimensionedRelationCarrier {
+            marker,
+            curve: None,
+            center: center.coordinates_m?,
+            construction: Some(true),
+        });
+    }
     let explicit_circular_marker = explicit.is_some_and(|marker| {
         matches!(
             marker.kind,
