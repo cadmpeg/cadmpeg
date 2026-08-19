@@ -422,6 +422,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// at token 15.
 /// Type 402 Form 19 puts the block count at index 1 and stores six fields per
 /// view/segment block, so its groups start at token `2 + 6*N`.
+/// Type 202 Form 0 stores eight fixed primary fields, so its groups start at
+/// token nine.
 /// Type 114 Form 0 puts `M` and `N` at indexes 3 and 4 and stores a complete
 /// `(M + 1) * (N + 1)` grid of 48-value patch and placeholder blocks, so its
 /// groups start at token `7 + M + N + 48*(M + 1)*(N + 1)`.
@@ -488,6 +490,7 @@ pub(crate) fn entity_primary_end(
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
+        (202, 0) => Some(fixed_primary_end(record, 9)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
