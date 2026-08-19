@@ -34,6 +34,7 @@ use std::{
 
 use crate::layout::{
     component_face_compact_reference_prefix as compact_face,
+    component_face_flagged_operation_prefix as flagged_face,
     component_face_nested_reference_prefix as nested_face,
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
@@ -888,9 +889,23 @@ fn operation_surface_selection_candidates(
             .filter_map(|class| {
                 let class_offset = usize::try_from(class.offset).ok()?;
                 let body = class_offset.checked_add(6 + class.name.len())?;
-                component_face_reference_at(&lane.native_payload, body)
+                component_face_reference_at_for_operation(&lane.native_payload, body)
             }),
     );
+    let component_face_tokens = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCompFace_c")
+        .filter_map(|class| {
+            let class_offset = usize::try_from(class.offset).ok()?;
+            let body = class_offset.checked_add(6 + class.name.len())?;
+            let token = View::u16_le_at(&lane.native_payload, body)?;
+            is_class_token(token).then_some(token)
+        })
+        .collect::<HashSet<_>>();
+    candidates.extend(component_face_tokens.into_iter().flat_map(|token| {
+        component_face_reference_candidates(&lane.native_payload, token, start, end)
+    }));
     candidates.sort_by_key(|(offset, _)| *offset);
     candidates.dedup();
     if candidates.len() == 1 {
@@ -1268,20 +1283,28 @@ pub(super) fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    component_face_reference_at_impl(payload, body_offset, false)
+    component_face_reference_at_impl(payload, body_offset, false, false)
+}
+
+fn component_face_reference_at_for_operation(
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    component_face_reference_at_impl(payload, body_offset, false, true)
 }
 
 fn component_face_reference_at_for_full_round_fillet(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    component_face_reference_at_impl(payload, body_offset, true)
+    component_face_reference_at_impl(payload, body_offset, true, false)
 }
 
 fn component_face_reference_at_impl(
     payload: &[u8],
     body_offset: usize,
     include_compact_frame: bool,
+    allow_flagged_operation_frame: bool,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
     const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
     let token = View::u16_le_at(payload, body_offset)?;
@@ -1303,7 +1326,9 @@ fn component_face_reference_at_impl(
                         && &header[CLASS_MARKER.len() + 2..] == NESTED_FACE_CLASS
                 })
         });
-    let marker_offsets: &[usize] = if flags == [0x40, 0] {
+    let marker_offsets: &[usize] = if flags == [0x40, 0] && allow_flagged_operation_frame {
+        &[100, flagged_face::COMPONENT_MARKER]
+    } else if flags == [0x40, 0] {
         &[100]
     } else if nested_face_class {
         &[nested_face::COMPONENT_MARKER]
@@ -1333,6 +1358,25 @@ fn component_face_reference_at_impl(
             compact_surface_reference_at(payload, marker).map(|components| (marker, components))
         })
     }
+}
+
+fn component_face_reference_candidates(
+    payload: &[u8],
+    class_token: u16,
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let bounded_end = end.min(payload.len());
+    let Some(bounded_payload) = payload.get(..bounded_end) else {
+        return Vec::new();
+    };
+    let mut candidates = (start..bounded_end.saturating_sub(8))
+        .filter(|offset| View::u16_le_at(bounded_payload, *offset) == Some(class_token))
+        .filter_map(|offset| component_face_reference_at_for_operation(bounded_payload, offset))
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(offset, _)| *offset);
+    candidates.dedup();
+    candidates
 }
 
 pub(super) fn component_face_reference_in_record(

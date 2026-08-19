@@ -6936,6 +6936,56 @@ source = "spec"
 anchor = "zero marker tail at `+80..+81`"
 
 [[record]]
+name = "component_face_flagged_operation_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+kind = "byte"
+section = "2"
+anchor = "An operation `moCompFace_c` body with `40 00` flags has its component-path marker at `+68` and a zero marker tail at `+84..+85`"
+size = 86
+endianness = "little"
+note = "Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail."
+
+[[record.field]]
+name = "class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "class token at `+0`"
+
+[[record.field]]
+name = "record_version"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "u32 `2` at `+2`"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "bytes[2]"
+source = "spec"
+anchor = "`40 00` flags at `+6..+7`"
+
+[[record.gap]]
+offset = 8
+size = 60
+note = "Fixed carrier bytes before the component marker."
+
+[[record.field]]
+name = "component_marker"
+offset = 68
+type = "bytes[16]"
+source = "spec"
+anchor = "component-path marker 68 bytes after the body start"
+
+[[record.field]]
+name = "marker_tail"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "zero marker tail at `+84..+85`"
+
+[[record]]
 name = "temporary_axis_reference_nine_scalar"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
 kind = "byte"

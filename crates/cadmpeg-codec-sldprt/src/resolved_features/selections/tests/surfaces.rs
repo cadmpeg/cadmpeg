@@ -155,6 +155,88 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
 }
 
 #[test]
+fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisions() {
+    let class_name = "moCompFace_c";
+    let class_body = 6 + class_name.len();
+    let class_token = 0x802b_u16;
+    let first_body = 120;
+    let second_body = 300;
+    let signature = [0x34, 0x80, 0x37, 0, 1, 0, 0, 0, 2, 0, 0, 0];
+    let build_face = |payload: &mut Vec<u8>, body: usize, local_id: u32| {
+        let marker = body + 68;
+        payload[body..body + 2].copy_from_slice(&class_token.to_le_bytes());
+        payload[body + 2..body + 6].copy_from_slice(&2u32.to_le_bytes());
+        payload[body + 6..body + 8].copy_from_slice(&[0x40, 0]);
+        payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0x04, 0x02, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+        let entry = marker + 18;
+        payload[entry..entry + 2].copy_from_slice(&0x8020u16.to_le_bytes());
+        payload[entry + 4..entry + 16].copy_from_slice(&signature);
+        payload[entry + 16..entry + 20].copy_from_slice(&local_id.to_le_bytes());
+    };
+    let lane_for = |payload: Vec<u8>| FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let first_end = first_body + 68 + 18 + 20;
+    let mut one = vec![0; first_end];
+    one[..4].copy_from_slice(CLASS_MARKER);
+    one[4..6].copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    one[6..class_body].copy_from_slice(class_name.as_bytes());
+    one[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
+    build_face(&mut one, first_body, 6);
+    let lane = lane_for(one);
+    let selections = operation_surface_selection_candidates(
+        FeatureClass::Dome,
+        &lane,
+        first_body,
+        first_end,
+        None,
+    );
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].0, first_body + 68);
+    assert_eq!(selections[0].1[0].local_id, Some(6));
+
+    let collision_end = second_body + 68 + 18 + 20;
+    let mut collision = vec![0; collision_end];
+    collision[..class_body].copy_from_slice(&lane.native_payload[..class_body]);
+    collision[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
+    build_face(&mut collision, first_body, 6);
+    build_face(&mut collision, second_body, 9);
+    let lane = lane_for(collision);
+    assert!(operation_surface_selection_candidates(
+        FeatureClass::Dome,
+        &lane,
+        first_body,
+        collision_end,
+        None,
+    )
+    .is_empty());
+}
+
+#[test]
 fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     let body_offset = 30;
     let marker = body_offset + 94;
@@ -722,6 +804,9 @@ fn component_face_reference_accepts_both_nested_body_flags() {
 
     let flagged = build_payload(0x40, body_offset + 100);
     assert!(component_face_reference_at(&flagged, body_offset).is_some());
+    let flagged_compact = build_payload(0x40, body_offset + 68);
+    assert!(component_face_reference_at(&flagged_compact, body_offset).is_none());
+    assert!(component_face_reference_at_for_operation(&flagged_compact, body_offset).is_some());
     let mut record = CLASS_MARKER.to_vec();
     record.extend((b"moCompFace_c".len() as u16).to_le_bytes());
     record.extend(b"moCompFace_c");

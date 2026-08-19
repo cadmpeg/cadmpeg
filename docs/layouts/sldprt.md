@@ -1783,6 +1783,27 @@ Unstated regions:
 
 - `8..64` (56 B): Fixed carrier bytes before the component marker.
 
+## `component_face_flagged_operation_prefix`
+
+Spec §2 · layout: byte offsets · size: 86 B
+
+Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | class token at `+0` |
+| 2 | 4 | `record_version` | `u32` | little | spec | u32 `2` at `+2` |
+| 6 | 2 | `flags` | `bytes[2]` | little | spec | `40 00` flags at `+6..+7` |
+| 68 | 16 | `component_marker` | `bytes[16]` | little | spec | component-path marker 68 bytes after the body start |
+| 84 | 2 | `marker_tail` | `u16` | little | spec | zero marker tail at `+84..+85` |
+
+Unstated regions:
+
+- `8..68` (60 B): Fixed carrier bytes before the component marker.
+
 ## `temporary_axis_reference_nine_scalar`
 
 Spec §2 · layout: byte offsets · size: 316 B
