@@ -1984,3 +1984,4 @@ fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
 }
 
 mod point_identity;
+mod point_projection;

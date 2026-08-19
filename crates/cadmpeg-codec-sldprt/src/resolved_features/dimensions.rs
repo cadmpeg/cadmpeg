@@ -848,6 +848,21 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 marker,
                 radius,
             )
+            .or_else(|| {
+                let explicit_center = operand.entity_ref.is_some()
+                    && declared_entity_handle_point_dimension_center(
+                        lanes,
+                        relation.feature_ref.as_str(),
+                        operand,
+                    )
+                    .is_some()
+                    && !declared_entity_handle_point_is_declared_radial(
+                        lanes,
+                        relation.feature_ref.as_str(),
+                        operand,
+                    );
+                explicit_center.then_some(false)
+            })
             .or_else(|| lane.native_payload.is_empty().then_some(false));
             let Some(construction) = construction else {
                 continue;
