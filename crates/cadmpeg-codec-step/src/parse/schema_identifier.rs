@@ -8,10 +8,13 @@
 //! recoverable form.
 //!
 //! One rule separates the recoverable form from the invalid form. A component
-//! number outside the range that its position permits is recoverable: the
-//! source states which components it asserts, and the classifier reports the
-//! range defect. Text that does not parse into components is invalid: the
-//! source states no components to report.
+//! outside the range that its position permits is recoverable: the source
+//! states which components it asserts, and the classifier reports the range
+//! defect. Text that does not parse into components is invalid: the source
+//! states no components to report.
+//!
+//! The root component states a root number as a number or as a registered
+//! ASN.1 identifier, so one range rule covers both spellings.
 //!
 //! This module owns the one schema-name and object-identifier split.
 //! `split_schema_identifier` serves the admission here, the DATA section and
@@ -28,14 +31,14 @@ pub(super) enum AdmittedSchemaIdentifier {
         /// The decoded identifier text, as the source states it.
         text: String,
     },
-    /// The object identifier parses, and one component number is outside the
-    /// range that its position permits.
+    /// The object identifier parses, and one component is outside the range
+    /// that its position permits.
     ObjectIdentifierOutOfRange {
         /// The decoded identifier text, as the source states it.
         text: String,
         /// The schema name, without the object identifier.
         name: String,
-        /// The first component in source order whose number is out of range.
+        /// The first component in source order that is out of range.
         component: String,
     },
 }
@@ -72,12 +75,12 @@ impl AdmittedSchemaIdentifier {
 enum SchemaIdentifierForm<'a> {
     /// The schema name and the optional object identifier are both valid.
     Valid,
-    /// The object identifier parses, and one component number is outside the
-    /// range that its position permits.
+    /// The object identifier parses, and one component is outside the range
+    /// that its position permits.
     ObjectIdentifierOutOfRange {
         /// The schema name, without the object identifier.
         name: &'a str,
-        /// The first component in source order whose number is out of range.
+        /// The first component in source order that is out of range.
         component: &'a str,
     },
     /// The identifier does not parse.
@@ -143,10 +146,10 @@ const SECOND_INDEX: usize = 1;
 
 /// The admission form of one object identifier.
 enum ObjectIdentifierForm<'a> {
-    /// Every component parses, and every component number is in the range that
-    /// its position permits.
+    /// Every component parses, and every component is in the range that its
+    /// position permits.
     Valid,
-    /// Every component parses, and this component's number is out of range.
+    /// Every component parses, and this component is out of range.
     ComponentOutOfRange(&'a str),
     /// The object identifier does not parse.
     Invalid,
@@ -163,17 +166,11 @@ fn schema_object_identifier_form(value: &str) -> ObjectIdentifierForm<'_> {
     let root = schema_oid_root_number(first);
     let mut out_of_range = None;
     for (index, component) in [first, second].into_iter().chain(components).enumerate() {
-        let component_out_of_range = match schema_oid_component_form(component) {
-            // A component with no number in its text states no number to place
-            // out of range.
-            ComponentForm::Unnumbered => false,
-            // An object identifier component number is non-negative, so a
-            // minus sign is out of range in every position.
-            ComponentForm::Negative => true,
-            ComponentForm::Number(number) => schema_oid_number_out_of_range(index, root, number),
-            ComponentForm::Invalid => return ObjectIdentifierForm::Invalid,
-        };
-        if component_out_of_range {
+        let form = schema_oid_component_form(component);
+        if matches!(form, ComponentForm::Invalid) {
+            return ObjectIdentifierForm::Invalid;
+        }
+        if schema_oid_component_out_of_range(index, root, &form) {
             out_of_range = out_of_range.or(Some(component));
         }
     }
@@ -224,19 +221,32 @@ fn schema_oid_number_form(value: &str) -> ComponentForm<'_> {
     ComponentForm::Invalid
 }
 
-/// True when a non-negative component number is outside the range that its
-/// position permits.
+/// True when one component is outside the range that its position permits.
 ///
-/// A root component number is `0`, `1`, or `2`. Under root `0` or `1`, the
-/// second component number is in `0..=39`. Every other position permits every
-/// non-negative number. A root component with no known number constrains no
-/// second component.
-fn schema_oid_number_out_of_range(index: usize, root: Option<u8>, number: &str) -> bool {
-    match index {
-        ROOT_INDEX => root.is_none(),
-        SECOND_INDEX => matches!(root, Some(0 | 1)) && !valid_schema_oid_second_arc(number),
-        _ => false,
+/// The root component is out of range when its text states no root number. Its
+/// text states a root number when the text is `0`, `1`, or `2`, or a registered
+/// ASN.1 identifier for one of those numbers, so this one rule holds a root
+/// number and a root name to the same range.
+///
+/// After the root, an object identifier component number is non-negative, so a
+/// minus sign is out of range. Under root `0` or `1`, the second component
+/// number is in `0..=39`. Every other position permits every non-negative
+/// number, and a component whose text states no number states no number to
+/// place out of range.
+fn schema_oid_component_out_of_range(
+    index: usize,
+    root: Option<u8>,
+    form: &ComponentForm<'_>,
+) -> bool {
+    if index == ROOT_INDEX {
+        return root.is_none();
     }
+    if matches!(form, ComponentForm::Negative) {
+        return true;
+    }
+    index == SECOND_INDEX
+        && matches!(root, Some(0 | 1))
+        && matches!(*form, ComponentForm::Number(number) if !valid_schema_oid_second_arc(number))
 }
 
 /// True when a second component number is in `0..=39`.
@@ -276,8 +286,10 @@ fn valid_schema_oid_name(value: &str) -> bool {
 
 /// The number of the root component, when the component text gives one.
 ///
-/// A root number is `0`, `1`, or `2`, written as that number or as the ASN.1
-/// identifier for that root. Every other component text gives no root number.
+/// A root number is `0`, `1`, or `2`, written as that number or as a registered
+/// ASN.1 identifier for that root. The identifier comparison is exact, so an
+/// identifier that differs in case or in spelling from a registered identifier
+/// gives no root number. Every other component text gives no root number.
 fn schema_oid_root_number(component: &str) -> Option<u8> {
     match schema_oid_component_form(component) {
         ComponentForm::Number("0") => Some(0),

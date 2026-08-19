@@ -365,7 +365,8 @@ pub enum ParseDiagnosticKind {
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
     OmittedEntityName,
-    /// A `FILE_SCHEMA` object identifier has a negative component number.
+    /// A `FILE_SCHEMA` object identifier has a component outside the range
+    /// that its position permits.
     SchemaObjectIdentifierOutOfRange,
 }
 

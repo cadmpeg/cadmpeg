@@ -207,12 +207,13 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
 
 #[test]
 fn parser_recovers_every_out_of_range_schema_object_identifier_component() {
-    // A component number outside the range that its position permits is
-    // recoverable, and the diagnostic names the first such component in source
-    // order. A root number is `0`, `1`, or `2`. Under root `0` or `1` the
-    // second number is in `0..=39`. Every other position permits every
-    // non-negative number. A root component with no known number constrains no
-    // second component.
+    // A component outside the range that its position permits is recoverable,
+    // and the diagnostic names the first such component in source order. The
+    // root component states a root number as `0`, `1`, or `2`, or as a
+    // registered ASN.1 identifier for one of those numbers; every other root
+    // component is out of range. Under root `0` or `1` the second number is in
+    // `0..=39`. Every other position permits every non-negative number. A root
+    // component that states no root number constrains no second component.
     let cases = [
         ("AP242 { -1 40 }", Some("-1")),
         ("AP242 { 1 40 }", Some("40")),
@@ -220,9 +221,12 @@ fn parser_recovers_every_out_of_range_schema_object_identifier_component() {
         ("AP242 { 0 40 }", Some("40")),
         ("AP242 { iso 40 }", Some("40")),
         ("AP242 { 1 part(214) }", Some("part(214)")),
+        ("AP242 { foo 40 }", Some("foo")),
+        ("AP242 { iSo 40 }", Some("iSo")),
         ("AP242 { 1 39 }", None),
         ("AP242 { 2 40 }", None),
-        ("AP242 { foo 40 }", None),
+        ("AP242 { iso 39 }", None),
+        ("AP242 { iso standard 10303 part(214) version(1) }", None),
         ("AP242 { 1 0 10303 442 3 1 4 }", None),
         ("AP242", None),
     ];
@@ -258,23 +262,57 @@ fn parser_admits_a_valid_schema_object_identifier_without_a_loss() {
 
 #[test]
 fn parser_does_not_admit_a_recovered_object_identifier_as_an_identifier() {
-    let header = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;";
-    let by_name = format!(
-        "{header}DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
-    );
-    crate::parse::parse(by_name.as_bytes()).expect("a DATA section names the schema name");
+    // Each identifier holds one out-of-range component: a negative number
+    // after the root, a root number that is not `0`, `1`, or `2`, and a root
+    // ASN.1 identifier that is not a registered root. All three take the one
+    // disposition: the header keeps the schema name, charges one diagnostic,
+    // and admits the identifier neither as a DATA section schema name nor as a
+    // `FILE_POPULATION` governing schema.
+    for identifier in [
+        "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }",
+        "AUTOMOTIVE_DESIGN_CC2 { 3 40 }",
+        "AUTOMOTIVE_DESIGN_CC2 { foo 40 }",
+    ] {
+        let header = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('{identifier}'));"
+        );
 
-    let by_identifier = format!(
-        "{header}DATA('main',('AUTOMOTIVE_DESIGN_CC2 {{ 1 2 10303 214 -1 1 5 4 }}'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
-    );
-    let error = crate::parse::parse(by_identifier.as_bytes())
-        .expect_err("the object identifier is not an admitted identifier");
-    assert!(
-        error
-            .to_string()
-            .contains("DATA section schema is not listed in FILE_SCHEMA"),
-        "unexpected error: {error}"
-    );
+        let data_by_identifier = format!(
+            "{header}ENDSEC;DATA('main',('{identifier}'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let error = crate::parse::parse(data_by_identifier.as_bytes())
+            .expect_err("the object identifier is not an admitted DATA section schema");
+        assert!(
+            error
+                .to_string()
+                .contains("DATA section schema is not listed in FILE_SCHEMA"),
+            "{identifier}: unexpected error: {error}"
+        );
+
+        let population_by_identifier = format!(
+            "{header}FILE_POPULATION('{identifier}','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let error = crate::parse::parse(population_by_identifier.as_bytes())
+            .expect_err("the object identifier is not an admitted governing schema");
+        assert!(
+            error
+                .to_string()
+                .contains("FILE_POPULATION has invalid parameters"),
+            "{identifier}: unexpected error: {error}"
+        );
+
+        let by_name = format!(
+            "{header}FILE_POPULATION('AUTOMOTIVE_DESIGN_CC2','INCLUDE_ALL_COMPATIBLE',('main'));ENDSEC;DATA('main',('AUTOMOTIVE_DESIGN_CC2'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let (_, diagnostics) = crate::parse::parse(by_name.as_bytes())
+            .unwrap_or_else(|error| panic!("{identifier} keeps its schema name: {error}"));
+        assert_eq!(diagnostics.len(), 1, "{identifier}");
+        assert_eq!(
+            diagnostics[0].kind,
+            crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+            "{identifier}"
+        );
+    }
 }
 
 #[test]

@@ -38,10 +38,12 @@ fn admitted(identifier: &str) -> Admitted {
 
 #[test]
 fn classifier_reports_the_first_out_of_range_component_in_source_order() {
-    // A root number is `0`, `1`, or `2`. Under root `0` or `1` the second
-    // number is in `0..=39`. Every other position permits every non-negative
-    // number, and a negative number is out of range in every position. The
-    // report names the whole component text, not the number inside it.
+    // The root component states a root number as `0`, `1`, or `2`, or as a
+    // registered ASN.1 identifier for one of those numbers. Every other root
+    // component is out of range. Under root `0` or `1` the second number is in
+    // `0..=39`. Every other position permits every non-negative number, and a
+    // negative number is out of range in every position. The report names the
+    // whole component text, not the number inside it.
     let cases = [
         // A minus sign is out of range in the root position.
         ("AP242 { -1 40 }", "-1"),
@@ -50,8 +52,8 @@ fn classifier_reports_the_first_out_of_range_component_in_source_order() {
         ("AP242 { 1 40 }", "40"),
         // Root `0` bounds the second number the same way.
         ("AP242 { 0 40 }", "40"),
-        // `iso` is the ASN.1 identifier for root `1`, so it bounds the second
-        // number as the number `1` does.
+        // `iso` is the registered identifier for root `1`, so it bounds the
+        // second number as the number `1` does.
         ("AP242 { iso 40 }", "40"),
         // A component with an identifier and parentheses states the number
         // inside the parentheses, and the second-component bound applies to it.
@@ -59,6 +61,16 @@ fn classifier_reports_the_first_out_of_range_component_in_source_order() {
         // `3` is not a root number, so the root is out of range and no bound
         // reaches the second component.
         ("AP242 { 3 1 }", "3"),
+        // An unregistered identifier states no root number, so the root is out
+        // of range for the same reason that `3` is.
+        ("AP242 { foo 40 }", "foo"),
+        // The registered identifiers compare exactly, so a case difference
+        // gives another identifier, which states no root number.
+        ("AP242 { iSo 40 }", "iSo"),
+        // An identifier and parentheses that hold an identifier state no
+        // number, so this root is out of range even though it opens with a
+        // registered identifier.
+        ("AP242 { iso(standard) 40 }", "iso(standard)"),
     ];
     for (identifier, component) in cases {
         assert_eq!(
@@ -76,9 +88,18 @@ fn classifier_admits_in_range_object_identifiers() {
         "AP242 { 1 39 }",
         // Root `2` bounds no second number.
         "AP242 { 2 40 }",
-        // A root component that is an ASN.1 identifier with no registered
-        // number has no known number, so it bounds no second component.
-        "AP242 { foo 40 }",
+        // Each registered identifier states its root number.
+        "AP242 { iso 39 }",
+        "AP242 { itu-t 39 }",
+        "AP242 { ccitt 39 }",
+        "AP242 { joint-iso-itu-t 40 }",
+        "AP242 { joint-iso-ccitt 40 }",
+        // A registered root bounds a numeric second component only, so an
+        // unnumbered second component states no number to place out of range.
+        "AP242 { iso standard 10303 part(214) version(1) }",
+        // An identifier and parentheses that hold a number state that number,
+        // so this root is root `1`.
+        "AP242 { iso(1) 39 }",
         // A schema name alone is a complete identifier.
         "AP242",
     ];
@@ -95,6 +116,11 @@ fn classifier_rejects_identifiers_that_do_not_parse() {
         "AP242 { 1 0 10303 442 -01 1 4 }",
         // An ASN.1 identifier uses letters, digits, and hyphens only.
         "AP242 { 1 0 10303 442 invalid_ 1 4 }",
+        // An ASN.1 identifier starts with a lowercase letter, so an uppercase
+        // spelling of a registered identifier has no component form. The
+        // identifier does not parse, so the range rule does not apply to it.
+        "AP242 { ISO 40 }",
+        "AP242 { Iso 40 }",
         // A numeric component has no leading zero.
         "AP242 { 01 0 }",
         // An object identifier has at least two components.

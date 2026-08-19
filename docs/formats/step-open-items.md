@@ -58,40 +58,6 @@ parameter takes the anchor value.
 
 ## 3. Containers and other encodings
 
-### CE-09. Unregistered root name in a schema object identifier
-
-**Question.** Must a schema object identifier whose root component is an
-unregistered ASN.1 identifier stay a valid identifier?
-
-**Known.** `step.md` §6 "The ASN.1 identifiers `itu-t` and `ccitt` are root `0`,
-`iso` is root `1`, and" gives the five ASN.1 identifiers that name a root, and
-gives no root number to each other ASN.1 identifier. `step.md` §6 "CADIR
-decision: an object identifier component number outside the range that" makes a
-root component number that is not `0`, `1`, or `2` a recoverable defect: the
-decode charges `metadata.schema-object-identifier-out-of-range`, and the
-identifier stays invalid for a DATA section schema name and for a
-`FILE_POPULATION` governing schema.
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:291-298` gives the
-number of each of the five names, and gives no number to each other name.
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:165-182` tests the
-range of a component that holds a number only. A root component that is an
-ASN.1 identifier has the `Unnumbered` form, so no rule tests it, and
-`crates/cadmpeg-codec-step/src/parse/schema_identifier.rs:234-240` gives the
-second component no rule because the root number is absent. The identifier
-`{ foo 40 }` is therefore valid, and the identifier `{ 3 40 }` is a charged
-defect.
-
-**Conflict.** One defect has two dispositions. A root component that is not a
-registered root gets a charged warning and stays unadmitted when it is a
-number, and gets no warning and full admission when it is a name.
-
-**Need.** A valid identifier is admitted as a DATA section schema name and as a
-`FILE_POPULATION` governing schema, so the disposition changes which records the
-decode accepts. The decoder holds the evidence that separates the two cases,
-because it lists the five names that give a root number. Give the rule that an
-unregistered root name obeys, or give the reason that a name and a number that
-both fail the root rule must not agree.
-
 ### CE-10. Repeated forwarding of a root ANCHOR resource
 
 **Question.** How many times must a root `ANCHOR` forward a URI-valued binding
