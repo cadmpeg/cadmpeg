@@ -35,9 +35,10 @@ nonliteral_vec_repeat = 152
 crate_root_tests_rs = 0
 path_test_includes = 0
 test_line_debt = 1777
-production_line_debt = 0
+production_line_debt = 159
 
 [reasons]
 from_endian_bytes = "widened glob from cadmpeg-codec-*/src to crates/**/src so the counter matches the unscoped from_le_bytes/from_be_bytes rule; honest end state is not zero (View/le/be and documented exceptions)"
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
+production_line_debt = "the bounded repeated face-domain solver and branch-aware mesh handoff add 159 production lines to the CATIA mesh solver; keep the debt explicit until that solver responsibility is split"

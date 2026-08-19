@@ -3034,6 +3034,7 @@ fn attach_standard_topology(
     };
     let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
         .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut open_face_domains = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
@@ -3126,42 +3127,7 @@ fn attach_standard_topology(
         };
         endpoint_candidates.push(candidates);
     }
-    let mut edge_classes = Vec::with_capacity(supports.len());
-    for (edge, support) in supports.iter().enumerate() {
-        let class = supports[..edge]
-            .iter()
-            .position(|candidate| {
-                let mut candidate_faces = candidate.faces;
-                candidate_faces.sort_unstable();
-                let mut support_faces = support.faces;
-                support_faces.sort_unstable();
-                candidate_faces == support_faces
-                    && match (&candidate.geometry, &support.geometry) {
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: left_center,
-                                radius: left_radius,
-                            },
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: right_center,
-                                radius: right_radius,
-                            },
-                        ) => {
-                            left_center.x.to_bits() == right_center.x.to_bits()
-                                && left_center.y.to_bits() == right_center.y.to_bits()
-                                && left_center.z.to_bits() == right_center.z.to_bits()
-                                && left_radius.to_bits() == right_radius.to_bits()
-                        }
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                        ) => true,
-                        _ => false,
-                    }
-            })
-            .map_or(edge, |candidate| edge_classes[candidate]);
-        edge_classes.push(class);
-    }
+    let edge_classes = standard_curve_edge_classes(&supports);
     let topology_graph = crate::families::b5::graph::parse(source);
     let native_edges = topology_graph
         .as_ref()
@@ -3434,8 +3400,14 @@ fn attach_standard_topology(
                         .get(edge)
                         .is_some_and(|faces| !faces.is_empty());
             }
+            if allowed_faces.iter().any(|faces| !faces.is_empty()) {
+                open_face_domains = Some(allowed_faces);
+            }
         }
     }
+    let has_open_face_domains = open_face_domains
+        .as_ref()
+        .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
     let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| {
         pair.iter().all(|point| {
             let Some(position) = ir.model.points.get(*point).map(|point| point.position) else {
@@ -3717,31 +3689,34 @@ fn attach_standard_topology(
         fbb::parse_standard(spine)
             .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
     };
-    let mesh_bound = mesh_topology.and_then(|topology| {
-        let endpoint_pairs = resolved_endpoint_pairs
-            .clone()
-            .or_else(|| {
-                endpoint_candidates
-                    .iter()
-                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                    .collect::<Option<Vec<[usize; 2]>>>()
-            })
-            .or_else(|| {
-                let ports = topology
-                    .edge_vertices()?
-                    .into_iter()
-                    .map(|[left, right]| {
-                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                missing_edge::bind_edge_port_candidates(
-                    &ports,
-                    constrained_endpoint_options.as_ref()?,
-                )
-            })?;
-        let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-        Some((topology, point_assignment))
-    });
+    let mesh_bound = (!has_open_face_domains)
+        .then_some(mesh_topology)
+        .flatten()
+        .and_then(|topology| {
+            let endpoint_pairs = resolved_endpoint_pairs
+                .clone()
+                .or_else(|| {
+                    endpoint_candidates
+                        .iter()
+                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                        .collect::<Option<Vec<[usize; 2]>>>()
+                })
+                .or_else(|| {
+                    let ports = topology
+                        .edge_vertices()?
+                        .into_iter()
+                        .map(|[left, right]| {
+                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    missing_edge::bind_edge_port_candidates(
+                        &ports,
+                        constrained_endpoint_options.as_ref()?,
+                    )
+                })?;
+            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
+            Some((topology, point_assignment))
+        });
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)
@@ -3766,7 +3741,7 @@ fn attach_standard_topology(
         })
         .collect::<Vec<_>>();
     let mut mesh_search_exhausted = false;
-    let native_fbb_topology = if fbb_only {
+    let native_fbb_topology = if fbb_only && !has_open_face_domains {
         native_endpoint_pairs.as_ref().and_then(|pairs| {
             fbb::parse_fbb_endpoints_with_edge_classes(
                 spine,
@@ -3778,49 +3753,27 @@ fn attach_standard_topology(
     } else {
         None
     };
+    let mut selected_face_assignment = None;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
-        fbb::parse_standard_endpoints_with_edge_classes(
-            spine,
-            &edge_faces,
-            pairs,
-            Some(&edge_classes),
-        )
-    }) {
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then_some(native_endpoint_pairs.as_ref())
+        .flatten()
+        .and_then(|pairs| {
+            fbb::parse_standard_endpoints_with_edge_classes(
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )
+        })
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        // FBB-only rows are complete boundary runs. Their table-scoped handle
-        // quotient, not standard-row allocation rank, is the incidence source.
-        // Keep the generic mesh solver's admitted domains intact for this route.
-        let branch_groups = if fbb_only {
-            Vec::new()
-        } else {
-            standard_curve_branch_groups(&supports, options)
-        };
-        // Same-incidence allocation rank is a final relation reduction. Keep
-        // every admitted endpoint pair in the mesh solver until exact trim
-        // cycles, port identities, and face closure have selected a complete
-        // candidate. The complete-solution callback below applies the rank
-        // rule after those constraints, while branch dependencies keep the
-        // relation's surrounding frontier ahead of its rows.
-        let solver_options = options.clone();
-        let mut branch_preferred_edges = vec![false; options.len()];
-        for edge in branch_groups
-            .iter()
-            .flat_map(|group| group.edges.iter().copied())
-        {
-            branch_preferred_edges[edge] = true;
-        }
-        let branch_assignment_dependencies = (!fbb_only)
-            .then(|| standard_curve_branch_assignment_dependencies(&supports, &branch_groups));
-        let preferred_budget =
-            work_budget.session_child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-        let fallback_budget = WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
         let edge_identity_evidence = supports
             .iter()
             .enumerate()
@@ -3835,88 +3788,204 @@ fn attach_standard_topology(
                     || !limit_curve_bindings[edge].is_empty()
             })
             .collect::<Vec<_>>();
-        let line_preference = StandardLinePairPreference::new(&ir.model.points, &supports, options);
-        let line_preference_active = line_preference.has_flexible_edges();
-        let partial_constraint_edges = circle_constraint_edges
-            .iter()
-            .zip(line_preference.flexible_edge_mask())
-            .map(|(circle, line)| *circle || *line)
-            .collect::<Vec<_>>();
-        let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
-            spine,
-            &edge_faces,
-            &solver_options,
-            &edge_classes,
-            &edge_identity_evidence,
-            &partial_constraint_edges,
-            &branch_preferred_edges,
-            Some(&partial_constraint_edges),
-            branch_assignment_dependencies.as_deref(),
-            &preferred_budget,
-            |pairs| line_preference.is_valid(pairs),
-            |pairs| {
-                if !fbb_only
-                    && !standard_curve_branch_assignment_is_ranked(
-                        &supports,
-                        &solver_options,
-                        &branch_groups,
-                        pairs,
-                        None,
-                    )
+        let solve_mesh_candidate =
+            |selected_edge_faces: &[[usize; 2]],
+             selected_supports: &[crate::families::standard::records::StandardCurveSupport],
+             selected_edge_classes: &[usize],
+             solve_budget: &WorkBudget<'_>| {
+                // FBB-only rows are complete boundary runs. Their table-scoped
+                // handle quotient, not allocation rank, is the incidence source.
+                let branch_groups = if fbb_only {
+                    Vec::new()
+                } else {
+                    standard_curve_branch_groups(selected_supports, options)
+                };
+                let solver_options = options.clone();
+                let mut branch_preferred_edges = vec![false; options.len()];
+                for edge in branch_groups
+                    .iter()
+                    .flat_map(|group| group.edges.iter().copied())
                 {
-                    return false;
+                    branch_preferred_edges[edge] = true;
                 }
-                if !line_preference.is_simple(pairs) {
-                    return false;
-                }
-                standard_circle_pair_solution_is_simple(
-                    ir,
-                    bindings,
-                    &surface_indices,
-                    brep,
-                    &supports,
-                    &solver_options,
-                    pairs,
-                )
-            },
-        );
-        let has_circle_preference = circle_constraint_edges
-            .iter()
-            .any(|constrained| *constrained);
-        let has_line_preference = !fbb_only && line_preference_active;
-        let outcome = if has_circle_preference || has_line_preference {
-            // Distinct B-rep edges may legally occupy overlapping ranges of the same
-            // circular carrier. Treat range separation as a search preference, then
-            // accept the unconstrained bounded result only when it is uniquely
-            // determined.
-            retry_rejected_mesh_solution(preferred, || {
-                mesh_quotient::parse_standard_mesh_candidate_outcome(
+                let branch_assignment_dependencies = (!fbb_only).then(|| {
+                    standard_curve_branch_assignment_dependencies(selected_supports, &branch_groups)
+                });
+                let endpoint_pairs_on_selected_faces = |pairs: &[Option<[usize; 2]>]| {
+                    if pairs.len() != selected_supports.len() {
+                        return false;
+                    }
+                    pairs.iter().enumerate().all(|(edge, pair)| {
+                        let Some(pair) = pair else {
+                            return true;
+                        };
+                        pair.iter().all(|point| {
+                            let Some(position) =
+                                ir.model.points.get(*point).map(|point| point.position)
+                            else {
+                                return false;
+                            };
+                            selected_supports[edge].faces.iter().all(|face| {
+                                face_surface(ir, bindings, &surface_indices, *face).is_some_and(
+                                    |surface| {
+                                        point_on_standard_face(
+                                            position,
+                                            &surface.geometry,
+                                            face_bounds.as_ref().and_then(|bounds| bounds[*face]),
+                                        )
+                                    },
+                                )
+                            })
+                        })
+                    })
+                };
+                let line_preference =
+                    StandardLinePairPreference::new(&ir.model.points, selected_supports, options);
+                let line_preference_active = line_preference.has_flexible_edges();
+                let face_domain_edges = open_face_domains.as_ref().map_or_else(
+                    || options.iter().map(|_| false).collect::<Vec<_>>(),
+                    |domains| domains.iter().map(|domain| !domain.is_empty()).collect(),
+                );
+                let partial_constraint_edges = circle_constraint_edges
+                    .iter()
+                    .zip(line_preference.flexible_edge_mask())
+                    .zip(&face_domain_edges)
+                    .map(|((circle, line), face)| *circle || *line || *face)
+                    .collect::<Vec<_>>();
+                let preferred_budget =
+                    solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
                     spine,
-                    &edge_faces,
+                    selected_edge_faces,
                     &solver_options,
-                    &edge_classes,
+                    selected_edge_classes,
                     &edge_identity_evidence,
                     &partial_constraint_edges,
                     &branch_preferred_edges,
                     Some(&partial_constraint_edges),
                     branch_assignment_dependencies.as_deref(),
-                    &fallback_budget,
-                    |pairs| line_preference.is_valid(pairs),
+                    &preferred_budget,
                     |pairs| {
-                        line_preference.is_valid(pairs)
+                        endpoint_pairs_on_selected_faces(pairs) && line_preference.is_valid(pairs)
+                    },
+                    |pairs| {
+                        endpoint_pairs_on_selected_faces(pairs)
                             && (fbb_only
                                 || standard_curve_branch_assignment_is_ranked(
-                                    &supports,
+                                    selected_supports,
                                     &solver_options,
                                     &branch_groups,
                                     pairs,
                                     None,
                                 ))
+                            && line_preference.is_simple(pairs)
+                            && standard_circle_pair_solution_is_simple(
+                                ir,
+                                bindings,
+                                &surface_indices,
+                                brep,
+                                selected_supports,
+                                &solver_options,
+                                pairs,
+                            )
                     },
-                )
-            })
+                );
+                if !solve_budget.charge_by(preferred_budget.consumed()) {
+                    return mesh_quotient::MeshCandidateSolve::Exhausted(
+                        mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                    );
+                }
+                let has_circle_preference = circle_constraint_edges
+                    .iter()
+                    .any(|constrained| *constrained);
+                let has_line_preference = !fbb_only && line_preference_active;
+                if has_circle_preference || has_line_preference {
+                    let fallback_budget =
+                        solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                        spine,
+                        selected_edge_faces,
+                        &solver_options,
+                        selected_edge_classes,
+                        &edge_identity_evidence,
+                        &partial_constraint_edges,
+                        &branch_preferred_edges,
+                        Some(&partial_constraint_edges),
+                        branch_assignment_dependencies.as_deref(),
+                        &fallback_budget,
+                        |pairs| {
+                            endpoint_pairs_on_selected_faces(pairs)
+                                && line_preference.is_valid(pairs)
+                        },
+                        |pairs| {
+                            endpoint_pairs_on_selected_faces(pairs)
+                                && line_preference.is_valid(pairs)
+                                && (fbb_only
+                                    || standard_curve_branch_assignment_is_ranked(
+                                        selected_supports,
+                                        &solver_options,
+                                        &branch_groups,
+                                        pairs,
+                                        None,
+                                    ))
+                        },
+                    );
+                    if !solve_budget.charge_by(fallback_budget.consumed()) {
+                        return mesh_quotient::MeshCandidateSolve::Exhausted(
+                            mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                        );
+                    }
+                    retry_rejected_mesh_solution(preferred, || fallback)
+                } else {
+                    preferred
+                }
+            };
+        let outcome = if has_open_face_domains {
+            let domains = open_face_domains.as_deref().unwrap_or_default();
+            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_domains(
+                &edge_faces,
+                domains,
+                face_count,
+                work_budget,
+                |selected_edge_faces, branch_budget| {
+                    let selected_supports = supports
+                        .iter()
+                        .zip(selected_edge_faces)
+                        .map(|(support, faces)| {
+                            let mut selected = support.clone();
+                            selected.faces = *faces;
+                            selected
+                        })
+                        .collect::<Vec<_>>();
+                    let selected_edge_classes = standard_curve_edge_classes(&selected_supports);
+                    solve_mesh_candidate(
+                        selected_edge_faces,
+                        &selected_supports,
+                        &selected_edge_classes,
+                        branch_budget,
+                    )
+                },
+            ) {
+                mesh_quotient::MeshFaceDomainCandidateSolve::Solved(
+                    faces,
+                    topology,
+                    assignment,
+                ) => {
+                    selected_face_assignment = Some(faces);
+                    mesh_quotient::MeshCandidateSolve::Solved(topology, assignment)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Rejected(rejection) => {
+                    mesh_quotient::MeshCandidateSolve::Rejected(rejection)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Ambiguous(ambiguity) => {
+                    mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Exhausted(exhaustion) => {
+                    mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion)
+                }
+            }
         } else {
-            preferred
+            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)
         };
         match outcome {
             mesh_quotient::MeshCandidateSolve::Solved(topology, assignment) => {
@@ -3938,24 +4007,36 @@ fn attach_standard_topology(
         }
     }) {
         bound
-    } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        missing_edge::standard_mesh_edge_ports(spine)
-            .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(
-                    spine,
-                    &edge_faces,
-                    options,
-                    &ports,
-                    work_budget,
-                )
-            })
-            .or_else(|| {
-                fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options, work_budget)
-            })
-    }) {
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then_some(constrained_endpoint_options.as_ref())
+        .flatten()
+        .and_then(|options| {
+            missing_edge::standard_mesh_edge_ports(spine)
+                .and_then(|ports| {
+                    fbb::parse_standard_port_endpoint_candidates(
+                        spine,
+                        &edge_faces,
+                        options,
+                        &ports,
+                        work_budget,
+                    )
+                })
+                .or_else(|| {
+                    fbb::parse_standard_endpoint_candidates(
+                        spine,
+                        &edge_faces,
+                        options,
+                        work_budget,
+                    )
+                })
+        })
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors) {
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then(|| fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors))
+        .flatten()
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
@@ -3967,6 +4048,12 @@ fn attach_standard_topology(
             StandardTopologyFailure::NoTopologySolution
         });
     };
+    if let Some(faces) = selected_face_assignment {
+        edge_faces = faces;
+        for (support, faces) in supports.iter_mut().zip(&edge_faces) {
+            support.faces = *faces;
+        }
+    }
     let Some(edge_vertices) = validate_standard_topology(
         ir,
         annotations,
@@ -5314,6 +5401,48 @@ fn bind_ordered_standard_curve_branches_with_focus(
             grouped[edge] = true;
         }
     }
+}
+
+fn standard_curve_edge_classes(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+) -> Vec<usize> {
+    let mut classes = Vec::with_capacity(supports.len());
+    for (edge, support) in supports.iter().enumerate() {
+        let class = supports[..edge]
+            .iter()
+            .position(|candidate| {
+                let mut candidate_faces = candidate.faces;
+                candidate_faces.sort_unstable();
+                let mut support_faces = support.faces;
+                support_faces.sort_unstable();
+                candidate_faces == support_faces
+                    && match (&candidate.geometry, &support.geometry) {
+                        (
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
+                                center: left_center,
+                                radius: left_radius,
+                            },
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
+                                center: right_center,
+                                radius: right_radius,
+                            },
+                        ) => {
+                            left_center.x.to_bits() == right_center.x.to_bits()
+                                && left_center.y.to_bits() == right_center.y.to_bits()
+                                && left_center.z.to_bits() == right_center.z.to_bits()
+                                && left_radius.to_bits() == right_radius.to_bits()
+                        }
+                        (
+                            crate::families::standard::records::StandardCurveGeometry::Line,
+                            crate::families::standard::records::StandardCurveGeometry::Line,
+                        ) => true,
+                        _ => false,
+                    }
+            })
+            .map_or(edge, |candidate| classes[candidate]);
+        classes.push(class);
+    }
+    classes
 }
 
 struct StandardCurveBranchGroup {

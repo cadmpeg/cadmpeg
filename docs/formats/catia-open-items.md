@@ -520,6 +520,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The implementation conflict is closed: allocation rank is no longer applied while constructing the mesh solver's endpoint domains. The native row-assignment meaning remains open.
 
+### SN-37. Repeated edge-face slot assignment
+
+**Question.** Which admitted relation selects the second face for a repeated standard edge row when more than one alternate face remains after trim occurrence and endpoint closure pruning?
+
+**Known.** `catia.md` §5.5 retains the repeated slot as a face domain. The production solver carries each non-empty alternate set into a bounded joint assignment phase, applies each concrete face pair to trim coverage and endpoint incidence, and preserves multiple complete assignments as ambiguity. An empty alternate set retains the serialized same-face wildcard.
+
+**Need.** A native owner or other admitted relation that selects one concrete second face when the joint topology constraints admit more than one assignment.
+
+**Conflict.** None.
+
+**Note.** No concrete assignment is inferred from allocation order or from a topology that is only internally consistent.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face

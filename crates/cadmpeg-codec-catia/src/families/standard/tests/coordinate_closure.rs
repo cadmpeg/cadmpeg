@@ -1322,6 +1322,39 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
 }
 
 #[test]
+fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
+    let serialized = [[0, 0], [1, 1], [0, 2]];
+    let allowed = [vec![2, 1, 0], Vec::new(), Vec::new()];
+    let mut assignments = Vec::new();
+
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 4, |assignment| {
+        assignments.push(assignment.to_vec());
+        true
+    });
+
+    assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
+    assert_eq!(
+        assignments,
+        vec![vec![[0, 1], [1, 1], [0, 2]], vec![[0, 2], [1, 1], [0, 2]],]
+    );
+}
+
+#[test]
+fn duplicate_face_assignment_visitor_reports_the_bound() {
+    let serialized = [[0, 0], [0, 0]];
+    let allowed = [vec![1, 2], vec![1, 2]];
+    let mut visits = 0;
+
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 3, |_| {
+        visits += 1;
+        true
+    });
+
+    assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
+    assert_eq!(visits, 3);
+}
+
+#[test]
 fn duplicate_face_slots_do_not_budget_forced_assignments() {
     const EDGE_COUNT: usize = 5_000;
     let serialized = vec![[0, 0]; EDGE_COUNT];

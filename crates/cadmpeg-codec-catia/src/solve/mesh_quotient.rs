@@ -29,9 +29,9 @@ use crate::solve::matching::{
 use crate::solve::missing_edge::standard_mesh_boundary_assignments;
 use crate::solve::missing_edge::{
     same_unordered_pair, standard_mesh_boundary_assignments_from_context,
-    standard_mesh_boundary_domains_from_context, MeshBoundaryEdgeCandidate,
-    MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
-    StandardMeshBoundaryContext,
+    standard_mesh_boundary_domains_from_context, visit_duplicate_face_assignments,
+    DuplicateFaceAssignmentVisit, MeshBoundaryEdgeCandidate, MeshDeferredFaceBoundary,
+    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain, StandardMeshBoundaryContext,
 };
 use crate::solve::UnionFind;
 use std::cell::{Cell, RefCell};
@@ -46,6 +46,7 @@ pub(crate) const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
 /// assignments without retaining an unbounded set of complete topologies.
 pub(crate) const MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES: usize = 256;
 pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
+pub(crate) const MAX_FACE_DOMAIN_ASSIGNMENTS: usize = 4_096;
 /// Bounds one complete mesh-constraint phase, including exhaustive endpoint
 /// orientation selection. The decode session applies its own global work cap.
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
@@ -98,11 +99,20 @@ pub(crate) enum MeshCandidateExhaustion {
     IncidenceEnumeration,
     EndpointResolution,
     PreferredSolutionSearch,
+    FaceDomainEnumeration,
 }
 
 #[derive(Debug)]
 pub(crate) enum MeshCandidateSolve {
     Solved(StandardTopology, Vec<usize>),
+    Rejected(MeshCandidateRejection),
+    Ambiguous(MeshCandidateAmbiguity),
+    Exhausted(MeshCandidateExhaustion),
+}
+
+#[derive(Debug)]
+pub(crate) enum MeshFaceDomainCandidateSolve {
+    Solved(Vec<[usize; 2]>, StandardTopology, Vec<usize>),
     Rejected(MeshCandidateRejection),
     Ambiguous(MeshCandidateAmbiguity),
     Exhausted(MeshCandidateExhaustion),
@@ -9545,6 +9555,90 @@ where
     }
 }
 
+/// Solve a standard mesh whose repeated edge-face rows still carry alternate
+/// second-face domains. Each concrete face assignment is handed to the
+/// existing solver, so optional incidences never become required trim uses.
+/// A second solved assignment is semantic ambiguity: no topology gauge may
+/// erase a different edge-to-face incidence graph.
+#[must_use]
+pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_domains<F>(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    face_count: usize,
+    budget: &WorkBudget<'_>,
+    mut solve: F,
+) -> MeshFaceDomainCandidateSolve
+where
+    F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> MeshCandidateSolve,
+{
+    let mut solution = None;
+    let mut rejection = None;
+    let mut ambiguity = None;
+    let mut exhaustion = None;
+    let visit = visit_duplicate_face_assignments(
+        edge_faces,
+        allowed_faces,
+        face_count,
+        MAX_FACE_DOMAIN_ASSIGNMENTS,
+        |assignment| {
+            if !budget.charge() {
+                exhaustion = Some(MeshCandidateExhaustion::FaceDomainEnumeration);
+                return false;
+            }
+            let branch_budget = budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
+            let outcome = solve(assignment, &branch_budget);
+            if !budget.charge_by(branch_budget.consumed()) {
+                exhaustion = Some(MeshCandidateExhaustion::FaceDomainEnumeration);
+                return false;
+            }
+            match outcome {
+                MeshCandidateSolve::Solved(topology, point_assignment) => {
+                    if solution.is_some() {
+                        ambiguity = Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
+                        false
+                    } else {
+                        solution = Some((assignment.to_vec(), topology, point_assignment));
+                        true
+                    }
+                }
+                MeshCandidateSolve::Rejected(reason) => {
+                    rejection.get_or_insert(reason);
+                    true
+                }
+                MeshCandidateSolve::Ambiguous(reason) => {
+                    ambiguity = Some(reason);
+                    false
+                }
+                MeshCandidateSolve::Exhausted(reason) => {
+                    exhaustion = Some(reason);
+                    false
+                }
+            }
+        },
+    );
+    if visit.is_none() {
+        return MeshFaceDomainCandidateSolve::Rejected(MeshCandidateRejection::InputStructure);
+    }
+    if let Some(ambiguity) = ambiguity {
+        return MeshFaceDomainCandidateSolve::Ambiguous(ambiguity);
+    }
+    if let Some(exhaustion) = exhaustion {
+        return MeshFaceDomainCandidateSolve::Exhausted(exhaustion);
+    }
+    if matches!(visit, Some(DuplicateFaceAssignmentVisit::Exhausted)) {
+        return MeshFaceDomainCandidateSolve::Exhausted(
+            MeshCandidateExhaustion::FaceDomainEnumeration,
+        );
+    }
+    if let Some((faces, topology, point_assignment)) = solution {
+        MeshFaceDomainCandidateSolve::Solved(faces, topology, point_assignment)
+    } else {
+        MeshFaceDomainCandidateSolve::Rejected(
+            rejection.unwrap_or(MeshCandidateRejection::InputStructure),
+        )
+    }
+}
+
 #[test]
 fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
     let base_candidates = vec![vec![[0, 1], [0, 2]], vec![[1, 2]]];
@@ -9602,6 +9696,71 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
             |_| true,
         ),
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+    ));
+}
+
+#[test]
+fn face_domain_solver_returns_the_unique_concrete_assignment() {
+    let edge_faces = [[0, 0]];
+    let allowed_faces = [vec![2, 1]];
+    let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
+    let mut visited = Vec::new();
+    let result = parse_standard_mesh_candidate_outcome_with_face_domains(
+        &edge_faces,
+        &allowed_faces,
+        3,
+        &budget,
+        |faces, _| {
+            visited.push(faces.to_vec());
+            if faces[0][1] == 1 {
+                MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+            } else {
+                MeshCandidateSolve::Solved(
+                    StandardTopology {
+                        faces: Vec::new(),
+                        edge_rows: Vec::new(),
+                        vertex_points: Vec::new(),
+                        logical_vertex_count: 0,
+                    },
+                    Vec::new(),
+                )
+            }
+        },
+    );
+
+    let MeshFaceDomainCandidateSolve::Solved(faces, _, _) = result else {
+        panic!("face-domain solver did not retain the unique branch");
+    };
+    assert_eq!(visited, vec![vec![[0, 1]], vec![[0, 2]]]);
+    assert_eq!(faces, vec![[0, 2]]);
+}
+
+#[test]
+fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
+    let edge_faces = [[0, 0]];
+    let allowed_faces = [vec![1, 2]];
+    let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
+    let result = parse_standard_mesh_candidate_outcome_with_face_domains(
+        &edge_faces,
+        &allowed_faces,
+        3,
+        &budget,
+        |_, _| {
+            MeshCandidateSolve::Solved(
+                StandardTopology {
+                    faces: Vec::new(),
+                    edge_rows: Vec::new(),
+                    vertex_points: Vec::new(),
+                    logical_vertex_count: 0,
+                },
+                Vec::new(),
+            )
+        },
+    );
+
+    assert!(matches!(
+        result,
+        MeshFaceDomainCandidateSolve::Ambiguous(MeshCandidateAmbiguity::DistinctTopologySolutions)
     ));
 }
 

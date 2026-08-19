@@ -436,6 +436,112 @@ where
         .map(|[solution]| solution)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DuplicateFaceAssignmentVisit {
+    Complete,
+    Stopped,
+    Exhausted,
+}
+
+/// Visit concrete second-face assignments without materializing their product.
+///
+/// A non-empty alternate entry replaces the serialized duplicate slot with one
+/// of its distinct faces. An empty entry retains the serialized same-face
+/// wildcard. The visitor returns `true` to continue and `false` to stop after
+/// a solved or otherwise terminal result.
+pub(crate) fn visit_duplicate_face_assignments<F>(
+    serialized: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    face_count: usize,
+    max_assignments: usize,
+    mut visitor: F,
+) -> Option<DuplicateFaceAssignmentVisit>
+where
+    F: FnMut(&[[usize; 2]]) -> bool,
+{
+    fn visit<F>(
+        branches: &[(usize, Vec<usize>)],
+        at: usize,
+        assignment: &mut [[usize; 2]],
+        max_assignments: usize,
+        visited: &mut usize,
+        visitor: &mut F,
+    ) -> DuplicateFaceAssignmentVisit
+    where
+        F: FnMut(&[[usize; 2]]) -> bool,
+    {
+        if at == branches.len() {
+            if *visited >= max_assignments {
+                return DuplicateFaceAssignmentVisit::Exhausted;
+            }
+            *visited += 1;
+            return if visitor(assignment) {
+                DuplicateFaceAssignmentVisit::Complete
+            } else {
+                DuplicateFaceAssignmentVisit::Stopped
+            };
+        }
+        let (edge, choices) = &branches[at];
+        for &face in choices {
+            assignment[*edge][1] = face;
+            match visit(
+                branches,
+                at + 1,
+                assignment,
+                max_assignments,
+                visited,
+                visitor,
+            ) {
+                DuplicateFaceAssignmentVisit::Complete => {}
+                terminal => return terminal,
+            }
+        }
+        DuplicateFaceAssignmentVisit::Complete
+    }
+
+    if serialized.len() != allowed_faces.len()
+        || serialized.iter().flatten().any(|face| *face >= face_count)
+        || allowed_faces
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_count)
+    {
+        return None;
+    }
+    let mut assignment = serialized.to_vec();
+    let mut branches = Vec::<(usize, Vec<usize>)>::new();
+    for (edge, faces) in serialized.iter().enumerate() {
+        let allowed = &allowed_faces[edge];
+        if faces[0] != faces[1] {
+            if !allowed.is_empty() {
+                return None;
+            }
+            continue;
+        }
+        let mut choices = allowed
+            .iter()
+            .copied()
+            .filter(|face| *face != faces[0])
+            .collect::<Vec<_>>();
+        choices.sort_unstable();
+        choices.dedup();
+        if !choices.is_empty() {
+            branches.push((edge, choices));
+        }
+    }
+    branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
+
+    let mut visited = 0;
+    Some(visit(
+        &branches,
+        0,
+        &mut assignment,
+        max_assignments,
+        &mut visited,
+        &mut visitor,
+    ))
+}
+
 /// Complete repeated standard edge-face slots when carrier incidence and a
 /// complete trim-boundary partition select one common assignment.
 pub(crate) fn resolve_standard_duplicate_edge_faces(
