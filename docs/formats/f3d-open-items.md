@@ -105,14 +105,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know the meaning to build face topology from a recipe without the edge-recipe rule.
 
-### DR-22. Form-33 `Combine` body recipe
-
-**Question.** Which field selects the input body for a form-33 `Combine` body-recipe identity that intersects more than one input body and has no matching occurrence elsewhere in the Design stream?
-
-**Known.** `f3d.md` §3.1 "A `Combine` scope stores" gives the complete persistent identity and the agreement rule. The identity is the stream GUID, the asset GUID, the context GUID, the ordered `(Design reference, form)` clauses, the recipe Design id, and the recipe selector. Repeated occurrences of that identity select the same stable history body when every resolved occurrence agrees. A legacy `Combine` tool form can have an empty clause list; the decoder retains its complete body-recipe envelope, but the empty identity supplies no body-selection proof.
-
-**Need.** This item is the case in which the agreement rule has no input. The neutral model then has no body selection.
-
 ### DR-24. Class-365 whole-body operand fields
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
