@@ -152,12 +152,12 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
     )
 }
 
-pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch(smbh: &[u8]) -> Vec<u8> {
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[u8]) -> Vec<u8> {
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
     )];
-    let (design_bulk, design_records) = generated_design_sketch_bulkstream();
-    let design_metastream = generated_design_sketch_metastream(&design_records);
+    let (design_bulk, design_records) = generated_design_sketch_dimension_bulkstream();
+    let design_metastream = generated_design_sketch_dimension_metastream(&design_records);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,

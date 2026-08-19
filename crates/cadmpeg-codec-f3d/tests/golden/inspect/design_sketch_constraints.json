@@ -50,19 +50,19 @@
     },
     {
       "attributes": {},
-      "compressed_size": 3394,
+      "compressed_size": 4600,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 3394
+      "uncompressed_size": 4600
     },
     {
       "attributes": {},
-      "compressed_size": 2038,
+      "compressed_size": 2581,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/MetaStream.dat",
       "role": "metastream",
-      "uncompressed_size": 2038
+      "uncompressed_size": 2581
     },
     {
       "attributes": {},

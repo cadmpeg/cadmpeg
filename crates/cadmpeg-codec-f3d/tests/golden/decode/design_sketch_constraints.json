@@ -222,7 +222,38 @@
         }
       ],
       "configurations": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "id": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1201",
+          "owner": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
+          "ordinal": 0,
+          "name": "d1",
+          "expression": "10 mm",
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          },
+          "properties": {
+            "source_kind": "Linear Dimension-1"
+          },
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921"
+        },
+        {
+          "id": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1204",
+          "owner": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
+          "ordinal": 1,
+          "name": "d2",
+          "expression": "10 mm",
+          "value": {
+            "kind": "length",
+            "value": 10.0
+          },
+          "properties": {
+            "source_kind": "Linear Dimension-2"
+          },
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382"
+        }
+      ],
       "sketches": [
         {
           "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
@@ -329,9 +360,78 @@
               "v": 50.0
             }
           }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          }
+        },
+        {
+          "id": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "construction": false,
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600",
+          "geometry": {
+            "kind": "point",
+            "position": {
+              "u": 10.0,
+              "v": 0.0
+            }
+          }
         }
       ],
       "sketch_constraints": [
+        {
+          "id": "f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat120112:recipe-group",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "definition": {
+            "kind": "native",
+            "native_kind": "Linear Dimension-1",
+            "entities": [
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501",
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503",
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p600",
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p502",
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800",
+              "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801"
+            ],
+            "parameter": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1201",
+            "operands": [
+              {
+                "native_kind": "construction_recipe",
+                "native_field": "recipe",
+                "object_index": 1305,
+                "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243"
+              }
+            ]
+          },
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070"
+        },
+        {
+          "id": "f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat12044:pair",
+          "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
+          "definition": {
+            "kind": "horizontal_distance",
+            "first": {
+              "kind": "entity",
+              "entity": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800"
+            },
+            "second": {
+              "kind": "entity",
+              "entity": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801"
+            },
+            "parameter": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1204"
+          },
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-locus-pair#4128"
+        },
         {
           "id": "f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@33",
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
@@ -587,6 +687,20 @@
               "recipe_index": 0,
               "record_index": 123,
               "record_index_offset": 2850
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#4243",
+              "byte_offset": 4243,
+              "design_id": "270",
+              "design_id_offset": 4271,
+              "design_selector": {
+                "byte_offset": 4274,
+                "value": 1203
+              },
+              "kind": "body",
+              "recipe_index": 0,
+              "record_index": 5,
+              "record_index_offset": 4227
             }
           ],
           "creation_timestamps": [],
@@ -629,10 +743,52 @@
           "design_decal_images": [],
           "design_dimension_annotation_frames": [],
           "design_dimension_locus_groups": [],
-          "design_dimension_locus_pairs": [],
+          "design_dimension_locus_pairs": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-locus-pair#4128",
+              "byte_offset": 4128,
+              "class_tag": "274",
+              "companion_record_index": 1202,
+              "first_geometry_record_index": 1300,
+              "first_geometry_reference_offset": 4168,
+              "first_role": 0,
+              "first_role_offset": 4178,
+              "frame_length": 80,
+              "governing_companion_record_index": 1205,
+              "opaque_index": 4,
+              "opaque_index_offset": 4163,
+              "paired_byte_offset": 4208,
+              "paired_class_tag": "273",
+              "record_index": 1304,
+              "second_geometry_record_index": 1302,
+              "second_geometry_reference_offset": 4183,
+              "second_role": 1,
+              "second_role_offset": 4193
+            }
+          ],
           "design_dimension_null_locus_pairs": [],
           "design_dimension_presentation_frames": [],
-          "design_dimension_recipe_records": [],
+          "design_dimension_recipe_records": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243",
+              "byte_offset": 4219,
+              "class_tag": "275",
+              "companion_record_index": 1202,
+              "frame_length": 48,
+              "prefix_bytes": "AAAAAAAAAAAA",
+              "prefix_offset": 4230,
+              "program": [
+                0,
+                0
+              ],
+              "program_offset": 4259,
+              "recipe_id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#4243",
+              "recipe_kind": "body",
+              "recipe_ordinal": 0,
+              "record_index": 1305,
+              "references": []
+            }
+          ],
           "design_edge_identity_operands": [],
           "design_edge_operands": [],
           "design_entity_headers": [
@@ -692,8 +848,65 @@
             }
           ],
           "design_mesh_features": [],
-          "design_parameter_companions": [],
-          "design_parameter_owners": [],
+          "design_parameter_companions": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070",
+              "byte_offset": 4070,
+              "class_tag": "272",
+              "owned_recipe_ids": [
+                "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#4243"
+              ],
+              "owner_record_index": 1200,
+              "payload_byte_length": 139,
+              "payload_byte_offset": 4128,
+              "record_index": 1202,
+              "timestamp_micros": 1700000000000000,
+              "timestamp_micros_offset": 4112
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4531",
+              "byte_offset": 4531,
+              "class_tag": "272",
+              "owner_record_index": 1203,
+              "payload_byte_length": 11,
+              "payload_byte_offset": 4589,
+              "record_index": 1205,
+              "timestamp_micros": 1700000000000000,
+              "timestamp_micros_offset": 4573
+            }
+          ],
+          "design_parameter_owners": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-owner#3806",
+              "byte_offset": 3806,
+              "class_tag": "270",
+              "companion_record_index": 1202,
+              "evaluated_value": 1.0,
+              "evaluated_value_offset": 3846,
+              "frame_length": 104,
+              "local_ordinal": 0,
+              "owned_ordinal": 9,
+              "parameter_record_index": 1201,
+              "record_index": 1200,
+              "scope_record_index": 1100,
+              "variant": 1
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-owner#4267",
+              "byte_offset": 4267,
+              "class_tag": "270",
+              "companion_record_index": 1205,
+              "evaluated_value": 1.0,
+              "evaluated_value_offset": 4307,
+              "frame_length": 104,
+              "local_ordinal": 1,
+              "owned_ordinal": 9,
+              "parameter_record_index": 1204,
+              "record_index": 1203,
+              "scope_record_index": 1100,
+              "variant": 1
+            }
+          ],
           "design_parameter_scopes": [
             {
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026",
@@ -725,7 +938,50 @@
               ]
             }
           ],
-          "design_parameters": [],
+          "design_parameters": [
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921",
+              "byte_offset": 3921,
+              "class_tag": "271",
+              "evaluated_value": 1.0,
+              "evaluated_value_offset": 4050,
+              "expression": "10 mm",
+              "expression_offset": 3971,
+              "family_discriminator": 0,
+              "family_discriminator_offset": 3943,
+              "kind": "dimension",
+              "name": "d1",
+              "name_offset": 4046,
+              "owner_record_index": 1200,
+              "record_index": 1201,
+              "source_kind": "Linear Dimension-1",
+              "source_kind_offset": 3994,
+              "source_ordinal": 9,
+              "unit": "mm",
+              "unit_offset": 4038
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382",
+              "byte_offset": 4382,
+              "class_tag": "271",
+              "evaluated_value": 1.0,
+              "evaluated_value_offset": 4511,
+              "expression": "10 mm",
+              "expression_offset": 4432,
+              "family_discriminator": 0,
+              "family_discriminator_offset": 4404,
+              "kind": "dimension",
+              "name": "d2",
+              "name_offset": 4507,
+              "owner_record_index": 1203,
+              "record_index": 1204,
+              "source_kind": "Linear Dimension-2",
+              "source_kind_offset": 4455,
+              "source_ordinal": 9,
+              "unit": "mm",
+              "unit_offset": 4499
+            }
+          ],
           "design_record_headers": [
             {
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1006",
@@ -762,6 +1018,42 @@
               "byte_offset": 3182,
               "class_tag": "269",
               "record_index": 584
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3806",
+              "byte_offset": 3806,
+              "class_tag": "270",
+              "record_index": 1200
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3921",
+              "byte_offset": 3921,
+              "class_tag": "271",
+              "record_index": 1201
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4070",
+              "byte_offset": 4070,
+              "class_tag": "272",
+              "record_index": 1202
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4267",
+              "byte_offset": 4267,
+              "class_tag": "270",
+              "record_index": 1203
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4382",
+              "byte_offset": 4382,
+              "class_tag": "271",
+              "record_index": 1204
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4531",
+              "byte_offset": 4531,
+              "class_tag": "272",
+              "record_index": 1205
             },
             {
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#730",
@@ -850,14 +1142,18 @@
                 1304,
                 1312,
                 1320,
-                1328
+                1328,
+                1336,
+                1344
               ],
               "entity_ids": [
                 100,
                 200,
                 300,
                 400,
-                700
+                700,
+                1300,
+                1302
               ],
               "module": "Geometry",
               "type_guid": "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
@@ -866,46 +1162,50 @@
               "version_offset": 1276
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1336",
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1352",
               "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-              "base_type_guid_offset": 1380,
-              "byte_offset": 1336,
+              "base_type_guid_offset": 1396,
+              "byte_offset": 1352,
               "entity_id_offsets": [
-                1436,
-                1444,
                 1452,
                 1460,
-                1468
+                1468,
+                1476,
+                1484,
+                1492,
+                1500
               ],
               "entity_ids": [
                 101,
                 201,
                 301,
                 401,
-                701
+                701,
+                1301,
+                1303
               ],
               "module": "Geometry",
               "type_guid": "362B7EC3-0F09-47C8-A3BE-DC066715CDAE",
-              "type_guid_offset": 1340,
+              "type_guid_offset": 1356,
               "version": 0,
-              "version_offset": 1416
+              "version_offset": 1432
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1476",
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1508",
               "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-              "base_type_guid_offset": 1520,
-              "byte_offset": 1476,
+              "base_type_guid_offset": 1552,
+              "byte_offset": 1508,
               "entity_id_offsets": [
-                1575
+                1607
               ],
               "entity_ids": [
                 1100
               ],
               "module": "MSketch",
               "type_guid": "00000000-0000-0000-0000-000000001100",
-              "type_guid_offset": 1480,
+              "type_guid_offset": 1512,
               "version": 1,
-              "version_offset": 1556
+              "version_offset": 1588
             },
             {
               "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155",
@@ -925,21 +1225,78 @@
               "version_offset": 235
             },
             {
-              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1583",
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1615",
               "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-              "base_type_guid_offset": 1627,
-              "byte_offset": 1583,
+              "base_type_guid_offset": 1659,
+              "byte_offset": 1615,
               "entity_id_offsets": [
-                1682
+                1714
               ],
               "entity_ids": [
                 584
               ],
               "module": "MSketch",
               "type_guid": "00000000-0000-0000-0000-000000000584",
-              "type_guid_offset": 1587,
+              "type_guid_offset": 1619,
               "version": 1,
-              "version_offset": 1663
+              "version_offset": 1695
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1722",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1766,
+              "byte_offset": 1722,
+              "entity_id_offsets": [
+                1823,
+                1831
+              ],
+              "entity_ids": [
+                1200,
+                1203
+              ],
+              "module": "Dimension",
+              "type_guid": "00000000-0000-0000-0000-000000001200",
+              "type_guid_offset": 1726,
+              "version": 1,
+              "version_offset": 1802
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1839",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 1883,
+              "byte_offset": 1839,
+              "entity_id_offsets": [
+                1940,
+                1948
+              ],
+              "entity_ids": [
+                1201,
+                1204
+              ],
+              "module": "Dimension",
+              "type_guid": "00000000-0000-0000-0000-000000001201",
+              "type_guid_offset": 1843,
+              "version": 1,
+              "version_offset": 1919
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1956",
+              "base_type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+              "base_type_guid_offset": 2000,
+              "byte_offset": 1956,
+              "entity_id_offsets": [
+                2057,
+                2065
+              ],
+              "entity_ids": [
+                1202,
+                1205
+              ],
+              "module": "Dimension",
+              "type_guid": "00000000-0000-0000-0000-000000001202",
+              "type_guid_offset": 1960,
+              "version": 1,
+              "version_offset": 2036
             },
             {
               "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#259",
@@ -1222,6 +1579,20 @@
               "kind": "point",
               "value": 439,
               "value_offset": 33
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#3423",
+              "byte_offset": 3423,
+              "kind": "point",
+              "value": 800,
+              "value_offset": 33
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#3629",
+              "byte_offset": 3629,
+              "kind": "point",
+              "value": 801,
+              "value_offset": 33
             }
           ],
           "persistent_subentity_tags": [],
@@ -1445,6 +1816,62 @@
                 "padded_paired_reference": false
               },
               "record_index": 700
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394",
+              "byte_offset": 3394,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
+              "coordinate_offset": 89,
+              "coordinates": {
+                "u": 0.0,
+                "v": 0.0
+              },
+              "depth": 0.0,
+              "owner_reference": 277,
+              "paired_reference": 1301,
+              "persistent_id": 800,
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
+              "record_index": 1300
+            },
+            {
+              "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600",
+              "byte_offset": 3600,
+              "class_tag": "266",
+              "closure": {
+                "selector": 0,
+                "state": 1
+              },
+              "companion": {
+                "incident_curves": [],
+                "prefix_present_zero": false,
+                "reference_encoding": "same_segment"
+              },
+              "coordinate_offset": 89,
+              "coordinates": {
+                "u": 10.0,
+                "v": 0.0
+              },
+              "depth": 0.0,
+              "owner_reference": 277,
+              "paired_reference": 1303,
+              "persistent_id": 801,
+              "record_form": {
+                "kind": "version11",
+                "padded_paired_reference": false
+              },
+              "record_index": 1302
             }
           ],
           "sketch_relations": [
@@ -1636,6 +2063,15 @@
         },
         "severity": "warning",
         "message": "2 sketch relation(s) retain native operands because no unique neutral relation was resolved."
+      },
+      {
+        "code": {
+          "namespace": "f3d",
+          "code": "sketch.dimension-native",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "1 sketch dimension(s) retain native operands because no unique neutral dimension was resolved."
       }
     ],
     "notes": [
@@ -1658,6 +2094,11 @@
           "offset": 0,
           "tag": "construction_recipe"
         },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#4243": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "construction_recipe"
+        },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-member#2816": {
           "stream": 1,
           "offset": 0,
@@ -1668,6 +2109,11 @@
           "offset": 0,
           "tag": "BodiesRoot"
         },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-locus-pair#4128": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_dimension_locus_pair"
+        },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-entity-header#730": {
           "stream": 1,
           "offset": 0,
@@ -1677,6 +2123,36 @@
           "stream": 1,
           "offset": 0,
           "tag": "design_entity_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#3921": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#4382": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter_companion"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4531": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter_companion"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-owner#3806": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter_owner"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-owner#4267": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_parameter_owner"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026": {
           "stream": 1,
@@ -1709,6 +2185,36 @@
           "tag": "design_record_header"
         },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3182": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3806": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#3921": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4070": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4267": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4382": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#4531": {
           "stream": 1,
           "offset": 0,
           "tag": "design_record_header"
@@ -1793,6 +2299,16 @@
           "offset": 0,
           "tag": "persistent_reference"
         },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#3423": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "persistent_reference"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:persistent-reference#3629": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "persistent_reference"
+        },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830": {
           "stream": 1,
           "offset": 0,
@@ -1828,6 +2344,16 @@
           "offset": 0,
           "tag": "sketch_point"
         },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "sketch_point"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "sketch_point"
+        },
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33": {
           "stream": 1,
           "offset": 0,
@@ -1848,12 +2374,12 @@
           "offset": 0,
           "tag": "design_type"
         },
-        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1336": {
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1352": {
           "stream": 1,
           "offset": 0,
           "tag": "design_type"
         },
-        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1476": {
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1508": {
           "stream": 1,
           "offset": 0,
           "tag": "design_type"
@@ -1863,7 +2389,22 @@
           "offset": 0,
           "tag": "design_type"
         },
-        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1583": {
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1615": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1722": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1839": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1956": {
           "stream": 1,
           "offset": 0,
           "tag": "design_type"
@@ -2043,6 +2584,11 @@
           "offset": 0,
           "tag": "sketch"
         },
+        "f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat12044:pair": {
+          "stream": 1,
+          "offset": 52,
+          "tag": "sketch_constraint"
+        },
         "f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@33": {
           "stream": 1,
           "offset": 0,
@@ -2082,6 +2628,16 @@
           "stream": 1,
           "offset": 0,
           "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "sketch_entity"
+        },
+        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801": {
+          "stream": 1,
+          "offset": 0,
+          "tag": "sketch_entity"
         }
       },
       "exactness": {
@@ -2099,9 +2655,9 @@
         "id": "f3d:file:source-image#0",
         "stream": "f3d",
         "offset": 0,
-        "byte_len": 12169,
-        "sha256": "3f3a1baf54c03f8c8dfb742889aa5cccd0a5a119ce40bf40097ab56e9c813955",
-        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAD13T15KBgAASgYAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsDBAoAAAAAAAAAIQB53scWMAMAADADAABGAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAwQKAAAAAAAAACEAdljpDqgBAACoAQAAIAAAAEFzc2V0RGF0YS9JbnN0YW5jZVByb3BlcnRpZXMuYmluiAAAAP//////////AAAAAAAAAACAAAEADQAAAEdlbmVyaWNTY2hlbWEkAAAAMTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtNTU1NTU1NTU1NTU1CQAAAFByaXNtLTAwMSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACamZmZmZm5P5qZmZmZmck/MzMzMzMz0z8AAAAAAADwPwAA/////z8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAANA/AAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAA+D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEABnkigUYAAABGAAAAKgAAAEFzc2V0RGF0YS9EZWZpbml0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AENENTdCQzQ4LTUwRUMtNDdEQy05NzVBLUZCNkRFQTcyRjREQSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUEAAAABAAAAEJvZHkBAAAABwAAAAAAAAAkAAAANzAyYjljZDItNTM3Yy00MjllLThjYzQtMjJiZWVlYjk4YzM3JAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQEAAAAFAAAAU2NlbmUBAAAA2gMAAAAAAAAkAAAANzRDQTQ1NjItNTlGOC00Qzk3LThBRDEtRjgyOTdDMjFGOUFBJAAAAEU4RENCMDQwLTZBMEUtNEFEMS1CQ0YzLTFFMUFFREQzNUVFNAAAAAAEAAAAQm9keQEAAACDAwAAAAAAACQAAABGMDEzMDQyNC04QjdFLTQwOTItOTNDOS0xQ0E4MDc0ODI1MzQkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAAAAAAgAAABHZW9tZXRyeQEAAABYAgAAAAAAACQAAABEODJFMDEyRi02RERELTRBRUQtQkRFMS1DMEY3RjkxMDBCOUIkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAwAAAAcAAABNU2tldGNoAQAAACADAAAAAAAAJAAAAEMyQ0VEQUU3LTE3MTYtNDdDMS1CN0IxLTA3QjcwMDgxRDBGQiQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWULAAAACAAAAEdlb21ldHJ5BQAAAGQAAAAAAAAAyAAAAAAAAAAsAQAAAAAAAJABAAAAAAAAvAIAAAAAAAAkAAAAMzYyQjdFQzMtMEYwOS00N0M4LUEzQkUtREMwNjY3MTVDREFFJAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQAAAAAIAAAAR2VvbWV0cnkFAAAAZQAAAAAAAADJAAAAAAAAAC0BAAAAAAAAkQEAAAAAAAC9AgAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDExMDAkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAQAAAAcAAABNU2tldGNo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aXZlXS9Qcm90ZWluQXNzZXRzLkJsb2JQYXJ0cy9Qcm90ZWluQXNzZXQuMC5wcm90ZWluUEsBAgoDCgAAAAAAAAAhAIjQSqVCDQAAQg0AAC4AAAAAAAAAAAAAAKSBKw8AAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvQnVsa1N0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEAxxePhPYHAAD2BwAALgAAAAAAAAAAAAAApIG5HAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRGVzaWduMS9NZXRhU3RyZWFtLmRhdFBLAQIKAwoAAAAAAAAAIQD9bSOnrgIAAK4CAAA8AAAAAAAAAAAAAACkgfskAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9GdXNpb25BQ1RTZWdtZW50VHlwZTEvQnVsa1N0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEAHJokcSEEAAAhBAAAPAAAAAAAAAAAAAAApIEDKAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRnVzaW9uQUNUU2VnbWVudFR5cGUxL01ldGFTdHJlYW0uZGF0UEsFBgAAAAAIAAgA9QIAAH4sAAAAAA=="
+        "byte_len": 13918,
+        "sha256": "4c7c566568825e6fa95709baf3796f47efe7312a9fd396f9eb77958fca88cc9c",
+        "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAD13T15KBgAASgYAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsDBAoAAAAAAAAAIQB53scWMAMAADADAABGAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAwQKAAAAAAAAACEAdljpDqgBAACoAQAAIAAAAEFzc2V0RGF0YS9JbnN0YW5jZVByb3BlcnRpZXMuYmluiAAAAP//////////AAAAAAAAAACAAAEADQAAAEdlbmVyaWNTY2hlbWEkAAAAMTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtNTU1NTU1NTU1NTU1CQAAAFByaXNtLTAwMSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACamZmZmZm5P5qZmZmZmck/MzMzMzMz0z8AAAAAAADwPwAA/////z8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAANA/AAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAA+D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEABnkigUYAAABGAAAAKgAAAEFzc2V0RGF0YS9EZWZpbml0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ACQAAAAzMzMzMzMzMy00NDQ0LTU1NTUtNjY2Ni03Nzc3Nzc3Nzc3NzcAAAAABQAAAAkAAABEaW1lbnNpb24CAAAADgEAAAAAAAAPAQAAAAAAACQAAAA2MDQwM0Q0Ny0wQzQ5LTQ5QjAtQkRFOC0xNjc5NjA4MTY0QTIkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAQAAAAcAAABNU2tldGNoAgAAACEAAAAAAAAALAAAAAAAAAAkAAAARDI2MzUxRjAtNTk0MC00RDIzLUFBMjAtMkMzNTQ3NUE2RDlFJAAAAENCODQ0QUI2LTI0MEQtNGZjOS05QzlGLTM2NzlEQzg5NkQ2RgIAAAAGAAAARnVzaW9uAQAAAIQDAAAAAAAAJAAAAENENTdCQzQ4LTUwRUMtNDdEQy05NzVBLUZCNkRFQTcyRjREQSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUEAAAABAAAAEJvZHkBAAAABwAAAAAAAAAkAAAANzAyYjljZDItNTM3Yy00MjllLThjYzQtMjJiZWVlYjk4YzM3JAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQEAAAAFAAAAU2NlbmUBAAAA2gMAAAAAAAAkAAAANzRDQTQ1NjItNTlGOC00Qzk3LThBRDEtRjgyOTdDMjFGOUFBJAAAAEU4RENCMDQwLTZBMEUtNEFEMS1CQ0YzLTFFMUFFREQzNUVFNAAAAAAEAAAAQm9keQEAAACDAwAAAAAAACQAAABGMDEzMDQyNC04QjdFLTQwOTItOTNDOS0xQ0E4MDc0ODI1MzQkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAAAAAAgAAABHZW9tZXRyeQEAAABYAgAAAAAAACQAAABEODJFMDEyRi02RERELTRBRUQtQkRFMS1DMEY3RjkxMDBCOUIkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAwAAAAcAAABNU2tldGNoAQAAACADAAAAAAAAJAAAAEMyQ0VEQUU3LTE3MTYtNDdDMS1CN0IxLTA3QjcwMDgxRDBGQiQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWULAAAACAAAAEdlb21ldHJ5BwAAAGQAAAAAAAAAyAAAAAAAAAAsAQAAAAAAAJABAAAAAAAAvAIAAAAAAAAUBQAAAAAAABYFAAAAAAAAJAAAADM2MkI3RUMzLTBGMDktNDdDOC1BM0JFLURDMDY2NzE1Q0RBRSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUAAAAACAAAAEdlb21ldHJ5BwAAAGUAAAAAAAAAyQAAAAAAAAAtAQAAAAAAAJEBAAAAAAAAvQIAAAAAAAAVBQAAAAAAABcFAAAAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMTEwMCQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUBAAAABwAAAE1Ta2V0Y2gBAAAATAQAAAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwNTg0JAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQEAAAAHAAAATVNrZXRjaAEAAABIAgAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDEyMDAkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAQAAAAkAAABEaW1lbnNpb24CAAAAsAQAAAAAAACzBAAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDEyMDEkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAQAAAAkAAABEaW1lbnNpb24CAAAAsQQAAAAAAAC0BAAAAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDEyMDIkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlAQAAAAkAAABEaW1lbnNpb24CAAAAsgQAAAAAAAC1BAAAAAAAAAAAAAAeAAAAgwMAAAAAAAAAAAAAAAAAANkDAAAAAAAAXwAAAAAAAACEAwAAAAAAAG4CAAAAAAAAFQEAAAAAAADaAgAAAAAAACEAAAAAAAAAJAMAAAAAAAAsAAAAAAAAAIkDAAAAAAAAZAAAAAAAAADuAwAAAAAAAGUAAAAAAAAAlwQAAAAAAADIAAAAAAAAALwEAAAAAAAAyQAAAAAAAABlBQAAAAAAACwBAAAAAAAAigUAAAAAAAAtAQAAAAAAADMGAAAAAAAAkAEAAAAAAABYBgAAAAAAAJEBAAAAAAAAAQcAAAAAAABYAgAAAAAAACYHAAAAAAAAvAIAAAAAAAAWCAAAAAAAAL0CAAAAAAAA8wgAAAAAAAAgAwAAAAAAABgJAAAAAAAATAQAAAAAAADSCwAAAAAAAEgCAAAAAAAAbgwAAAAAAAAUBQAAAAAAAEINAAAAAAAAFQUAAAAAAADrDQAAAAAAABYFAAAAAAAAEA4AAAAAAAAXBQAAAAAAALkOAAAAAAAAsAQAAAAAAADeDgAAAAAAALEEAAAAAAAAUQ8AAAAAAACyBAAAAAAAAOYPAAAAAAAAswQAAAAAAACrEAAAAAAAALQEAAAAAAAAHhEAAAAAAAC1BAAAAAAAALMRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQSwMECgAAAAAAAAAhAP1tI6euAgAArgIAADwAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9GdXNpb25BQ1RTZWdtZW50VHlwZTEvQnVsa1N0cmVhbS5kYXQDAAAAMjU2AgAAAGRlY295OkFDVFRhYmxlAAAAAAAAAwAAADI2OAEAAAAAAAAACAAAAEFDVFRhYmxlAAABAAAAAQcAAAAAAAAAAAAFAAAAMABfADkAOAA1ACQAAABlAGUAZQBlAGUAZQBlAGUALQAxADEAMQAxAC0AMgAyADIAMgAtADMAMwAzADMALQBmAGYAZgBmAGYAZgBmAGYAZgBmAGYAZgABAAAAAQkAAAAAAAAAAAACAAAACgAAAEFwcGVhcmFuY2UkAAAAYQBhAGEAYQBhAGEAYQBhAC0AMQAxADEAMQAtADIAMgAyADIALQAzADMAMwAzAC0AYgBiAGIAYgBiAGIAYgBiAGIAYgBiAGIAEAAAAFBoeXNpY2FsTWF0ZXJpYWwkAAAAYwBjAGMAYwBjAGMAYwBjAC0AMQAxADEAMQAtADIAMgAyADIALQAzADMAMwAzAC0AZABkAGQAZABkAGQAZABkAGQAZABkAGQAAwAAADI2NwkAAAAAAAAAAAAAAAAAAQwAAAAAAAAAAAADAAAAMABfADMAAQMAAAAAAAAAAAEBAAAACQAAACgAVQBuAHMAYQB2AGUAZAApAAABBwAAAAAAAAAAAAMAAAAyNjEHAAAAAAAAAAAAAAAAAAIAAAAKAAAAQXBwZWFyYW5jZSQAAABhAGEAYQBhAGEAYQBhAGEALQAxADEAMQAxAC0AMgAyADIAMgAtADMAMwAzADMALQBiAGIAYgBiAGIAYgBiAGIAYgBiAGIAYgAQAAAAUGh5c2ljYWxNYXRlcmlhbCQAAABjAGMAYwBjAGMAYwBjAGMALQAxADEAMQAxAC0AMgAyADIAMgAtADMAMwAzADMALQBkAGQAZABkAGQAZABkAGQAZABkAGQAZAAFAAAAMABfADkAOAA1AFBLAwQKAAAAAAAAACEAHJokcSEEAAAhBAAAPAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Z1c2lvbkFDVFNlZ21lbnRUeXBlMS9NZXRhU3RyZWFtLmRhdBQAAABGdXNpb25BQ1RTZWdtZW50VHlwZQAAAAAkAAAAYQBhAGEAYQBhAGEAYQBhAC0AYgBiAGIAYgAtAGMAYwBjAGMALQBkAGQAZABkAC0AZQBlAGUAZQBlAGUAZQBlAGUAZQBlAGUA0gQAAAAAAAAAAAAAAAAAABQAAABGdXNpb25BQ1RTZWdtZW50VHlwZQYAAABGdXNpb24AAAAAAAAAAA0AAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTAwAAAAAAEAAAADAAAAQUNUAQAAAAIAAAAAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwMQAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTAyAAAAAAEAAAADAAAAQUNUAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDMAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwNAAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTA1AAAAAAEAAAADAAAAQUNUAQAAAAcAAAAAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwNgAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTA3AAAAAAEAAAADAAAAQUNUAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMDgAAAAAAQAAAAMAAABBQ1QAAAAAJAAAADAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDEwOQAAAAABAAAAAwAAAEFDVAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTBhAAAAAAEAAAADAAAAQUNUAAAAACQAAAAwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAxMGIAAAAAAQAAAAMAAABBQ1QBAAAACQAAAAAAAAAkAAAAMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMTBjAAAAAAEAAAADAAAAQUNUAQAAAAEAAAAAAAAAAAAAAAQAAAACAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAfAAAAAAAAAAkAAAAAAAAAcgEAAAAAAAAHAAAAAAAAAM0BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQSwECCgMKAAAAAAAAACEAoL+x6zsCAAA7AgAADAAAAAAAAAAAAAAApIEAAAAATWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAH3N1T1NAgAATQIAACQAAAAAAAAAAAAAAKSBZQIAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQA9d09eSgYAAEoGAAA7AAAAAAAAAAAAAACkgfQEAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaFBLAQIKAwoAAAAAAAAAIQB53scWMAMAADADAABGAAAAAAAAAAAAAACkgZcLAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9Qcm90ZWluQXNzZXRzLkJsb2JQYXJ0cy9Qcm90ZWluQXNzZXQuMC5wcm90ZWluUEsBAgoDCgAAAAAAAAAhAIz4JOL4EQAA+BEAAC4AAAAAAAAAAAAAAKSBKw8AAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvQnVsa1N0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEAB/KV3BUKAAAVCgAALgAAAAAAAAAAAAAApIFvIQAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRGVzaWduMS9NZXRhU3RyZWFtLmRhdFBLAQIKAwoAAAAAAAAAIQD9bSOnrgIAAK4CAAA8AAAAAAAAAAAAAACkgdArAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9GdXNpb25BQ1RTZWdtZW50VHlwZTEvQnVsa1N0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEAHJokcSEEAAAhBAAAPAAAAAAAAAAAAAAApIHYLgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRnVzaW9uQUNUU2VnbWVudFR5cGUxL01ldGFTdHJlYW0uZGF0UEsFBgAAAAAIAAgA9QIAAFMzAAAAAA=="
       }
     ]
   }

@@ -75,18 +75,44 @@ pub(crate) fn segment_metastream(
 }
 
 pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, false)
+    generated_design_metastream_with_sketch_types(records, false, false)
 }
 
-pub(crate) fn generated_design_sketch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
-    generated_design_metastream_with_sketch_types(records, true)
+pub(crate) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    generated_design_metastream_with_sketch_types(records, true, true)
 }
 
 fn generated_design_metastream_with_sketch_types(
     records: &[(u64, u64)],
     include_sketch_types: bool,
+    include_dimension_types: bool,
 ) -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let point_entity_ids: &[u64] = if include_dimension_types {
+        &[100, 200, 300, 400, 700, 1300, 1302]
+    } else {
+        &[100, 200, 300, 400, 700]
+    };
+    let point_companion_entity_ids: &[u64] = if include_dimension_types {
+        &[101, 201, 301, 401, 701, 1301, 1303]
+    } else {
+        &[101, 201, 301, 401, 701]
+    };
+    let owner_entity_ids: &[u64] = if include_dimension_types {
+        &[1200, 1203]
+    } else {
+        &[]
+    };
+    let parameter_entity_ids: &[u64] = if include_dimension_types {
+        &[1201, 1204]
+    } else {
+        &[]
+    };
+    let companion_entity_ids: &[u64] = if include_dimension_types {
+        &[1202, 1205]
+    } else {
+        &[]
+    };
     let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
         (
             crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
@@ -163,14 +189,14 @@ fn generated_design_metastream_with_sketch_types(
             base,
             11,
             "Geometry",
-            &[100, 200, 300, 400, 700],
+            point_entity_ids,
         ),
         (
             crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
             base,
             crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
             crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
-            &[101, 201, 301, 401, 701],
+            point_companion_entity_ids,
         ),
     ];
     if include_sketch_types {
@@ -187,6 +213,29 @@ fn generated_design_metastream_with_sketch_types(
             1,
             crate::records::DESIGN_MODULE_SKETCH,
             &[584],
+        ));
+    }
+    if include_dimension_types {
+        types.push((
+            "00000000-0000-0000-0000-000000001200",
+            base,
+            1,
+            "Dimension",
+            owner_entity_ids,
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001201",
+            base,
+            1,
+            "Dimension",
+            parameter_entity_ids,
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001202",
+            base,
+            1,
+            "Dimension",
+            companion_entity_ids,
         ));
     }
     design_metastream_with_records(&types, records)
@@ -769,6 +818,217 @@ pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     out.extend_from_slice(b"261");
     out.extend_from_slice(&placement_record.to_le_bytes());
     records.push((u64::from(placement_record), placement_offset));
+
+    (out, records)
+}
+
+/// Add paired dimensional parameters and their companion payloads to the
+/// generated Sketch stream. The payload contains a paired two-locus frame over
+/// two additional point records and one construction recipe record.
+pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn marked_reference(out: &mut Vec<u8>, target: u32) {
+        out.push(1);
+        out.extend_from_slice(&u64::from(target).to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    fn append_point(
+        out: &mut Vec<u8>,
+        records: &mut Vec<(u64, u64)>,
+        record_index: u32,
+        paired_record_index: u32,
+        persistent_id: u64,
+        coordinates: [f64; 2],
+    ) {
+        records.push((
+            u64::from(record_index),
+            u64::try_from(out.len()).expect("synthetic dimension point offset"),
+        ));
+        let mut point = vec![0_u8; 105];
+        point[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        point[4..7].copy_from_slice(b"266");
+        point[7..11].copy_from_slice(&record_index.to_le_bytes());
+        point[20] = 1;
+        point[21..25].copy_from_slice(&1_u32.to_le_bytes());
+        point[25..29].copy_from_slice(&6_u32.to_le_bytes());
+        point[29..35].copy_from_slice(b"pt_tag");
+        point[35..39].copy_from_slice(&23_u32.to_le_bytes());
+        point[39..62].copy_from_slice(b"IntrinsicMetaTypeuint64");
+        point[62..70].copy_from_slice(&persistent_id.to_le_bytes());
+        point[70] = 1;
+        point[71..75].copy_from_slice(&paired_record_index.to_le_bytes());
+        point[89..97].copy_from_slice(&coordinates[0].to_le_bytes());
+        point[97..105].copy_from_slice(&coordinates[1].to_le_bytes());
+        point.extend_from_slice(&[0; 16]);
+        point.push(1);
+        point.extend_from_slice(&[0; 12]);
+        point.extend_from_slice(&1.0_f32.to_le_bytes());
+        point.extend_from_slice(&1.0_f32.to_le_bytes());
+        point.extend_from_slice(&[0, 1, 0, 0, 0]);
+        marked_reference(&mut point, paired_record_index);
+        marked_reference(&mut point, 277);
+        out.extend_from_slice(&point);
+        records.push((
+            u64::from(paired_record_index),
+            u64::try_from(out.len()).expect("synthetic dimension point pair offset"),
+        ));
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(b"267");
+        out.extend_from_slice(&paired_record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 15]);
+        marked_reference(out, record_index);
+    }
+
+    let (mut out, mut records) = generated_design_sketch_bulkstream();
+    append_point(&mut out, &mut records, 1300, 1301, 800, [0.0, 0.0]);
+    append_point(&mut out, &mut records, 1302, 1303, 801, [1.0, 0.0]);
+
+    let scope_record_index = 1100_u32;
+
+    fn append_owner(
+        out: &mut Vec<u8>,
+        records: &mut Vec<(u64, u64)>,
+        owner_record_index: u32,
+        parameter_record_index: u32,
+        companion_record_index: u32,
+        scope_record_index: u32,
+        local_ordinal: u32,
+    ) {
+        records.push((
+            u64::from(owner_record_index),
+            u64::try_from(out.len()).expect("synthetic dimension owner offset"),
+        ));
+        let mut owner = crate::design::test_support::parameter_owner_frame();
+        owner[4..7].copy_from_slice(b"270");
+        owner[7..11].copy_from_slice(&owner_record_index.to_le_bytes());
+        owner[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+        owner[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
+        owner[49..53].copy_from_slice(&parameter_record_index.to_le_bytes());
+        owner[35..39].copy_from_slice(&local_ordinal.to_le_bytes());
+        owner[68..72].copy_from_slice(&scope_record_index.to_le_bytes());
+        owner[82..86].copy_from_slice(&companion_record_index.to_le_bytes());
+        owner[94..98].copy_from_slice(&scope_record_index.to_le_bytes());
+        out.extend_from_slice(&owner);
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(b"270");
+        out.extend_from_slice(&owner_record_index.to_le_bytes());
+    }
+
+    fn append_parameter(
+        out: &mut Vec<u8>,
+        records: &mut Vec<(u64, u64)>,
+        owner_record_index: u32,
+        parameter_record_index: u32,
+        name: &str,
+        source_kind: &str,
+    ) {
+        records.push((
+            u64::from(parameter_record_index),
+            u64::try_from(out.len()).expect("synthetic dimension parameter offset"),
+        ));
+        let mut parameter = crate::design::test_support::parameter_record(
+            Some(owner_record_index),
+            "10 mm",
+            source_kind,
+            Some("mm"),
+            name,
+            1.0,
+        );
+        parameter[4..7].copy_from_slice(b"271");
+        parameter[7..11].copy_from_slice(&parameter_record_index.to_le_bytes());
+        out.extend_from_slice(&parameter);
+    }
+
+    fn append_companion(
+        out: &mut Vec<u8>,
+        records: &mut Vec<(u64, u64)>,
+        owner_record_index: u32,
+        companion_record_index: u32,
+    ) {
+        records.push((
+            u64::from(companion_record_index),
+            u64::try_from(out.len()).expect("synthetic dimension companion offset"),
+        ));
+        let mut companion = vec![0_u8; 58];
+        companion[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        companion[4..7].copy_from_slice(b"272");
+        companion[7..11].copy_from_slice(&companion_record_index.to_le_bytes());
+        companion[31] = 1;
+        companion[32..36].copy_from_slice(&owner_record_index.to_le_bytes());
+        companion[42..50].copy_from_slice(&1_700_000_000_000_000_u64.to_le_bytes());
+        out.extend_from_slice(&companion);
+    }
+
+    append_owner(
+        &mut out,
+        &mut records,
+        1200,
+        1201,
+        1202,
+        scope_record_index,
+        0,
+    );
+    append_parameter(
+        &mut out,
+        &mut records,
+        1200,
+        1201,
+        "d1",
+        "Linear Dimension-1",
+    );
+    append_companion(&mut out, &mut records, 1200, 1202);
+
+    let mut locus_pair = vec![0_u8; 80];
+    locus_pair[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    locus_pair[4..7].copy_from_slice(b"274");
+    locus_pair[7..11].copy_from_slice(&1304_u32.to_le_bytes());
+    locus_pair[19] = 1;
+    locus_pair[20..24].copy_from_slice(&3_u32.to_le_bytes());
+    locus_pair[24] = 1;
+    locus_pair[35..39].copy_from_slice(&4_u32.to_le_bytes());
+    locus_pair[39] = 1;
+    locus_pair[40..44].copy_from_slice(&1300_u32.to_le_bytes());
+    locus_pair[50..54].copy_from_slice(&0_u32.to_le_bytes());
+    locus_pair[54] = 1;
+    locus_pair[55..59].copy_from_slice(&1302_u32.to_le_bytes());
+    locus_pair[65..69].copy_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&locus_pair);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"273");
+    out.extend_from_slice(&1304_u32.to_le_bytes());
+
+    let recipe_prefix = [0_u8; 9];
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"275");
+    out.extend_from_slice(&1305_u32.to_le_bytes());
+    out.extend_from_slice(&recipe_prefix);
+    out.extend_from_slice(&16_u32.to_le_bytes());
+    out.extend_from_slice(b"body_recipe_data");
+    for value in [0_i32, 0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+
+    append_owner(
+        &mut out,
+        &mut records,
+        1203,
+        1204,
+        1205,
+        scope_record_index,
+        1,
+    );
+    append_parameter(
+        &mut out,
+        &mut records,
+        1203,
+        1204,
+        "d2",
+        "Linear Dimension-2",
+    );
+    append_companion(&mut out, &mut records, 1203, 1205);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"272");
+    out.extend_from_slice(&1205_u32.to_le_bytes());
 
     (out, records)
 }
