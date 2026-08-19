@@ -15,31 +15,6 @@ Each item has an identifier and these fields:
 
 ## 4. Exact-topology transfer
 
-### XT-05. Neutral topology transform equality
-
-**Question.** What exact location equality and identity rule selects neutral topology and located
-geometry identities when equal shapes occur at nearby composed locations?
-
-**Known.** The specification gives a distinct indexed position to a shape at a different composed
-location. `topology_transfer.rs:146-168` uses tolerant `OccurrenceKey` values for neutral vertices
-and edges; `topology_transfer.rs:1135-1181` uses the same tolerance for located curves and
-surfaces. `transform_digest` at `topology_transfer.rs:1612-1627` rounds matrix components to
-`1.0e-11`, and `transforms_equal` at `topology_transfer.rs:1644-1650` treats components within
-`1.0e-12` as equal. The source-index map uses an exact transform digest, so it does not repair
-the neutral identity collapse.
-
-**Need.** Establish the producer or kernel equality rule for composed locations and apply it to
-all neutral identity and identity-elision decisions. A decoder tolerance must be source-backed and
-specified; otherwise distinct locations must remain distinct.
-
-**Conflict.** Two uses of one shape at translations of `2.0e-12` and `4.0e-12` are different
-locations but round to the same transform digest and reuse one neutral edge, vertex, curve, or
-surface identity. A location within `1.0e-12` of identity is also elided as identity. The neutral
-topology can therefore collapse or omit source-distinct locations without a refusal or loss,
-despite the specification's separate-location rule.
-
-**Note.** New hostile-sweep finding.
-
 ## 5. Design projection
 
 ### DP-02. Sketch profile seed order

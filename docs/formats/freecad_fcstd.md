@@ -281,16 +281,24 @@ examined for that requested kind. A non-matching node is traversed in pre-order 
 through direct `TopoDS_Iterator` children, and the indexed map assigns the next position at first
 encounter. Its `TopTools_ShapeMapHasher` key uses `TopoDS_Shape::IsSame`: equal `TShape` and
 composed location share one position regardless of orientation; a copied `TShape` or a different
-location receives a new position. Element-map names bind to these producer positions. The decoder
-carries that source position with each transferred neutral occurrence. It does not derive the
-position from neutral arena order. These transient positions are connected to persistent names and
-to placed neutral occurrences; they are never exposed as persistent identity by themselves. Counts,
+location receives a new position. `TopLoc_Location::IsEqual` defines location equality by the same
+elementary datum sequence and powers, with no numeric tolerance. `TopLoc_Location::IsIdentity`
+selects only the exact identity location. Element-map names bind to these producer positions. The
+decoder carries that source position with each transferred neutral occurrence. It does not derive
+the position from neutral arena order. These transient positions are connected to persistent names
+and to placed neutral occurrences; they are never exposed as persistent identity by themselves. Counts,
 indices, dictionary references, string references, property ownership, and neutral topology links
 are validated without synthesizing missing names.
 A repeated use of one OCCT shape identity at one composed location, including a reversed use,
 occupies the first indexed position. A distinct copied shape at that location and a shape at a
 different location occupy separate indexed positions. A nested compound root therefore occupies
 one `Compound` position; its nested and later sibling compounds are not visited for that map.
+
+CADIR decision: neutral occurrence keys, topology labels, and located curve or surface identities
+use the exact components of the fully composed transform. Any nonzero component difference keeps
+the identities separate, including a difference below `1.0e-12`. Identity elision occurs only for
+an exact identity transform. This preserves source-distinct placements when the text carrier has
+already composed a location chain.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

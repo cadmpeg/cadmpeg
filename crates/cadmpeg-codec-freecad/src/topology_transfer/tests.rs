@@ -6,13 +6,13 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
+fn neutral_identity_keys_preserve_exact_composed_locations() {
     let mut positive = Transform::identity();
     positive.rows[0][3] = 0.5e-12;
     let mut negative = Transform::identity();
     negative.rows[0][3] = -0.5e-12;
 
-    assert_eq!(
+    assert_ne!(
         OccurrenceKey::new(7, positive),
         OccurrenceKey::new(7, negative)
     );
@@ -31,7 +31,7 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
     let mut direct = Transform::identity();
     direct.rows[0][3] = 258.75;
 
-    assert_eq!(
+    assert_ne!(
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
     );
@@ -45,6 +45,9 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
     );
+
+    assert!(is_identity(Transform::identity()));
+    assert!(!is_identity(positive));
 }
 
 #[test]
@@ -448,6 +451,76 @@ Fa
         PcurveGeometry::Line { origin, .. } => assert_eq!(origin.v, 0.0),
         geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
     }
+}
+
+#[test]
+fn nearby_composed_locations_remain_distinct_in_neutral_transfer() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000002000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000004000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+Curve2ds 0
+Curves 1
+1 0.00000000000000000 0.00000000000000000 0.00000000000000000 1.00000000000000000 0.00000000000000000 0.00000000000000000
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 4
+Ve
+0.000000100000000
+0.000000000000000 0.000000000000000 0.000000000000000
+0 0
+
+0101101
+*
+Ve
+0.000000100000000
+1.000000000000000 0.000000000000000 0.000000000000000
+0 0
+
+0101101
+*
+Ed
+ 0.000000100000000 1 1 0
+1  1 0 0.000000000000000 1.000000000000000
+0
+
+0101000
++4 0 -3 0 *
+Co
+
+1100000
++2 2 +2 3 *
+
++1 1";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("nearby location transfer");
+    let model = &result.ir().model;
+    assert_eq!(model.edges.len(), 2);
+    assert_eq!(model.points.len(), 4);
+    assert_eq!(model.vertices.len(), 4);
+    assert_eq!(model.curves.len(), 3);
+    assert_eq!(model.regions.len(), 2);
+    assert_eq!(model.shells.len(), 2);
+    assert_ne!(model.edges[0].id, model.edges[1].id);
+    assert_ne!(model.regions[0].id, model.regions[1].id);
 }
 
 #[test]

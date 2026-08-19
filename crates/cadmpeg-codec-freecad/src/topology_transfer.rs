@@ -157,7 +157,7 @@ struct SourceOccurrenceKey(String);
 
 impl SourceOccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
-        Self(format!("{}@{}", shape, exact_transform_digest(transform)))
+        Self(format!("{}@{}", shape, transform_digest(transform)))
     }
 }
 
@@ -1610,43 +1610,20 @@ fn indexed_name(kind: TextShapeKind) -> &'static str {
 }
 
 fn transform_digest(transform: Transform) -> String {
+    // TopLoc_Location equality is exact; neutral identities must not merge
+    // source-distinct placements at a decoder tolerance boundary.
     let mut bytes = Vec::with_capacity(16 * 8);
     for row in transform.rows {
         for value in row {
-            // TopLoc locations can encode the same placement through different
-            // factor chains. Matrix composition then leaves sub-picometre
-            // roundoff even though OCCT treats the occurrences as identical.
-            // Canonicalize with one decimal digit of margin around the codec's
-            // transform-equivalence tolerance so shared topology receives one
-            // occurrence identity even when roundoff crosses zero.
-            let rounded = (value * 1.0e11).round() / 1.0e11;
-            let canonical = if rounded == 0.0 { 0.0 } else { rounded };
+            let canonical = if value == 0.0 { 0.0 } else { value };
             bytes.extend_from_slice(&canonical.to_bits().to_le_bytes());
         }
     }
     sha256_hex(&bytes)[..16].to_owned()
 }
 
-fn exact_transform_digest(transform: Transform) -> String {
-    let mut bytes = Vec::with_capacity(16 * 8);
-    for row in transform.rows {
-        for value in row {
-            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
-        }
-    }
-    sha256_hex(&bytes)[..16].to_owned()
-}
-
 fn is_identity(transform: Transform) -> bool {
-    transforms_equal(transform, Transform::identity())
-}
-
-fn transforms_equal(left: Transform, right: Transform) -> bool {
-    left.rows
-        .into_iter()
-        .flatten()
-        .zip(right.rows.into_iter().flatten())
-        .all(|(left, right)| left.to_bits() == right.to_bits() || (left - right).abs() <= 1.0e-12)
+    exact_transforms_equal(transform, Transform::identity())
 }
 
 fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
@@ -1654,7 +1631,7 @@ fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
         .into_iter()
         .flatten()
         .zip(right.rows.into_iter().flatten())
-        .all(|(left, right)| left.to_bits() == right.to_bits())
+        .all(|(left, right)| left == right)
 }
 
 fn is_reversed(orientation: TextOrientation) -> bool {
