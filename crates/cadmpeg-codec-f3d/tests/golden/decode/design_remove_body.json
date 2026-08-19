@@ -479,7 +479,14 @@
                   "form_offset": 3350
                 }
               ],
-              "scope_record_index": 1400
+              "scope_record_index": 1400,
+              "selector_tail": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "selector_tail_offset": 3525
             }
           ],
           "design_canvas_images": [],

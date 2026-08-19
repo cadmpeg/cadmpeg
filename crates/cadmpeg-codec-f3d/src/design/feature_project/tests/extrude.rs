@@ -777,6 +777,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,

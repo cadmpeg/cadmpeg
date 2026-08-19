@@ -592,6 +592,8 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![reference(&[
             "f3d:brep/current/face#1",
             "f3d:brep/external/face#1",
@@ -709,6 +711,8 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![crate::records::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
@@ -914,6 +918,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![crate::records::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,

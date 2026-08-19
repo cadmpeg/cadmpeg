@@ -2951,9 +2951,18 @@ fn parse_body_recipe_operand_frame(
     let asset_id_at = cursor.checked_add(15)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
-    let selector_tail = bytes.get(after_context_id + 4..after_context_id + 8)?;
-    let selector_tail_is_valid =
-        selector_tail == [0; 4] || (header.class_tag == "367" && selector_tail == [1, 0, 0, 0]);
+    let selector_tail_at = after_context_id.checked_add(4)?;
+    let selector_tail: [u8; 4] = bytes
+        .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
+        .try_into()
+        .ok()?;
+    let selector_tail_is_valid = match header.class_tag.as_str() {
+        // The class-365 member is a four-byte generation-dependent value.
+        // Retain it until DR-24 identifies its neutral meaning.
+        "365" => true,
+        "367" => selector_tail == [1, 0, 0, 0],
+        _ => selector_tail == [0; 4],
+    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
@@ -2973,6 +2982,8 @@ fn parse_body_recipe_operand_frame(
         asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+        selector_tail: Some(selector_tail),
+        selector_tail_offset: Some(u64::try_from(selector_tail_at).ok()?),
         references,
         nested_record_index,
         nested_record_index_offset: u64::try_from(cursor + 1).ok()?,

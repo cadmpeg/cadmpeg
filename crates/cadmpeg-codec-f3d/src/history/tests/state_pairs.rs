@@ -176,6 +176,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         asset_id_offset: 0,
         context_id: String::new(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![DesignBodyRecipeReference {
             design_reference: 1,
             design_reference_offset: 0,

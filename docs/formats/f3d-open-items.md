@@ -109,7 +109,7 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Question.** What do the class-365 whole-body operand fields after the asset UUID and the context UUID hold? This question excludes the bounded nested-record join and the body-recipe join.
 
-**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four zero bytes, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. The four bytes after it are not always zero, and the u32 after those takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the reference count, the ordered `(Design reference, form)` pairs, the asset UUID, the context UUID, the `u32 2`, the four-byte selector-tail member, the paired header, and the nested indexed headers. The `u32 2` is a literal that never varies. Class `365` permits a nonzero selector-tail value; class `367` stores `01 00 00 00`. The selector-tail bytes and their offset are retained in the native operand. The u32 after those bytes takes a broad range of small values. The `0x01`-tagged value before the two UUIDs is a reference whose target is the containing entity plus three, so the two zero bytes after it are that reference's flags.
 
 **Need.** We must know what the two variable u32 select to write a complete class-365 member.
 

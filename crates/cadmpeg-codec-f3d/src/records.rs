@@ -4093,6 +4093,15 @@ pub struct DesignBodyRecipeOperand {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
+    /// Raw four-byte selector-tail member after the fixed `u32 2`.
+    ///
+    /// Class `365` varies this member without a settled neutral meaning;
+    /// class `367` stores `01 00 00 00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selector_tail: Option<[u8; 4]>,
+    /// Byte offset of the raw selector-tail member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selector_tail_offset: Option<u64>,
     /// Counted persistent Design references carried by this operand.
     pub references: Vec<DesignBodyRecipeReference>,
     /// Tagged nested record reference following the Design reference.

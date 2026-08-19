@@ -6004,6 +6004,14 @@ fn validate_body_recipe_operands<'a>(
             && operand.asset_id_offset == nested_record_index_offset.saturating_add(18)
             && operand.context_id_offset > operand.asset_id_offset
             && operand.context_id_offset < operand.next_byte_offset
+            && match (operand.selector_tail, operand.selector_tail_offset) {
+                (None, None) => true,
+                (Some(_), Some(offset)) => {
+                    offset >= operand.context_id_offset
+                        && offset.saturating_add(4) <= operand.next_byte_offset
+                }
+                _ => false,
+            }
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && recipe.is_some_and(|recipe| {

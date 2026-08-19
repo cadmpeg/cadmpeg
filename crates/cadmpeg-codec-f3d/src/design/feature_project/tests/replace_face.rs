@@ -82,6 +82,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![DesignBodyRecipeReference {
             design_reference: 326,
             design_reference_offset: 0,

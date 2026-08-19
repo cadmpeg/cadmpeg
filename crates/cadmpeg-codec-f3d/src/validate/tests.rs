@@ -261,6 +261,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
             context_id: "22222222-2222-4222-8222-222222222222".into(),
             context_id_offset: byte_offset + if empty_legacy_tool { 124 } else { 136 },
+            selector_tail: None,
+            selector_tail_offset: None,
             references: if empty_legacy_tool {
                 Vec::new()
             } else {

@@ -72,7 +72,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
     lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
     bytes.extend_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&[7, 0, 0, 0]);
     header(&mut bytes, *b"259", 100);
     header(&mut bytes, *b"283", 101);
     header(&mut bytes, *b"463", 102);
@@ -105,6 +105,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(operand.references[0].form, 3);
     assert_eq!(operand.references[1].design_reference, 2266);
     assert_eq!(operand.references[1].form, 32);
+    assert_eq!(operand.selector_tail, Some([7, 0, 0, 0]));
+    assert_eq!(operand.selector_tail_offset, Some(220));
     assert_eq!(
         operand.owner,
         crate::records::DesignBodyRecipeOperandOwner::Group {
@@ -323,6 +325,8 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     assert_eq!(operand.references.len(), 1);
     assert_eq!(operand.references[0].design_reference, 301);
     assert_eq!(operand.references[0].form, 33);
+    assert_eq!(operand.selector_tail, Some([1, 0, 0, 0]));
+    assert_eq!(operand.selector_tail_offset, Some(208));
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.next_byte_offset, next_at as u64);
 }

@@ -34,12 +34,12 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 153
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1927
+test_line_debt = 1929
 production_line_debt = 51
 
 [reasons]
 from_endian_bytes = "widened glob from cadmpeg-codec-*/src to crates/**/src so the counter matches the unscoped from_le_bytes/from_be_bytes rule; honest end state is not zero (View/le/be and documented exceptions)"
 nonliteral_vec_repeat = "history-bound scope-variant admission allocates one admission flag per scope; the count it needs is the scope population, so the repeat count cannot be a literal"
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit, the legacy WorkPlane grammar adds focused fixtures to the existing fixed-kind suite, and the TextFrame projection admission rule adds an owner-level regression fixture"
+test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit, the legacy WorkPlane grammar adds focused fixtures to the existing fixed-kind suite, the TextFrame projection admission rule adds an owner-level regression fixture, and DR-24 retains two selector-tail fields in the already-over-limit body-recipe selection fixture"
 production_line_debt = "admitted the legacy class-256 WorkPlane placement grammar and the class-337/266 plus class-341/261 and class-346/262 opaque-prefix variants in the owning scope parser; the fixed class-pair, frame-length, and zero-lane checks are required for safe legacy support"
