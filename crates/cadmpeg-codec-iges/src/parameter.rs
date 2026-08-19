@@ -466,6 +466,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token 9.
 /// Type 156 Form 0 has nine fixed primary fields, so its groups start at
 /// token 10.
+/// Type 158 Form 0 has four fixed primary fields, so its groups start at
+/// token 5.
 /// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
 /// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
@@ -521,6 +523,7 @@ pub(crate) fn entity_primary_end(
         (152, 0) => Some(fixed_primary_end(record, 14)),
         (154, 0) => Some(fixed_primary_end(record, 9)),
         (156, 0) => Some(fixed_primary_end(record, 10)),
+        (158, 0) => Some(fixed_primary_end(record, 5)),
         (312, 0..=1) => Some(fixed_primary_end(record, 11)),
         (314, 0) => Some(fixed_primary_end(record, 5)),
         (304, 1) => Some(fixed_primary_end(record, 5)),
