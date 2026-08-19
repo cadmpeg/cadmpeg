@@ -15,27 +15,6 @@ Each item has an identifier and these fields:
 
 ## 4. Exact-topology transfer
 
-### XT-01. Edge endpoint child selection
-
-**Question.** What child-use cardinality and orientation grammar does a producer-valid degenerate
-edge use, and which malformed endpoint forms are invalid?
-
-**Known.** Exact-shape records retain ordered and oriented topology children. Normal and closed
-edges use one `Forward` and one `Reversed` endpoint use, and a degenerate edge can reuse one vertex
-identity in those orientations. `topology_transfer.rs:1677-1707` rejects duplicate orientations
-and requires both endpoint directions.
-
-**Need.** Establish the valid degenerate form and the malformed duplicate, missing, and extra
-endpoint forms from the producer or OCCT writer. Apply the rule to every valid form and retain an
-attributable refusal for invalid forms.
-
-**Conflict.** The rejection in `edge_endpoint_uses` is a decoder policy. The closure evidence
-establishes one valid degenerate witness but does not establish that every duplicate, missing, or
-extra orientation is producer-invalid. A legal edge form outside the two-orientation subset is
-therefore refused without a source-backed loss or compatibility rule.
-
-**Note.** Reopened. The valid case is narrower than the original cardinality question.
-
 ### XT-04. P-curve composed-location equality
 
 **Question.** What equality rule selects a p-curve representation when its surface matches but

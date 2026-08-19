@@ -253,6 +253,11 @@ fn endpoint_selection_requires_unique_oriented_direct_children() {
             orientation: TextOrientation::Reversed,
             location: 0,
         },
+        TextShapeUse {
+            shape: 5,
+            orientation: TextOrientation::External,
+            location: 0,
+        },
     ];
     let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
     assert_eq!(start.shape, 1);

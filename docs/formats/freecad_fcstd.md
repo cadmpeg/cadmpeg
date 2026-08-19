@@ -305,6 +305,9 @@ can use the same vertex identity in those two oriented uses. A degenerated edge 
 without an exact 3D curve representation. `Internal` and `External` child uses are additional
 non-endpoint uses and do not supply endpoint incidence. A second `Forward` or `Reversed` use, or
 the absence of either required orientation, is malformed.
+CADIR decision: endpoint incidence admits only one `Forward` and one `Reversed` use; it ignores
+`Internal` and `External` uses for endpoint selection and refuses duplicate or missing endpoint
+orientations.
 
 Edge geometry access follows serialized representation order. Repeated 3D-curve representations
 are equivalent only when their referenced curve records, composed carrier locations, and parameter
