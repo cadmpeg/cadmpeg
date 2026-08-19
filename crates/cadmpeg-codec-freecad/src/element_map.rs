@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent string-table and element-map recovery.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
@@ -17,6 +17,23 @@ const MAX_MAP_NODES: usize = 1_000_000;
 const MAX_GROUPS: usize = 1_000_000;
 const MAX_NAMES: usize = 10_000_000;
 
+struct LegacyElementRecord {
+    indexed_name: String,
+    mapped_name: String,
+    string_ids: Vec<i64>,
+}
+
+struct MapPayload {
+    source_entry: Option<String>,
+    declared_count: usize,
+    parsed: ParsedMap,
+}
+
+enum ElementMapCarrier<'a, 'input> {
+    New(roxmltree::Node<'a, 'input>),
+    Legacy(roxmltree::Node<'a, 'input>),
+}
+
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
     document: &[u8],
@@ -27,6 +44,12 @@ pub(crate) fn parse(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
+    let file_version = xml
+        .root_element()
+        .attribute("FileVersion")
+        .map(|value| parse_usize(value, "FileVersion"))
+        .transpose()?
+        .unwrap_or(0);
     let string_hasher_nodes = xml
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
@@ -96,7 +119,7 @@ pub(crate) fn parse(
                 property.id
             ))
         })?;
-        let Some((part, map_node)) = direct_element_map(property_xml.root_element())? else {
+        let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
             continue;
         };
         let version = part.attribute("ElementMap").unwrap_or("").to_owned();
@@ -104,34 +127,55 @@ pub(crate) fn parse(
             .attribute("HasherIndex")
             .map(|value| parse_usize(value, "HasherIndex"))
             .transpose()?;
-        let declared_count = map_node
-            .attribute("count")
-            .map(|count| parse_usize(count, "ElementMap count"))
-            .transpose()?;
-        let source_entry = map_node.attribute("file").filter(|name| !name.is_empty());
-        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
-        let bytes = if let Some(name) = source_entry {
-            *entry_data.get(name).ok_or_else(|| {
-                CodecError::Malformed(format!("ElementMap references missing entry {name}"))
-            })?
-        } else {
-            inline_bytes.as_deref().unwrap_or_default()
+        let payload = match carrier {
+            ElementMapCarrier::New(map_node) => {
+                let declared_count = map_node
+                    .attribute("count")
+                    .map(|count| parse_usize(count, "ElementMap2 count"))
+                    .transpose()?;
+                let source_entry = map_node
+                    .attribute("file")
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned);
+                let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
+                let bytes = if let Some(name) = source_entry.as_deref() {
+                    *entry_data.get(name).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "ElementMap2 references missing entry {name}"
+                        ))
+                    })?
+                } else {
+                    inline_bytes.as_deref().unwrap_or_default()
+                };
+                let parsed = parse_element_map(bytes, source_entry.is_some())?;
+                let declared_count = match declared_count {
+                    Some(count) => count,
+                    None => mapped_name_count(&parsed),
+                };
+                Some(MapPayload {
+                    source_entry,
+                    declared_count,
+                    parsed,
+                })
+            }
+            ElementMapCarrier::Legacy(marker) => {
+                parse_legacy_element_map(marker, file_version, &entry_data)?
+            }
         };
-        let parsed = parse_element_map(bytes, source_entry.is_some())?;
-        let actual_count = parsed
-            .maps
-            .iter()
-            .flat_map(|node| &node.groups)
-            .flat_map(|group| &group.names)
-            .flat_map(|chain| chain.iter())
-            .count();
-        let declared_count = declared_count.unwrap_or(actual_count);
+        let Some(payload) = payload else {
+            continue;
+        };
+        let MapPayload {
+            source_entry,
+            declared_count,
+            parsed,
+        } = payload;
         maps.push(ElementMapRecord {
             id: crate::native::native_child_id("element-map", &property.id, "map"),
             property: property.id.clone(),
             version,
             hasher_index,
-            source_entry: source_entry.map(str::to_owned),
+            source_entry,
             map_id: parsed.map_id,
             declared_count,
             postfixes: parsed.postfixes,
@@ -309,7 +353,7 @@ fn is_shape_property(node: roxmltree::Node<'_, '_>) -> bool {
 
 fn direct_element_map<'a, 'input>(
     root: roxmltree::Node<'a, 'input>,
-) -> Result<Option<(roxmltree::Node<'a, 'input>, roxmltree::Node<'a, 'input>)>, CodecError> {
+) -> Result<Option<(roxmltree::Node<'a, 'input>, ElementMapCarrier<'a, 'input>)>, CodecError> {
     let children = root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -372,7 +416,10 @@ fn direct_element_map<'a, 'input>(
                 "new ElementMap marker has no direct ElementMap2 successor".into(),
             ));
         }
-        return Ok(None);
+        return Ok(Some((
+            children[part_index],
+            ElementMapCarrier::Legacy(marker),
+        )));
     };
     if !is_new {
         return Err(CodecError::Malformed(
@@ -384,7 +431,298 @@ fn direct_element_map<'a, 'input>(
             "ElementMap2 is not the direct successor of ElementMap".into(),
         ));
     }
-    Ok(Some((children[part_index], children[map_index])))
+    Ok(Some((
+        children[part_index],
+        ElementMapCarrier::New(children[map_index]),
+    )))
+}
+
+fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
+    let root = parsed
+        .maps
+        .last()
+        .ok_or_else(|| CodecError::Malformed("element map has no root node".into()))?;
+    let mapped_name_count = root
+        .groups
+        .iter()
+        .flat_map(|group| &group.names)
+        .map(Vec::len)
+        .sum::<usize>();
+    let child_element_count = root
+        .groups
+        .iter()
+        .flat_map(|group| &group.children)
+        .map(|child| {
+            let count = child.split_ascii_whitespace().nth(2).ok_or_else(|| {
+                CodecError::Malformed("element-map child descriptor has no count".into())
+            })?;
+            parse_usize(count, "element-map child count")
+        })
+        .try_fold(0_usize, |total, count| {
+            total
+                .checked_add(count?)
+                .ok_or_else(|| CodecError::Malformed("element-map size overflows".into()))
+        })?;
+    mapped_name_count
+        .checked_add(child_element_count)
+        .ok_or_else(|| CodecError::Malformed("element-map size overflows".into()))
+}
+
+fn mapped_name_count(parsed: &ParsedMap) -> usize {
+    parsed
+        .maps
+        .iter()
+        .flat_map(|node| &node.groups)
+        .flat_map(|group| &group.names)
+        .flat_map(|chain| chain.iter())
+        .count()
+}
+
+fn parse_legacy_element_map(
+    marker: roxmltree::Node<'_, '_>,
+    file_version: usize,
+    entry_data: &HashMap<&str, &[u8]>,
+) -> Result<Option<MapPayload>, CodecError> {
+    let source_entry = marker
+        .attribute("file")
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned);
+    if let Some(name) = source_entry.as_deref() {
+        let bytes = *entry_data.get(name).ok_or_else(|| {
+            CodecError::Malformed("legacy ElementMap references missing entry".into())
+        })?;
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| CodecError::Malformed("legacy element map is not UTF-8".into()))?;
+        let mut header = text.split_ascii_whitespace();
+        let first = header.next().unwrap_or_default();
+        if first == "BeginElementMap" && header.next() == Some("v1") {
+            let parsed = parse_element_map(bytes, true)?;
+            let declared_count = match marker.attribute("count") {
+                Some(count) => parse_usize(count, "ElementMap count")?,
+                None => element_map_size(&parsed)?,
+            };
+            return Ok(Some(MapPayload {
+                source_entry,
+                declared_count,
+                parsed,
+            }));
+        }
+        let (declared_count, records) = parse_legacy_stream(bytes, None)?;
+        return Ok(Some(legacy_map_payload(
+            records,
+            declared_count,
+            source_entry,
+        )?));
+    }
+
+    let declared_count = parse_count(marker, "ElementMap")?;
+    if declared_count == 0 {
+        return Ok(None);
+    }
+    let records = if file_version > 1 {
+        let bytes = node_text_bytes(marker);
+        parse_legacy_stream(&bytes, Some(declared_count))?.1
+    } else {
+        parse_legacy_elements(marker, declared_count)?
+    };
+    Ok(Some(legacy_map_payload(
+        records,
+        declared_count,
+        source_entry,
+    )?))
+}
+
+fn parse_legacy_stream(
+    bytes: &[u8],
+    expected_count: Option<usize>,
+) -> Result<(usize, Vec<LegacyElementRecord>), CodecError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("legacy element map is not UTF-8".into()))?;
+    let mut tokens = text.split_ascii_whitespace();
+    let count = expected_count.map_or_else(
+        || {
+            parse_usize(
+                next_token(&mut tokens, "element-map record count")?,
+                "element-map record count",
+            )
+        },
+        Ok,
+    )?;
+    let records = parse_legacy_records(&mut tokens, count)?;
+    if tokens.next().is_some() {
+        return Err(CodecError::Malformed(
+            "legacy element map has trailing data".into(),
+        ));
+    }
+    Ok((count, records))
+}
+
+fn parse_legacy_records<'a>(
+    tokens: &mut impl Iterator<Item = &'a str>,
+    count: usize,
+) -> Result<Vec<LegacyElementRecord>, CodecError> {
+    if count > MAX_NAMES {
+        return Err(CodecError::Malformed(
+            "legacy element-map record count exceeds limit".into(),
+        ));
+    }
+    let mut records = Vec::with_capacity(count);
+    for _ in 0..count {
+        let indexed_name = next_token(tokens, "legacy element indexed name")?.to_owned();
+        let mapped_name = next_token(tokens, "legacy mapped name")?.to_owned();
+        let sid_count = parse_usize(
+            next_token(tokens, "legacy string-id count")?,
+            "legacy string-id count",
+        )?;
+        if sid_count > MAX_NAMES {
+            return Err(CodecError::Malformed(
+                "legacy string-id count exceeds limit".into(),
+            ));
+        }
+        let mut string_ids = Vec::with_capacity(sid_count);
+        for _ in 0..sid_count {
+            string_ids.push(
+                next_token(tokens, "legacy string id")?
+                    .parse::<i64>()
+                    .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))?,
+            );
+        }
+        records.push(LegacyElementRecord {
+            indexed_name,
+            mapped_name,
+            string_ids,
+        });
+    }
+    Ok(records)
+}
+
+fn parse_legacy_elements(
+    marker: roxmltree::Node<'_, '_>,
+    count: usize,
+) -> Result<Vec<LegacyElementRecord>, CodecError> {
+    let elements = marker
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if elements.len() != count
+        || elements
+            .iter()
+            .any(|element| !element.has_tag_name("Element"))
+    {
+        return Err(CodecError::Malformed(
+            "legacy ElementMap count does not match direct Element children".into(),
+        ));
+    }
+    elements
+        .into_iter()
+        .map(|element| {
+            let indexed_name = element
+                .attribute("value")
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no value".into()))?
+                .to_owned();
+            let mapped_name = element
+                .attribute("key")
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no key".into()))?
+                .to_owned();
+            let string_ids = element
+                .attribute("sid")
+                .map(parse_legacy_string_ids)
+                .transpose()?
+                .unwrap_or_default();
+            Ok(LegacyElementRecord {
+                indexed_name,
+                mapped_name,
+                string_ids,
+            })
+        })
+        .collect()
+}
+
+fn parse_legacy_string_ids(value: &str) -> Result<Vec<i64>, CodecError> {
+    value
+        .split(|character: char| !character.is_ascii_digit() && character != '-')
+        .filter(|token| !token.is_empty())
+        .map(|token| {
+            token
+                .parse::<i64>()
+                .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))
+        })
+        .filter(|id| id.as_ref().is_ok_and(|id| *id != 0))
+        .collect()
+}
+
+fn legacy_map_payload(
+    records: Vec<LegacyElementRecord>,
+    declared_count: usize,
+    source_entry: Option<String>,
+) -> Result<MapPayload, CodecError> {
+    let mut groups = BTreeMap::<String, Vec<Vec<ElementMappedName>>>::new();
+    for record in records {
+        let (indexed_name, index) = split_indexed_name(&record.indexed_name)?;
+        let names = groups.entry(indexed_name).or_default();
+        if names.len() <= index {
+            names.resize_with(index + 1, Vec::new);
+        }
+        names[index].push(ElementMappedName {
+            encoded: record.mapped_name.clone(),
+            resolved: Some(record.mapped_name),
+            string_ids: record.string_ids,
+            topology_ids: Vec::new(),
+        });
+    }
+    let parsed = ParsedMap {
+        map_id: 0,
+        postfixes: Vec::new(),
+        maps: vec![ElementMapNode {
+            index: 1,
+            map_id: 0,
+            groups: groups
+                .into_iter()
+                .map(|(indexed_name, names)| ElementMapGroup {
+                    indexed_name,
+                    children: Vec::new(),
+                    names,
+                })
+                .collect(),
+        }],
+    };
+    Ok(MapPayload {
+        source_entry,
+        declared_count,
+        parsed,
+    })
+}
+
+fn split_indexed_name(value: &str) -> Result<(String, usize), CodecError> {
+    if value.is_empty() {
+        return Err(CodecError::Malformed("legacy indexed name is empty".into()));
+    }
+    let suffix_start = value
+        .as_bytes()
+        .iter()
+        .rposition(|character| !character.is_ascii_digit())
+        .map_or(0, |position| position + 1);
+    let (type_name, suffix) = value.split_at(suffix_start);
+    if type_name.is_empty()
+        || !type_name
+            .bytes()
+            .all(|character| character.is_ascii_alphabetic() || character == b'_')
+    {
+        return Err(CodecError::Malformed("invalid legacy indexed name".into()));
+    }
+    let index = if suffix.is_empty() {
+        0
+    } else {
+        suffix
+            .parse::<usize>()
+            .map_err(|_| CodecError::Malformed("invalid legacy indexed-name index".into()))?
+    };
+    if index > MAX_NAMES {
+        return Err(CodecError::Malformed(
+            "legacy indexed-name index exceeds limit".into(),
+        ));
+    }
+    Ok((type_name.to_owned(), index))
 }
 
 fn string_hasher_successor<'a, 'input>(
@@ -983,6 +1321,146 @@ mod tests {
         )
         .expect("parse absolute element map");
         assert_eq!(map.map_id, 1);
+    }
+
+    fn legacy_entry(name: &str, data: &[u8]) -> EntryRecord {
+        EntryRecord {
+            id: name.into(),
+            name: name.into(),
+            role: "element-map".into(),
+            byte_len: data.len() as u64,
+            sha256: String::new(),
+            referenced_by: Vec::new(),
+            data: data.to_vec(),
+        }
+    }
+
+    #[test]
+    fn admits_legacy_direct_element_carrier() {
+        let property = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap count="3">
+<Element key="FaceStable" value="Face1"/>
+<Element key="EdgeStable" value="Edge1"/>
+<Element key="VertexStable" value="Vertex1"/>
+</ElementMap></Property>"#,
+        );
+        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, &[property], &[])
+            .expect("legacy direct element map");
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps[0].declared_count, 3);
+        assert_eq!(maps[0].source_entry, None);
+        assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
+        assert_eq!(
+            maps[0].maps[0].groups[0].names[1][0].resolved.as_deref(),
+            Some("EdgeStable")
+        );
+        assert_eq!(
+            maps[0].maps[0].groups[1].names[1][0].resolved.as_deref(),
+            Some("FaceStable")
+        );
+    }
+
+    #[test]
+    fn admits_legacy_inline_stream_carrier() {
+        let property = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap count="2">
+Face1 FaceStable 0
+Edge1 EdgeStable 1 7
+</ElementMap></Property>"#,
+        );
+        let (_, maps) = parse(br#"<Document FileVersion="2"/>"#, &[property], &[])
+            .expect("legacy inline element map");
+        assert_eq!(maps[0].declared_count, 2);
+        let edge = &maps[0].maps[0].groups[0].names[1][0];
+        assert_eq!(edge.resolved.as_deref(), Some("EdgeStable"));
+        assert_eq!(edge.string_ids, [7]);
+    }
+
+    #[test]
+    fn admits_legacy_side_entry_record_stream() {
+        let data = b"2\nFace1 FaceStable 0\nEdge1 EdgeStable 1 7\n";
+        let property = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
+        );
+        let (_, maps) = parse(
+            br#"<Document FileVersion="1"/>"#,
+            &[property],
+            &[legacy_entry("Shape.Map.txt", data)],
+        )
+        .expect("legacy side-entry record stream");
+        assert_eq!(maps[0].declared_count, 2);
+        assert_eq!(maps[0].source_entry.as_deref(), Some("Shape.Map.txt"));
+        assert_eq!(maps[0].maps[0].groups[0].indexed_name, "Edge");
+        assert_eq!(maps[0].maps[0].groups[0].names[1][0].string_ids, [7]);
+    }
+
+    #[test]
+    fn admits_legacy_side_entry_v1_map_stream() {
+        let data = b"BeginElementMap v1\n\
+1 PostfixCount 0\n\
+MapCount 1\n\
+ElementMap 1 1 1\n\
+Face\n\
+ChildCount 1\n\
+1 0 3 0 0 0 0\n\
+NameCount 0\n\
+EndMap\n";
+        let property = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
+        );
+        let (_, maps) = parse(
+            br#"<Document FileVersion="1"/>"#,
+            &[property],
+            &[legacy_entry("Shape.Map.txt", data)],
+        )
+        .expect("legacy v1 side-entry map");
+        assert_eq!(maps[0].declared_count, 3);
+        assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
+    }
+
+    #[test]
+    fn treats_legacy_empty_marker_as_no_map() {
+        let property = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap/></Property>"#,
+        );
+        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, &[property], &[])
+            .expect("legacy empty element map");
+        assert!(maps.is_empty());
+    }
+
+    #[test]
+    fn rejects_legacy_element_count_and_side_entry_errors() {
+        let direct = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part/><ElementMap count="2"><Element key="Face" value="Face1"/></ElementMap></Property>"#,
+        );
+        assert!(matches!(
+            parse(br#"<Document FileVersion="1"/>"#, &[direct], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let missing = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
+        );
+        assert!(matches!(
+            parse(br#"<Document FileVersion="1"/>"#, &[missing], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let trailing = test_property(
+            "Part::PropertyPartShape",
+            r#"<Property><Part/><ElementMap count="1">Face1 FaceStable 0 trailing</ElementMap></Property>"#,
+        );
+        assert!(matches!(
+            parse(br#"<Document FileVersion="2"/>"#, &[trailing], &[]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 
     #[test]

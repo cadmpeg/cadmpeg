@@ -706,7 +706,7 @@ pub struct ElementMapRecord {
     pub source_entry: Option<String>,
     /// Native map identity.
     pub map_id: u64,
-    /// Declared number of mapped transient elements.
+    /// Declared native element-map size, including mapped names and child spans.
     pub declared_count: usize,
     /// Ordered postfix dictionary.
     pub postfixes: Vec<String>,

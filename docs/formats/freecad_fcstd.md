@@ -199,10 +199,25 @@ that carrier from being read. An `ElementMap2` without an `ElementMap` marker is
 carrier: restore's marker search reaches the end of the XML and raises an XML parse error, and a
 subsequent save writes an empty marker without the map payload.
 
+A compatibility `ElementMap` marker without `new` is itself the legacy carrier. If it has a
+non-empty `file` attribute, that side entry is consumed before the marker `count`: a
+`BeginElementMap v1` header selects the element-map stream described below; otherwise the side
+entry begins with a decimal record count and carries that many records of indexed name, mapped
+name, decimal string-id count, and decimal string ids. Without `file`, `count="0"` is empty. A
+positive count in a document with `FileVersion` above one carries the same records inline as
+whitespace-delimited text; a positive count in an older document carries exactly that many direct
+`Element` children, with `value` as the indexed name, `key` as the mapped name, and optional
+decimal `sid` values. The indexed-name type is ASCII letters or underscore followed by an optional
+decimal index. A legacy record occupies that type's indexed position; empty positions remain in
+the group. The side-entry v1 map retains child-map descriptors and persistent-name chains; its
+root size is the sum of root mapped names and root child spans.
+
 CADIR decision: neutral element-map admission requires one direct `Part`, one direct
 `ElementMap new="1"` marker after it, and that marker's immediate direct `ElementMap2` successor.
-Nested, duplicate, missing, or non-successor carriers are decode refusals and do not assign
-persistent names to neutral topology. Multiple exact-shape properties emit independent `Part` and
+Nested, duplicate, missing, or non-successor new-layout carriers are decode refusals and do not
+assign persistent names to neutral topology. A direct marker without `new` is admitted as the
+legacy carrier described above; its side entry, inline records, or direct `Element` children form
+one map owned by that property. Multiple exact-shape properties emit independent `Part` and
 element-map carriers and independent side-entry requests; no carrier is shared across properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.

@@ -13,32 +13,6 @@ Each item has an identifier and these fields:
 
 ## 3. Persistent topology identity
 
-### PT-07. Legacy element-map carrier admission
-
-**Question.** Which carrier supplies a non-empty element map when the compatibility marker has no
-`new` attribute?
-
-**Known.** FreeCAD `ComplexGeoData::Restore` reads one `ElementMap` element and moves to
-`ElementMap2` only when that marker has `new`. It then reads the `file` and `count` attributes of
-the element it stands on. A non-empty `file` names the side entry that holds the map, and a `count`
-of zero is the only empty map. With a `count` above zero and no `new`, the marker itself carries the
-map, as an inline stream for file version above one and as direct `Element` children otherwise.
-`ComplexGeoData::Save` in the current producer writes only the `new` form. `element_map.rs:373-378`
-gives no map when the marker has no `new` and no `ElementMap2` follows it. The symmetric legacy
-string-table carrier is admitted at `element_map.rs:47-51`, and the specification records that
-legacy string-table rule while it records the opposite rule for the element map.
-
-**Need.** Admit the legacy marker as a map carrier for its side-entry, inline-stream, and `Element`
-child forms, or refuse the property with an explicit result. Give the producer version that first
-writes the `new` form.
-
-**Conflict.** A shape property whose marker is `ElementMap` with a `count` above zero and a `file`
-attribute supplies persistent element names in the producer and no element-map record in the
-decoder. The transfer then reports exact coverage with no finding and no loss, and per-face material
-and color binding is skipped for that shape because no `Face` group exists.
-
-**Note.** New hostile-sweep finding.
-
 ## 4. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
