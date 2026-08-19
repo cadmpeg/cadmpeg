@@ -277,18 +277,34 @@ Hole natively. `design.rs:4913` now uses the exact Bool selector, and the owner 
 `distinguishes_absent_and_malformed_hole_flags` covers absent, valid, wrong-runtime,
 integer-runtime, invalid-value, nested, and duplicate carriers.
 
+Part `Helix` and `Spiral` carrier semantics are settled. `PrimitiveFeature.h:317-364` declares
+`LocalCoord` and `Style` as `App::PropertyEnumeration` and `SegmentLength` as
+`App::PropertyQuantityConstraint`. `PrimitiveFeature.cpp:819-866,943-963` establishes their
+constructor defaults and enum values; `:907-927,994-1009` consumes handedness and subdivision;
+`TopoShape.cpp:2446-2465` maps an explicit zero subdivision length to the kernel limit. An absent
+Part `Helix` `LocalCoord`, `Style`, and `SegmentLength` restore as `0`, `0`, and `0`; an absent
+Part `Spiral` `SegmentLength` restores as `1`. `FeatureHelix.cpp:59-214` declares the PartDesign
+`Mode`, booleans, and tolerance carriers and their constructor defaults; `:463-485,539-610`
+consumes `Outside`, handedness, reversal, mode, growth, and angle. `FeatureSketchBased.cpp:106-126`
+and `PropertyContainer.cpp:343-378` establish the restore-time `AllowMultiFace` result. The
+producer witness `dp15_helix_carrier_witness.py`, its extracted direct carrier XML, and
+`dp15_helix_restore_probe.py` show the selected carriers and restore defaults. The rebuilt CLI
+checks of the default, selected, and absent witnesses report zero losses and zero findings.
+`design.rs` now requires the exact present carrier types, applies the restore defaults only when
+absent, and retains malformed operations natively. The owner test
+`distinguishes_absent_and_malformed_helix_carriers` covers all settled selectors and carriers.
+
 **Need.** Apply the same absence-versus-present validation to the remaining design operation
 flags. Trace each producer carrier and preserve its restore-time default only when the property is
-absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale, and
-`CosmeticThread` boolean flags are settled above. Helix, ShapeBinder, and the remaining pattern
-flags still need their own writer and restore evidence.
+absent. Pad, Pocket, Revolution, Groove, loft and sweep booleans, dress-up, Scale,
+`CosmeticThread` boolean flags, and helix carriers are settled above. ShapeBinder and the remaining
+pattern flags still need their own writer and restore evidence.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
-neutral semantics or discard a valid legacy default. The remaining helix, ShapeBinder, and pattern
-flags still require their own writer and restore evidence before the generic fallback sites can
-change.
+neutral semantics or discard a valid legacy default. ShapeBinder and the remaining pattern flags
+still require their own writer and restore evidence before the generic fallback sites can change.
 
 **Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
 `SideType`/`Type`/`Type2` and `Midplane`/`UseCustomVector`/`AlongSketchNormal`/`Reversed`/
@@ -298,8 +314,8 @@ and LinearPattern/PolarPattern `Mode` and active `Mode2` are covered by the spec
 exact-carrier decoder rule. Revolution and Groove boolean flags, loft and sweep boolean flags,
 dress-up `UseAllEdges` and
 `FlipDirection` including its old-version migration, Part Scale `Uniform`, Hole enumeration
-modes, Hole boolean flags, `BaseProfileType`, and the versioned `CosmeticThread` carrier are
-covered; the remaining helix, ShapeBinder, and pattern flags stay open.
+modes, Hole boolean flags, `BaseProfileType`, the versioned `CosmeticThread` carrier, and Part and
+PartDesign helix carriers are covered; ShapeBinder and the remaining pattern flags stay open.
 
 ### DP-16. Sketch placement rotation admission
 

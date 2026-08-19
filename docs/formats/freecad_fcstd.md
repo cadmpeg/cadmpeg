@@ -1485,10 +1485,31 @@ supplied that resolved plane remains attached for attribution and dependency rec
 source or zero-length normal leaves the operation attributable and native.
 
 Parametric Part helices retain radius, pitch, height-derived revolution count, handedness, conical
-angle, optional curve-subdivision length, and legacy-versus-corrected construction style. Planar
-Part spirals use the same neutral curve family with zero axial pitch and retain radius growth per
-revolution, total rotations, and subdivision length. Invalid dimensions or enumeration values
-leave the operation attributable and native.
+angle, curve subdivision, and construction style. `LocalCoord` and `Style` are
+`App::PropertyEnumeration` carriers with one direct `Integer`; index `0` means right-handed and
+legacy construction, and index `1` means left-handed and corrected construction. An absent
+`LocalCoord` or `Style` uses index `0`. `SegmentLength` is an
+`App::PropertyQuantityConstraint` carrier with one direct `Float`; an absent Part helix value is
+`0`, an absent Part spiral value is `1`, and an explicit zero means no subdivision. A positive
+value is the number of turns per subdivision. A present selector with another runtime type,
+without exactly one direct value, or with a non-integer or unsupported index leaves the operation
+attributable and native. A present subdivision carrier with another runtime type, an invalid
+number, or a negative value does the same. Planar Part spirals use the same neutral curve family
+with zero axial pitch and retain radius growth per revolution and total rotations. Invalid
+dimensions leave the operation attributable and native.
+
+PartDesign additive and subtractive helices retain their profile, resolved axis, independent
+pitch/height/turn/growth/angle law, handedness, reversal, tolerance, and multiple-profile-face
+policy. `Mode` is an `App::PropertyEnumeration` carrier with one direct `Integer`: indices `0`
+through `3` mean pitch-height-angle, pitch-turns-angle, height-turns-angle, and height-turns-growth.
+An absent `Mode` means index `0`. `LeftHanded`, `Reversed`, and `AllowMultiFace` are exact
+`App::PropertyBool` carriers with absent value `false`. `Tolerance` is an exact
+`App::PropertyFloatConstraint` carrier with one direct `Float`; its absent value is `0.1`.
+`SubtractiveHelix` carries `Outside` as an exact `App::PropertyBool` with absent value `false`;
+`false` selects subtraction and `true` selects intersection. Additive helices always select Join,
+and their hidden `Outside` property has no operation effect. A present selector with another
+runtime type, without exactly one direct value, or with an unsupported value leaves the helix
+attributable and native. An absent or unresolved profile also leaves it native.
 
 Part projection-on-surface operations retain the complete ordered source-subelement property, one
 support face, normalized projection direction, all-shapes, faces-only, or edges-only result mode,

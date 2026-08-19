@@ -35,6 +35,8 @@ use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
+const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
+const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
 
 pub(crate) fn transfer(
     ir: &mut CadIr,
@@ -1936,6 +1938,42 @@ fn bool_selector(properties: &[&PropertyRecord], name: &str, absent_default: boo
     direct_bool_value(property)
 }
 
+fn float_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: f64,
+) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyFloatConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
+fn quantity_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: f64,
+) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyQuantityConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
 fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
     if property.type_name != "App::PropertyBool" {
         return None;
@@ -3467,12 +3505,16 @@ fn parametric_helix_definition(
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
     let radius = scalar_named(properties, "Radius").filter(|value| *value > 0.0)?;
-    let segment_turns = if property(properties, "SegmentLength").is_some() {
-        let value = scalar_named(properties, "SegmentLength").filter(|value| *value >= 0.0)?;
-        (value > 0.0).then_some(value)
+    let segment_default = if kind == "Part::Spiral" {
+        DEFAULT_PART_SPIRAL_SEGMENT_TURNS
     } else {
-        None
+        0.0
     };
+    let segment_value = quantity_constraint_selector(properties, "SegmentLength", segment_default)?;
+    if segment_value < 0.0 {
+        return None;
+    }
+    let segment_turns = (segment_value > 0.0).then_some(segment_value);
     let (pitch, revolutions, clockwise, radial_growth, cone_angle, construction_style) =
         if kind == "Part::Helix" {
             let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
@@ -3481,16 +3523,15 @@ fn parametric_helix_definition(
             if !angle.is_finite() || angle.abs() >= 90.0 {
                 return None;
             }
-            let clockwise = match integer_property(properties, "LocalCoord").unwrap_or(0) {
+            let clockwise = match enumeration_selector(properties, "LocalCoord", 0)? {
                 0 => false,
                 1 => true,
                 _ => return None,
             };
-            let construction_style = match integer_property(properties, "Style") {
-                None => None,
-                Some(0) => Some(HelixConstructionStyle::Legacy),
-                Some(1) => Some(HelixConstructionStyle::Corrected),
-                Some(_) => return None,
+            let construction_style = match enumeration_selector(properties, "Style", 0)? {
+                0 => Some(HelixConstructionStyle::Legacy),
+                1 => Some(HelixConstructionStyle::Corrected),
+                _ => return None,
             };
             (
                 pitch,
@@ -5032,7 +5073,7 @@ fn helical_sweep_definition(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
-    let law = match integer_property(properties, "Mode")? {
+    let law = match enumeration_selector(properties, "Mode", 0)? {
         0 => HelicalSweepLaw::PitchHeightAngle,
         1 => HelicalSweepLaw::PitchTurnsAngle,
         2 => HelicalSweepLaw::HeightTurnsAngle,
@@ -5057,17 +5098,17 @@ fn helical_sweep_definition(
         turns: scalar_named(properties, "Turns")?,
         radial_growth: Length(scalar_named(properties, "Growth")?),
         cone_angle: cadmpeg_ir::features::Angle(scalar_named(properties, "Angle")?.to_radians()),
-        left_handed: bool_property(properties, "LeftHanded")?,
-        reversed: bool_property(properties, "Reversed")?,
-        tolerance: scalar_named(properties, "Tolerance"),
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
-        } else {
-            None
-        },
+        left_handed: bool_selector(properties, "LeftHanded", false)?,
+        reversed: bool_selector(properties, "Reversed", false)?,
+        tolerance: Some(float_constraint_selector(
+            properties,
+            "Tolerance",
+            DEFAULT_HELICAL_SWEEP_TOLERANCE,
+        )?),
+        allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     };
     let op = if kind.ends_with("SubtractiveHelix") {
-        if bool_property(properties, "Outside").unwrap_or(false) {
+        if bool_selector(properties, "Outside", false)? {
             BooleanOp::Intersect
         } else {
             BooleanOp::Cut

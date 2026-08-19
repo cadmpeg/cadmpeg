@@ -1037,7 +1037,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
   <Property name="Height" type="App::PropertyLength"><Float value="20"/></Property>
   <Property name="Radius" type="App::PropertyLength"><Float value="3"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="12"/></Property>
-  <Property name="SegmentLength" type="App::PropertyQuantity"><Float value="0.5"/></Property>
+  <Property name="SegmentLength" type="App::PropertyQuantityConstraint"><Float value="0.5"/></Property>
   <Property name="LocalCoord" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Style" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
@@ -1045,7 +1045,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
   <Property name="Growth" type="App::PropertyLength"><Float value="2"/></Property>
   <Property name="Radius" type="App::PropertyLength"><Float value="5"/></Property>
   <Property name="Rotations" type="App::PropertyQuantity"><Float value="3.5"/></Property>
-  <Property name="SegmentLength" type="App::PropertyQuantity"><Float value="0.25"/></Property>
+  <Property name="SegmentLength" type="App::PropertyQuantityConstraint"><Float value="0.25"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -1167,9 +1167,480 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
     } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
         && construction.pitch.0 == 0.0 && construction.radial_growth.0 == 2.0
         && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-        && construction.tolerance.is_none())
+        && construction.tolerance == Some(0.1)
+        && construction.allow_multi_profile_faces == Some(false))
     );
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_helix_carriers() {
+    fn document(mutation: Option<(&str, &str, &str)>) -> String {
+        let choose = |object: &str, name: &str, default: &str| {
+            mutation
+                .filter(|(target_object, target_name, _)| {
+                    *target_object == object && *target_name == name
+                })
+                .map_or_else(
+                    || default.to_owned(),
+                    |(_, _, replacement)| replacement.to_owned(),
+                )
+        };
+        let part_helix = [
+            choose(
+                "PartHelix",
+                "Pitch",
+                r#"<Property name="Pitch" type="App::PropertyLength"><Float value="4"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "Height",
+                r#"<Property name="Height" type="App::PropertyLength"><Float value="20"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "Radius",
+                r#"<Property name="Radius" type="App::PropertyLength"><Float value="3"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "Angle",
+                r#"<Property name="Angle" type="App::PropertyAngle"><Float value="12"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "SegmentLength",
+                r#"<Property name="SegmentLength" type="App::PropertyQuantityConstraint"><Float value="0.5"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "LocalCoord",
+                r#"<Property name="LocalCoord" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+            ),
+            choose(
+                "PartHelix",
+                "Style",
+                r#"<Property name="Style" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+            ),
+        ]
+        .join("");
+        let spiral = [
+            choose(
+                "Spiral",
+                "Growth",
+                r#"<Property name="Growth" type="App::PropertyLength"><Float value="2"/></Property>"#,
+            ),
+            choose(
+                "Spiral",
+                "Radius",
+                r#"<Property name="Radius" type="App::PropertyLength"><Float value="5"/></Property>"#,
+            ),
+            choose(
+                "Spiral",
+                "Rotations",
+                r#"<Property name="Rotations" type="App::PropertyQuantityConstraint"><Float value="3.5"/></Property>"#,
+            ),
+            choose(
+                "Spiral",
+                "SegmentLength",
+                r#"<Property name="SegmentLength" type="App::PropertyQuantityConstraint"><Float value="0.25"/></Property>"#,
+            ),
+        ]
+        .join("");
+        let additive = [
+            r#"<Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>"#
+                .to_owned(),
+            r#"<Property name="Base" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>"#
+                .to_owned(),
+            r#"<Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>"#
+                .to_owned(),
+            choose(
+                "AdditiveHelix",
+                "Mode",
+                r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Pitch",
+                r#"<Property name="Pitch" type="App::PropertyLength"><Float value="4"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Height",
+                r#"<Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Turns",
+                r#"<Property name="Turns" type="App::PropertyFloatConstraint"><Float value="2.5"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Growth",
+                r#"<Property name="Growth" type="App::PropertyDistance"><Float value="1"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Angle",
+                r#"<Property name="Angle" type="App::PropertyAngle"><Float value="14"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "LeftHanded",
+                r#"<Property name="LeftHanded" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Reversed",
+                r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Outside",
+                r#"<Property name="Outside" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "Tolerance",
+                r#"<Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>"#,
+            ),
+            choose(
+                "AdditiveHelix",
+                "AllowMultiFace",
+                r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+            ),
+        ]
+        .join("");
+        let subtractive = [
+            r#"<Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>"#
+                .to_owned(),
+            r#"<Property name="Base" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="0"/></Property>"#
+                .to_owned(),
+            r#"<Property name="Axis" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>"#
+                .to_owned(),
+            choose(
+                "SubtractiveHelix",
+                "Mode",
+                r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Pitch",
+                r#"<Property name="Pitch" type="App::PropertyLength"><Float value="10"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Height",
+                r#"<Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Turns",
+                r#"<Property name="Turns" type="App::PropertyFloatConstraint"><Float value="3"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Growth",
+                r#"<Property name="Growth" type="App::PropertyDistance"><Float value="2"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Angle",
+                r#"<Property name="Angle" type="App::PropertyAngle"><Float value="0"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "LeftHanded",
+                r#"<Property name="LeftHanded" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Reversed",
+                r#"<Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Outside",
+                r#"<Property name="Outside" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "Tolerance",
+                r#"<Property name="Tolerance" type="App::PropertyFloatConstraint"><Float value="0.25"/></Property>"#,
+            ),
+            choose(
+                "SubtractiveHelix",
+                "AllowMultiFace",
+                r#"<Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+            ),
+        ]
+        .join("");
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Part::Helix" name="PartHelix" id="1"/>
+ <Object type="Part::Spiral" name="Spiral" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="3"/>
+ <Object type="PartDesign::AdditiveHelix" name="AdditiveHelix" id="4"/>
+ <Object type="PartDesign::SubtractiveHelix" name="SubtractiveHelix" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="PartHelix"><Properties Count="{part_helix_count}">{part_helix}</Properties></Object>
+ <Object name="Spiral"><Properties Count="{spiral_count}">{spiral}</Properties></Object>
+ <Object name="Profile"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="AdditiveHelix"><Properties Count="{additive_count}">{additive}</Properties></Object>
+ <Object name="SubtractiveHelix"><Properties Count="{subtractive_count}">{subtractive}</Properties></Object>
+</ObjectData></Document>"#,
+            part_helix_count = part_helix.matches("<Property ").count(),
+            spiral_count = spiral.matches("<Property ").count(),
+            additive_count = additive.matches("<Property ").count(),
+            subtractive_count = subtractive.matches("<Property ").count(),
+        )
+    }
+
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let decode = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("helix carrier document")
+    };
+    let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
+        let actual = definition(result, name);
+        assert!(
+            matches!(actual, FeatureDefinition::Native { kind: value, .. } if value == kind),
+            "{name} expected native {kind}, got {actual:?}"
+        );
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    };
+
+    for (object, name) in [
+        ("PartHelix", "LocalCoord"),
+        ("PartHelix", "Style"),
+        ("PartHelix", "SegmentLength"),
+        ("Spiral", "SegmentLength"),
+        ("AdditiveHelix", "Mode"),
+        ("AdditiveHelix", "LeftHanded"),
+        ("AdditiveHelix", "Reversed"),
+        ("AdditiveHelix", "Outside"),
+        ("AdditiveHelix", "Tolerance"),
+        ("AdditiveHelix", "AllowMultiFace"),
+        ("SubtractiveHelix", "Outside"),
+    ] {
+        let result = decode(&document(Some((object, name, ""))));
+        assert!(result.report().losses.is_empty(), "{object}.{name}");
+        match (object, name) {
+            ("PartHelix", "LocalCoord") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Helix {
+                    clockwise: false,
+                    ..
+                }
+            )),
+            ("PartHelix", "Style") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Helix {
+                    construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Legacy),
+                    ..
+                }
+            )),
+            ("PartHelix", "SegmentLength") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Helix {
+                    segment_turns: None,
+                    ..
+                }
+            )),
+            ("Spiral", "SegmentLength") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::Helix {
+                    segment_turns: Some(value),
+                    ..
+                } if *value == 1.0
+            )),
+            ("AdditiveHelix", "Mode") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep {
+                    construction,
+                    ..
+                } if construction.law == cadmpeg_ir::features::HelicalSweepLaw::PitchHeightAngle
+            )),
+            ("AdditiveHelix", "LeftHanded") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep { construction, .. }
+                    if !construction.left_handed
+            )),
+            ("AdditiveHelix", "Reversed") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep { construction, .. }
+                    if !construction.reversed
+            )),
+            ("AdditiveHelix", "Outside") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep {
+                    op: cadmpeg_ir::features::BooleanOp::Join,
+                    ..
+                }
+            )),
+            ("AdditiveHelix", "Tolerance") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep { construction, .. }
+                    if construction.tolerance == Some(0.1)
+            )),
+            ("AdditiveHelix", "AllowMultiFace") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep { construction, .. }
+                    if construction.allow_multi_profile_faces == Some(false)
+            )),
+            ("SubtractiveHelix", "Outside") => assert!(matches!(
+                definition(&result, object),
+                FeatureDefinition::HelicalSweep {
+                    op: cadmpeg_ir::features::BooleanOp::Cut,
+                    ..
+                }
+            )),
+            _ => unreachable!(),
+        }
+    }
+
+    let malformed_enumerations = [
+        ("App::PropertyString", r#"<String value="1"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="1"/>"#),
+        ("App::PropertyEnumeration", r#"<Integer value="bad"/>"#),
+        (
+            "App::PropertyEnumeration",
+            r#"<Wrapper><Integer value="1"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyEnumeration",
+            r#"<Integer value="0"/><Integer value="1"/>"#,
+        ),
+        ("App::PropertyEnumeration", r#"<Integer value="-1"/>"#),
+        ("App::PropertyEnumeration", r#"<Integer value="99"/>"#),
+    ];
+    for (object, name) in [
+        ("PartHelix", "LocalCoord"),
+        ("PartHelix", "Style"),
+        ("AdditiveHelix", "Mode"),
+    ] {
+        for (type_name, value) in malformed_enumerations {
+            let replacement =
+                format!(r#"<Property name="{name}" type="{type_name}">{value}</Property>"#);
+            let result = decode(&document(Some((object, name, &replacement))));
+            assert_native(
+                &result,
+                object,
+                if object == "PartHelix" {
+                    "Part::Helix"
+                } else {
+                    "PartDesign::AdditiveHelix"
+                },
+            );
+        }
+    }
+
+    let malformed_quantities = [
+        ("App::PropertyQuantity", r#"<Float value="0.5"/>"#),
+        ("App::PropertyQuantityConstraint", r#"<Float value="bad"/>"#),
+        (
+            "App::PropertyQuantityConstraint",
+            r#"<Wrapper><Float value="0.5"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyQuantityConstraint",
+            r#"<Float value="0.5"/><Float value="0.25"/>"#,
+        ),
+    ];
+    for (type_name, value) in malformed_quantities {
+        let replacement =
+            format!(r#"<Property name="SegmentLength" type="{type_name}">{value}</Property>"#);
+        let result = decode(&document(Some((
+            "PartHelix",
+            "SegmentLength",
+            &replacement,
+        ))));
+        assert_native(&result, "PartHelix", "Part::Helix");
+    }
+
+    let malformed_booleans = [
+        ("App::PropertyString", r#"<String value="true"/>"#),
+        ("App::PropertyInteger", r#"<Integer value="1"/>"#),
+        ("App::PropertyBool", r#"<Bool value="bad"/>"#),
+        (
+            "App::PropertyBool",
+            r#"<Wrapper><Bool value="true"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyBool",
+            r#"<Bool value="false"/><Bool value="true"/>"#,
+        ),
+        ("App::PropertyBool", r#"<Bool value="1"/>"#),
+        ("App::PropertyBool", r#"<Bool value="2"/>"#),
+    ];
+    for (object, name) in [
+        ("AdditiveHelix", "LeftHanded"),
+        ("AdditiveHelix", "Reversed"),
+        ("AdditiveHelix", "AllowMultiFace"),
+        ("SubtractiveHelix", "Outside"),
+    ] {
+        for (type_name, value) in malformed_booleans {
+            let replacement =
+                format!(r#"<Property name="{name}" type="{type_name}">{value}</Property>"#);
+            let result = decode(&document(Some((object, name, &replacement))));
+            assert_native(
+                &result,
+                object,
+                if object == "AdditiveHelix" {
+                    "PartDesign::AdditiveHelix"
+                } else {
+                    "PartDesign::SubtractiveHelix"
+                },
+            );
+        }
+    }
+
+    let malformed_tolerance = [
+        ("App::PropertyFloat", r#"<Float value="0.25"/>"#),
+        ("App::PropertyFloatConstraint", r#"<Float value="bad"/>"#),
+        (
+            "App::PropertyFloatConstraint",
+            r#"<Wrapper><Float value="0.25"/></Wrapper>"#,
+        ),
+        (
+            "App::PropertyFloatConstraint",
+            r#"<Float value="0.25"/><Float value="0.5"/>"#,
+        ),
+    ];
+    for (type_name, value) in malformed_tolerance {
+        let replacement =
+            format!(r#"<Property name="Tolerance" type="{type_name}">{value}</Property>"#);
+        let result = decode(&document(Some((
+            "AdditiveHelix",
+            "Tolerance",
+            &replacement,
+        ))));
+        assert_native(&result, "AdditiveHelix", "PartDesign::AdditiveHelix");
+    }
 }
 
 #[test]
