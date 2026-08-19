@@ -1056,62 +1056,78 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             .then_with(|| first.1.cmp(&second.1))
             .then_with(|| first.2.cmp(&second.2))
     });
+    let candidate_count = candidates.len();
     let replacements = candidates
         .into_iter()
-        .filter_map(|(_, _, procedural_index)| {
-            let procedural = ir.model.procedural_curves.get(procedural_index)?;
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
-            else {
-                return None;
-            };
-            if transfer_budget_exhausted(transfer_budget) {
-                return None;
-            }
-            let missing = context
-                .sides
-                .each_ref()
-                .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
-            let target = match missing {
-                [true, false] => 0,
-                [false, true] => 1,
-                _ => return None,
-            };
-            let source = 1 - target;
-            let source_surface = context.sides[source].surface.as_ref()?;
-            let source_pcurve = context.sides[source].pcurve.as_ref()?;
-            let target_surface = context.sides[target].surface.as_ref()?;
-            let tolerance = procedural
-                .cache_fit_tolerance
-                .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
-            let tolerance =
-                blend_spine_cache_fit_tolerance_with_index(&model_index, target_surface, tolerance);
-            let blend_contact = blend_contacts
-                .entry((source_surface.clone(), target_surface.clone()))
-                .or_insert_with(|| {
-                    blend_transfer_contact(&model_index, source_surface, target_surface)
-                })
-                .as_ref()
-                .copied();
-            let pcurve = transfer_intersection_pcurve_with_contact_and_budget(
-                &model_index,
-                &procedural.curve,
-                source_surface,
-                source_pcurve,
-                target_surface,
-                context.parameter_range,
-                tolerance,
-                blend_contact,
-                transfer_budget,
-                geometry_budget,
-                &mut blend_parameter_grids,
-            )?;
-            Some((
-                procedural_index,
-                target,
-                pcurve,
-                tolerance,
-                curve_is_cache_backed_with_index(&model_index, &procedural.curve),
-            ))
+        .enumerate()
+        .filter_map(|(candidate_index, (_, _, procedural_index))| {
+            let candidates_remaining = candidate_count.saturating_sub(candidate_index);
+            let candidate_geometry_budget =
+                geometry_budget.child_slice(opposite_chart_geometry_work_limit(
+                    candidates_remaining,
+                    geometry_budget.remaining(),
+                ));
+            let replacement = (|| {
+                let procedural = ir.model.procedural_curves.get(procedural_index)?;
+                let ProceduralCurveDefinition::Intersection { context, .. } =
+                    &procedural.definition
+                else {
+                    return None;
+                };
+                if transfer_budget_exhausted(transfer_budget) {
+                    return None;
+                }
+                let missing = context
+                    .sides
+                    .each_ref()
+                    .map(|side| pcurve_requires_completion(side.pcurve.as_ref()));
+                let target = match missing {
+                    [true, false] => 0,
+                    [false, true] => 1,
+                    _ => return None,
+                };
+                let source = 1 - target;
+                let source_surface = context.sides[source].surface.as_ref()?;
+                let source_pcurve = context.sides[source].pcurve.as_ref()?;
+                let target_surface = context.sides[target].surface.as_ref()?;
+                let tolerance = procedural
+                    .cache_fit_tolerance
+                    .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
+                let tolerance = blend_spine_cache_fit_tolerance_with_index(
+                    &model_index,
+                    target_surface,
+                    tolerance,
+                );
+                let blend_contact = blend_contacts
+                    .entry((source_surface.clone(), target_surface.clone()))
+                    .or_insert_with(|| {
+                        blend_transfer_contact(&model_index, source_surface, target_surface)
+                    })
+                    .as_ref()
+                    .copied();
+                let pcurve = transfer_intersection_pcurve_with_contact_and_budget(
+                    &model_index,
+                    &procedural.curve,
+                    source_surface,
+                    source_pcurve,
+                    target_surface,
+                    context.parameter_range,
+                    tolerance,
+                    blend_contact,
+                    transfer_budget,
+                    &candidate_geometry_budget,
+                    &mut blend_parameter_grids,
+                )?;
+                Some((
+                    procedural_index,
+                    target,
+                    pcurve,
+                    tolerance,
+                    curve_is_cache_backed_with_index(&model_index, &procedural.curve),
+                ))
+            })();
+            let _ = geometry_budget.consume_child(&candidate_geometry_budget);
+            replacement
         })
         .collect::<Vec<_>>();
     for (procedural_index, side, pcurve, tolerance, cache_backed) in replacements {
@@ -2254,6 +2270,17 @@ pub(super) fn new_transfer_budget() -> TransferBudget<'static> {
 
 pub(super) fn transfer_budget_exhausted(budget: &TransferBudget<'_>) -> bool {
     budget.exhausted() || budget.remaining() == 0
+}
+
+/// Divide the remaining certified geometry work among the candidates still in
+/// the deterministic transfer order. A failed candidate cannot consume the
+/// whole model slice and starve later candidates, while unused work remains
+/// available to later candidates through the parent budget.
+fn opposite_chart_geometry_work_limit(candidates_remaining: usize, remaining: usize) -> usize {
+    if candidates_remaining == 0 {
+        return 0;
+    }
+    remaining.saturating_add(candidates_remaining - 1) / candidates_remaining
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3454,4 +3481,17 @@ pub(crate) fn pcurve_matches_edge_endpoint_contract(
         && point_distance(coincident_surface[1], edge_endpoints[1]) <= allowance)
         || (point_distance(coincident_surface[0], edge_endpoints[1]) <= allowance
             && point_distance(coincident_surface[1], edge_endpoints[0]) <= allowance)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::opposite_chart_geometry_work_limit;
+
+    #[test]
+    fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
+        assert_eq!(opposite_chart_geometry_work_limit(0, 10), 0);
+        assert_eq!(opposite_chart_geometry_work_limit(3, 10), 4);
+        assert_eq!(opposite_chart_geometry_work_limit(2, 6), 3);
+        assert_eq!(opposite_chart_geometry_work_limit(1, 3), 3);
+    }
 }
