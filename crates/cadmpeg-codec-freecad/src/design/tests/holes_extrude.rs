@@ -475,6 +475,86 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
+    fn extrusion_definition(
+        result: &cadmpeg_ir::codec::DecodeResult,
+    ) -> &cadmpeg_ir::features::FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Extrusion"))
+            .expect("extrusion feature")
+            .definition
+    }
+
+    let malformed_values = [
+        "<Integer value=\"bad\"/>",
+        "<String value=\"0\"/>",
+        "<Wrapper><Integer value=\"0\"/></Wrapper>",
+        "<Integer value=\"0\"/><Integer value=\"1\"/>",
+        "<Integer value=\"-1\"/>",
+        "<Integer value=\"99\"/>",
+    ];
+    let absent_document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Profile"/><Object type="Part::Extrusion" name="Extrusion"/></Objects>
+<ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object>
+<Object name="Extrusion"><Properties Count="5"><Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property><Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="5"/></Property><Property name="LengthFwd" type="App::PropertyDistance"><Float value="5"/></Property><Property name="LengthRev" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(absent_document)),
+            &DecodeOptions::default(),
+        )
+        .expect("absent direction mode");
+    assert!(matches!(
+        extrusion_definition(&result),
+        FeatureDefinition::Extrude {
+            direction_source: Some(ExtrusionDirectionSource::Custom),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.0)
+                    },
+                    ..
+                }
+            },
+            ..
+        } if direction.z == 1.0
+    ));
+    assert!(result.report().losses.is_empty());
+    assert_valid_document(result.ir());
+
+    for value in malformed_values {
+        let property = if value.starts_with("<String") {
+            format!(r#"<Property name="DirMode" type="App::PropertyString">{value}</Property>"#)
+        } else {
+            format!(
+                r#"<Property name="DirMode" type="App::PropertyEnumeration">{value}</Property>"#
+            )
+        };
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Profile"/><Object type="Part::Extrusion" name="Extrusion"/></Objects>
+<ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object>
+<Object name="Extrusion"><Properties Count="6"><Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property><Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="5"/></Property>{property}<Property name="LengthFwd" type="App::PropertyDistance"><Float value="5"/></Property><Property name="LengthRev" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object></ObjectData></Document>"#
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("malformed direction mode");
+        assert!(matches!(
+            extrusion_definition(&result),
+            FeatureDefinition::Native { kind, .. } if kind == "Part::Extrusion"
+        ));
+        assert_valid_document(result.ir());
+    }
+}
+
+#[test]
 fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::Pad" name="Pad" id="1"/></Objects>

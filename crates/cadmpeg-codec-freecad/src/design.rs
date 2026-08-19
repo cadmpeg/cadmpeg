@@ -3522,7 +3522,7 @@ fn extrusion_definition(
             (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                 .sqrt()
         });
-        let direction_mode = integer_property(properties, "DirMode").unwrap_or(0);
+        let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
         let (mut direction, direction_source) = match direction_mode {
             0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom),
             1 => {

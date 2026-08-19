@@ -667,6 +667,11 @@ Index `4` is the deprecated two-length marker and is not a current termination f
 `SideType` is present. A selected present carrier with another runtime type, without exactly one
 direct `Integer`, or with a non-integer, negative, duplicate, nested, or unsupported index does
 not select a neutral operation; the affected operation remains native.
+Part `Extrusion` `DirMode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean
+Custom, Edge, and Normal. Custom uses `Dir`, Edge uses `DirLink`, and Normal uses the base-shape
+normal. An absent `DirMode` means Custom. A selected present `DirMode` carrier with another
+runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
+nested, or unsupported index does not select a neutral extrusion; the operation remains native.
 These operation dimensions participate in the same literal/evaluated/expression parameter graph.
 When a dress-up subelement selector has not resolved through persistent topology identity, its
 native `Base` property remains the edge selection; the decoder does not infer an edge from a

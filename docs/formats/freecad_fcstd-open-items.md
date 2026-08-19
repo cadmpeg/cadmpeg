@@ -43,19 +43,25 @@ two-sided blind form; the `Type=4` form takes precedence over `Midplane=true`. I
 `Length` and `Length2` are the two blind extents. A present `Type=4` is not a current termination
 family.
 
+Part::Extrusion `DirMode` is an `App::PropertyEnumeration` with constructor default `0`.
+Indices `0`, `1`, and `2` mean Custom, Edge, and Normal; they select `Dir`, `DirLink`, and the
+base-shape normal respectively. A present selected carrier requires one direct `Integer` value;
+a non-integer, negative, unknown, nested, duplicate, or wrong-runtime carrier leaves the
+extrusion native. An absent `DirMode` selects Custom.
+
 **Need.** Apply the same absence-versus-present validation to the remaining operation selectors:
-extrusion direction mode, shell and surface modes, pattern modes, hole modes and flags, and the
-remaining design operation flags. Trace each producer carrier and preserve its constructor
-default only when the property is absent.
+shell and surface modes, pattern modes, hole modes and flags, and the remaining design operation
+flags. Trace each producer carrier and preserve its constructor default only when the property is
+absent.
 
 **Conflict.** The remaining generic `integer_property` and `bool_property` call sites still
 collapse a malformed present carrier with an absent property. Their producer defaults and CADIR
 salvage rules may differ by operation family; changing them without tracing the writer can change
 neutral semantics or discard a valid legacy default.
 
-**Note.** Partly settled: Boolean/Revolution/Groove `Type` and PartDesign Pad/Pocket
-`SideType`/`Type`/`Type2` are covered by the specification and exact-carrier decoder rule. The
-remaining selectors stay open.
+**Note.** Partly settled: Boolean/Revolution/Groove `Type`, PartDesign Pad/Pocket
+`SideType`/`Type`/`Type2`, and Part `DirMode` are covered by the specification and exact-carrier
+decoder rule. The remaining selectors stay open.
 
 ### DP-16. Sketch placement rotation admission
 
