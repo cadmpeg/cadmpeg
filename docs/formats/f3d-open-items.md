@@ -282,16 +282,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** We must know the targets and field meanings to write a complete occurrence placement in each envelope. A reader takes the target path, the discriminators, the role, and the transform without resolving the remaining fields.
 
-### XR-08. Placement records that a scope-bound carrier hides
-
-**Question.** When one Design stream holds a scope-bound `Component Insert` carrier and more than one placement record for the same occurrence role, how many occurrences does the document place?
-
-**Known.** `f3d.md` §1.4 "**Placement.**" states that several placements can carry the same role and place the same target document more than once. `f3d.md` §3.1 "`Component Insert` has one ordered reference" states that a scope-bound carrier transform takes precedence over placement records for the same role in the same Design stream, and that each matching placement record supplies one occurrence when no scope-bound carrier exists.
-
-`crates/cadmpeg-codec-f3d/src/xref.rs` `occurrence_transforms_with_precedence` gives the whole rule: when the scope-bound list is not empty it returns that list, and it never reads the placement records. Every placement record for the role is therefore dropped, not merged. The counter `placement_failures` records nothing here, because `crates/cadmpeg-codec-f3d/src/xref.rs` pushes an ordinal only when the occurrence list is empty and the scope-bound list is also empty. One occurrence reaches the neutral model and no loss states how many placements the document held.
-
-**Need.** A document that places one component several times gives one occurrence. The neutral model then has the wrong component count and the merged `.f3z` document repeats the error. We must find whether a scope-bound carrier and a placement record for one role describe one occurrence or two, and the decode must record the placements that the precedence rule discards.
-
 ## 3. Material assets
 
 ### MA-03. Distance unit-tag values
