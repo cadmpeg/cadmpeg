@@ -1370,6 +1370,20 @@ pub struct DesignComponentPatternOccurrences {
     pub generated_occurrence_guids: Vec<String>,
 }
 
+/// Angular limits carried by a legacy As-built assembly scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblyAngularLimits {
+    /// Lower angular bound in radians.
+    pub minimum: f64,
+    /// Upper angular bound in radians.
+    pub maximum: f64,
+    /// Parameter-owner records for the lower and upper bounds.
+    pub owner_record_indices: [u32; 2],
+    /// Evaluated-value offsets parallel to `owner_record_indices`.
+    pub value_offsets: [u64; 2],
+}
+
 /// Alignment scalars carried by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1391,6 +1405,9 @@ pub struct DesignAssemblyAlignment {
     /// Exact pathless operand targets carried by an axial assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axial_operand_targets: Option<[DesignAssemblyAxialOperandTarget; 2]>,
+    /// Optional angular limits carried by a legacy As-built scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angular_limits: Option<DesignAssemblyAngularLimits>,
     /// `JointOrigin` scope whose datum frame is carried by this scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_scope_record_index: Option<u32>,

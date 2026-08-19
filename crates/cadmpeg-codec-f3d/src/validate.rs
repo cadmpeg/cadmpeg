@@ -2530,6 +2530,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let compact_frames = matches!(scope.frame_length, 633 | 732);
                 let axial_frames = matches!(scope.frame_length, 705 | 772);
                 let as_built_frames = scope.kind == "As-built" && scope.frame_length == 399;
+                let as_built_421 = design::assembly::is_legacy_as_built_421(
+                    scope.frame_length,
+                    &scope.class_tag,
+                    &scope.paired_class_tag,
+                );
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
@@ -2696,7 +2701,75 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         == Some(scope.byte_offset + 36)
                             })
                     });
-                let alignment_scalars_link =
+                let alignment_scalars_link = if as_built_421 {
+                    match alignment.angular_limits.as_ref() {
+                        Some(limits) => {
+                            let alignment_lanes = [
+                                (
+                                    alignment.owner_record_indices.get(1).copied(),
+                                    alignment.value_offsets.get(1).copied(),
+                                    alignment.offset[0],
+                                    0_u32,
+                                ),
+                                (
+                                    alignment.owner_record_indices.get(2).copied(),
+                                    alignment.value_offsets.get(2).copied(),
+                                    alignment.offset[1],
+                                    1_u32,
+                                ),
+                                (
+                                    alignment.owner_record_indices.get(3).copied(),
+                                    alignment.value_offsets.get(3).copied(),
+                                    alignment.offset[2],
+                                    2_u32,
+                                ),
+                                (
+                                    alignment.owner_record_indices.first().copied(),
+                                    alignment.value_offsets.first().copied(),
+                                    alignment.angle,
+                                    3_u32,
+                                ),
+                            ];
+                            let limit_lanes = [
+                                (
+                                    Some(limits.owner_record_indices[0]),
+                                    Some(limits.value_offsets[0]),
+                                    limits.minimum,
+                                    4_u32,
+                                ),
+                                (
+                                    Some(limits.owner_record_indices[1]),
+                                    Some(limits.value_offsets[1]),
+                                    limits.maximum,
+                                    5_u32,
+                                ),
+                            ];
+                            alignment.owner_record_indices.len() == 4
+                                && alignment.value_offsets.len() == 4
+                                && limits.minimum.is_finite()
+                                && limits.maximum.is_finite()
+                                && limits.minimum <= limits.maximum
+                                && alignment_lanes.into_iter().chain(limit_lanes).all(
+                                    |(record_index, value_offset, value, local_ordinal)| {
+                                        let (Some(record_index), Some(value_offset)) =
+                                            (record_index, value_offset)
+                                        else {
+                                            return false;
+                                        };
+                                        native.design_parameter_owners.iter().any(|owner| {
+                                            design_stream(&owner.id) == native_stream
+                                                && owner.record_index == record_index
+                                                && owner.scope_record_index == scope.record_index
+                                                && owner.local_ordinal == local_ordinal
+                                                && owner.evaluated_value == value
+                                                && owner.evaluated_value_offset == value_offset
+                                        })
+                                    },
+                                )
+                        }
+                        None => false,
+                    }
+                } else {
                     alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
                         alignment.owner_record_indices.len()
                             == alignment_end.saturating_sub(alignment_start)
@@ -2717,16 +2790,36 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             && owner.evaluated_value_offset == *value_offset
                                     })
                                 })
-                    });
+                    })
+                };
+                let alignment_reference_link = if as_built_421 {
+                    alignment.angular_limits.as_ref().is_some_and(|limits| {
+                        alignment.owner_record_indices.len() == 4
+                            && scope.reference_members.get(4..8)
+                                == Some(
+                                    [
+                                        alignment.owner_record_indices[1],
+                                        alignment.owner_record_indices[2],
+                                        alignment.owner_record_indices[3],
+                                        alignment.owner_record_indices[0],
+                                    ]
+                                    .as_slice(),
+                                )
+                            && scope.reference_members.get(9..11)
+                                == Some(limits.owner_record_indices.as_slice())
+                    })
+                } else {
+                    scope
+                        .reference_members
+                        .ends_with(&alignment.owner_record_indices)
+                };
                 design::design_feature_family(&scope.kind)
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
                     && operand_qualifiers_link
                     && joint_origin_envelope_link
-                    && scope
-                        .reference_members
-                        .ends_with(&alignment.owner_record_indices)
+                    && alignment_reference_link
                     && alignment_scalars_link
             }
         };

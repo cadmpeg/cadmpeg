@@ -1032,6 +1032,38 @@ pub(crate) mod assembly_operand_path_locator_reference_run {
     pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 15;
 }
 
+/// Byte offsets for the `assembly_as_built_421_scope` record.
+///
+/// Spec §Assembly operands. Record length 421 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. Class 364 paired with 272 and class 420 paired with 262 use this layout.
+/// ```
+pub(crate) mod assembly_as_built_421_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 421;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 185;
+    /// Stated value of `reference_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000b;
+    /// Offset of `reference_entries` (`bytes[121]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_ENTRIES: usize = 189;
+    /// Offset of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER: usize = 310;
+    /// Stated value of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER_VALUE: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+    /// Offset of `kind_length` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const KIND_LENGTH: usize = 314;
+    /// Stated value of `kind_length` (`u32`). Spec §Assembly operands.
+    pub(crate) const KIND_LENGTH_VALUE: u32 = 0x0000_0008;
+    /// Offset of `kind` (`bytes[16]`). Spec §Assembly operands.
+    pub(crate) const KIND: usize = 318;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FEATURE_ORDINAL: usize = 334;
+}
+
 /// Byte offsets for the `assembly_operand_path_locator` record.
 ///
 /// Spec §Assembly operands. Record length 190 B.

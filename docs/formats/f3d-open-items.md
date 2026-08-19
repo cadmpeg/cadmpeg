@@ -210,6 +210,14 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** A neutral projection requires a proven mapping from each owner pair to the selected-edge orientation, or a neutral representation that carries independent per-edge width laws. Until that mapping is established, the form remains native.
 
+### DR-67. Legacy `As-built` operand-carrier mapping
+
+**Question.** Which document occurrence or external connector identities do the two operand-carrier pairs of the 421-byte `As-built` forms name, and how does the solved frame carrier join to the two neutral operand frames?
+
+**Known.** `f3d.md` §3.1 "In a 421-byte `As-built` scope" gives the two scope generations, the eleven-reference order, the four placement owners, the two angular-limit owners, and the generation-specific solved-frame matrix. The 421-byte form has no operand-path locator run. The decoder retains the canonical alignment values and the inclusive angular interval, but it does not project a neutral joint because the two carrier pairs do not yet resolve to two operand identities and frames.
+
+**Need.** A neutral assembly joint requires two ordered `JointOperand` values and two connector-local frames. The writer must derive both from the carrier pairs and preserve the solved frame without assigning one connector frame to both operands.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

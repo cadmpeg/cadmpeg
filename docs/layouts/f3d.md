@@ -781,6 +781,30 @@ Cross-checked against code:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The compact assembly forms use the two tabulated scope-relative locator-reference offsets.
 
+## `assembly_as_built_421_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: 421 B
+
+Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. Class 364 paired with 272 and class 420 paired with 262 use this layout.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | In a 421-byte `As-built` scope |
+| 185 | 4 | `reference_count` | `u32` | little | spec | Offset 185 stores u32 value 11 · value `11` |
+| 189 | 121 | `reference_entries` | `bytes[121]` | little | spec | Entries 0 and 1 form the first operand carrier pair. Entries 2 and 3 form the second pair. Entries 4 through 7 are the placement owners in OffsetX, OffsetY, OffsetZ, and AngleZ order. Entry 8 is the solved connector-frame carrier. Entries 9 and 10 are the AngleMinimum and AngleMaximum owners. |
+| 310 | 4 | `reference_trailer` | `bytes[4]` | little | spec | Offset 310 stores four `ff` bytes · value `[255, 255, 255, 255]` |
+| 314 | 4 | `kind_length` | `u32` | little | spec | offset 314 stores u32 value 8 · value `8` |
+| 318 | 16 | `kind` | `bytes[16]` | little | spec | offset 318 stores the UTF-16LE string `As-built` |
+| 334 | 4 | `feature_ordinal` | `u32` | little | spec | offset 334 stores the feature ordinal |
+
+Unstated regions:
+
+- `11..185` (174 B): The fixed scope prologue before the reference count is not assigned.
+- `338..421` (83 B): The fixed frame tail before the paired indexed header is not assigned.
+
 ## `assembly_operand_path_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 190 B

@@ -12,6 +12,7 @@ use crate::design::decode::sketch::{
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
+use crate::layout::assembly_as_built_421_scope as as_built_421;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
@@ -91,11 +92,12 @@ use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
 use crate::records::{
-    ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget,
-    DesignAssemblyAxialSelectorIdentity, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
-    DesignAssemblyOperandPathLink, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
-    DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
-    DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
+    ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyAngularLimits,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity,
+    DesignAssemblyOperandFrame, DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
+    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignBendPosition,
+    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
     DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
@@ -1344,6 +1346,123 @@ fn exact_surface_boundary_operation(
     Some(candidate.clone())
 }
 
+struct LegacyAsBuilt421Alignment {
+    angle: f64,
+    offset: [f64; 3],
+    owner_record_indices: Vec<u32>,
+    value_offsets: Vec<u64>,
+    angular_limits: DesignAssemblyAngularLimits,
+}
+
+fn exact_legacy_as_built_421_alignment(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    lanes: &[&DesignParameterOwner],
+) -> Option<LegacyAsBuilt421Alignment> {
+    if !crate::design::assembly::is_legacy_as_built_421(
+        scope.frame_length,
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    ) || scope.kind != "As-built"
+        || lanes.len() != 6
+        || scope.reference_members.len() != 11
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if usize::try_from(scope.paired_byte_offset).ok()? != start.checked_add(as_built_421::LEN)?
+        || scope.reference_count_offset
+            != u64::try_from(start.checked_add(as_built_421::REFERENCE_COUNT)?).ok()?
+        || View::u32_le_at(bytes, start.checked_add(as_built_421::REFERENCE_COUNT)?)?
+            != as_built_421::REFERENCE_COUNT_VALUE
+        || View::u32_le_at(bytes, start.checked_add(as_built_421::KIND_LENGTH)?)?
+            != as_built_421::KIND_LENGTH_VALUE
+        || scope.feature_ordinal_offset
+            != u64::try_from(start.checked_add(as_built_421::FEATURE_ORDINAL)?).ok()?
+    {
+        return None;
+    }
+    for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+        let reference_at = start
+            .checked_add(as_built_421::REFERENCE_ENTRIES.checked_add(ordinal.checked_mul(11)?)?)?;
+        if marked_record_reference(bytes, reference_at)? != *record_index
+            || bytes.get(reference_at.checked_add(5)?..reference_at.checked_add(11)?)? != [0; 6]
+            || scope.reference_member_offsets.get(ordinal).copied()
+                != Some(u64::try_from(reference_at.checked_add(1)?).ok()?)
+        {
+            return None;
+        }
+    }
+    if bytes.get(
+        start.checked_add(as_built_421::KIND_LENGTH)?..start.checked_add(as_built_421::KIND)?,
+    )? != as_built_421::KIND_LENGTH_VALUE.to_le_bytes()
+        || bytes.get(
+            start.checked_add(as_built_421::REFERENCE_TRAILER)?
+                ..start.checked_add(as_built_421::KIND_LENGTH)?,
+        )? != as_built_421::REFERENCE_TRAILER_VALUE
+    {
+        return None;
+    }
+    let expected_owner_class = if scope.class_tag == "364" {
+        "293"
+    } else {
+        "378"
+    };
+    if lanes
+        .iter()
+        .any(|owner| owner.class_tag != expected_owner_class)
+    {
+        return None;
+    }
+    let [offset_x, offset_y, offset_z, angle, minimum, maximum] = lanes else {
+        return None;
+    };
+    let alignment_owner_record_indices = [
+        offset_x.record_index,
+        offset_y.record_index,
+        offset_z.record_index,
+        angle.record_index,
+    ];
+    let limit_owner_record_indices = [minimum.record_index, maximum.record_index];
+    if scope.reference_members.get(4..8) != Some(alignment_owner_record_indices.as_slice())
+        || scope.reference_members.get(9..11) != Some(limit_owner_record_indices.as_slice())
+        || !minimum.evaluated_value.is_finite()
+        || !maximum.evaluated_value.is_finite()
+        || minimum.evaluated_value > maximum.evaluated_value
+    {
+        return None;
+    }
+    Some(LegacyAsBuilt421Alignment {
+        angle: angle.evaluated_value,
+        offset: [
+            offset_x.evaluated_value,
+            offset_y.evaluated_value,
+            offset_z.evaluated_value,
+        ],
+        owner_record_indices: vec![
+            angle.record_index,
+            offset_x.record_index,
+            offset_y.record_index,
+            offset_z.record_index,
+        ],
+        value_offsets: vec![
+            angle.evaluated_value_offset,
+            offset_x.evaluated_value_offset,
+            offset_y.evaluated_value_offset,
+            offset_z.evaluated_value_offset,
+        ],
+        angular_limits: DesignAssemblyAngularLimits {
+            minimum: minimum.evaluated_value,
+            maximum: maximum.evaluated_value,
+            owner_record_indices: limit_owner_record_indices,
+            value_offsets: [
+                minimum.evaluated_value_offset,
+                maximum.evaluated_value_offset,
+            ],
+        },
+    })
+}
+
 pub(crate) fn exact_assembly_alignment(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1370,44 +1489,61 @@ pub(crate) fn exact_assembly_alignment(
     {
         return None;
     }
-    let (alignment_start, alignment_end) =
-        crate::design::assembly::alignment_lane_bounds(scope.frame_length, lanes.len())?;
-    let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
-    let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
-        [angle, offset_x, offset_y, offset_z] => (
-            angle.evaluated_value,
-            [
-                offset_x.evaluated_value,
-                offset_y.evaluated_value,
-                offset_z.evaluated_value,
-            ],
-            vec![
-                angle.record_index,
-                offset_x.record_index,
-                offset_y.record_index,
-                offset_z.record_index,
-            ],
-            vec![
-                angle.evaluated_value_offset,
-                offset_x.evaluated_value_offset,
-                offset_y.evaluated_value_offset,
-                offset_z.evaluated_value_offset,
-            ],
-        ),
-        [angle, axial_offset] => (
-            angle.evaluated_value,
-            [0.0, 0.0, axial_offset.evaluated_value],
-            vec![angle.record_index, axial_offset.record_index],
-            vec![
-                angle.evaluated_value_offset,
-                axial_offset.evaluated_value_offset,
-            ],
-        ),
-        _ => return None,
+    let as_built_421 = crate::design::assembly::is_legacy_as_built_421(
+        scope.frame_length,
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    );
+    let (angle, offset, owner_record_indices, value_offsets, angular_limits) = if as_built_421 {
+        let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
+        (
+            exact.angle,
+            exact.offset,
+            exact.owner_record_indices,
+            exact.value_offsets,
+            Some(exact.angular_limits),
+        )
+    } else {
+        let (alignment_start, alignment_end) =
+            crate::design::assembly::alignment_lane_bounds(scope.frame_length, lanes.len())?;
+        let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
+        let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
+            [angle, offset_x, offset_y, offset_z] => (
+                angle.evaluated_value,
+                [
+                    offset_x.evaluated_value,
+                    offset_y.evaluated_value,
+                    offset_z.evaluated_value,
+                ],
+                vec![
+                    angle.record_index,
+                    offset_x.record_index,
+                    offset_y.record_index,
+                    offset_z.record_index,
+                ],
+                vec![
+                    angle.evaluated_value_offset,
+                    offset_x.evaluated_value_offset,
+                    offset_y.evaluated_value_offset,
+                    offset_z.evaluated_value_offset,
+                ],
+            ),
+            [angle, axial_offset] => (
+                angle.evaluated_value,
+                [0.0, 0.0, axial_offset.evaluated_value],
+                vec![angle.record_index, axial_offset.record_index],
+                vec![
+                    angle.evaluated_value_offset,
+                    axial_offset.evaluated_value_offset,
+                ],
+            ),
+            _ => return None,
+        };
+        if !scope.reference_members.ends_with(&owner_record_indices) {
+            return None;
+        }
+        (angle, offset, owner_record_indices, value_offsets, None)
     };
-    if !scope.reference_members.ends_with(&owner_record_indices) {
-        return None;
-    }
     let mut alignment = DesignAssemblyAlignment {
         angle,
         offset,
@@ -1416,6 +1552,7 @@ pub(crate) fn exact_assembly_alignment(
         operand_frames: None,
         operand_paths: None,
         axial_operand_targets: None,
+        angular_limits,
         joint_origin_scope_record_index: None,
     };
     if scope.kind == "As-built" {

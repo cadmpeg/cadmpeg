@@ -2445,6 +2445,79 @@ note = "The compact assembly forms use the two tabulated scope-relative locator-
 
 
 [[record]]
+name = "assembly_as_built_421_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "In a 421-byte `As-built` scope"
+size = 421
+note = "Offsets are relative to the primary indexed header. The reference table starts with its marked entry at offset 189; each entry is 11 bytes. Class 364 paired with 272 and class 420 paired with 262 use this layout."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "In a 421-byte `As-built` scope"
+
+[[record.gap]]
+offset = 11
+size = 174
+note = "The fixed scope prologue before the reference count is not assigned."
+
+[[record.field]]
+name = "reference_count"
+offset = 185
+type = "u32"
+source = "spec"
+anchor = "Offset 185 stores u32 value 11"
+value = 11
+
+[[record.field]]
+name = "reference_entries"
+offset = 189
+type = "bytes[121]"
+source = "spec"
+anchor = "the eleven-entry reference table starts with its marked entry at offset 189"
+note = "Entries 0 and 1 form the first operand carrier pair. Entries 2 and 3 form the second pair. Entries 4 through 7 are the placement owners in OffsetX, OffsetY, OffsetZ, and AngleZ order. Entry 8 is the solved connector-frame carrier. Entries 9 and 10 are the AngleMinimum and AngleMaximum owners."
+
+[[record.field]]
+name = "reference_trailer"
+offset = 310
+type = "bytes[4]"
+source = "spec"
+anchor = "Offset 310 stores four `ff` bytes"
+value = [255, 255, 255, 255]
+
+[[record.field]]
+name = "kind_length"
+offset = 314
+type = "u32"
+source = "spec"
+anchor = "offset 314 stores u32 value 8"
+value = 8
+
+[[record.field]]
+name = "kind"
+offset = 318
+type = "bytes[16]"
+source = "spec"
+anchor = "offset 318 stores the UTF-16LE string `As-built`"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 334
+type = "u32"
+source = "spec"
+anchor = "offset 334 stores the feature ordinal"
+
+[[record.gap]]
+offset = 338
+size = 83
+note = "The fixed frame tail before the paired indexed header is not assigned."
+
+
+[[record]]
 name = "assembly_operand_path_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

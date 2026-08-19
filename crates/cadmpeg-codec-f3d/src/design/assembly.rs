@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointOperand,
+    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointLimits,
+    JointOperand,
 };
 
 use crate::ids::native_stream;
@@ -13,6 +14,20 @@ use crate::records::{
     DesignAssemblyAxialOperandTarget, DesignAssemblyOperandPath, DesignComponentOccurrence,
     DesignParameterScope,
 };
+
+/// Return whether a 421-byte As-built scope uses one of the admitted legacy
+/// generation pairs.
+pub(crate) fn is_legacy_as_built_421(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    frame_length == 421
+        && matches!(
+            (class_tag, paired_class_tag),
+            ("364", "272") | ("420", "262")
+        )
+}
 
 /// Return the half-open owner-lane range that carries assembly alignment.
 ///
@@ -96,7 +111,10 @@ pub(crate) fn project_assembly_joints(
             translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
             distance: None,
             distance2: None,
-            angular_limits: None,
+            angular_limits: alignment.angular_limits.as_ref().map(|limits| JointLimits {
+                minimum: Some(limits.minimum),
+                maximum: Some(limits.maximum),
+            }),
             linear_limits: None,
             properties: BTreeMap::new(),
             native_ref: Some(scope.id.clone()),

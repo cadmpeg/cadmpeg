@@ -253,6 +253,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         operand_frames: None,
         operand_paths: None,
         axial_operand_targets: None,
+        angular_limits: None,
         joint_origin_scope_record_index: Some(20),
     });
     let mut origin = DesignParameterScope::empty(
@@ -364,6 +365,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             operand_frames: None,
             operand_paths: None,
             axial_operand_targets: None,
+            angular_limits: None,
             joint_origin_scope_record_index: Some(20),
         });
         scope
