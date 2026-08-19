@@ -830,6 +830,40 @@ fn named_solver_tables_retain_complete_prefix_rows() {
 }
 
 #[test]
+fn named_solver_tables_accept_direct_prototype_item_schema_close() {
+    let skamps = b"skamp_ptr\0\xf1\xf8\x02\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\
+            \xf3\xf7\x6b\xe2\
+            \x07\x02\x03\x23\xf8\x01\xf7\x6c\xfb\xe2\
+            \xf7\x6d\x2a\x01\xe2";
+
+    let rows = feature_skamps(skamps, 0, skamps.len());
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].id, 5);
+    assert_eq!(
+        rows[0].items,
+        vec![FeatureSkampItem {
+            entity_id: 42,
+            sense: 1
+        }]
+    );
+    assert_eq!(rows[1].id, 7);
+    assert_eq!(rows[1].kind, 2);
+    assert_eq!(rows[1].flags, 3);
+    assert_eq!(rows[1].status, 35);
+    assert_eq!(
+        rows[1].items,
+        vec![FeatureSkampItem {
+            entity_id: 42,
+            sense: 1
+        }]
+    );
+}
+
+#[test]
 fn positional_definition_preserves_its_named_solver_tables() {
     let solver_tables = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
             \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\

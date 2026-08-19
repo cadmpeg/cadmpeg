@@ -4265,11 +4265,18 @@ pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<Fe
     item_close.push(0xf1);
     item_close.extend_from_slice(item_class_encoding);
     item_close.push(0xe2);
-    let Some(named_item_end) = find_bytes(payload, &item_close, after_item_class, prototype_end)
-    else {
-        return Vec::new();
+    let named_item_end = find_bytes(payload, &item_close, after_item_class, prototype_end);
+    let (named_item_end, named_item_close_len) = match named_item_end {
+        Some(offset) => (offset, item_close.len()),
+        None if prototype_item_count == 1 && named_item.is_some() => {
+            // Some named prototypes store the one named item directly in the
+            // array body. The outer table trailer closes both the prototype
+            // and its one-item schema; there is no inner item trailer.
+            (prototype_end, 0)
+        }
+        None => return Vec::new(),
     };
-    item_cursor = named_item_end + item_close.len();
+    item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = named_item.into_iter().collect::<Vec<_>>();
     while prototype_items.len() < usize::try_from(prototype_item_count).unwrap_or(usize::MAX) {
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {

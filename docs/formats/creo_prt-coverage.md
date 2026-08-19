@@ -462,6 +462,10 @@ fixtures, scores above L1 remain blocked.
   frame occurs between solver status and the item array. Matching item-table
   and item-row classes delimit the auxiliary body and prevent an embedded
   counted value from becoming the item array.
+- Named solver-incidence prototypes accept both the inner item-trailer form
+  and the one-item form closed directly by the outer table trailer. The
+  declared count and every complete instantiated row remain available in both
+  forms.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the

@@ -1663,7 +1663,7 @@ absent and own no bytes.
 | `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                                                                                                                                                                                                                                                                   |
 | `eqtn_arr`    | Solver-equation table. The header is an optional `f2`, `f8 <declared_count>`, optional `f7 <entity_ref>`, `fb e2`; a named prototype follows and closes with `f1 f7 <class> e2`. Positional rows store solver `equation_id` and `function_id`, followed by either an explicit `f8 <argument_count>` or an uncounted argument body, then `f6` auxiliary data and an `e2` row terminator. The final row may terminate directly at the following `f2 f7` table separator; the separator is not part of the row.                                                                                                                                 |
 | `relat_ptr`   | Counted sketch-constraint relations. An `f8` allocation count of one is the empty table form. Larger counts include two structural entries; exactly `count - 2` positional rows follow the schema close. Zero is invalid. Each row ends at `e2` and stores `id`, `used`, three four-slot operand vectors `a`, `b`, `c`, then `sign`, dimension selector, and relation-type discriminator. |
-| `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs.                                                                                                                                                                                                                                     |
+| `skamp_ptr`   | Counted solver-incidence rows. Each row stores `id`, `type`, `flags`, `status`, and a counted ordered array of section-entity `ent_id`/`sense` pairs. The named prototype may close its one-item schema directly with the outer `f3 f7 <table-class> e2` trailer; instantiated rows retain the same item class and row delimiters.                                                                                                                                 |
 | `triples_ptr` | Counted joins from relation and equation identifiers to `skamp_ptr` incidence identifiers. Each of the three fields independently admits the `f6` null sentinel.                                                                                                                                                                                                                          |
 
 Within an `eqtn_arr` argument body, `e4` occupies one slot with value one,
@@ -1864,8 +1864,9 @@ whole-table topology. Both table headers remain present with their complete row
 prefixes.
 
 `skamp_ptr` accepts the table wrappers `f1`, `f3`, and `f4 05`. Its named row
-is the first counted row. Positional rows repeat the nested item schema for the
-first item, then store additional `ent_id`/`sense` pairs directly; `e2`
+is the first counted row. A one-item named prototype may omit the inner item
+trailer and use the outer table trailer to close its item schema. Positional
+rows repeat the nested item schema for the first item, then store additional `ent_id`/`sense` pairs directly; `e2`
 separates direct items when the item count exceeds two. The row trailer is
 `f3` plus the table entity reference plus `e2`; a one-item row instead ends at
 its item `e2`. The final row may end at the following named record, at a
