@@ -886,16 +886,6 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 
 **Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
 
-### AM-11. JT 9 high-degree lane count
-
-**Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?
-
-**Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
-
-**Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
-
-**Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
-
 ## 4. Test evidence
 
 ### TE-01. Golden coverage of the native arenas named by open items
@@ -904,4 +894,4 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 
 **Known.** `crates/cadmpeg-codec-nx/src/golden_tests.rs` names two hundred and thirty-three arenas and asserts that the fixture set populates at least one hundred and twenty-two of them. The golden documents serialize the complete decoded document, so a changed field of a populated arena moves a golden. The fixture set populates one hundred and twenty-seven arenas. One hundred and six arenas are populated by no fixture.
 
-**Need.** We must have a snapshot witness for the fields that carry open items. `feature_operation_tagged_references`, `feature_operation_data_block_references`, and `feature_pattern_counted_reference_lanes` received new §7.1 grammars, and no fixture populates them. `feature_body_data_block_uses`, `feature_body_segment_uses`, `feature_operation_body_members`, and `feature_operation_body_operands` carry the relations of OM-07, OM-08, and OM-40. `feature_hole_package_construction_group_lanes` and `feature_simple_hole_construction_groups` carry the relation of OM-30. `display_jt_topology_packet_sequences`, `display_jt_vertex_records_headers`, and `display_jt_coordinate_array_headers` carry the lane rule of AM-11. `saved_toggle_streams` carries AM-03 and the `fast_load_component_*` arenas carry AM-01 and AM-07. A change to any of these fields moves no golden, so the unit tests written with each change are the only evidence.
+**Need.** We must have a snapshot witness for the fields that carry open items. `feature_operation_tagged_references`, `feature_operation_data_block_references`, and `feature_pattern_counted_reference_lanes` received new §7.1 grammars, and no fixture populates them. `feature_body_data_block_uses`, `feature_body_segment_uses`, `feature_operation_body_members`, and `feature_operation_body_operands` carry the relations of OM-07, OM-08, and OM-40. `feature_hole_package_construction_group_lanes` and `feature_simple_hole_construction_groups` carry the relation of OM-30. `saved_toggle_streams` carries AM-03 and the `fast_load_component_*` arenas carry AM-01 and AM-07. A change to any of these fields moves no golden, so the unit tests written with each change are the only evidence.
