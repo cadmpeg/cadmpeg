@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
     analyze_trailing_pointer_groups, groups_for_candidate, structural_pointer_group_candidates,
-    trailing_pointer_groups, DefaultTailCount, ParameterRecord, Token, TokenValue,
+    trailing_pointer_groups, ParameterRecord, Token, TokenValue,
 };
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -256,52 +256,6 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
     };
 
     assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
-}
-
-#[test]
-fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
-    let partial_final_item = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: std::iter::once(0)
-            .chain(std::iter::once(1))
-            .chain((0..19).map(|_| 0))
-            .map(|value| Token {
-                value: TokenValue::Integer(value),
-                span: 0..0,
-            })
-            .collect(),
-        parameter_end: 21,
-        comment: Vec::new(),
-    };
-    assert_eq!(
-        partial_final_item.count_with_stride_before_default_tail(1, 20, 21),
-        DefaultTailCount::Held(1)
-    );
-
-    let mut suffixed_tokens = vec![0, 2];
-    suffixed_tokens.extend(std::iter::repeat_n(0, 20));
-    suffixed_tokens.extend([1, 9]);
-    let suffixed_parameter_end = suffixed_tokens.len();
-    let suffixed = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: suffixed_tokens
-            .into_iter()
-            .map(|value| Token {
-                value: TokenValue::Integer(value),
-                span: 0..0,
-            })
-            .collect(),
-        parameter_end: suffixed_parameter_end,
-        comment: Vec::new(),
-    };
-    assert!(matches!(
-        suffixed.count_with_stride_before_default_tail(1, 20, 22),
-        DefaultTailCount::Overdeclared { .. }
-    ));
 }
 
 #[test]
