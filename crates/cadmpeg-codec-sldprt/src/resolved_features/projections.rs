@@ -1098,7 +1098,11 @@ pub(crate) fn project_compact_surface_selections(
         }) else {
             continue;
         };
-        if let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition {
+        if let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &mut feature.definition
+        {
             let native = compact_surface_selection_value(&selection.components);
             let generated = selection
                 .terminal_feature_ref
@@ -1147,6 +1151,13 @@ pub(crate) fn project_compact_surface_selections(
                     else {
                         continue;
                     };
+                    let origin = crate::history::offset_plane_support_origin(
+                        &feature.source_properties,
+                        crate::history::face_selection_native(&face),
+                        origin,
+                        normal,
+                        *distance,
+                    );
                     *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
                         face,
                         origin,
@@ -1295,7 +1306,11 @@ pub(crate) fn project_compact_surface_selections(
         let Some(face) = face_aliases.get(target.as_str()).cloned() else {
             continue;
         };
-        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
+        let FeatureDefinition::DatumOffsetPlane {
+            reference,
+            distance,
+        } = &mut feature.definition
+        else {
             continue;
         };
         if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
@@ -1335,6 +1350,13 @@ pub(crate) fn project_compact_surface_selections(
         else {
             continue;
         };
+        let origin = crate::history::offset_plane_support_origin(
+            &feature.source_properties,
+            crate::history::face_selection_native(&face),
+            origin,
+            normal,
+            *distance,
+        );
         *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
             face,
             origin,

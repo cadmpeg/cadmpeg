@@ -57,6 +57,51 @@ pub(crate) struct TopologySelectionInputs<'a> {
     pub(crate) face_identities: &'a [(String, u32, u32)],
 }
 
+const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-component-ids";
+
+/// Return the native expression retained by a face selection, when present.
+pub(crate) fn face_selection_native(selection: &FaceSelection) -> Option<&str> {
+    match selection {
+        FaceSelection::Resolved { native, .. }
+        | FaceSelection::Historical { native, .. }
+        | FaceSelection::HistoricalPartial { native, .. }
+        | FaceSelection::Generated { native, .. }
+        | FaceSelection::Native(native) => Some(native),
+        FaceSelection::Unresolved | FaceSelection::Faces(_) => None,
+    }
+}
+
+/// Resolve the support origin represented by a face-backed offset reference.
+/// Explicit face frames and legacy face aliases store the support origin. A
+/// surface-component selection stores the resulting plane origin, so its
+/// support is one signed `D1` displacement along the stored normal.
+pub(crate) fn offset_plane_support_origin(
+    source_properties: &BTreeMap<String, String>,
+    native: Option<&str>,
+    fallback_origin: Point3,
+    normal: Vector3,
+    distance: Length,
+) -> Point3 {
+    if let Some(origin) = source_properties
+        .get("ReferenceFaceOrigin")
+        .and_then(|value| parse_point3_mm(value))
+    {
+        return origin;
+    }
+    let origin = source_properties
+        .get("Origin")
+        .and_then(|value| parse_point3_mm(value))
+        .unwrap_or(fallback_origin);
+    if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
+        return Point3::new(
+            origin.x + normal.x * distance.0,
+            origin.y + normal.y * distance.0,
+            origin.z + normal.z * distance.0,
+        );
+    }
+    origin
+}
+
 fn surface_selection_face_bindings<'a>(
     selections: impl IntoIterator<Item = &'a FeatureInputSurfaceSelection>,
     feature_sources: &HashMap<String, Option<u32>>,
@@ -191,11 +236,25 @@ pub fn bind_topology_selections(
                         normal,
                         ..
                     }),
-                ..
+                distance,
             } => {
+                let native = face_selection_native(reference).or_else(|| {
+                    feature
+                        .source_properties
+                        .get("ReferenceFaceNative")
+                        .map(String::as_str)
+                });
+                let support_origin = offset_plane_support_origin(
+                    &feature.source_properties,
+                    native,
+                    *origin,
+                    *normal,
+                    *distance,
+                );
+                *origin = support_origin;
                 resolve_offset_plane_face_selection(
                     reference,
-                    *origin,
+                    support_origin,
                     *normal,
                     &face_selection_context,
                     faces,
