@@ -110,15 +110,16 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
             continue;
         }
         let frames = fixed_record_candidates(stream, p, kind, len);
-        let candidates = frames
-            .iter()
-            .copied()
-            .filter_map(|frame| analytic_candidate(stream, p, kind, frame))
-            .collect::<Vec<_>>();
+        let mut candidates = [None, None];
+        for (slot, frame) in frames.iter().enumerate() {
+            if let Some(frame) = frame {
+                candidates[slot] = analytic_candidate(stream, p, kind, *frame);
+            }
+        }
         if let Some((record, end)) = select_analytic_candidate(stream, &candidates) {
             out.push(record);
             p = end;
-        } else if let Some(end) = frames.iter().map(|frame| frame.end).max() {
+        } else if let Some(end) = frames.iter().flatten().map(|frame| frame.end).max() {
             // A complete structural frame owns its bytes even when its analytic
             // payload fails validation. Do not rescan those bytes as another
             // carrier; an unresolved or ambiguous frame is skipped atomically.
@@ -169,20 +170,21 @@ fn analytic_candidate(
 
 fn select_analytic_candidate(
     stream: &[u8],
-    candidates: &[AnalyticCandidate],
+    candidates: &[Option<AnalyticCandidate>; 2],
 ) -> Option<(AnalyticRecord, usize)> {
-    match candidates {
-        [] => None,
-        [candidate] => Some((candidate.record.clone(), candidate.frame.end)),
-        [direct, escaped] => {
-            let direct_boundary = fixed_record_boundary(stream, direct.frame.end);
-            let escaped_boundary = fixed_record_boundary(stream, escaped.frame.end);
-            match (direct_boundary, escaped_boundary) {
-                (true, false) => Some((direct.record.clone(), direct.frame.end)),
-                (false, true) => Some((escaped.record.clone(), escaped.frame.end)),
-                _ => None,
-            }
-        }
+    let mut valid = candidates.iter().flatten();
+    let first = valid.next()?;
+    let Some(second) = valid.next() else {
+        return Some((first.record.clone(), first.frame.end));
+    };
+    if valid.next().is_some() {
+        return None;
+    }
+    let first_boundary = fixed_record_boundary(stream, first.frame.end);
+    let second_boundary = fixed_record_boundary(stream, second.frame.end);
+    match (first_boundary, second_boundary) {
+        (true, false) => Some((first.record.clone(), first.frame.end)),
+        (false, true) => Some((second.record.clone(), second.frame.end)),
         _ => None,
     }
 }

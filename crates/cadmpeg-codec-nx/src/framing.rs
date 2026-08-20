@@ -43,43 +43,54 @@ pub(crate) struct FixedRecordFrame {
     pub(crate) end: usize,
 }
 
+/// The framing grammar admits at most the direct and escaped readings at one
+/// type-tag offset. Keep both slots inline so a rejected probe does not allocate
+/// while a whole stream is scanned.
+pub(crate) type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
+
 /// Build all complete direct and escaped interpretations at one fixed-record tag.
 pub(crate) fn fixed_record_candidates(
     stream: &[u8],
     pos: usize,
     kind: u8,
     len: usize,
-) -> Vec<FixedRecordFrame> {
-    let mut candidates = Vec::new();
+) -> FixedRecordCandidates {
+    let mut candidates = [None; 2];
     if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
-        candidates.push((xmt, shift));
+        candidates[0] = complete_frame(stream, pos, kind, len, xmt, shift);
     }
     if stream.get(pos + 2) == Some(&0xff) {
         if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
-            candidates.push((xmt, shift + 1));
+            candidates[1] = complete_frame(stream, pos, kind, len, xmt, shift + 1);
         }
     }
     candidates
-        .into_iter()
-        .filter_map(|(xmt, shift)| {
-            // 1 is Parasolid's null reference. A record itself cannot occupy it.
-            if xmt <= 1 {
-                return None;
-            }
-            let payload_shift = payload_shift(stream, pos, kind, shift)?;
-            let end = pos
-                .checked_add(len)?
-                .checked_add(shift)?
-                .checked_add(payload_shift)?;
-            stream.get(pos..end)?;
-            Some(FixedRecordFrame {
-                xmt,
-                shift,
-                payload_shift,
-                end,
-            })
-        })
-        .collect()
+}
+
+fn complete_frame(
+    stream: &[u8],
+    pos: usize,
+    kind: u8,
+    len: usize,
+    xmt: u32,
+    shift: usize,
+) -> Option<FixedRecordFrame> {
+    // 1 is Parasolid's null reference. A record itself cannot occupy it.
+    if xmt <= 1 {
+        return None;
+    }
+    let payload_shift = payload_shift(stream, pos, kind, shift)?;
+    let end = pos
+        .checked_add(len)?
+        .checked_add(shift)?
+        .checked_add(payload_shift)?;
+    stream.get(pos..end)?;
+    Some(FixedRecordFrame {
+        xmt,
+        shift,
+        payload_shift,
+        end,
+    })
 }
 
 /// Return whether `end` is the stream boundary or a complete fixed-record start.
@@ -96,7 +107,11 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     let Some(len) = fixed_len(kind) else {
         return false;
     };
-    !fixed_record_candidates(stream, end, kind, len).is_empty()
+    fixed_record_candidates(stream, end, kind, len)
+        .iter()
+        .flatten()
+        .next()
+        .is_some()
 }
 
 pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {

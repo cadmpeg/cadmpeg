@@ -679,7 +679,11 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            candidates.extend(Self::fixed_record_candidates(stream, pos, kind, len));
+            candidates.extend(
+                Self::fixed_record_candidates(stream, pos, kind, len)
+                    .into_iter()
+                    .flatten(),
+            );
         }
 
         let selected = Self::select_unique_candidates(candidates);
@@ -700,35 +704,43 @@ impl Graph {
         pos: usize,
         kind: u8,
         len: usize,
-    ) -> Vec<NodeCandidate> {
-        let candidates = framed_record_candidates(stream, pos, kind, len)
+    ) -> [Option<NodeCandidate>; 2] {
+        let mut candidates = [None; 2];
+        let mut count = 0;
+        for frame in framed_record_candidates(stream, pos, kind, len)
             .into_iter()
-            .filter_map(|frame| {
-                candidate_has_valid_family_framing(stream, pos, kind, frame.shift, frame.end)?;
-                Some(NodeCandidate {
-                    kind,
-                    xmt: frame.xmt,
-                    pos,
-                    shift: frame.shift,
-                    end: frame.end,
-                })
-            })
-            .collect::<Vec<_>>();
-        if candidates.len() < 2 {
+            .flatten()
+        {
+            let Some(()) =
+                candidate_has_valid_family_framing(stream, pos, kind, frame.shift, frame.end)
+            else {
+                continue;
+            };
+            candidates[count] = Some(NodeCandidate {
+                kind,
+                xmt: frame.xmt,
+                pos,
+                shift: frame.shift,
+                end: frame.end,
+            });
+            count += 1;
+        }
+        if count < 2 {
             return candidates;
         }
 
         let mut boundary_candidates = candidates
             .iter()
+            .flatten()
             .copied()
             .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
         let Some(candidate) = boundary_candidates.next() else {
-            return Vec::new();
+            return [None; 2];
         };
         if boundary_candidates.next().is_none() {
-            vec![candidate]
+            [Some(candidate), None]
         } else {
-            Vec::new()
+            [None; 2]
         }
     }
 
