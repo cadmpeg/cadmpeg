@@ -10,7 +10,7 @@ The representation flag is in the first 80 bytes. A `C` in byte 73 identifies Co
 
 The Binary representation starts with one 80-byte Binary Flag Section. Byte 1 is ASCII `B`. Bytes 2 through 5 are the big-endian unsigned 32-bit value `75`, which is the count of the remaining flag bytes. Bytes 6 through 11 are the one-byte bit lengths `Is`, `Id`, `NXs`, `NFs`, `NXd`, and `NFd`. Bytes 12, 17, 22, 27, 32, and 37 are ASCII `B`, `S`, `G`, `D`, `P`, and `T`. Each letter is followed by a big-endian unsigned 32-bit displacement for that section. Bytes 42 through 72 are unassigned. Byte 73 is ASCII `B`, bytes 74 through 79 are ASCII blanks or zeroes, and byte 80 is ASCII `1`. The Binary Flag Section contains no control bytes.
 
-The Fixed ASCII representation is an ordered sequence of physical lines. A canonical line contains an 80-byte card followed by a line ending. A conformant line has exactly 80 payload bytes; the final line may end at file end. Card bytes 1 through 72 are section data. Byte 73 is the section marker. Bytes 74 through 80 are the right-aligned decimal sequence field. Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence. Before the Terminate card, every physical line is one 80-byte card with a recognized section marker and a valid positive sequence. A short, blank, or other unsequenced line before Terminate is malformed and is not an opaque record. A recognized section marker with an invalid sequence is also malformed. A physical line with more than 80 payload bytes is malformed; bytes beyond column 80 do not form another card. The Terminate card is the last sequenced line, so bytes after its 80-byte card and before the next line boundary are not an unsequenced line and are malformed. Unsequenced lines may follow the Terminate line and are ignored by conforming postprocessors. The decoder has a CADIR recovery for a same-line suffix: when the first 80 bytes are a valid Terminate card, it retains the card and the suffix as a separate opaque `post-terminate` physical record, with no section or sequence semantics assigned to the suffix. This follows the fixed-line and post-Terminate rules in [IGES 5.3 §2.2](https://paulbourke.net/dataformats/iges/IGES.pdf) and [§2.2.4.6](https://paulbourke.net/dataformats/iges/IGES.pdf).
+The Fixed ASCII representation is an ordered sequence of physical lines. A canonical line contains an 80-byte card followed by a line ending. A conformant line has exactly 80 payload bytes; the final line may end at file end. Card bytes 1 through 72 are section data. Byte 73 is the section marker. Bytes 74 through 80 are the right-aligned decimal sequence field. Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence. A canonical physical line before the Terminate card is one 80-byte card with a recognized section marker and a valid positive sequence. A short, blank, or other unmarked line before Terminate is malformed and is not an opaque record. A recognized section marker with an absent, unreadable, or disagreeing sequence is recoverable, and a line before Terminate that carries more than one 80-column card is recoverable under stated conditions; the record quarantine section states both recoveries and the framing loss they charge. Any other physical line with more than 80 payload bytes before Terminate is malformed, and bytes beyond column 80 do not form another card. The Terminate card is the last sequenced line, so bytes after its 80-byte card and before the next line boundary are not an unsequenced line and are malformed. Unsequenced lines may follow the Terminate line and are ignored by conforming postprocessors. The decoder has a CADIR recovery for a same-line suffix: when the first 80 bytes are a valid Terminate card, it retains the card and the suffix as a separate opaque `post-terminate` physical record, with no section or sequence semantics assigned to the suffix. This follows the fixed-line and post-Terminate rules in [IGES 5.3 §2.2](https://paulbourke.net/dataformats/iges/IGES.pdf) and [§2.2.4.6](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
 Byte positions are one-based in this specification. Source spans use zero-based half-open byte ranges. Parsing records the card payload and line ending as disjoint source spans before interpreting fields. A short card, a noncanonical line ending, and bytes after the Terminate card remain separate physical records with their original spans.
 
@@ -131,6 +131,8 @@ The status number is exactly eight decimal digits interpreted as four two-digit 
 
 Subordinate-entity switch `00` is independent, `01` is physically dependent, `02` is logically dependent, and `03` is both physically and logically dependent. A rule that requires physical dependence accepts `01` and `03`. A rule that requires logical dependence accepts `02` and `03`.
 
+A Directory Entry whose fields do not satisfy the rules above does not refuse the file. The record quarantine section states the two-list parse result, the identity and retained bytes of a quarantined record, and the loss it charges.
+
 ## Parameter Data section
 
 Type 406 Forms 34 and 35 put `NP = 1 + 3*ND` at Parameter index 1 and `ND` at index 2 under [IGES 5.3 §§4.130–4.131](https://paulbourke.net/dataformats/iges/IGES.pdf). Each range stores the positive text-string index `T`, the positive first-character index `F`, and the positive last-character index `L` at indexes `3 + 3*i` through `5 + 3*i`, with `F <= L`; the last specified primary index is `2 + 3*ND`, so trailing pointer groups begin at token index `3 + 3*ND` after the entity type token. Form 34 has one General Note owner. Form 35 has one General Note or Text Display Template owner.
@@ -208,6 +210,140 @@ Type 406 Form 11 puts `NP`, `PTYPE`, `ND`, and `NI` at Parameter Data indexes 1 
 The decoder selects that boundary only when the complete nested span fits, its arithmetic does not overflow, and `NP` matches the formula. A malformed count, a truncated list, an overflowing count, or an `NP` mismatch has no usable entity-table boundary and does not enable generic suffix recovery. A wrong-typed `VALI` or `VALD` value does not change a complete count-defined boundary; its native value slot is null and semantic property projection rejects the property. If a nested count is malformed or its list is incomplete, all typed lists are empty; the declared counts and raw Parameter Data tokens remain in the native property and no later token becomes a typed sibling value. This is the CADIR recovery rule for an incomplete counted property.
 
 Type 406 Form 1 stores positive `NP` followed by `NP` level identifiers at Parameter Data indexes 2 through `1+NP` under [IGES 5.3 §4.98](https://paulbourke.net/dataformats/iges/IGES.pdf). The first trailing pointer-group count is token `2+NP`. The native definition-level projection applies the selected entity-specific boundary: a complete span retains that boundary when a level has the wrong lexical or value domain, while a missing, nonpositive, wrong-typed, or incomplete count/list retains no typed levels and suppresses generic trailing-pointer recovery. A valid Definition Levels property has distinct nonnegative level numbers; a negative Directory Level points to its odd Directory Entry sequence.
+
+## Record quarantine
+
+A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record: the decoder retains its raw card bytes under a stable identity, accounts for it in the transfer ledger, and charges a loss. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
+
+### Card framing and the boundary-recovery reading
+
+[IGES 5.3 §2.2](https://paulbourke.net/dataformats/iges/IGES.pdf) defines the Fixed ASCII file as an ordered sequence of 80-column card images. A line terminator is a media convention that separates card images; it is not part of the data model. Two facts place a card. The section marker in column 73 names the section that owns it, and its position fixes its order inside that section. The marker is not recoverable from position, because a section boundary is exactly where the markers change. The sequence is recoverable from position, because §2.2 defines the sequence as the position. A card-scan defect therefore refuses the file when the marker is unreadable or contradicts the canonical section order, and is recovered when the defect lies in a declaration that the card census already fixes.
+
+| Card-scan defect                                                                                          | What the file still fixes                                                     | Disposition                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| No line terminator anywhere in the file, or the first two card images share one line                      | Not reached: the file is not admitted as Fixed ASCII                          | Wrong-format refusal at representation classification, before the card scan. Detection requires the first two card images to be separately terminated. This contract does not change detection. |
+| A line before Terminate carries more than one 80-column card                                              | The marker of every card the 80-column division produces                      | Recovered. The line divides into successive 80-byte cards when its payload length is an exact multiple of 80 and every card so produced carries a recognized section marker. Otherwise the file is malformed. Charges `iges/card.framing-recovered`. |
+| A line before Terminate is shorter than 80 bytes, including a blank line                                  | Nothing: the card has no marker                                               | Malformed. The card joins no section, so the section census is unknown, and the census fixes both the Directory Entry odd/even pairing and the Terminate counts. |
+| Column 73 before Terminate holds a letter other than `S`, `G`, `D`, `P`, or `T`                            | Nothing: the card has no recognized marker                                    | Malformed, for the same reason.                                                                                                       |
+| A recognized section marker does not advance the canonical `S`, `G`, `D`, `P`, `T` order                   | The marker and the canonical order contradict each other                      | Malformed. Both readings change which records the file contains.                                                                     |
+| Columns 74 through 80 hold no valid positive sequence                                                     | The marker, and the position inside the section                               | Recovered. The card's position inside its section is its sequence. Charges `iges/card.framing-recovered`.                            |
+| The declared sequence disagrees with the card's position inside its section                                | The marker, and the position inside the section                               | Recovered the same way. The position is what a per-section index that starts at one and increases by one denotes.                     |
+| The file has no Terminate card                                                                            | Nothing fixes the end of the file                                             | Malformed. [§2.2.4.6](https://paulbourke.net/dataformats/iges/IGES.pdf) makes the Terminate card the last card, and the rule that ignores unsequenced trailing lines has no anchor without it. |
+| Two or more Terminate cards                                                                               | Not applicable                                                                | Cannot occur. The scan assigns a section only to cards before the first Terminate card, so a later `T` card is an unsequenced trailing line under the post-Terminate rule. |
+| A Terminate count disagrees with the actual card count of its section, or its section letter or count digits are malformed | The card census of each section                                | Recovered. The census is authoritative and the four counts are redundant declarations of it. Charges `iges/card.framing-recovered`.   |
+
+Recovered sequences are authoritative for identity. Every Directory Entry identity, every Directory Entry pointer target, and every Parameter Data back-pointer resolves against positional sequences, so one misnumbered card changes only its own identity.
+
+### The parse result
+
+Directory Entry parsing returns two lists. The first holds one fully typed record for every Directory Entry whose twenty fields are readable. The second holds one quarantine record for every Directory Entry that is not. The typed list keeps its meaning: a consumer of a typed Directory Entry sees only records whose fields were read from the file, never a record with a substituted field. A quarantine record carries the section, the sequence, the byte offset of its first card, the raw card bytes, and a defect key. It carries no interpreted field, because a field the parser could not read has no interpretation.
+
+One quarantine record covers one whole Directory Entry, which is the two-card pair. A defect in either card quarantines the pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
+
+### The quarantine arenas
+
+Quarantined records live in their own `native.iges` arenas, so each keeps a stable entity identity that the reference graph, the transfer ledger, and a stored document can name.
+
+| Arena                             | Holds                                                       | Identity                                | Key                                                            |
+| --------------------------------- | ----------------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------- |
+| `quarantined_directory_records`   | One Directory Entry whose typed fields were not recovered    | `iges:quarantine:directory#<sequence>`  | The odd positional Directory sequence of the record's first card |
+| `quarantined_parameter_records`   | One entity's Parameter Data                                 | `iges:quarantine:parameter#<sequence>`  | The odd positional Directory sequence of the owning entry       |
+
+The two arenas stay separate because their consequences differ: a `quarantined_directory_records` key names a sequence that has no typed entry and no `entities` record, while a `quarantined_parameter_records` key names a sequence that has both. One arena with a discriminator field would make every consumer filter to learn which case it holds.
+
+Each record carries these fields.
+
+| Field           | Meaning                                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `section`       | `directory-entry` or `parameter-data`                                                                                       |
+| `sequence`      | The positional Directory sequence that is the record's key                                                                  |
+| `source_offset` | The zero-based byte offset of the record's first card                                                                       |
+| `cards`         | The number of 80-byte cards the record covers                                                                               |
+| `bytes`         | The ordered concatenation of those cards' 80-byte payloads, without line endings                                            |
+| `defect`        | A stable kebab-case key for the defect class                                                                                |
+
+`bytes` holds the full 80-byte payloads, not the 72-byte or 64-byte data areas, because the purpose of the record is retention and the sequence and marker columns are part of what failed. The `cards` arena also holds those payloads as physical records, and the quarantine record repeats them so that a consumer never joins across arenas to see what failed; this matches how `entities` repeats Parameter Data text in `parameter_bytes`. The record carries no message text: the loss note in the decode report carries the prose, and the two join on the sequence.
+
+The defect keys are `field-not-ascii`, `field-not-an-integer`, `status-number-invalid`, `repeated-entity-type-mismatch`, and `unpaired-card` for a Directory Entry record; and `hollerith-count-unreadable`, `hollerith-payload-truncated`, `token-not-ascii`, `token-not-a-number`, `delimiter-missing`, `entity-type-token-mismatch`, `declared-card-missing`, `no-owned-cards`, `declared-count-zero`, and `ownership-conflict` for a Parameter Data record. The loss code, not the defect key, is the gating contract; the key lets a consumer of a stored document recover the class without parsing prose.
+
+Quarantined records count as native entities for resource accounting, on the same charge as every other native record.
+
+### Native store version
+
+The `native.iges` namespace version becomes `3`. Version `2` declares the arena set without the two quarantine arenas; version `3` declares the same arenas plus `quarantined_directory_records` and `quarantined_parameter_records`. The field is a declaration about a stored document: it states which arena set and which record shapes the document holds. No IGES code path branches on the value and IGES declares no accepted-version range, so the bump changes no decode or write decision. The version rises by one whenever the arena set or a stored record shape changes.
+
+### Transfer ledger rows
+
+Accounting stays complete and ledger verification stays fatal.
+
+| Source key      | Case                                                        | Target                                  | Disposition | Note                                                                              |
+| --------------- | ----------------------------------------------------------- | --------------------------------------- | ----------- | --------------------------------------------------------------------------------- |
+| `D<n>`          | A quarantined Directory Entry record                        | `iges:quarantine:directory#<n>`         | `Retained`  | `quarantined directory record retained; typed Directory fields were not recovered` |
+| `D<n>`          | A typed Directory Entry whose Parameter Data is quarantined | `iges:entity:directory#<n>`             | `Retained`  | The existing attributed-loss note, unchanged                                       |
+| `D<n>:parameter`| The quarantined Parameter Data of that entry                | `iges:quarantine:parameter#<n>`         | `Retained`  | `quarantined parameter data retained; tokens were not recovered`                   |
+
+`TransferLedger::verify` rejects a `Retained` row without a target, a row whose target the finalized model index does not contain, and an `Omitted` row that has one. A quarantine row satisfies all three: it names a target, and the model index collects the identity of every record in every native arena, so a quarantine-arena identity resolves. Verification therefore stays fatal and passes.
+
+Every quarantined Directory Entry record has a ledger row, including one whose entity-type field is unreadable. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null.
+
+### Pointers into a quarantined record
+
+A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence, so a report consumer joins the two on `D<sequence>`.
+
+### Pointers out of a quarantined record
+
+The decoder does not analyze the outbound pointers of a quarantined Directory Entry record. Its structure, line-font, level, view, transformation, label-display, and color pointers are the same eight-byte fields that failed typing. Reading a pointer out of a field that is not known to hold a signed decimal integer would report a reference the file does not state, which is fabrication, not recovery. A quarantined record therefore contributes no edge to the reference graph and charges no pointer loss of its own. Its raw bytes retain every pointer field for a consumer that chooses to inspect them.
+
+### Parameter Data quarantine
+
+A defect in one entity's Parameter Data quarantines that entity's parameter data and nothing else.
+
+- The typed Directory Entry stays in the typed list with all twenty fields.
+- The entity is not projected to neutral IR. No geometry, annotation, or product record is derived from tokens that were not read.
+- The `entities` arena keeps the entity's record, with empty parameter text and no tokens. The quarantine record holds the raw text, which has no other typed home.
+- The decoder charges one `iges/parameter.data-quarantined` loss whose provenance tag is `D<sequence>:parameter`. The reader counts that as an attributed loss, so the generic `iges/entity.retained-unprojected` note is not also charged and the entity's ledger note states that projection was omitted with an attributed loss.
+
+Ownership of Parameter Data cards resolves in a fixed order, because the Directory Entry declaration and the card back-pointers are redundant statements of the same fact and either can be the broken one.
+
+1. The declared range applies when the Directory Entry Parameter Data start and line count are positive values inside the unsigned 32-bit range and every Parameter Data position in `start` through `start + count - 1` exists. The range is primary because [§2.2.4.5](https://paulbourke.net/dataformats/iges/IGES.pdf) makes the Directory Entry the index of its parameter data and columns 65 through 72 a back reference to it.
+2. Otherwise the back-pointer census applies: the contiguous run of Parameter Data cards whose back-pointer names this entry.
+3. Otherwise the entity's Parameter Data is quarantined.
+
+Throughout these rules, an existing entry is one in the typed list. A back-pointer that is absent, unreadable, zero, even, or names no existing entry does not quarantine anything when rule 1 claims the card; the disagreement charges `iges/card.framing-recovered`. Any use of rule 2, and any disagreement between rule 1 and the back-pointer census, charges the same code. A readable back-pointer that names a different existing entry is a conflict rather than a broken declaration: it quarantines the Parameter Data of both entries, as does a card that two declared ranges claim. A Parameter Data card that no entry claims under either rule, and whose back-pointer names no quarantined Directory Entry record either, is retained in the `cards` arena, belongs to no record, needs no quarantine record and no ledger row, and charges `iges/card.framing-recovered`.
+
+A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no `quarantined_parameter_records` entry and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the quarantine identity space holds one record per broken source record rather than two.
+
+A non-null entity that declares zero Parameter Data cards has a quarantine record with zero cards and no bytes. The record exists so that the entity's missing parameter data has one identity and one ledger row, on the same terms as every other quarantined record.
+
+### Loss codes
+
+Three codes cover both quarantine classes and every recovered framing defect. Each names one consequence class, which is what a report consumer acts on.
+
+| Loss code                          | Taxonomy                   | Severity | Strict consequence                       | Charged for                                                                                                                                                                              |
+| ---------------------------------- | -------------------------- | -------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iges/directory.record-quarantined`| `NoncanonicalSourceSyntax` | Warning  | Rejected. The taxonomy floor is Warning. | One Directory Entry record whose typed fields were not recovered: a non-ASCII field, a field that is not a decimal integer, an invalid status number, a repeated entity type that disagrees, or an unpaired card |
+| `iges/parameter.data-quarantined`  | `NoncanonicalSourceSyntax` | Warning  | Rejected. The taxonomy floor is Warning. | One entity's Parameter Data: an unreadable Hollerith count, a truncated Hollerith payload, a non-ASCII or non-numeric token, a missing delimiter, a first token that disagrees with the entity type, a declared card that does not exist, no owned card, a declared count of zero, or conflicting ownership |
+| `iges/card.framing-recovered`      | `NoncanonicalSourceSyntax` | Warning  | Rejected. The taxonomy floor is Warning. | A card boundary, a card sequence, a Parameter Data card owner, or a Terminate count that the decoder took from the card census because the file's own declaration was absent, unreadable, or disagreed |
+
+All three use `NoncanonicalSourceSyntax` rather than `RecordNotTyped`. `RecordNotTyped` states that this codec does not type a record, which is a claim about the read envelope; a quarantine states that the file does not hold the record it declares, which is a claim about source syntax. The strict consequence follows the same split. A strict caller accepts that the reader does not cover an entity type, and its taxonomy declares no floor; a strict caller must not silently accept a file whose Directory Entry is not a Directory Entry, and `NoncanonicalSourceSyntax` floors at Warning. Severity is Warning, not Blocking, because a quarantined record removes one record and leaves the rest of the document usable, which is the same weight as `iges/global.noncanonical-framing`.
+
+Each message names its record and its defect.
+
+| Loss code                          | The message names                                                                                                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `iges/directory.record-quarantined`| The section `directory-entry`, the sequence as `D<n>`, the failing field under the name the typed parser uses, and the defect. Provenance is the first card's offset with tag `directory_entry:D<n>`. |
+| `iges/parameter.data-quarantined`  | The owning sequence as `D<n>`, the owned card range as `P<first>` through `P<last>`, and the defect. Provenance is the first owned card's offset, or the failing token's offset when it is known, with tag `D<n>:parameter`. |
+| `iges/card.framing-recovered`      | The section name, the position of the first offending card inside that section, the declared value, the value the decoder used, and the count of offending cards in that section.               |
+
+A file that misnumbers every card charges one note, not one note per card: `iges/card.framing-recovered` is charged at most once for each pair of section and defect class, where the defect classes are a recovered card boundary, a recovered sequence, a recovered Parameter Data owner, an unclaimed Parameter Data card, and a replaced Terminate count. The two quarantine codes are charged once per quarantined record.
+
+### The write path
+
+The semantic writer does not regenerate a quarantined record, because a record that failed typing has no fields to write. Both quarantine arenas are admitted native passthrough arenas, and a non-empty one charges `iges/writer.passthrough-omitted` naming the arena and its record count. Without that admission the semantic writer would refuse every document that holds a quarantined record, because it refuses any native arena it cannot preserve. Byte-exact replay is unaffected: it copies the retained source image, which holds every quarantined card.
+
+### Integrity and resource failures
+
+The third tier is unchanged. The transfer-ledger verification at the end of decode, a resource-limit refusal, and an I/O failure each refuse the request. Ledger verification checks the decoder's own output, so a failure there is a decoder defect and not a source defect. Resource refusals are admission control, described under decode admission below.
 
 ## Entity graph
 
@@ -524,11 +660,11 @@ A positive Directory line-weight number selects that numbered increment in the u
 
 A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
 
-The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `line_fonts` arena stores typed template and visible-blank definitions. Its `definition_levels` arena stores ordered multiple-level sets. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.
+The `native.iges` namespace version is `3`; the record quarantine section states what the version declares. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `line_fonts` arena stores typed template and visible-blank definitions. Its `definition_levels` arena stores ordered multiple-level sets. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and verifies it against the decoded model.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and for every quarantined record, and verifies it against the decoded model. The record quarantine section states the quarantine arenas and their ledger rows.
 
 ## Decode admission
 
@@ -554,9 +690,9 @@ invariants before it returns the document. A failed candidate does not commit
 partial topology.
 
 Every non-null Directory Entry has one retained native identity and one
-`transfer_ledger` disposition. A supported entity without neutral projection
-has a stable namespaced loss code, source provenance, and its retained native
-record. A projected entity with reduced fidelity records the reduction on the
+`transfer_ledger` disposition, and so does every quarantined record. A
+supported entity without neutral projection has a stable namespaced loss code,
+source provenance, and its retained native record. A projected entity with reduced fidelity records the reduction on the
 same source identity. Salvage mode records every loss in the decode report.
 Strict mode refuses through the shared decode gate: a loss causes refusal when
 its shared taxonomy defines a strict severity floor and the loss severity
@@ -564,6 +700,10 @@ reaches that floor. For the current IGES loss set that is exactly
 `iges/graph.pointer-unresolved`, `iges/curve.composite-carrier-degraded`,
 `iges/source.dialect-unverified`,
 `iges/global.semantic-context-substituted`,
-`iges/global.length-unit-unresolved`, and
-`iges/global.noncanonical-framing`. Every other IGES loss is recorded in the
-decode report in both modes.
+`iges/global.length-unit-unresolved`,
+`iges/global.noncanonical-framing`,
+`iges/directory.record-quarantined`, `iges/parameter.data-quarantined`, and
+`iges/card.framing-recovered`. Every other IGES loss is recorded in the
+decode report in both modes. Strict mode therefore refuses a structurally
+defective file, and salvage mode recovers it with the losses the record
+quarantine section states.
