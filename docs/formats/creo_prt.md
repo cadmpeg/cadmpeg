@@ -1590,6 +1590,36 @@ and occurs once in its labeled prototype. Each of
 `next_crv_hdr_ptr[1]` occurs once in the same prototype; repeated endpoint or
 topology fields make the prototype ambiguous.
 
+### 4.1.1 Legacy ASCII curve topology and endpoints
+
+In legacy ASCII persistence, the model curve namespace is the unique complete
+`crv_array` object array directly below the unique
+`Sld_VisGeom.active_geom` object. Each direct element is one `crv_array` curve
+object. A curve object is a complete topology row only when it has one scalar
+`crv_id`, `type`, and `feat_id`, one dimension-`[2]` type-1 `crv_pnt_dir`
+array, and one scalar field for each of
+`crv_hdr_geom_ptr[0]`, `crv_hdr_geom_ptr[1]`, `next_crv_hdr_ptr[0]`, and
+`next_crv_hdr_ptr[1]`. The two `crv_hdr_geom_ptr` values are the `F0` and `F1`
+surface identifiers. The two `next_crv_hdr_ptr` values are the `E0` and `E1`
+successor curve identifiers. A missing, duplicate, dimension-incomplete, or
+non-signed direction field withholds the typed row.
+
+The legacy `crv_pnt_dir` values `1` and `-1` encode the `01` and `f6`
+endpoint directions respectively. A complete `crv_pnt_arr` type-2 array has
+dimensions `[N, 4]` with `N >= 2` and exactly `4N` finite values in row-major
+order. Each sample row stores the two adjacent face-chart coordinates. The
+first row is endpoint A and the last row is endpoint B:
+
+| Slots | Meaning |
+| ----- | ------- |
+| `0..1` | Endpoint in face `F0` parameter space |
+| `2..3` | Endpoint in face `F1` parameter space |
+
+Intermediate rows are bounded pcurve samples. Their endpoint pairs bind to the
+same `F0`/`F1` faces as the topology row. A complete legacy curve namespace
+uses the same half-edge successor, vertex-orbit, face-loop, and carrier
+admission rules as the binary `crv_array` namespace.
+
 ### 4.2 `fc` curve bodies
 
 Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class.

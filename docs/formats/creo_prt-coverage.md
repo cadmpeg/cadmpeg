@@ -41,6 +41,11 @@ fixtures, scores above L1 remain blocked.
   object and twelve-slot row-major `local_sys` frame, including canonical unit
   scaling. Incomplete, duplicate, conflicting, or non-visible carriers remain
   native.
+- Legacy ASCII `Sld_VisGeom.active_geom.crv_array` joins complete curve objects
+  to their two face references, two successor references, signed endpoint
+  directions, and bounded `crv_pnt_arr` endpoint witnesses. These rows use the
+  common guarded half-edge, vertex, and face-loop transfer path; incomplete or
+  ambiguous curve objects remain native.
 - When a legacy ASCII part has no unique `principal_sys_units` scalar, its
   unique complete `unit_arr` length record supplies the stored-to-millimeter
   scale from `25.4 * factor`. Missing or ambiguous unit records do not select

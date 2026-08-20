@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::curve::{CurveTopologyRow, PcurveEndpoints};
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence, RealRecord};
 use crate::surface::{self, SurfaceKind, SurfaceRow};
 
@@ -42,15 +43,20 @@ pub(crate) struct LegacySurfaceCarrier {
     pub(crate) offset: usize,
 }
 
-/// Legacy surface rows and complete analytic carriers from both namespaces.
+/// Legacy geometry rows and complete analytic carriers from both namespaces.
 #[derive(Debug, Default, Clone, PartialEq)]
-pub(crate) struct LegacySurfaceScan {
+pub(crate) struct LegacyGeometryScan {
     /// Rows under `Sld_VisGeom.active_geom.srf_array`.
     pub(crate) rows: Vec<SurfaceRow>,
     /// Rows under `Sld_NonVisGeom.inactive_geom.srf_array`.
     pub(crate) nonvisible_rows: Vec<SurfaceRow>,
     /// Complete plane and cylinder carriers from visible rows.
     pub(crate) carriers: Vec<LegacySurfaceCarrier>,
+    /// Complete visible curve topology rows from the legacy `crv_array`
+    /// namespace.
+    pub(crate) topology_rows: Vec<CurveTopologyRow>,
+    /// Complete endpoint witnesses from legacy `crv_pnt_arr` samples.
+    pub(crate) pcurves: Vec<PcurveEndpoints>,
 }
 
 type ObjectIdIndex<'a> = BTreeMap<&'a str, &'a ObjectRecord>;
@@ -59,7 +65,7 @@ type IntegerFieldIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a legacy::Intege
 type RealFieldIndex<'a> = BTreeMap<(&'a str, &'a str), Vec<&'a RealRecord>>;
 
 /// Decode the surface portions of one legacy persistence object graph.
-pub(crate) fn scan(persistence: &Persistence) -> LegacySurfaceScan {
+pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
     let object_ids = object_id_index(&persistence.objects);
     let children = child_index(&persistence.objects);
     let integer_fields = integer_field_index(&persistence.integer_values);
@@ -82,10 +88,190 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacySurfaceScan {
         "Sld_NonVisGeom",
         "inactive_geom",
     );
-    LegacySurfaceScan {
+    let (topology_rows, pcurves) = curve_namespace(
+        &persistence.objects,
+        &object_ids,
+        &integer_fields,
+        &real_fields,
+    );
+    LegacyGeometryScan {
         rows,
         nonvisible_rows,
         carriers,
+        topology_rows,
+        pcurves,
+    }
+}
+
+fn curve_namespace(
+    objects: &[ObjectRecord],
+    object_ids: &ObjectIdIndex<'_>,
+    integer_fields: &IntegerFieldIndex<'_>,
+    real_fields: &RealFieldIndex<'_>,
+) -> (Vec<CurveTopologyRow>, Vec<PcurveEndpoints>) {
+    let Some(elements) = curve_array_elements(objects, object_ids, "Sld_VisGeom", "active_geom")
+    else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut topology_rows = Vec::new();
+    let mut pcurves = Vec::new();
+    for curve_object in elements {
+        let Some(row) = curve_topology_row(curve_object, integer_fields) else {
+            continue;
+        };
+        if let Some(pcurve) = curve_pcurve(curve_object, &row, real_fields) {
+            pcurves.push(pcurve);
+        }
+        topology_rows.push(row);
+    }
+    topology_rows.sort_by_key(|row| row.offset);
+    topology_rows.dedup_by_key(|row| row.offset);
+    pcurves.sort_by_key(|pcurve| pcurve.offset);
+    pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    (topology_rows, pcurves)
+}
+
+fn curve_array_elements<'a>(
+    objects: &'a [ObjectRecord],
+    object_ids: &ObjectIdIndex<'a>,
+    root_name: &str,
+    branch_name: &str,
+) -> Option<Vec<&'a ObjectRecord>> {
+    let mut roots = objects
+        .iter()
+        .filter(|object| object.name == root_name && object.parent.is_none());
+    let root = roots.next()?;
+    roots.next().is_none().then_some(())?;
+
+    let mut branches = objects.iter().filter(|object| {
+        object.parent.as_deref() == Some(root.id.as_str()) && object.name == branch_name
+    });
+    let branch = branches.next()?;
+    branches.next().is_none().then_some(())?;
+
+    let mut arrays = objects.iter().filter(|object| {
+        object.parent.as_deref() == Some(branch.id.as_str())
+            && object.name == "crv_array"
+            && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+    });
+    let array = arrays.next()?;
+    arrays.next().is_none().then_some(())?;
+
+    let ObjectPayload::Array { elements, .. } = &array.payload else {
+        unreachable!("the curve namespace array was filtered above");
+    };
+    elements
+        .iter()
+        .map(|element_id| {
+            let element = object_ids.get(element_id.as_str()).copied()?;
+            (element.parent.as_deref() == Some(array.id.as_str()) && element.name == "crv_array")
+                .then_some(())?;
+            Some(element)
+        })
+        .collect()
+}
+
+fn curve_topology_row(
+    curve_object: &ObjectRecord,
+    integers: &IntegerFieldIndex<'_>,
+) -> Option<CurveTopologyRow> {
+    let id = u32::try_from(integer_field(integers, &curve_object.id, "crv_id")?).ok()?;
+    let type_byte = u8::try_from(integer_field(integers, &curve_object.id, "type")?).ok()?;
+    let feature_id = u32::try_from(integer_field(integers, &curve_object.id, "feat_id")?).ok()?;
+    let directions = integer_array(integers, &curve_object.id, "crv_pnt_dir")?
+        .into_iter()
+        .map(legacy_direction)
+        .collect::<Option<Vec<_>>>()?;
+    let [first_direction, second_direction] = directions.as_slice() else {
+        return None;
+    };
+    let faces = [
+        u32::try_from(integer_field(
+            integers,
+            &curve_object.id,
+            "crv_hdr_geom_ptr[0]",
+        )?)
+        .ok()?,
+        u32::try_from(integer_field(
+            integers,
+            &curve_object.id,
+            "crv_hdr_geom_ptr[1]",
+        )?)
+        .ok()?,
+    ];
+    let next_edges = [
+        u32::try_from(integer_field(
+            integers,
+            &curve_object.id,
+            "next_crv_hdr_ptr[0]",
+        )?)
+        .ok()?,
+        u32::try_from(integer_field(
+            integers,
+            &curve_object.id,
+            "next_crv_hdr_ptr[1]",
+        )?)
+        .ok()?,
+    ];
+    Some(CurveTopologyRow {
+        id,
+        type_byte,
+        feature_id,
+        directions: [*first_direction, *second_direction],
+        faces,
+        next_edges,
+        offset: integer_record(integers, &curve_object.id, "crv_id")?.offset,
+    })
+}
+
+fn curve_pcurve(
+    curve_object: &ObjectRecord,
+    topology: &CurveTopologyRow,
+    reals: &RealFieldIndex<'_>,
+) -> Option<PcurveEndpoints> {
+    let record = real_record(reals, &curve_object.id, "crv_pnt_arr")?;
+    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+        return None;
+    };
+    let [sample_count, lane_width] = dimensions.as_slice() else {
+        return None;
+    };
+    if *lane_width != 4 || *sample_count < 2 {
+        return None;
+    }
+    let sample_count = usize::try_from(*sample_count).ok()?;
+    let expected_elements = sample_count.checked_mul(4)?;
+    if record.payload.element_count() != u64::try_from(expected_elements).ok()? {
+        return None;
+    }
+    let mut values = Vec::new();
+    for run in runs {
+        let count = usize::try_from(run.count).ok()?;
+        let value = run.value.value();
+        value.is_finite().then_some(())?;
+        for _ in 0..count {
+            values.push(value);
+        }
+    }
+    let first: [f64; 4] = values.get(..4)?.try_into().ok()?;
+    let last: [f64; 4] = values
+        .get((sample_count - 1).checked_mul(4)?..expected_elements)?
+        .try_into()
+        .ok()?;
+    Some(PcurveEndpoints {
+        curve_id: topology.id,
+        faces: topology.faces,
+        face_0_endpoints: [[first[0], first[1]], [last[0], last[1]]],
+        face_1_endpoints: [[first[2], first[3]], [last[2], last[3]]],
+        offset: record.offset,
+    })
+}
+
+fn legacy_direction(value: i32) -> Option<u8> {
+    match value {
+        1 => Some(0x01),
+        -1 => Some(0xf6),
+        _ => None,
     }
 }
 
@@ -300,6 +486,25 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> O
     }
 }
 
+fn integer_array(records: &IntegerFieldIndex<'_>, parent: &str, name: &str) -> Option<Vec<i32>> {
+    let record = integer_record(records, parent, name)?;
+    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+        return None;
+    };
+    let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
+        count.checked_mul(u64::from(*dimension))
+    })?;
+    (record.payload.element_count() == expected).then_some(())?;
+    let mut values = Vec::new();
+    for run in runs {
+        let count = usize::try_from(run.count).ok()?;
+        for _ in 0..count {
+            values.push(run.value);
+        }
+    }
+    (u64::try_from(values.len()).ok()? == expected).then_some(values)
+}
+
 fn real_record<'a>(
     records: &'a RealFieldIndex<'a>,
     parent: &str,
@@ -335,6 +540,10 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
 #[cfg(test)]
 mod tests {
     use super::{scan, LegacySurfaceGeometry};
+    use crate::legacy::{
+        IntegerPayload, IntegerRun, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload,
+        RealRun, ValueRecord,
+    };
 
     fn real(value: f64) -> String {
         format!("{:016X}", value.to_bits())
@@ -413,5 +622,189 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());
+    }
+
+    fn object(id: &str, name: &str, parent: Option<&str>, payload: ObjectPayload) -> ObjectRecord {
+        ObjectRecord {
+            id: id.to_string(),
+            name: name.to_string(),
+            attribute_id: 0,
+            scope_offset: 0,
+            parent: parent.map(str::to_string),
+            depth: 0,
+            payload,
+            offset: 0,
+        }
+    }
+
+    fn integer(
+        parent: &str,
+        name: &str,
+        payload: IntegerPayload,
+        offset: usize,
+    ) -> crate::legacy::IntegerRecord {
+        ValueRecord {
+            id: format!("{parent}:{name}"),
+            name: name.to_string(),
+            attribute_id: 0,
+            scope_offset: 0,
+            parent: Some(parent.to_string()),
+            depth: 0,
+            payload,
+            offset,
+        }
+    }
+
+    fn real_array(parent: &str, values: [[f64; 4]; 2], offset: usize) -> crate::legacy::RealRecord {
+        let values = values
+            .into_iter()
+            .flatten()
+            .map(|value| Real::from_bits(value.to_bits()));
+        let runs = values.map(|value| RealRun { count: 1, value }).collect();
+        ValueRecord {
+            id: format!("{parent}:crv_pnt_arr"),
+            name: "crv_pnt_arr".to_string(),
+            attribute_id: 0,
+            scope_offset: 0,
+            parent: Some(parent.to_string()),
+            depth: 0,
+            payload: RealPayload::Array {
+                dimensions: vec![2, 4],
+                runs,
+            },
+            offset,
+        }
+    }
+
+    fn curve_field_records(
+        curve: &str,
+        id: i32,
+        faces: [i32; 2],
+        next: [i32; 2],
+    ) -> Vec<crate::legacy::IntegerRecord> {
+        vec![
+            integer(
+                curve,
+                "crv_id",
+                IntegerPayload::Scalar { value: id },
+                id as usize,
+            ),
+            integer(
+                curve,
+                "type",
+                IntegerPayload::Scalar { value: 0 },
+                100 + id as usize,
+            ),
+            integer(
+                curve,
+                "feat_id",
+                IntegerPayload::Scalar { value: 7 },
+                200 + id as usize,
+            ),
+            integer(
+                curve,
+                "crv_pnt_dir",
+                IntegerPayload::Array {
+                    dimensions: vec![2],
+                    runs: vec![
+                        IntegerRun { count: 1, value: 1 },
+                        IntegerRun {
+                            count: 1,
+                            value: -1,
+                        },
+                    ],
+                },
+                300 + id as usize,
+            ),
+            integer(
+                curve,
+                "crv_hdr_geom_ptr[0]",
+                IntegerPayload::Scalar { value: faces[0] },
+                400 + id as usize,
+            ),
+            integer(
+                curve,
+                "crv_hdr_geom_ptr[1]",
+                IntegerPayload::Scalar { value: faces[1] },
+                500 + id as usize,
+            ),
+            integer(
+                curve,
+                "next_crv_hdr_ptr[0]",
+                IntegerPayload::Scalar { value: next[0] },
+                600 + id as usize,
+            ),
+            integer(
+                curve,
+                "next_crv_hdr_ptr[1]",
+                IntegerPayload::Scalar { value: next[1] },
+                700 + id as usize,
+            ),
+        ]
+    }
+
+    fn topology_persistence() -> Persistence {
+        let root = "root";
+        let branch = "branch";
+        let array = "curve_array";
+        let first = "curve_10";
+        let second = "curve_11";
+        let objects = vec![
+            object(root, "Sld_VisGeom", None, ObjectPayload::Arrow),
+            object(branch, "active_geom", Some(root), ObjectPayload::Arrow),
+            object(
+                array,
+                "crv_array",
+                Some(branch),
+                ObjectPayload::Array {
+                    dimensions: vec![2],
+                    elements: vec![first.to_string(), second.to_string()],
+                    complete: true,
+                },
+            ),
+            object(first, "crv_array", Some(array), ObjectPayload::Arrow),
+            object(second, "crv_array", Some(array), ObjectPayload::Arrow),
+        ];
+        let mut integer_values = curve_field_records(first, 10, [100, 200], [11, 11]);
+        integer_values.extend(curve_field_records(second, 11, [100, 200], [10, 10]));
+        let real_values = vec![real_array(
+            first,
+            [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0]],
+            810,
+        )];
+        Persistence {
+            real_values,
+            integer_values,
+            objects,
+            ..Persistence::default()
+        }
+    }
+
+    #[test]
+    fn extracts_legacy_curve_topology_and_endpoint_witnesses() {
+        let result = scan(&topology_persistence());
+
+        assert_eq!(result.topology_rows.len(), 2);
+        assert_eq!(result.topology_rows[0].id, 10);
+        assert_eq!(result.topology_rows[0].directions, [0x01, 0xf6]);
+        assert_eq!(result.topology_rows[0].faces, [100, 200]);
+        assert_eq!(result.topology_rows[0].next_edges, [11, 11]);
+        assert_eq!(result.pcurves.len(), 1);
+        assert_eq!(result.pcurves[0].curve_id, 10);
+        assert_eq!(result.pcurves[0].face_0_endpoints, [[0.0, 1.0], [4.0, 5.0]]);
+        assert_eq!(result.pcurves[0].face_1_endpoints, [[2.0, 3.0], [6.0, 7.0]]);
+    }
+
+    #[test]
+    fn incomplete_legacy_curve_fields_withhold_topology() {
+        let mut persistence = topology_persistence();
+        persistence.integer_values.retain(|record| {
+            !(record.parent.as_deref() == Some("curve_11") && record.name == "next_crv_hdr_ptr[1]")
+        });
+
+        let result = scan(&persistence);
+
+        assert_eq!(result.topology_rows.len(), 1);
+        assert_eq!(result.topology_rows[0].id, 10);
     }
 }

@@ -2228,7 +2228,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     } else {
         None
     };
-    let legacy_surface_geometry = legacy_ascii
+    let legacy_geometry = legacy_ascii
         .as_ref()
         .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
         .unwrap_or_default();
@@ -2263,10 +2263,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     loop_array_sections.dedup_by_key(|section| section.offset);
     let loop_arrays = loop_array_scan(&data, &loop_array_sections);
     let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
-    nonvisible_surface_rows.extend(legacy_surface_geometry.nonvisible_rows);
+    nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows.sort_by_key(|row| row.offset);
     let mut surface_rows = surface_rows(&data, &model_geometry_sections);
-    surface_rows.extend(legacy_surface_geometry.rows);
+    surface_rows.extend(legacy_geometry.rows);
     surface_rows.sort_by_key(|row| row.offset);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
@@ -2314,9 +2314,17 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let nonvisible_curve_parameters = curve_parameters(&data, &nonvisible_geometry_sections);
     let curve_parameters = curve_parameters(&data, &model_geometry_sections);
     let nonvisible_curve_topology_rows = curve_topology_rows(&data, &nonvisible_geometry_sections);
-    let curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
+    let mut curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
-    let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    if layout == Layout::LegacyAscii {
+        curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
+        pcurves.extend(legacy_geometry.pcurves.iter().cloned());
+        curve_topology_rows.sort_by_key(|row| row.offset);
+        curve_topology_rows.dedup_by_key(|row| row.offset);
+        pcurves.sort_by_key(|pcurve| pcurve.offset);
+        pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    }
     let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
@@ -2485,7 +2493,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             prototypes: surface_prototypes,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
-            legacy_carriers: legacy_surface_geometry.carriers,
+            legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {
             local_systems: plane_local_systems,
