@@ -7,9 +7,10 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::{PointId, VertexId};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Vertex;
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, SourceProvenance};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -256,4 +257,51 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("iges:model");
     let error = crate::reader::reject_invalid_semantic_ir(&rejected).unwrap_err();
     assert!(error.to_string().contains("referential_integrity"));
+}
+
+fn tagged_loss(tag: &str) -> LossNote {
+    IgesLossCode::EntityRetainedUnprojected
+        .note("attribution fixture")
+        .with_provenance(SourceProvenance {
+            format: "iges".into(),
+            stream: "iges".into(),
+            offset: 0,
+            tag: Some(tag.to_owned()),
+        })
+}
+
+#[test]
+fn attribution_indexes_a_parameter_tag_under_its_exact_sequence() {
+    let index = crate::reader::attributed_sequences(&[tagged_loss("D7:parameter")]);
+
+    assert!(index.contains(&7));
+    assert!(!index.contains(&70));
+    assert_eq!(index.len(), 1);
+}
+
+#[test]
+fn attribution_indexes_directory_entry_and_indexed_parameter_tags() {
+    let index = crate::reader::attributed_sequences(&[
+        tagged_loss("directory_entry:D12"),
+        tagged_loss("D3:parameter[4]"),
+        tagged_loss("directory_entry:D12"),
+    ]);
+
+    assert_eq!(index.into_iter().collect::<Vec<_>>(), [3, 12]);
+}
+
+#[test]
+fn attribution_ignores_tags_that_do_not_render_a_sequence() {
+    let index = crate::reader::attributed_sequences(&[
+        tagged_loss("D007:parameter"),
+        tagged_loss("directory_entry:D12:extra"),
+        tagged_loss("directory_entry:D007"),
+        tagged_loss("D5"),
+        tagged_loss("D:parameter"),
+        tagged_loss("D+5:parameter"),
+        tagged_loss("directory-entry:framing"),
+        IgesLossCode::EntityRetainedUnprojected.note("no provenance"),
+    ]);
+
+    assert!(index.is_empty(), "{index:?}");
 }

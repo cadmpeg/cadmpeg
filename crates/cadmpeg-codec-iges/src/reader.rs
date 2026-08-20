@@ -62,15 +62,24 @@ fn occurrence_loss(
     }
 }
 
-fn loss_is_attributed_to(losses: &[LossNote], source_sequence: u32) -> bool {
-    let directory_tag = format!("directory_entry:D{source_sequence}");
-    let parameter_prefix = format!("D{source_sequence}:");
-    losses.iter().any(|loss| {
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref())
-            .is_some_and(|tag| tag == directory_tag || tag.starts_with(&parameter_prefix))
-    })
+fn attributed_sequences(losses: &[LossNote]) -> BTreeSet<u32> {
+    fn rendered_sequence(rendered: &str) -> Option<u32> {
+        let sequence = rendered.parse::<u32>().ok()?;
+        (sequence.to_string() == rendered).then_some(sequence)
+    }
+
+    losses
+        .iter()
+        .filter_map(|loss| loss.provenance.as_ref()?.tag.as_deref())
+        .filter_map(|tag| {
+            tag.strip_prefix("directory_entry:D")
+                .and_then(rendered_sequence)
+                .or_else(|| {
+                    let (head, _) = tag.split_once(':')?;
+                    rendered_sequence(head.strip_prefix('D')?)
+                })
+        })
+        .collect()
 }
 
 pub(crate) fn decode(
@@ -277,6 +286,7 @@ fn decode_with_occurrence_limits(
         ));
     }
     if !options.container_only {
+        let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = directory
             .iter()
             .filter(|entry| entry.entity_type != 0)
@@ -286,7 +296,7 @@ fn decode_with_occurrence_limits(
                 }
                 !projection.decoded.contains(&entry.sequence)
                     && !projection.consumed.contains(&entry.sequence)
-                    && !loss_is_attributed_to(&losses, entry.sequence)
+                    && !attributed_before_generic.contains(&entry.sequence)
             })
             .map(|entry| {
                 let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
@@ -311,9 +321,10 @@ fn decode_with_occurrence_limits(
         )?;
         reject_invalid_semantic_ir(&ir)?;
     }
+    let attributed = attributed_sequences(&losses);
     let mut transfer_ledger = TransferLedger::default();
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
-        let attributed_loss = loss_is_attributed_to(&losses, entry.sequence);
+        let attributed_loss = attributed.contains(&entry.sequence);
         let note = if options.container_only {
             "native record retained; semantic projection was not requested"
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
