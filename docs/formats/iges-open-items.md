@@ -588,6 +588,48 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 
 ## 2. Global metadata
 
+### GL-06. Global field resolution is specified but not implemented
+
+**Question.** When does the decoder replace the fatal Global admission with the disposition matrix?
+
+**Known.** The Global field disposition matrix in `iges.md` states, for all twenty-six Table 1 fields, the spec class, the production consumers, the absent disposition, the malformed disposition, and the loss code with its taxonomy, severity, and strict consequence. The matrix is the contract. The decoder does not implement it yet. `global.rs::validate` still runs the fatal admission: it rejects a Global record with more than twenty-six fields, requires fields 4, 5, and 6 to be Hollerith strings, requires fields 7 through 11 to be integers, requires fields 9 and 11 to be positive and inside the unsigned 32-bit range, requires field 13 to be finite and positive, requires field 14 to be inside `1` through `11`, requires a nonempty field 15 when field 14 is `3`, requires field 16 to be greater than zero, requires field 17 to be finite and positive, requires field 19 to be finite and nonnegative, requires field 20 to be finite and nonnegative, requires field 23 to parse as an integer, and requires field 24 to be inside `0` through `7`. Eleven `expect("validated ...")` accessors and one `unreachable!("validated ...")` arm depend on that admission. `reader.rs` still returns a `NotImplemented` refusal when the units flag is `3` and the name has no known millimetre factor, instead of suppressing geometry and charging `iges/global.length-unit-unresolved`.
+
+**Need.** Until the implementation lands, `iges.md` describes behavior the codec does not have. A caller reading the matrix expects a degraded decode with losses and receives a whole-file refusal. Thirteen of the twenty-six fields have no production consumer, so the current admission refuses complete files over metadata nothing reads.
+
+**Note.** The implementation introduces five loss codes: `iges/global.metadata-field-unusable`, `iges/global.semantic-context-substituted`, `iges/global.length-unit-unresolved`, `iges/presentation.line-weight-scale-unavailable`, and `iges/global.noncanonical-framing`. It reuses `iges/source.dialect-unverified` for field 23. Delete this item when the resolver replaces `validate` and the accessors carry no `expect`.
+
+### GL-07. Conservative constants for the fields 9, 11, and 19 fallbacks
+
+**Question.** Do the narrow fallback constants `17` for fields 9 and 11 and `0.0` millimetres for field 19 remove geometry that a wider constant transfers correctly?
+
+**Known.** `iges.md` derives both constants from the direction rule that a fallback must not widen an admission the file did not justify. Real-token uncertainty falls as the declared digit count rises, and the monotone consumers of that uncertainty admit more when the interval is wider, so the conservative direction is the larger digit count. The field 19 consumers admit more as the coincidence distance grows, so the conservative direction is the smallest distance. The constant `17` is the largest decimal significance a binary64 value carries and the value `writer.rs` declares for field 11. The constant `0.0` is the IGES 5.3 §2.2.2.2 implicit default for an empty Real field and the smallest distance §2.2.4.3.19 permits, and every consumer defines its behavior at zero. Only the fields 9 and 11 constant departs from a specification default; see GL-09. Two consumers are non-monotone. The spline weight comparison admits more polynomial splines and fewer rational splines as the interval widens. The plane classification and the spline closedness test each compare a computed result against a declared flag.
+
+**Need.** The direction rule fixes the sign of the choice but not the magnitude. A constant that is too narrow converts a whole-file refusal into a file that decodes with many per-entity rejections, which is an improvement but not a transfer. The IEEE 32-bit and 64-bit significance pair `6` and `15` from IGES 5.3 §2.2.4.3.11 is the alternative, and it is what most producers declare.
+
+**Note.** The discriminating check is a corpus sweep restricted to files that omit or malform field 9, field 11, or field 19. For each file, decode once with `17` and `0.0` and once with `6`, `15`, and the neutral linear default, then compare the admitted entity sets. Move a constant only for entities the wider run admits, the narrow run rejects, and an independent geometric check confirms as valid. A sweep that finds no such entity settles the narrow constants.
+
+### GL-08. Prohibited delimiter bytes are not rejected
+
+**Question.** Does the decoder tokenize a file correctly when Global field 1 or field 2 declares a byte that IGES 5.3 §2.2.3.1 prohibits?
+
+**Known.** IGES 5.3 §2.2.3.1 prohibits the control symbols, the space character, the digits `0` through `9`, the characters `+`, `-`, and `.`, and the letters `D`, `E`, and `H` as either delimiter, and states that those bytes cause parsing difficulties for postprocessors. The same section permits only four delimiter forms. `global.rs::first_delimiter` accepts any single-byte Hollerith payload that terminates its own field and does not test the prohibited set. The Global field disposition matrix in `iges.md` honors a prohibited declaration and charges `iges/global.noncanonical-framing`.
+
+**Need.** `D` and `E` introduce a real exponent and `H` introduces a Hollerith count, so a file declaring one of them as the parameter delimiter splits numeric and string tokens at the wrong byte. The decoder would report a successful decode over mis-tokenized Parameter Data. The matrix decision to honor the declaration is safe only if the tokenizer stays consistent with it.
+
+**Note.** The discriminating check has two parts. First, sweep the corpus for a Global field 1 or field 2 payload inside the prohibited set and record how many files contain one. Second, build one probe file for each of `D`, `E`, `H`, a digit, `+`, `-`, `.`, and a space, each carrying one Type 110 line with known coordinates, and compare the decoded coordinates against the authored values. A probe whose coordinates disagree converts the matrix disposition for that byte class from a loss into a refusal.
+
+### GL-09. Implicit defaults that the owning field cannot use
+
+**Question.** Which normative source authorizes the decoder to reject the data-type implicit default for Global fields 9, 11, and 17?
+
+**Known.** IGES 5.3 §2.2.2.1 sets the implicit default for an Integer field to zero, §2.2.2.2 sets the implicit default for a Real field to zero, and §2.2.2.3 sets the implicit default for a String field to NULL. §2.2.3 directs postprocessors to assign the explicit or implicit default to any empty field. The Global field disposition matrix in `iges.md` follows those rules for every field except three. Field 9 and field 11 take `17` instead of zero, and field 17 reports an absent line-weight scale instead of zero.
+
+**Need.** The three departures are the only places where the matrix contradicts a stated specification rule, so they need the strongest available justification. Zero significant digits makes the representation uncertainty of a real token as large as the token, which admits every unit-vector, orthogonality, and transformation-frame invariant that §§2.2.4.3.9 and 2.2.4.3.11 exist to bound. A zero maximum line width makes the §2.2.4.4.12 thickness ratio zero for every entity, which no display can use. The argument is that §§2.2.4.3.9, 2.2.4.3.11, and 2.2.4.3.17 describe a sending-system capability and a physical width, and a capability of zero digits and a width of zero are not values of those quantities.
+
+**Conflict.** §2.2.3 directs the postprocessor to assign the implicit default and states no exception. The matrix does not assign it for these three fields. The matrix reports a loss for each departure, so the deviation is visible in the transfer report, but the deviation stands.
+
+**Note.** The discriminating check is a second normative source that constrains the implicit default by field semantics: search ANSI/US PRO/IPO-100-1996, the NIST IGES 5.x test suite documentation, and the published IGES 5.3 errata for a rule that excludes a required-no-default capability field from the §2.2.2 implicit default. A source that upholds the literal §2.2.3 rule with no exception changes the fields 9, 11, and 17 absent dispositions to zero and removes their losses on the absent path.
+
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ## 4. Geometry carriers and tolerances
