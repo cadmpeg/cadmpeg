@@ -38,6 +38,8 @@ use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
 use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
+use crate::layout::extended_profile_104_indexed_arc as profile_arc_104;
+use crate::layout::extended_profile_terminal_102_indexed_arc as profile_arc_terminal_102;
 use crate::layout::extended_selector44_indexed_line_continuation as sel44_cont;
 use crate::layout::extended_selector44_indexed_line_control_terminal as sel44_term;
 use crate::layout::extended_wide_104_profile_curve as wide_104;
@@ -2245,11 +2247,13 @@ pub(super) fn coordinate_roster_arc_center(
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
     let extended_compact_104 = extended_compact_104_indexed_arc(payload, offset);
+    let extended_profile_terminal = extended_profile_terminal_102_indexed_arc(payload, offset);
     let extended_geometry_104 = extended_geometry_104_indexed_arc(payload, offset);
     let extended_geometry_116 = extended_geometry_116_indexed_arc(payload, offset);
     if !current_wide
         && !extended_wide
         && !extended_compact_104
+        && !extended_profile_terminal
         && !extended_geometry_104
         && !extended_geometry_116
         && legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_none()
@@ -2265,7 +2269,10 @@ pub(super) fn coordinate_roster_arc_center(
             return Some(center);
         }
     }
-    let endpoint_offset = if extended_compact_104 || extended_geometry_104 || extended_geometry_116
+    let endpoint_offset = if extended_compact_104
+        || extended_profile_terminal
+        || extended_geometry_104
+        || extended_geometry_116
     {
         56
     } else {
@@ -3386,6 +3393,7 @@ fn extended_indexed_arc_uses_point_roster(payload: &[u8], offset: usize) -> bool
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && indexed_arc_uses_coordinate_center(payload, offset)
         && (extended_compact_104_indexed_arc(payload, offset)
+            || extended_profile_terminal_102_indexed_arc(payload, offset)
             || extended_geometry_104_indexed_arc(payload, offset)
             || extended_geometry_116_indexed_arc(payload, offset))
 }
@@ -4564,23 +4572,63 @@ pub(super) fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) ->
         && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x04, 0x00]);
     let geometry_selector = marker_is_geometry_locus(payload, offset)
         && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x05, 0x00]);
+    extended_compact_indexed_arc_header(payload, offset, profile_selector || geometry_selector)
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+}
+
+pub(super) fn extended_profile_terminal_102_indexed_arc(payload: &[u8], offset: usize) -> bool {
+    extended_compact_indexed_arc_header(
+        payload,
+        offset,
+        payload.get(
+            offset + profile_arc_terminal_102::PROFILE_LOCUS
+                ..offset + profile_arc_terminal_102::PROFILE_LOCUS + 4,
+        ) == Some(&[0x04, 0x00, 0x02, 0x00]),
+    ) && payload
+        .get(offset + profile_arc_terminal_102::ZERO_TAIL..offset + profile_arc_terminal_102::LEN)
+        == Some(&[0; 8])
+        && !sketch_marker_prefix_at(
+            payload,
+            offset.saturating_add(profile_arc_terminal_102::LEN),
+        )
+}
+
+fn extended_compact_indexed_arc_header(
+    payload: &[u8],
+    offset: usize,
+    accepted_locus: bool,
+) -> bool {
     payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+        && payload
+            .get(offset + profile_arc_104::NATIVE_KIND..offset + profile_arc_104::NATIVE_KIND + 4)
+            == Some(&0u32.to_le_bytes())
         && marker_profile_curve_role(payload, offset) == Some(1)
-        && payload.get(offset + 31..offset + 35) == Some(&[0x00, 0x00, 0x80, 0xbf])
-        && (profile_selector || geometry_selector)
-        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
-        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
-        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
-        && View::i32_le_at(payload, offset + 72).is_some_and(|selector| matches!(selector, -1 | 1))
-        && payload.get(offset + 78..offset + 94)
-            == Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
-        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
-        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+        && payload.get(offset + profile_arc_104::SELECTOR..offset + profile_arc_104::SELECTOR + 4)
+            == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && accepted_locus
+        && payload
+            .get(offset + profile_arc_104::STATE_VALUE..offset + profile_arc_104::STATE_VALUE + 8)
+            == Some(&1.0f64.to_le_bytes())
+        && payload.get(
+            offset + profile_arc_104::ENDPOINT_SELECTOR
+                ..offset + profile_arc_104::ENDPOINT_SELECTOR + 4,
+        ) == Some(&1u32.to_le_bytes())
+        && payload.get(
+            offset + profile_arc_104::SIGNED_RADIUS_SELECTOR
+                ..offset + profile_arc_104::SIGNED_RADIUS_SELECTOR + 8,
+        ) == Some(&(-1.0f64).to_le_bytes())
+        && View::i32_le_at(payload, offset + profile_arc_104::ARC_SELECTOR)
+            .is_some_and(|selector| matches!(selector, -1 | 1))
+        && payload.get(
+            offset + profile_arc_104::REFERENCE_SENTINELS..offset + profile_arc_104::TERMINATOR,
+        ) == Some(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ])
+        && payload
+            .get(offset + profile_arc_104::TERMINATOR..offset + profile_arc_104::TERMINATOR + 2)
+            == Some(&[0; 2])
 }
 
 fn extended_geometry_indexed_arc_header(payload: &[u8], offset: usize) -> bool {
@@ -4653,6 +4701,7 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     let extended_compact = extended_compact_104_indexed_arc(payload, offset);
+    let extended_profile_terminal = extended_profile_terminal_102_indexed_arc(payload, offset);
     let extended_geometry = extended_geometry_104_indexed_arc(payload, offset)
         || extended_geometry_116_indexed_arc(payload, offset);
     let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
@@ -4667,6 +4716,7 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
     current_compact_84
         || extended_compact_84
         || extended_compact
+        || extended_profile_terminal
         || extended_geometry
         || current_wide
         || extended_wide

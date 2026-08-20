@@ -1416,6 +1416,83 @@ fn extended_compact_104_arc_uses_geometry_roster_for_center_index() {
 }
 
 #[test]
+fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
+    let mut payload = vec![0; 102];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&7u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&5u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+    for relative in (78..94).step_by(4) {
+        payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+    }
+
+    let entity = |id: &str, offset, object_index, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, None, None, SketchInputKind::Arc);
+    let center = entity(
+        "center",
+        10,
+        Some(4),
+        Some([2.0, 0.0]),
+        SketchInputKind::Point,
+    );
+    let start = entity(
+        "start",
+        20,
+        Some(5),
+        Some([0.0, 1.0]),
+        SketchInputKind::Point,
+    );
+    let end = entity(
+        "end",
+        30,
+        Some(7),
+        Some([0.0, -1.0]),
+        SketchInputKind::Point,
+    );
+    let markers = [&curve, &center, &start, &end];
+
+    assert!(extended_profile_terminal_102_indexed_arc(&payload, 0));
+    assert!(indexed_arc_uses_coordinate_center(&payload, 0));
+    assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["end", "start"]
+    );
+    assert_eq!(
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&end, &start]),
+        Some([2.0, 0.0])
+    );
+
+    payload[94] = 1;
+    assert!(!extended_profile_terminal_102_indexed_arc(&payload, 0));
+    assert!(!indexed_arc_uses_coordinate_center(&payload, 0));
+}
+
+#[test]
 fn coordinate_roster_arc_center_requires_matching_indexed_endpoints() {
     let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);

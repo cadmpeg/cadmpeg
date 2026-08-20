@@ -2129,6 +2129,285 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "extended_profile_104_indexed_arc"
+kind = "byte"
+section = "2"
+anchor = "An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout carries a circular arc"
+size = 104
+endianness = "little"
+note = "Distinct endpoint indices define a minor arc; one less than the smaller endpoint index selects the center under the profile-locus fallback rules."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind `0`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "The profile-locus form carries selector `00 00 04 00` at marker +35"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00`"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint indices at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint indices at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +60"
+value = 1
+
+[[record.field]]
+name = "signed_radius_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+value = -1.0
+
+[[record.field]]
+name = "arc_selector"
+offset = 72
+type = "i32"
+source = "spec"
+anchor = "signed selector `1` or `-1` at marker +72"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 78
+type = "bytes[16]"
+source = "spec"
+anchor = "four i32 `-2` cells"
+value = [255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]
+
+[[record.field]]
+name = "terminator"
+offset = 94
+type = "u16"
+source = "spec"
+anchor = "marker +94 is zero u16"
+value = 0
+
+[[record.field]]
+name = "trailer_identities"
+offset = 96
+type = "u32[2]"
+source = "spec"
+anchor = "two u32 trailer identities are at marker +96 and +100"
+
+[[record.gap]]
+offset = 76
+size = 2
+note = "The profile-locus arc does not use the geometry-locus center-index field."
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile-locus layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "extended_profile_terminal_102_indexed_arc"
+kind = "byte"
+section = "2"
+anchor = "An extended-prefix kind `0` profile-locus terminal 102-byte bounded-arc record"
+size = 102
+endianness = "little"
+note = "The terminal record uses the same center resolution as the 104-byte compact indexed profile arc and has no following sketch marker."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix kind `0` profile-locus terminal 102-byte bounded-arc record"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind `0`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile-locus"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "the same header"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "same header"
+value = 1.0
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+value = 1
+
+[[record.field]]
+name = "signed_radius_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+value = -1.0
+
+[[record.field]]
+name = "arc_selector"
+offset = 72
+type = "i32"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 78
+type = "bytes[16]"
+source = "spec"
+anchor = "same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc"
+value = [255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]
+
+[[record.field]]
+name = "zero_tail"
+offset = 94
+type = "bytes[8]"
+source = "spec"
+anchor = "Marker +94 through marker +101 are zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.gap]]
+offset = 76
+size = 2
+note = "The profile-locus arc does not use the geometry-locus center-index field."
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile-locus layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "extended_geometry_116_indexed_arc"
 kind = "byte"
 section = "2"

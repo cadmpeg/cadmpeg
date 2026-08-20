@@ -665,6 +665,73 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_profile_104_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+Distinct endpoint indices define a minor arc; one less than the smaller endpoint index selects the center under the profile-locus fallback rules.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | The profile-locus form carries selector `00 00 04 00` at marker +35 · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint indices at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint indices at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` at marker +72 |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells · value `[255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | marker +94 is zero u16 · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | two u32 trailer identities are at marker +96 and +100 |
+
+Unstated regions:
+
+- `76..78` (2 B): The profile-locus arc does not use the geometry-locus center-index field.
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile-locus layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `extended_profile_terminal_102_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 102 B
+
+The terminal record uses the same center resolution as the 104-byte compact indexed profile arc and has no following sketch marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `0` profile-locus terminal 102-byte bounded-arc record |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile-locus · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | the same header · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | same header · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `[255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]` |
+| 94 | 8 | `zero_tail` | `bytes[8]` | little | spec | Marker +94 through marker +101 are zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `76..78` (2 B): The profile-locus arc does not use the geometry-locus center-index field.
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile-locus layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_geometry_116_indexed_arc`
 
 Spec §2 · layout: byte offsets · size: 116 B
