@@ -471,6 +471,25 @@ mod tests {
     }
 
     #[test]
+    fn singleton_radial_pairs_survive_a_shared_face_component() {
+        let shared_endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, shared_endpoints, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(11, 2, shared_endpoints, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(10, 3, shared_endpoints, Point3::new(0.5, 2.0, 0.0)),
+            occurrence(11, 4, shared_endpoints, Point3::new(0.5, 2.0, 0.0)),
+        ];
+
+        assert_eq!(
+            endpoint_pair_candidates(&occurrences)
+                .iter()
+                .map(|candidate| candidate.support_record_ordinals)
+                .collect::<Vec<_>>(),
+            [[1, 2], [3, 4]]
+        );
+    }
+
+    #[test]
     fn radial_match_crosses_spatial_cells_and_accepts_reversed_endpoints() {
         let occurrences = [
             occurrence(
