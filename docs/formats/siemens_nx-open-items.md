@@ -425,7 +425,19 @@ branch, block, descriptor, and scalar-pair record remains native data.
 
 **Known.** `siemens_nx.md` §7.1 "A `DATUM_CSYS` payload begins" and `siemens_nx.md` §7.1 "An object-payload scalar-pair frame is" define the eight-reference construction lane, logical payload, scalar-pair framing, and feature identity.
 
-**Need.** We must know the roles to construct the model-space coordinate-system frame.
+**Need.** We must know one complete relation that assigns the payload scalar
+fields and pair records to a model-space origin and three orthonormal axes.
+
+**Conflict.** The eight construction references define ordered block identity,
+and the first two blocks define one logical payload. Scalar fields, scalar
+pairs, fixed pairs, and descriptor lanes have separate frames and no serialized
+role relation. Column-row reuse and equal descriptor identity establish block
+or history relations only; they do not assign an origin or axis.
+
+**Note.** A coordinate-system definition requires one unique finite origin and
+three orthonormal model-space axes with their handedness established. Until
+those roles are serialized, the operation remains
+`DatumCoordinateSystemUnresolved` while all complete lanes remain native data.
 
 ### OM-05. OM declaration trailing code
 
