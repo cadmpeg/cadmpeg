@@ -642,7 +642,7 @@ pub fn walk(stream: &[u8]) -> Census {
     let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
         intersection_schema_anchor_seen |=
-            crate::topology::intersection_data_schema_prefix_at(stream, offset);
+            crate::topology::intersection_data_schema_header_at(stream, offset);
         if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;

@@ -310,3 +310,28 @@ fn topology_rejects_status_framed_delta_as_fixed_record() {
 
     assert!(graph.of_kind(15).next().is_none());
 }
+
+#[test]
+fn intersection_data_requires_complete_schema_header() {
+    let source = deltas_intersection_curve_stream();
+    let header_start = source
+        .windows(TYPE_38_SCHEMA_HEADER.len())
+        .position(|window| window == TYPE_38_SCHEMA_HEADER)
+        .expect("schema header");
+    let after_header = header_start + TYPE_38_SCHEMA_HEADER.len();
+    let record_start = source[after_header..]
+        .iter()
+        .position(|byte| *byte == 0x5a)
+        .map(|offset| after_header + offset)
+        .expect("standalone intersection-data record");
+
+    let mut incomplete_header =
+        source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
+    incomplete_header.push(0xfe);
+    incomplete_header.extend_from_slice(&source[record_start..]);
+    assert!(intersection_data_curves(&incomplete_header).is_empty());
+    assert!(crate::deltas::walk(&incomplete_header)
+        .records
+        .iter()
+        .all(|record| record.kind != 90));
+}

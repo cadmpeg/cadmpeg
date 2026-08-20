@@ -19,15 +19,13 @@ use crate::framing::{
 use crate::vec3_at::vec3_be_at;
 
 /// Exact inline schema header for the `intersection_data` one-byte record
-/// family. The terminal `5a` is the record tag; callers use the prefix before
-/// that byte as the stream-level schema anchor.
+/// family. Its terminal `5a` is also the standalone record tag when the
+/// following fields form a complete shared record.
 pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
     0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
     0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
 ];
-
-const TYPE_38_SCHEMA_PREFIX_LEN: usize = TYPE_38_SCHEMA_HEADER.len() - 1;
 
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
@@ -454,7 +452,7 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     let mut seen = BTreeSet::new();
     let mut schema_anchor_seen = false;
     for (pos, byte) in stream.iter().enumerate() {
-        schema_anchor_seen |= intersection_data_schema_prefix_at(stream, pos);
+        schema_anchor_seen |= intersection_data_schema_header_at(stream, pos);
         if *byte != 0x5a || !schema_anchor_seen {
             continue;
         }
@@ -469,10 +467,10 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     out
 }
 
-/// Return whether the exact type-38 schema prefix starts at `offset`.
-pub(crate) fn intersection_data_schema_prefix_at(stream: &[u8], offset: usize) -> bool {
-    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_PREFIX_LEN))
-        == Some(&TYPE_38_SCHEMA_HEADER[..TYPE_38_SCHEMA_PREFIX_LEN])
+/// Return whether the complete type-38 schema header starts at `offset`.
+pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -> bool {
+    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_HEADER.len()))
+        == Some(TYPE_38_SCHEMA_HEADER)
 }
 
 pub(crate) fn intersection_data_curve_at(

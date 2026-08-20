@@ -294,16 +294,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
 
-### PS-36. Standalone `0x5a` record anchor
-
-**Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
-
-**Known.** `siemens_nx.md` §4.2 "The type-38 form has the header" gives the exact schema prefix, in which the name `intersection_data` precedes the `0x5a` tag at a fixed distance. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" states that these records occur standalone and need no following recognized tag.
-
-**Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
-
-**Note.** The closure introduces an exact header constant and a stream-global `schema_anchor_seen` flag. The tests construct the header from that same constant. A valid variant header may be rejected, and an unrelated later `0x5a` can be admitted after one earlier anchor. Scope and alternate forms need independent serialized evidence.
-
 ### PS-37. NURBS record count and degree limits
 
 **Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
