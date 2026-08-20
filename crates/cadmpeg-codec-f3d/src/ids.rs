@@ -759,6 +759,11 @@ native_record_id!(
     "design-face-operand"
 );
 native_record_id!(
+    /// The native design-face-source-group record key.
+    native_design_face_source_group_id,
+    "design-face-source-group"
+);
+native_record_id!(
     /// The native design-sketch-placement record key.
     native_design_sketch_placement_id,
     "design-sketch-placement"

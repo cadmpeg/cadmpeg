@@ -3803,6 +3803,9 @@ fn populate_annotations(
         for entity in &native.design_face_operands {
             note(&entity.id, "design_face_operand");
         }
+        for entity in &native.design_face_source_groups {
+            note(&entity.id, "design_face_source_group");
+        }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id(entity);
@@ -4049,6 +4052,10 @@ fn extend_related_design_records(
     crate::design::decode::scopes::admit_history_bound_scope_variants(
         &mut native.design_parameter_scopes,
         &native.asm_histories,
+    )?;
+    native.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        scan,
+        &native.design_parameter_scopes,
     )?;
     native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
     native.design_canvas_images =

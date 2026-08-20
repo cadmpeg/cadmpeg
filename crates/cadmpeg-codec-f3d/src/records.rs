@@ -4907,6 +4907,50 @@ pub struct DesignFaceOperand {
     pub next_byte_offset: u64,
 }
 
+/// Native source-shape carrier owned by a `Face` parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignFaceSourceGroup {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Owning `Face` parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position of the source carrier in the scope reference table.
+    pub carrier_reference_ordinal: u32,
+    /// Indexed record carrying the ordered source-shape references.
+    pub carrier_record_index: u32,
+    /// Byte offset of the source carrier's indexed header.
+    pub carrier_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub carrier_class_tag: String,
+    /// Bytes from the carrier header to its paired carrier header.
+    pub carrier_frame_length: u64,
+    /// Indexed record paired with the source carrier.
+    pub paired_record_index: u32,
+    /// Byte offset of the paired carrier's indexed header.
+    pub paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: String,
+    /// Absolute byte offsets of the marked source-reference slots.
+    pub source_reference_offsets: Vec<u64>,
+    /// Ordered persistent source-shape identities.
+    pub source_members: Vec<DesignFaceSourceMember>,
+}
+
+/// Persistent source-shape identity named by a `Face` source carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignFaceSourceMember {
+    /// Indexed record named by the carrier's source-reference slot.
+    pub record_index: u32,
+    /// Byte offset of the persistent-identity record's indexed header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII identity class tag.
+    pub class_tag: String,
+    /// Fixed persistent identity carried by the source record.
+    pub persistent_identity: DesignConstructionPersistentIdentity,
+}
+
 /// One length-delimited node in a face regeneration recipe program.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

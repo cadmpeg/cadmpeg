@@ -31,9 +31,10 @@ use crate::records::{
     DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignParameter,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+    DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchProfileOperand, DesignSketchProfileRegion,
+    DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
     DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
     DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
@@ -774,6 +775,241 @@ pub fn decode_face_operands(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+/// Decode the ordered persistent source identities carried by admitted `Face`
+/// source envelopes. The source envelope is distinct from a face-regeneration
+/// recipe: its members can name curves and vertices in one operation.
+pub fn decode_face_source_groups(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
+    let mut out = Vec::new();
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    for scope in scopes.iter().filter(|scope| scope.kind == "Face") {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let Ok(scope_start) = usize::try_from(scope.byte_offset) else {
+            continue;
+        };
+        let mut reference_headers = Vec::with_capacity(scope.reference_members.len());
+        for record_index in &scope.reference_members {
+            let Some(byte_offset) = records.first_at_or_after(
+                scope_start.saturating_add(indexed_header::LEN),
+                *record_index,
+            ) else {
+                reference_headers.push(None);
+                continue;
+            };
+            let Some((class_tag, _)) =
+                lp_ascii_filtered(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
+            else {
+                reference_headers.push(None);
+                continue;
+            };
+            reference_headers.push(Some((*record_index, byte_offset, class_tag)));
+        }
+        for (carrier_ordinal, carrier) in reference_headers.iter().enumerate() {
+            let Some((carrier_record_index, carrier_byte_offset, carrier_class_tag)) = carrier
+            else {
+                continue;
+            };
+            let Some(layout) = face_source_carrier_layout(carrier_class_tag) else {
+                continue;
+            };
+            let Some((paired_record_index, paired_byte_offset, paired_class_tag)) =
+                reference_headers
+                    .get(carrier_ordinal + 1)
+                    .and_then(Option::as_ref)
+            else {
+                continue;
+            };
+            if paired_class_tag != layout.paired_class_tag {
+                continue;
+            }
+            let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
+                bytes,
+                *carrier_byte_offset,
+                scope.record_index,
+                layout,
+            ) else {
+                continue;
+            };
+            let mut source_members = Vec::with_capacity(source_reference_offsets.len());
+            for (_, source_record_index) in &source_reference_offsets {
+                let Some(source_byte_offset) = records.first_at_or_after(
+                    carrier_byte_offset.saturating_add(indexed_header::LEN),
+                    *source_record_index,
+                ) else {
+                    source_members.clear();
+                    break;
+                };
+                let Some((source_class_tag, _)) =
+                    lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)
+                else {
+                    source_members.clear();
+                    break;
+                };
+                let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else {
+                    source_members.clear();
+                    break;
+                };
+                let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else {
+                    source_members.clear();
+                    break;
+                };
+                source_members.push(DesignFaceSourceMember {
+                    record_index: *source_record_index,
+                    byte_offset: source_byte_offset_u64,
+                    class_tag: source_class_tag,
+                    persistent_identity: DesignConstructionPersistentIdentity {
+                        local_id: member.local_id,
+                        local_id_offset: member.local_id_offset,
+                        asset_id: member.asset_id,
+                        asset_id_offset: member.asset_id_offset,
+                        context_id: member.context_id,
+                        context_id_offset: member.context_id_offset,
+                        tail_slot_present: member.tail_slot_present,
+                        tail_slot_offset: member.tail_slot_offset,
+                        next_record_index: member.next_record_index,
+                        next_byte_offset: member.next_byte_offset,
+                    },
+                });
+            }
+            if source_members.len() != source_reference_offsets.len() {
+                continue;
+            }
+            let Ok(carrier_reference_ordinal) = u32::try_from(carrier_ordinal) else {
+                continue;
+            };
+            let (Ok(carrier_byte_offset_u64), Ok(carrier_frame_length), Ok(paired_byte_offset_u64)) = (
+                u64::try_from(*carrier_byte_offset),
+                u64::try_from(paired_byte_offset.saturating_sub(*carrier_byte_offset)),
+                u64::try_from(*paired_byte_offset),
+            ) else {
+                continue;
+            };
+            let Ok(source_reference_offsets) = source_reference_offsets
+                .iter()
+                .map(|(offset, _)| u64::try_from(*offset))
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                continue;
+            };
+            out.push(DesignFaceSourceGroup {
+                id: ids::native_design_face_source_group_id(&entry.name, *carrier_byte_offset),
+                scope_record_index: scope.record_index,
+                carrier_reference_ordinal,
+                carrier_record_index: *carrier_record_index,
+                carrier_byte_offset: carrier_byte_offset_u64,
+                carrier_class_tag: carrier_class_tag.clone(),
+                carrier_frame_length,
+                paired_record_index: *paired_record_index,
+                paired_byte_offset: paired_byte_offset_u64,
+                paired_class_tag: paired_class_tag.clone(),
+                source_reference_offsets,
+                source_members,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+#[derive(Clone, Copy)]
+struct FaceSourceCarrierLayout {
+    source_count: usize,
+    source_reference_offset: usize,
+    scalar_offset: usize,
+    scalar_discriminator: u32,
+    paired_class_tag: &'static str,
+}
+
+fn face_source_carrier_layout(class_tag: &str) -> Option<FaceSourceCarrierLayout> {
+    match class_tag {
+        "398" => Some(FaceSourceCarrierLayout {
+            source_count: 4,
+            source_reference_offset: 36,
+            scalar_offset: 80,
+            scalar_discriminator: 100,
+            paired_class_tag: "462",
+        }),
+        "394" => Some(FaceSourceCarrierLayout {
+            source_count: 2,
+            source_reference_offset: 36,
+            scalar_offset: 58,
+            scalar_discriminator: 109,
+            paired_class_tag: "311",
+        }),
+        "356" => Some(FaceSourceCarrierLayout {
+            source_count: 2,
+            source_reference_offset: 36,
+            scalar_offset: 58,
+            scalar_discriminator: 109,
+            paired_class_tag: "309",
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn face_source_carrier_spec(
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<(usize, usize, usize, u32)> {
+    let layout = face_source_carrier_layout(class_tag)?;
+    (layout.paired_class_tag == paired_class_tag).then_some((
+        layout.source_count,
+        layout.source_reference_offset,
+        layout.scalar_offset,
+        layout.scalar_discriminator,
+    ))
+}
+
+fn parse_face_source_carrier_prefix(
+    bytes: &[u8],
+    start: usize,
+    scope_record_index: u32,
+    layout: FaceSourceCarrierLayout,
+) -> Option<Vec<(usize, u32)>> {
+    if bytes
+        .get(start + indexed_header::LEN..start + indexed_header::LEN + 10)
+        .is_none_or(|lane| lane != [0; 10])
+        || marked_face_source_reference(bytes, start + 21)? != scope_record_index
+        || View::u32_le_at(bytes, start + 32)? != u32::try_from(layout.source_count).ok()?
+        || View::u32_le_at(bytes, start + layout.scalar_offset)? != layout.scalar_discriminator
+        || !View::f64_le_at(bytes, start + layout.scalar_offset + 4)?.is_finite()
+        || View::u32_le_at(bytes, start + layout.scalar_offset + 12)? != layout.scalar_discriminator
+    {
+        return None;
+    }
+    (0..layout.source_count)
+        .map(|ordinal| {
+            let offset = start
+                .checked_add(layout.source_reference_offset)?
+                .checked_add(ordinal.checked_mul(11)?)?;
+            Some((offset, marked_face_source_reference(bytes, offset)?))
+        })
+        .collect()
+}
+
+fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
+    (bytes.get(offset) == Some(&1))
+        .then(|| {
+            bytes
+                .get(offset + 5..offset + 11)
+                .is_some_and(|tail| tail == [0; 6])
+                .then(|| View::u32_le_at(bytes, offset + 1))
+                .flatten()
+        })
+        .flatten()
 }
 
 /// Join each face recipe's persistent Design reference to active solved faces.

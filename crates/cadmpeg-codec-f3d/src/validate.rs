@@ -745,6 +745,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &face_operand_records,
         &native.design_entity_selection_operands,
     );
+    validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings);
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
@@ -7382,6 +7383,107 @@ fn validate_face_group_member_resolution(
                     "{}:design-face-group-member#{}:{}",
                     member.0, member.1, member.2
                 )),
+            });
+        }
+    }
+}
+
+/// Validate retained Face source carriers and their persistent identities.
+fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    let mut carrier_records = HashSet::new();
+    for group in &native.design_face_source_groups {
+        let native_stream = design_stream(&group.id);
+        let scope = ctx
+            .scopes_by_index
+            .get(&(native_stream, group.scope_record_index));
+        let carrier_header = ctx
+            .records_by_index
+            .get(&(native_stream, group.carrier_record_index));
+        let paired_header = ctx
+            .records_by_index
+            .get(&(native_stream, group.paired_record_index));
+        let carrier_ordinal = usize::try_from(group.carrier_reference_ordinal).ok();
+        let source_spec = design::decode::operands::face_source_carrier_spec(
+            &group.carrier_class_tag,
+            &group.paired_class_tag,
+        );
+        let scope_links_valid = scope.is_some_and(|scope| {
+            scope.kind == "Face"
+                && carrier_ordinal.and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&group.carrier_record_index)
+                && carrier_ordinal
+                    .and_then(|ordinal| ordinal.checked_add(1))
+                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&group.paired_record_index)
+        });
+        let headers_valid = carrier_header.is_some_and(|header| {
+            header.byte_offset == group.carrier_byte_offset
+                && header.class_tag == group.carrier_class_tag
+        }) && paired_header.is_some_and(|header| {
+            header.byte_offset == group.paired_byte_offset
+                && header.class_tag == group.paired_class_tag
+        });
+        let frame_valid = group.paired_byte_offset > group.carrier_byte_offset
+            && group
+                .paired_byte_offset
+                .checked_sub(group.carrier_byte_offset)
+                == Some(group.carrier_frame_length);
+        let source_offsets_valid =
+            source_spec.is_some_and(|(source_count, source_reference_offset, _, _)| {
+                let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
+                    return false;
+                };
+                group.source_reference_offsets.len() == source_count
+                    && group
+                        .source_reference_offsets
+                        .iter()
+                        .enumerate()
+                        .all(|(ordinal, offset)| {
+                            let Ok(ordinal) = u64::try_from(ordinal) else {
+                                return false;
+                            };
+                            group
+                                .carrier_byte_offset
+                                .checked_add(source_reference_offset)
+                                .and_then(|offset| offset.checked_add(ordinal.checked_mul(11)?))
+                                == Some(*offset)
+                        })
+            });
+        let mut source_records = HashSet::new();
+        let source_members_valid = source_spec.is_some_and(|(source_count, _, _, _)| {
+            group.source_members.len() == source_count
+                && group.source_members.iter().all(|member| {
+                    let unique_record = source_records.insert(member.record_index);
+                    let persistent = &member.persistent_identity;
+                    let local_id_offset = member.byte_offset.checked_add(21);
+                    let asset_id_offset = member.byte_offset.checked_add(33);
+                    unique_record
+                        && valid_dynamic_class_tag(&member.class_tag)
+                        && member.byte_offset > group.carrier_byte_offset
+                        && local_id_offset == Some(persistent.local_id_offset)
+                        && asset_id_offset == Some(persistent.asset_id_offset)
+                        && persistent.context_id_offset > persistent.asset_id_offset
+                        && persistent.tail_slot_offset > persistent.context_id_offset
+                        && persistent.next_byte_offset > member.byte_offset
+                        && valid_design_guid(&persistent.asset_id)
+                        && valid_design_guid(&persistent.context_id)
+                })
+        });
+        let valid = valid_dynamic_class_tag(&group.carrier_class_tag)
+            && valid_dynamic_class_tag(&group.paired_class_tag)
+            && carrier_records.insert((native_stream, group.carrier_record_index))
+            && scope_links_valid
+            && headers_valid
+            && frame_valid
+            && source_offsets_valid
+            && source_members_valid;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Face source carrier has invalid links or offsets".into(),
+                entity: Some(group.id.clone()),
             });
         }
     }

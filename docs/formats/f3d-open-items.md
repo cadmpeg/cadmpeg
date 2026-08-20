@@ -202,6 +202,14 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** A parallel-line or concentric-circle dimension whose solved separation agrees with its parameter inside the document linear tolerance, but not inside the fixed bound, does not match. The dimension keeps its native retention and the neutral model gets no constraint. The two rules must be one rule, and the specification must state which one.
 
+### DR-67. Face source-shape semantics
+
+**Question.** Which source-shape semantics and face-maker operation do the ordered identities in a `Face` source carrier express? Which source carrier grammar does each unadmitted class pair use?
+
+**Known.** `f3d.md` §3.1 "A `Face` scope has an ordered source-shape carrier" defines the admitted `398 / 462`, `394 / 311`, and `356 / 309` frames. Their source identities use the fixed persistent identity frame and can name different source-shape families. The `364 / 261` carrier is not an admitted source frame.
+
+**Need.** A neutral `FaceFromShapes` projection requires a proven mapping from each ordered source identity to its source shape and face-maker semantics. Until that mapping is established, the source carrier remains native data.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
