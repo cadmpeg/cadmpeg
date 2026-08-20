@@ -6304,54 +6304,51 @@ pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<Operation
     let terminator = record.payload.len().checked_sub(1)?;
     (record.payload.get(terminator) == Some(&0)).then_some(())?;
     let common_frames = operation_common_frames(record);
-    let mut matches = Vec::new();
-    for start in terminator.saturating_sub(9)..terminator {
-        let Some((Some(local_ordinal), first_end)) = feature_object_index(record.payload, start)
-        else {
-            continue;
-        };
-        let first_raw = &record.payload[start..first_end];
-        if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
-            continue;
-        }
-        let Some((Some(repeated), second_end)) = feature_object_index(record.payload, first_end)
-        else {
-            continue;
-        };
-        let second_raw = &record.payload[first_end..second_end];
-        if repeated != local_ordinal || second_raw != first_raw {
-            continue;
-        }
-        let Some((object_index, object_end)) = feature_object_index(record.payload, second_end)
-        else {
-            continue;
-        };
-        let object_raw = &record.payload[second_end..object_end];
-        if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
-            continue;
-        }
-        let local_ordinal_offset = record.payload_offset + start;
-        let immediate_common_frame_offset = common_frames
-            .iter()
-            .find(|frame| {
-                frame.local_ordinal_offset == local_ordinal_offset
-                    && frame.end_offset == record.payload_offset + object_end + 1
+    unique_candidate(
+        (terminator.saturating_sub(9)..terminator).filter_map(|start| {
+            let Some((Some(local_ordinal), first_end)) =
+                feature_object_index(record.payload, start)
+            else {
+                return None;
+            };
+            let first_raw = &record.payload[start..first_end];
+            if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
+                return None;
+            }
+            let Some((Some(repeated), second_end)) =
+                feature_object_index(record.payload, first_end)
+            else {
+                return None;
+            };
+            let second_raw = &record.payload[first_end..second_end];
+            if repeated != local_ordinal || second_raw != first_raw {
+                return None;
+            }
+            let (object_index, object_end) = feature_object_index(record.payload, second_end)?;
+            let object_raw = &record.payload[second_end..object_end];
+            if object_end != terminator || !canonical_feature_object_index(object_index, object_raw)
+            {
+                return None;
+            }
+            let local_ordinal_offset = record.payload_offset + start;
+            let immediate_common_frame_offset = common_frames
+                .iter()
+                .find(|frame| {
+                    frame.local_ordinal_offset == local_ordinal_offset
+                        && frame.end_offset == record.payload_offset + object_end + 1
+                })
+                .map(|frame| frame.offset);
+            Some(OperationTerminalFrame {
+                immediate_common_frame_offset,
+                local_ordinal,
+                raw_local_ordinal: first_raw.to_vec(),
+                object_index,
+                raw_object_index: object_raw.to_vec(),
+                offset: local_ordinal_offset,
+                object_index_offset: record.payload_offset + second_end,
             })
-            .map(|frame| frame.offset);
-        matches.push(OperationTerminalFrame {
-            immediate_common_frame_offset,
-            local_ordinal,
-            raw_local_ordinal: first_raw.to_vec(),
-            object_index,
-            raw_object_index: object_raw.to_vec(),
-            offset: local_ordinal_offset,
-            object_index_offset: record.payload_offset + second_end,
-        });
-    }
-    let [frame] = matches.as_slice() else {
-        return None;
-    };
-    Some(frame.clone())
+        }),
+    )
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.

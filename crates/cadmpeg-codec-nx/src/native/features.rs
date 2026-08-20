@@ -5792,8 +5792,9 @@ pub fn feature_sketch_datum_csys_dependencies(
         let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
             continue;
         };
-        let mut candidates = Vec::new();
-        for point_use in point_uses {
+        let mut candidate: Option<(usize, FeatureSketchDatumCsysBlockRelation)> = None;
+        let mut ambiguous = false;
+        'point_uses: for (point_use_index, point_use) in point_uses.iter().enumerate() {
             let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
                 continue;
             };
@@ -5808,12 +5809,21 @@ pub fn feature_sketch_datum_csys_dependencies(
                 .iter()
                 .filter(|block| point.data_blocks.contains(block))
             {
-                candidates.push((
-                    point_use,
-                    FeatureSketchDatumCsysBlockRelation::Shared {
-                        data_block: shared_block.clone(),
-                    },
-                ));
+                let relation = FeatureSketchDatumCsysBlockRelation::Shared {
+                    data_block: shared_block.clone(),
+                };
+                let is_new_ambiguity =
+                    candidate
+                        .as_ref()
+                        .is_some_and(|(existing_index, existing_relation)| {
+                            point_uses[*existing_index].id != point_use.id
+                                || *existing_relation != relation
+                        });
+                if is_new_ambiguity {
+                    ambiguous = true;
+                    break 'point_uses;
+                }
+                candidate.get_or_insert((point_use_index, relation));
             }
             let Some(point_last_block) = point.data_blocks.last() else {
                 continue;
@@ -5831,25 +5841,35 @@ pub fn feature_sketch_datum_csys_dependencies(
                 if point_store == construction_store
                     && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {
-                    candidates.push((
-                        point_use,
-                        FeatureSketchDatumCsysBlockRelation::Consecutive {
-                            point_data_block: point_last_block.clone(),
-                            construction_data_block: construction_first_block.clone(),
-                        },
-                    ));
+                    let relation = FeatureSketchDatumCsysBlockRelation::Consecutive {
+                        point_data_block: point_last_block.clone(),
+                        construction_data_block: construction_first_block.clone(),
+                    };
+                    let is_new_ambiguity =
+                        candidate
+                            .as_ref()
+                            .is_some_and(|(existing_index, existing_relation)| {
+                                point_uses[*existing_index].id != point_use.id
+                                    || *existing_relation != relation
+                            });
+                    if is_new_ambiguity {
+                        ambiguous = true;
+                    } else {
+                        candidate.get_or_insert((point_use_index, relation));
+                    }
                 }
             }
+            if ambiguous {
+                break;
+            }
         }
-        candidates.sort_by(|(left_use, left_relation), (right_use, right_relation)| {
-            (left_use.id.as_str(), left_relation).cmp(&(right_use.id.as_str(), right_relation))
-        });
-        candidates.dedup_by(|(left_use, left_relation), (right_use, right_relation)| {
-            left_use.id == right_use.id && left_relation == right_relation
-        });
-        let [(point_use, block_relation)] = candidates.as_slice() else {
+        if ambiguous {
+            continue;
+        }
+        let Some((point_use_index, block_relation)) = candidate else {
             continue;
         };
+        let point_use = &point_uses[point_use_index];
         let point = points[point_use.named_point.as_str()];
         let scalar_aliases = point
             .value_source_offsets
