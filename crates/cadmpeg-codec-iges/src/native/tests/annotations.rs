@@ -293,20 +293,3 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         other => panic!("expected a strict refusal, got {other:?}"),
     }
 }
-
-#[test]
-fn a_container_only_strict_decode_admits_the_overdeclared_count() {
-    let bytes = note_file(213, new_general_note_parameters(2, &["TOL!"], 0));
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.mode = DecodeMode::Strict;
-
-    let result = IgesCodec.decode(&mut Cursor::new(bytes), &options).unwrap();
-
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
-        1
-    );
-}

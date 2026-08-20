@@ -641,11 +641,9 @@ Every non-null Directory Entry has one retained native identity and one
 supported entity without neutral projection has a stable namespaced loss code,
 source provenance, and its retained native record. A projected entity with reduced fidelity records the reduction on the
 same source identity. Salvage mode records every loss in the decode report.
-Strict mode refuses through the shared decode gate: a loss causes refusal when
-its shared taxonomy defines a strict severity floor and the loss severity
-reaches that floor. The gate evaluates full-decode reports: a container-only
-decode records its losses and is admitted in either mode. For the current
-IGES loss set that is exactly
+A full strict decode refuses through the shared decode gate: a loss causes
+refusal when its shared taxonomy defines a strict severity floor and the loss
+severity reaches that floor. For the current IGES loss set that is exactly
 `iges/graph.pointer-unresolved`, `iges/curve.composite-carrier-degraded`,
 `iges/source.dialect-unverified`,
 `iges/global.semantic-context-substituted`,
@@ -654,9 +652,9 @@ IGES loss set that is exactly
 `iges/directory.record-quarantined`, `iges/parameter.data-quarantined`,
 `iges/parameter.count-overdeclared`, and
 `iges/card.framing-recovered`. Every other IGES loss is recorded in the
-decode report in both modes. Strict mode therefore refuses a structurally
-defective file, and salvage mode recovers it with the losses the record
-quarantine section states.
+decode report in both modes. A full strict decode therefore refuses a
+structurally defective file, and salvage mode recovers it with the losses the
+record quarantine section states.
 
 A container inspection has no loss channel, because a container summary carries
 notes only. The inspection therefore reports each loss it resolves as one
