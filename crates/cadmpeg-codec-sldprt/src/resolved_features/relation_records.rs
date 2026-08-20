@@ -48,8 +48,38 @@ pub(super) fn feature_intervals(
 fn feature_at_offset(offset: u64, intervals: &[(u64, u64, String)]) -> Option<&str> {
     intervals
         .iter()
-        .find(|(start, end, _)| offset > *start && offset < *end)
+        .find(|(start, end, _)| offset >= *start && offset < *end)
         .map(|(_, _, feature)| feature.as_str())
+}
+
+fn relation_scope_end(
+    class: &FeatureInputClass,
+    classes: &[FeatureInputClass],
+    intervals: &[(u64, u64, String)],
+) -> u64 {
+    let class_feature = feature_at_offset(class.offset, intervals);
+    let next_class = classes
+        .iter()
+        .filter(|candidate| {
+            candidate.offset > class.offset
+                && relation_family(&candidate.name).is_some()
+                && class_feature.is_some_and(|feature| {
+                    feature_at_offset(candidate.offset, intervals) == Some(feature)
+                })
+        })
+        .map(|candidate| candidate.offset)
+        .min()
+        .unwrap_or(u64::MAX);
+    let feature_end = intervals
+        .iter()
+        .find(|(start, end, _)| class.offset >= *start && class.offset < *end)
+        .map_or(u64::MAX, |(_, end, _)| *end);
+    let unknown_feature_limit = if class_feature.is_none() {
+        class.offset.saturating_add(128)
+    } else {
+        u64::MAX
+    };
+    next_class.min(feature_end).min(unknown_feature_limit)
 }
 
 pub(super) fn relation_declaration_candidates<'a>(
@@ -65,19 +95,18 @@ pub(super) fn relation_declaration_candidates<'a>(
         .iter()
         .filter_map(|class| {
             let family = relation_family(&class.name)?;
+            let class_feature = feature_at_offset(class.offset, intervals);
+            let scope_end = relation_scope_end(class, classes, intervals);
             let scalar = scalars
                 .iter()
                 .filter(|scalar| {
                     scalar.offset > class.offset
-                        && scalar.offset - class.offset <= 128
+                        && scalar.offset < scope_end
+                        && class_feature
+                            .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
                         && relation_signature(family, &scalar.operands)
                 })
                 .min_by_key(|scalar| scalar.offset)?;
-            if !intervals.is_empty()
-                && feature_at_offset(class.offset, intervals) != scalar.feature_ref.as_deref()
-            {
-                return None;
-            }
             Some((class, scalar, family))
         })
         .collect()
@@ -522,6 +551,54 @@ mod relation_records_tests {
         };
         assert_eq!(relation.parameter_scalar_ref, Some(driving.id.clone()));
         assert_eq!(relation.scalar_refs, vec![driving.id]);
+    }
+
+    #[test]
+    fn declaration_reaches_compatible_scalar_after_auxiliary_records() {
+        let relation_class = class(10, "sgPntPntHorDist");
+        let driving = scalar(200, FeatureInputScalarRole::Driving);
+        let mut lane = lane(vec![relation_class], vec![driving.clone()]);
+        lane.names.push(FeatureInputName {
+            id: "name-sketch".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: None,
+            value: "Sketch".into(),
+        });
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one relation instance");
+        };
+        assert_eq!(relation.parameter_scalar_ref, Some(driving.id.clone()));
+        assert_eq!(relation.scalar_refs, vec![driving.id]);
+    }
+
+    #[test]
+    fn declaration_stops_before_the_next_relation_class() {
+        let first = class(10, "sgPntPntHorDist");
+        let second = class(100, "sgPntPntVertDist");
+        let driving = scalar(200, FeatureInputScalarRole::Driving);
+        let mut lane = lane(vec![first, second.clone()], vec![driving]);
+        lane.names.push(FeatureInputName {
+            id: "name-sketch".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: None,
+            value: "Sketch".into(),
+        });
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one relation instance");
+        };
+        assert_eq!(relation.class_ref, second.id);
+        assert_eq!(
+            relation.family,
+            FeatureInputRelationFamily::PointPointVerticalDistance
+        );
     }
 
     #[test]
