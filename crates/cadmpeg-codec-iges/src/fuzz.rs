@@ -23,7 +23,7 @@ pub fn directory(data: &[u8]) {
     let Ok(scan) = crate::card::scan_with_context(data, None) else {
         return;
     };
-    let _ = crate::directory::parse(&scan);
+    let (_typed, _quarantined) = crate::directory::parse(&scan);
 }
 
 /// Exercise IGES parameter-section assembly.
@@ -34,10 +34,8 @@ pub fn parameters(data: &[u8]) {
     let Ok((global, _)) = crate::global::parse(&scan) else {
         return;
     };
-    let Ok(directory) = crate::directory::parse(&scan) else {
-        return;
-    };
-    let _ = crate::parameter::assemble_with_context(&scan, &directory, &global, None);
+    let (directory, quarantined) = crate::directory::parse(&scan);
+    let _ = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, None);
 }
 
 #[cfg(test)]

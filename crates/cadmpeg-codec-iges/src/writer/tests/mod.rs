@@ -19,6 +19,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesEncoder, IgesVersion};
 
 mod encode;
+mod quarantine;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {

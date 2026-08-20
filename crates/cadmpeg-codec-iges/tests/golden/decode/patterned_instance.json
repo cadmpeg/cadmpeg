@@ -2142,6 +2142,8 @@
           "product_occurrences": [],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [
             {
               "base": "iges:entity:directory#1",
@@ -2178,7 +2180,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 2
+        "version": 3
       }
     },
     "source": {

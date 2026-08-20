@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter Data assembly and count-driven token spans.
 
-use crate::card::{CardScan, PhysicalLine, Section};
-use crate::directory::DirectoryEntry;
+use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
+use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{RealPrecision, ResolvedGlobal};
-use cadmpeg_core::decode::DecodeContext;
+use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::SourceProvenance;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 /// One typed lexical value in an entity parameter record.
@@ -1603,36 +1606,113 @@ fn groups_for_candidate(
     })
 }
 
-fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
-    crate::error::malformed(format!(
-        "IGES parameters for D{sequence}: {}",
-        message.into()
-    ))
+/// Why one entity's Parameter Data has no typed tokens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParameterDefect {
+    HollerithCountUnreadable,
+    HollerithPayloadTruncated,
+    TokenNotAscii,
+    TokenNotANumber,
+    DelimiterMissing,
+    EntityTypeTokenMismatch,
+    DeclaredCardMissing,
+    NoOwnedCards,
+    DeclaredCountZero,
+    OwnershipConflict,
 }
 
-fn positive_u32(value: i64, sequence: u32, name: &str) -> Result<u32, CodecError> {
-    u32::try_from(value).map_err(|_| malformed(sequence, format!("{name} is not a positive u32")))
+impl ParameterDefect {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::HollerithCountUnreadable => "hollerith-count-unreadable",
+            Self::HollerithPayloadTruncated => "hollerith-payload-truncated",
+            Self::TokenNotAscii => "token-not-ascii",
+            Self::TokenNotANumber => "token-not-a-number",
+            Self::DelimiterMissing => "delimiter-missing",
+            Self::EntityTypeTokenMismatch => "entity-type-token-mismatch",
+            Self::DeclaredCardMissing => "declared-card-missing",
+            Self::NoOwnedCards => "no-owned-cards",
+            Self::DeclaredCountZero => "declared-count-zero",
+            Self::OwnershipConflict => "ownership-conflict",
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            Self::HollerithCountUnreadable => "a Hollerith byte count is unreadable",
+            Self::HollerithPayloadTruncated => "a Hollerith payload is truncated",
+            Self::TokenNotAscii => "a token is not ASCII",
+            Self::TokenNotANumber => "a token is not a number",
+            Self::DelimiterMissing => "a delimiter is missing",
+            Self::EntityTypeTokenMismatch => {
+                "the first token disagrees with the Directory Entry entity type"
+            }
+            Self::DeclaredCardMissing => "a declared Parameter Data card does not exist",
+            Self::NoOwnedCards => "no Parameter Data card is owned",
+            Self::DeclaredCountZero => "the Directory Entry declares zero Parameter Data cards",
+            Self::OwnershipConflict => "Parameter Data card ownership conflicts",
+        }
+    }
 }
 
-fn back_pointer(line: &PhysicalLine) -> Result<u32, CodecError> {
-    let field = line.payload.get(64..72).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "IGES Parameter Data card P{} is shorter than 72 bytes",
-            line.sequence.unwrap_or_default()
-        ))
-    })?;
-    let text = std::str::from_utf8(field)
-        .map_err(|_| CodecError::Malformed("IGES Parameter Data back-pointer is not ASCII".into()))?
-        .trim();
-    text.parse::<u32>()
-        .map_err(|_| CodecError::Malformed("IGES Parameter Data back-pointer is not a u32".into()))
+/// One entity's Parameter Data whose tokens were not recovered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct QuarantinedParameterRecord {
+    pub(crate) sequence: u32,
+    pub(crate) source_offset: u64,
+    pub(crate) cards: usize,
+    pub(crate) bytes: Vec<u8>,
+    line_range: Option<Range<u32>>,
+    provenance_offset: u64,
+    pub(crate) defect: ParameterDefect,
 }
 
-fn hollerith(
-    bytes: &[u8],
-    start: usize,
-    sequence: u32,
-) -> Result<Option<(Token, usize)>, CodecError> {
+impl QuarantinedParameterRecord {
+    /// The stable native identity of this quarantined record.
+    pub(crate) fn identity(&self) -> String {
+        format!("iges:quarantine:parameter#{}", self.sequence)
+    }
+
+    pub(crate) fn loss_note(&self) -> LossNote {
+        let owned = match &self.line_range {
+            Some(range) => format!("P{} through P{}", range.start, range.end.saturating_sub(1)),
+            None => "no owned Parameter Data card".to_owned(),
+        };
+        IgesLossCode::ParameterDataQuarantined
+            .note(format!(
+                "IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
+                self.sequence,
+                self.defect.describe(),
+                self.cards
+            ))
+            .with_provenance(SourceProvenance {
+                format: "iges".into(),
+                stream: "iges".into(),
+                offset: self.provenance_offset,
+                tag: Some(format!("D{}:parameter", self.sequence)),
+            })
+    }
+}
+
+/// A tokenizer stop: a source defect, or a resource refusal that is not one.
+enum TokenizeFailure {
+    Defect(ParameterDefect, usize),
+    Refusal(CodecError),
+}
+
+/// Both parse results of the Parameter Data section.
+pub(crate) struct ParameterAssembly {
+    pub(crate) records: Vec<ParameterRecord>,
+    pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
+    pub(crate) recoveries: FramingRecoveries,
+}
+
+fn back_pointer(line: &PhysicalLine) -> Option<u32> {
+    let text = std::str::from_utf8(line.payload.get(64..72)?).ok()?.trim();
+    text.parse::<u32>().ok()
+}
+
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -1640,19 +1720,20 @@ fn hollerith(
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
+    let unreadable_count =
+        || TokenizeFailure::Defect(ParameterDefect::HollerithCountUnreadable, start);
     let count = std::str::from_utf8(&bytes[start..cursor])
-        .map_err(|_| malformed(sequence, "Hollerith count is not ASCII"))?
+        .map_err(|_| unreadable_count())?
         .parse::<usize>()
-        .map_err(|_| malformed(sequence, "Hollerith count is out of range"))?;
-    let payload_start = cursor
+        .map_err(|_| unreadable_count())?;
+    let end = cursor
         .checked_add(1)
-        .ok_or_else(|| malformed(sequence, "Hollerith offset overflow"))?;
-    let end = payload_start
-        .checked_add(count)
-        .ok_or_else(|| malformed(sequence, "Hollerith length overflow"))?;
-    let payload = bytes
-        .get(payload_start..end)
-        .ok_or_else(|| malformed(sequence, "Hollerith payload is truncated"))?;
+        .and_then(|payload_start| payload_start.checked_add(count))
+        .ok_or_else(unreadable_count)?;
+    let payload = bytes.get(cursor + 1..end).ok_or(TokenizeFailure::Defect(
+        ParameterDefect::HollerithPayloadTruncated,
+        start,
+    ))?;
     Ok(Some((
         Token {
             value: TokenValue::String(payload.to_vec()),
@@ -1662,9 +1743,10 @@ fn hollerith(
     )))
 }
 
-fn numeric(bytes: &[u8], span: Range<usize>, sequence: u32) -> Result<Token, CodecError> {
+fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
+    let start = span.start;
     let text = std::str::from_utf8(&bytes[span.clone()])
-        .map_err(|_| malformed(sequence, "numeric token is not ASCII"))?
+        .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?
         .trim();
     if text.is_empty() {
         return Ok(Token {
@@ -1672,21 +1754,15 @@ fn numeric(bytes: &[u8], span: Range<usize>, sequence: u32) -> Result<Token, Cod
             span,
         });
     }
+    let not_a_number = || TokenizeFailure::Defect(ParameterDefect::TokenNotANumber, start);
     let real = text
         .bytes()
         .any(|byte| matches!(byte, b'.' | b'E' | b'e' | b'D' | b'd'));
     let value = if real {
         let normalized = text.replace(['D', 'd'], "E");
-        TokenValue::Real(
-            normalized
-                .parse::<f64>()
-                .map_err(|_| malformed(sequence, format!("invalid real token {text:?}")))?,
-        )
+        TokenValue::Real(normalized.parse::<f64>().map_err(|_| not_a_number())?)
     } else {
-        TokenValue::Integer(
-            text.parse::<i64>()
-                .map_err(|_| malformed(sequence, format!("invalid integer token {text:?}")))?,
-        )
+        TokenValue::Integer(text.parse::<i64>().map_err(|_| not_a_number())?)
     };
     Ok(Token { value, span })
 }
@@ -1695,9 +1771,9 @@ fn tokenize(
     bytes: &[u8],
     parameter_delimiter: u8,
     record_delimiter: u8,
-    sequence: u32,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(Vec<Token>, usize), CodecError> {
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -1705,7 +1781,7 @@ fn tokenize(
             return Ok((tokens, cursor + 1));
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            charge_token(ctx)?;
+            charge(ctx)?;
             tokens.push(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
@@ -1713,7 +1789,7 @@ fn tokenize(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, cursor, sequence)? {
+        let (token, end) = if let Some(value) = hollerith(bytes, cursor)? {
             value
         } else {
             let end = bytes[cursor..]
@@ -1722,130 +1798,379 @@ fn tokenize(
                     matches!(*byte, value if value == parameter_delimiter || value == record_delimiter)
                 })
                 .and_then(|relative| cursor.checked_add(relative))
-                .ok_or_else(|| malformed(sequence, "record delimiter is missing"))?;
+                .ok_or(TokenizeFailure::Defect(
+                    ParameterDefect::DelimiterMissing,
+                    cursor,
+                ))?;
             if end == cursor {
-                return Err(malformed(sequence, "empty token has no delimiter"));
+                return Err(TokenizeFailure::Defect(
+                    ParameterDefect::DelimiterMissing,
+                    cursor,
+                ));
             }
-            (numeric(bytes, cursor..end, sequence)?, end)
+            (numeric(bytes, cursor..end)?, end)
         };
-        charge_token(ctx)?;
+        charge(ctx)?;
         tokens.push(token);
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
             Some(value) if value == record_delimiter => return Ok((tokens, end + 1)),
-            _ => return Err(malformed(sequence, "token is not followed by a delimiter")),
+            _ => {
+                return Err(TokenizeFailure::Defect(
+                    ParameterDefect::DelimiterMissing,
+                    end,
+                ))
+            }
         }
     }
+}
+
+/// The Directory-declared Parameter Data range, when the declaration is usable.
+enum DeclaredRange {
+    Usable(Range<u32>),
+    CardMissing,
+    Unusable,
+}
+
+/// Positional sequences make the Parameter Data census contiguous, so a
+/// declared range names existing cards exactly when it lies inside `census`.
+fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange {
+    let start = u32::try_from(entry.parameter_start)
+        .ok()
+        .filter(|value| *value > 0);
+    let count = u32::try_from(entry.parameter_line_count)
+        .ok()
+        .filter(|value| *value > 0);
+    let (Some(start), Some(count)) = (start, count) else {
+        return DeclaredRange::Unusable;
+    };
+    let cards = usize::try_from(census.end.saturating_sub(census.start)).unwrap_or(usize::MAX);
+    if bounded_len(u64::from(count), 1, cards).is_none() {
+        return DeclaredRange::CardMissing;
+    }
+    let Some(end) = start.checked_add(count) else {
+        return DeclaredRange::CardMissing;
+    };
+    if start < census.start || end > census.end {
+        return DeclaredRange::CardMissing;
+    }
+    DeclaredRange::Usable(start..end)
+}
+
+/// The contiguous head of the run of cards whose back-pointer names one entry.
+fn contiguous_run(cards: &[u32]) -> Vec<u32> {
+    let mut run = Vec::<u32>::new();
+    for sequence in cards {
+        if run
+            .last()
+            .is_some_and(|last| last.checked_add(1) != Some(*sequence))
+        {
+            break;
+        }
+        run.push(*sequence);
+    }
+    run
+}
+
+/// The Directory Entries whose declared ranges claim a card in common.
+///
+/// A start-ordered sweep over the ranges marks every participant: an overlap
+/// marks the later range and the range holding the highest end so far.
+fn overlapping_ranges(declared: &BTreeMap<u32, Range<u32>>) -> BTreeSet<u32> {
+    let mut ordered = declared
+        .iter()
+        .map(|(sequence, range)| (range.start, range.end, *sequence))
+        .collect::<Vec<_>>();
+    ordered.sort_unstable();
+    let mut overlapping = BTreeSet::new();
+    let mut highest_end = 0_u32;
+    let mut highest_owner = None;
+    for (start, end, sequence) in ordered {
+        if start < highest_end {
+            overlapping.insert(sequence);
+            overlapping.extend(highest_owner);
+        }
+        if end >= highest_end {
+            highest_end = end;
+            highest_owner = Some(sequence);
+        }
+    }
+    overlapping
+}
+
+fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> Vec<u8> {
+    cards
+        .iter()
+        .filter_map(|sequence| lines.get(sequence))
+        .flat_map(|line| line.payload.get(..64).unwrap_or_default().iter().copied())
+        .collect()
+}
+
+/// The source offset of `offset` inside the assembled 64-column card stream.
+fn stream_offset(
+    offset: usize,
+    cards: &[u32],
+    lines: &BTreeMap<u32, &PhysicalLine>,
+) -> Option<u64> {
+    let line = lines.get(cards.get(offset / 64)?)?;
+    line.offset.checked_add((offset % 64) as u64)
+}
+
+fn quarantine(
+    entry: &DirectoryEntry,
+    cards: &[u32],
+    lines: &BTreeMap<u32, &PhysicalLine>,
+    defect: ParameterDefect,
+    failing_offset: Option<usize>,
+) -> QuarantinedParameterRecord {
+    let first = cards
+        .first()
+        .and_then(|sequence| lines.get(sequence))
+        .map_or(entry.source_offset, |line| line.offset);
+    QuarantinedParameterRecord {
+        sequence: entry.sequence,
+        source_offset: first,
+        cards: cards.len(),
+        bytes: cards
+            .iter()
+            .filter_map(|sequence| lines.get(sequence))
+            .flat_map(|line| line.payload.iter().copied())
+            .collect(),
+        line_range: cards.first().zip(cards.last()).map(|(first, last)| {
+            let end = last.saturating_add(1);
+            *first..end
+        }),
+        provenance_offset: failing_offset
+            .and_then(|offset| stream_offset(offset, cards, lines))
+            .unwrap_or(first),
+        defect,
+    }
+}
+
+/// One entity's resolved Parameter Data ownership.
+struct Ownership<'a> {
+    entry: &'a DirectoryEntry,
+    cards: Vec<u32>,
+    quarantine: Option<ParameterDefect>,
+}
+
+/// Resolve which Parameter Data cards each Directory Entry owns.
+///
+/// The declared range applies first, then the back-pointer census, and a
+/// conflict between the two statements quarantines both entities.
+fn resolve_ownership<'a>(
+    directory: &'a [DirectoryEntry],
+    lines: &BTreeMap<u32, &PhysicalLine>,
+    back_pointers: &BTreeMap<u32, Option<u32>>,
+    recoveries: &mut FramingRecoveries,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<Ownership<'a>>, CodecError> {
+    let typed = directory
+        .iter()
+        .map(|entry| entry.sequence)
+        .collect::<BTreeSet<_>>();
+    let candidates = directory
+        .iter()
+        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
+        .collect::<Vec<_>>();
+    let census = lines
+        .keys()
+        .next()
+        .copied()
+        .zip(lines.keys().next_back().copied())
+        .map_or(0..0, |(first, last)| first..last.saturating_add(1));
+    let mut named_by = BTreeMap::<u32, Vec<u32>>::new();
+    for (sequence, pointer) in back_pointers {
+        if let Some(owner) = pointer {
+            named_by.entry(*owner).or_default().push(*sequence);
+        }
+    }
+    let mut declared = BTreeMap::<u32, Range<u32>>::new();
+    let mut card_missing = BTreeSet::<u32>::new();
+    for entry in &candidates {
+        match declared_range(entry, &census) {
+            DeclaredRange::Usable(range) => {
+                declared.insert(entry.sequence, range);
+            }
+            DeclaredRange::CardMissing => {
+                card_missing.insert(entry.sequence);
+            }
+            DeclaredRange::Unusable => {}
+        }
+    }
+    let mut conflicted = overlapping_ranges(&declared);
+    let claimed = declared
+        .iter()
+        .filter(|(sequence, _)| !conflicted.contains(sequence))
+        .flat_map(|(sequence, range)| range.clone().map(|card| (card, *sequence)))
+        .collect::<BTreeMap<_, _>>();
+    for (card, owner) in &claimed {
+        match back_pointers.get(card).copied().flatten() {
+            Some(pointer) if pointer == *owner => {}
+            Some(pointer) if pointer % 2 == 1 && typed.contains(&pointer) => {
+                conflicted.insert(*owner);
+                conflicted.insert(pointer);
+            }
+            _ => {}
+        }
+    }
+    for (card, owner) in &claimed {
+        if conflicted.contains(owner) {
+            continue;
+        }
+        let pointer = back_pointers.get(card).copied().flatten();
+        if pointer != Some(*owner) {
+            recoveries.record(
+                Section::Parameter,
+                FramingDefect::ParameterOwner,
+                *card as usize,
+                lines.get(card).map_or(0, |line| line.offset),
+                pointer.map_or_else(
+                    || "no readable back-pointer".to_owned(),
+                    |value| format!("back-pointer {value}"),
+                ),
+                format!("the declared range of D{owner}"),
+            );
+        }
+    }
+    let mut resolved = Vec::new();
+    for entry in candidates {
+        let range = declared.get(&entry.sequence).cloned();
+        if let Some(range) = &range {
+            charge_owned_cards(ctx, u64::from(range.end.saturating_sub(range.start)))?;
+        }
+        let run = || contiguous_run(named_by.get(&entry.sequence).map_or(&[][..], Vec::as_slice));
+        if conflicted.contains(&entry.sequence) {
+            resolved.push(Ownership {
+                entry,
+                cards: range.map_or_else(run, Iterator::collect),
+                quarantine: Some(ParameterDefect::OwnershipConflict),
+            });
+            continue;
+        }
+        if let Some(range) = range {
+            resolved.push(Ownership {
+                entry,
+                cards: range.collect(),
+                quarantine: None,
+            });
+            continue;
+        }
+        let run = run();
+        if let Some(first) = run.first().copied() {
+            recoveries.record(
+                Section::Parameter,
+                FramingDefect::ParameterOwner,
+                first as usize,
+                lines.get(&first).map_or(0, |line| line.offset),
+                format!(
+                    "an unusable declared range for D{} (start {}, count {})",
+                    entry.sequence, entry.parameter_start, entry.parameter_line_count
+                ),
+                format!("the back-pointer census run of {} card(s)", run.len()),
+            );
+            resolved.push(Ownership {
+                entry,
+                cards: run,
+                quarantine: None,
+            });
+            continue;
+        }
+        let defect = if entry.parameter_line_count == 0 {
+            ParameterDefect::DeclaredCountZero
+        } else if card_missing.contains(&entry.sequence) {
+            ParameterDefect::DeclaredCardMissing
+        } else {
+            ParameterDefect::NoOwnedCards
+        };
+        resolved.push(Ownership {
+            entry,
+            cards: Vec::new(),
+            quarantine: Some(defect),
+        });
+    }
+    Ok(resolved)
+}
+
+fn charge_owned_cards(ctx: Option<&DecodeContext<'_>>, count: u64) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| {
+        ctx.charge_collection_items(count, "iges_parameter_ownership")
+    })
 }
 
 pub(crate) fn assemble_with_context(
     scan: &CardScan,
     directory: &[DirectoryEntry],
+    quarantined_directory: &[QuarantinedDirectoryRecord],
     global: &ResolvedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<ParameterRecord>, CodecError> {
+) -> Result<ParameterAssembly, CodecError> {
     let lines = scan
         .lines
         .iter()
         .filter(|line| line.section == Some(Section::Parameter))
         .map(|line| (line.sequence.unwrap_or_default(), line))
         .collect::<BTreeMap<_, _>>();
+    let back_pointers = lines
+        .iter()
+        .map(|(sequence, line)| (*sequence, back_pointer(line)))
+        .collect::<BTreeMap<_, _>>();
     let entries = directory
         .iter()
         .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut owned_by_entry = BTreeMap::<u32, Vec<u32>>::new();
-    for (sequence, line) in &lines {
-        let pointer = back_pointer(line)?;
-        if pointer == 0 || pointer % 2 == 0 || !entries.contains_key(&pointer) {
-            return Err(CodecError::Malformed(format!(
-                "IGES Parameter Data card P{sequence} back-pointer {pointer} is not an owning odd Directory Entry sequence"
-            )));
-        }
-        owned_by_entry.entry(pointer).or_default().push(*sequence);
-    }
+    let mut recoveries = FramingRecoveries::default();
+    let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries, ctx)?;
     let mut records = Vec::new();
-    for entry in directory {
-        if entry.parameter_line_count == 0 && entry.entity_type == 0 {
+    let mut quarantined = Vec::new();
+    for owned in &ownership {
+        let entry = owned.entry;
+        if let Some(defect) = owned.quarantine {
+            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None));
             continue;
         }
-        let start = positive_u32(
-            entry.parameter_start,
-            entry.sequence,
-            "Parameter Data start",
-        )?;
-        let count = positive_u32(
-            entry.parameter_line_count,
-            entry.sequence,
-            "Parameter Data line count",
-        )?;
-        if count == 0 {
-            return Err(malformed(
-                entry.sequence,
-                "Parameter Data line count is zero",
-            ));
-        }
-        let owned = owned_by_entry
-            .get(&entry.sequence)
-            .map_or(&[][..], Vec::as_slice);
-        let actual_start = owned.first().copied().ok_or_else(|| {
-            malformed(
-                entry.sequence,
-                "no Parameter Data card points to this Directory Entry",
-            )
-        })?;
-        let actual_end = owned
-            .last()
-            .copied()
-            .and_then(|sequence| sequence.checked_add(1))
-            .ok_or_else(|| malformed(entry.sequence, "Parameter Data range overflow"))?;
-        if actual_start != start || owned.windows(2).any(|pair| pair[1] != pair[0] + 1) {
-            return Err(malformed(
-                entry.sequence,
-                "Parameter Data back-pointer range is not contiguous at the declared start",
-            ));
-        }
-        let declared_count = usize::try_from(count)
-            .map_err(|_| malformed(entry.sequence, "Parameter Data count overflows usize"))?;
-        if owned.len() != declared_count {
-            return Err(malformed(
-                entry.sequence,
-                format!(
-                    "declares {declared_count} Parameter Data cards but owns {} by back-pointer",
-                    owned.len()
-                ),
-            ));
-        }
-        let mut bytes = Vec::new();
-        for sequence in actual_start..actual_end {
-            let line = lines.get(&sequence).ok_or_else(|| {
-                malformed(
-                    entry.sequence,
-                    format!("Parameter Data card P{sequence} is missing"),
-                )
-            })?;
-            bytes.extend_from_slice(&line.payload[..64]);
-        }
-        let (tokens, record_end) = tokenize(
+        let bytes = owned_bytes(&owned.cards, &lines);
+        let (tokens, record_end) = match tokenize(
             &bytes,
             global.parameter_delimiter,
             global.record_delimiter,
-            entry.sequence,
             ctx,
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(TokenizeFailure::Refusal(error)) => return Err(error),
+            Err(TokenizeFailure::Defect(defect, offset)) => {
+                quarantined.push(quarantine(
+                    entry,
+                    &owned.cards,
+                    &lines,
+                    defect,
+                    Some(offset),
+                ));
+                continue;
+            }
+        };
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
-            return Err(malformed(
-                entry.sequence,
-                "first parameter does not match the Directory Entry entity type",
+            quarantined.push(quarantine(
+                entry,
+                &owned.cards,
+                &lines,
+                ParameterDefect::EntityTypeTokenMismatch,
+                tokens.first().map(|token| token.span.start),
             ));
+            continue;
         }
+        let line_start = owned.cards.first().copied().unwrap_or_default();
+        let line_end = owned
+            .cards
+            .last()
+            .map_or(line_start, |last| last.saturating_add(1));
         let parameter_end = tokens.len();
         let mut record = ParameterRecord {
             directory_sequence: entry.sequence,
-            line_range: actual_start..actual_end,
-            comment: bytes[record_end..].to_vec(),
+            line_range: line_start..line_end,
+            comment: bytes.get(record_end..).unwrap_or_default().to_vec(),
             bytes,
             tokens,
             parameter_end,
@@ -1854,7 +2179,38 @@ pub(crate) fn assemble_with_context(
             .map_or(record.tokens.len(), |groups| groups.token_start);
         records.push(record);
     }
-    Ok(records)
+    let accounted = ownership
+        .iter()
+        .flat_map(|owned| owned.cards.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let quarantined_sequences = quarantined_directory
+        .iter()
+        .map(|record| record.sequence)
+        .collect::<BTreeSet<_>>();
+    for (sequence, line) in &lines {
+        let pointer = back_pointers.get(sequence).copied().flatten();
+        if accounted.contains(sequence)
+            || pointer.is_some_and(|value| quarantined_sequences.contains(&value))
+        {
+            continue;
+        }
+        recoveries.record(
+            Section::Parameter,
+            FramingDefect::UnclaimedParameterCard,
+            *sequence as usize,
+            line.offset,
+            pointer.map_or_else(
+                || "no readable back-pointer".to_owned(),
+                |value| format!("back-pointer {value}"),
+            ),
+            "no owning Directory Entry",
+        );
+    }
+    Ok(ParameterAssembly {
+        records,
+        quarantined,
+        recoveries,
+    })
 }
 
 fn charge_token(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
@@ -1883,5 +2239,7 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
     ]
 }
 
+#[cfg(test)]
+mod quarantine_tests;
 #[cfg(test)]
 mod tests;

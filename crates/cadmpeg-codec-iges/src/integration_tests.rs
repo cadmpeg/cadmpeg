@@ -246,8 +246,7 @@ fn decode_matrix(
             assert_matrix_destination(&matrix, subject_type, expected_arena);
             let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
             let scan = crate::card::scan(&bytes).expect("integration fixture cards");
-            let directory =
-                crate::directory::parse(&scan).expect("integration fixture Directory Entries");
+            let (directory, _quarantined) = crate::directory::parse(&scan);
             let subject_count = directory
                 .iter()
                 .filter(|entry| entry.entity_type == subject_type)

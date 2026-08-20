@@ -135,10 +135,32 @@ fn decode_with_occurrence_limits(
     let scan = card::scan_with_context(bytes, ctx)?;
     let (global, global_losses) = global::parse(&scan)?;
     let length_context = global.length_context();
-    let directory = directory::parse(&scan)?;
-    charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
+    let (directory, quarantined_directory) = directory::parse(&scan);
+    charge_entities(
+        ctx,
+        (directory.len() + quarantined_directory.len()) as u64,
+        "iges_directory_entries",
+    )?;
     entities::geometry::enforce_transform_depth(&directory, ctx)?;
-    let parameters = parameter::assemble_with_context(&scan, &directory, &global, ctx)?;
+    let parameter::ParameterAssembly {
+        records: parameters,
+        quarantined: quarantined_parameters,
+        recoveries: parameter_recoveries,
+    } = parameter::assemble_with_context(&scan, &directory, &quarantined_directory, &global, ctx)?;
+    let mut framing_recoveries = scan.recoveries.clone();
+    framing_recoveries.merge(parameter_recoveries);
+    let quarantined_parameter_sequences = quarantined_parameters
+        .iter()
+        .map(|record| record.sequence)
+        .collect::<BTreeSet<_>>();
+    let projected_directory = (!quarantined_parameter_sequences.is_empty()).then(|| {
+        directory
+            .iter()
+            .filter(|entry| !quarantined_parameter_sequences.contains(&entry.sequence))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let projected_directory = projected_directory.as_deref().unwrap_or(&directory);
     let parameter_tokens = parameters
         .iter()
         .map(|record| record.tokens.len() as u64)
@@ -166,7 +188,13 @@ fn decode_with_occurrence_limits(
     let projection = match length_context.filter(|_| !options.container_only) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-            entities::geometry::project_geometry(&mut ir, &directory, &parameters, &context, ctx)?
+            entities::geometry::project_geometry(
+                &mut ir,
+                projected_directory,
+                &parameters,
+                &context,
+                ctx,
+            )?
         }
         None => entities::geometry::Projection {
             handled: BTreeSet::default(),
@@ -185,6 +213,10 @@ fn decode_with_occurrence_limits(
         &scan,
         &directory,
         &parameters,
+        native::QuarantinedRecords {
+            directory: &quarantined_directory,
+            parameters: &quarantined_parameters,
+        },
         semantic_structure_admitted,
         &mut references,
         &global,
@@ -216,6 +248,17 @@ fn decode_with_occurrence_limits(
     losses.extend(global_losses);
     losses.extend(projection.losses);
     losses.extend(graph::losses(&references, &scan, &parameters));
+    losses.extend(framing_recoveries.notes());
+    losses.extend(
+        quarantined_directory
+            .iter()
+            .map(directory::QuarantinedDirectoryRecord::loss_note),
+    );
+    losses.extend(
+        quarantined_parameters
+            .iter()
+            .map(parameter::QuarantinedParameterRecord::loss_note),
+    );
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         losses.push(occurrence_loss(
             IgesLossCode::OccurrenceExpansionOutputTruncated,
@@ -323,6 +366,25 @@ fn decode_with_occurrence_limits(
             Some(format!("iges:entity:directory#{}", entry.sequence)),
             TransferDisposition::Retained,
             Some(note.into()),
+        );
+    }
+    for record in &quarantined_directory {
+        transfer_ledger.record(
+            format!("D{}", record.sequence),
+            Some(record.identity()),
+            TransferDisposition::Retained,
+            Some(
+                "quarantined directory record retained; typed Directory fields were not recovered"
+                    .into(),
+            ),
+        );
+    }
+    for record in &quarantined_parameters {
+        transfer_ledger.record(
+            format!("D{}:parameter", record.sequence),
+            Some(record.identity()),
+            TransferDisposition::Retained,
+            Some("quarantined parameter data retained; tokens were not recovered".into()),
         );
     }
     transfer_ledger

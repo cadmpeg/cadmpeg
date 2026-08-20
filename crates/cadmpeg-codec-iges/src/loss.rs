@@ -47,6 +47,12 @@ pub enum IgesLossCode {
     PointerUnresolved,
     /// Parameter Data has more than one structural trailing pointer-group boundary.
     ParameterBoundaryAmbiguous,
+    /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
+    DirectoryRecordQuarantined,
+    /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
+    ParameterDataQuarantined,
+    /// Card framing came from the card census because the file's own declaration did not.
+    CardFramingRecovered,
     /// Directory display, font, or color data was not projected.
     DisplayDataNotProjected,
     /// A drawing has conflicting valid properties of the same form.
@@ -93,6 +99,9 @@ impl IgesLossCode {
         Self::BoundaryPcurveOutsideSupportDomain,
         Self::PointerUnresolved,
         Self::ParameterBoundaryAmbiguous,
+        Self::DirectoryRecordQuarantined,
+        Self::ParameterDataQuarantined,
+        Self::CardFramingRecovered,
         Self::DisplayDataNotProjected,
         Self::DrawingPropertyAmbiguous,
         Self::LineWeightScaleUnavailable,
@@ -126,6 +135,9 @@ impl IgesLossCode {
             }
             Self::PointerUnresolved => "graph.pointer-unresolved",
             Self::ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
+            Self::DirectoryRecordQuarantined => "directory.record-quarantined",
+            Self::ParameterDataQuarantined => "parameter.data-quarantined",
+            Self::CardFramingRecovered => "card.framing-recovered",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
             Self::LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
@@ -164,6 +176,9 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
+            | Self::DirectoryRecordQuarantined
+            | Self::ParameterDataQuarantined
+            | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
             | Self::LineWeightScaleUnavailable
@@ -202,9 +217,11 @@ impl IgesLossCode {
             Self::CompositeCarrierDegraded | Self::GlobalLengthUnitUnresolved => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::GlobalSemanticContextSubstituted | Self::GlobalNoncanonicalFraming => {
-                LossTaxonomy::NoncanonicalSourceSyntax
-            }
+            Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNoncanonicalFraming
+            | Self::DirectoryRecordQuarantined
+            | Self::ParameterDataQuarantined
+            | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
@@ -252,6 +269,9 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
+                "directory.record-quarantined",
+                "parameter.data-quarantined",
+                "card.framing-recovered",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
                 "presentation.line-weight-scale-unavailable",

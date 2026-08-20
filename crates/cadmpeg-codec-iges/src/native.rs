@@ -2,13 +2,15 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::CardScan;
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
+use crate::parameter::{
+    trailing_pointer_groups, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
@@ -58,6 +60,17 @@ struct NativeToken {
     start: usize,
     end: usize,
     value: NativeTokenValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct NativeQuarantinedRecord {
+    id: String,
+    section: &'static str,
+    sequence: u32,
+    source_offset: u64,
+    cards: usize,
+    bytes: Vec<u8>,
+    defect: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -840,6 +853,13 @@ pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
 
+/// The two quarantine lists a decode carries into the native store.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct QuarantinedRecords<'a> {
+    pub(crate) directory: &'a [QuarantinedDirectoryRecord],
+    pub(crate) parameters: &'a [QuarantinedParameterRecord],
+}
+
 pub(crate) struct NativeStoreResult {
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize, bool)>,
@@ -1463,6 +1483,7 @@ pub(crate) fn store(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    quarantine: QuarantinedRecords<'_>,
     structure_admitted: Option<&BTreeSet<u32>>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
@@ -1470,6 +1491,32 @@ pub(crate) fn store(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeStoreResult, CodecError> {
     charge_native_entities(ctx, scan.lines.len() as u64)?;
+    let quarantined_directory_records = quarantine
+        .directory
+        .iter()
+        .map(|record| NativeQuarantinedRecord {
+            id: record.identity(),
+            section: "directory-entry",
+            sequence: record.sequence,
+            source_offset: record.source_offset,
+            cards: record.cards,
+            bytes: record.bytes.clone(),
+            defect: record.defect.key(),
+        })
+        .collect::<Vec<_>>();
+    let quarantined_parameter_records = quarantine
+        .parameters
+        .iter()
+        .map(|record| NativeQuarantinedRecord {
+            id: record.identity(),
+            section: "parameter-data",
+            sequence: record.sequence,
+            source_offset: record.source_offset,
+            cards: record.cards,
+            bytes: record.bytes.clone(),
+            defect: record.defect.key(),
+        })
+        .collect::<Vec<_>>();
     let cards = scan
         .lines
         .iter()
@@ -4981,6 +5028,8 @@ pub(crate) fn store(
         annotations.len(),
         product_occurrences.len(),
         product_occurrence_expansion.len(),
+        quarantined_directory_records.len(),
+        quarantined_parameter_records.len(),
     ]
     .into_iter()
     .fold(0_u64, |total, count| total.saturating_add(count as u64));
@@ -4988,7 +5037,7 @@ pub(crate) fn store(
         ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     }
     let namespace = ir.native.namespace_mut("iges");
-    namespace.version = 2;
+    namespace.version = 3;
     namespace.set_arena_from("cards", cards)?;
     namespace.set_arena_from("entities", entities)?;
     namespace.set_arena_from("directions", directions)?;
@@ -5028,6 +5077,14 @@ pub(crate) fn store(
     namespace.set_arena_from("annotations", annotations)?;
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
+    namespace.set_arena_from(
+        "quarantined_directory_records",
+        quarantined_directory_records,
+    )?;
+    namespace.set_arena_from(
+        "quarantined_parameter_records",
+        quarantined_parameter_records,
+    )?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
             output_truncated_at,

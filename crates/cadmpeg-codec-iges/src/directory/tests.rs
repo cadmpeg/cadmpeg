@@ -100,9 +100,9 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
 }
 
 #[test]
-fn directory_status_rejects_any_nonblank_space() {
+fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
     for status in ["     201", "0000 201", "0000020 "] {
-        let error = IgesCodec
+        let result = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
                     entity_type: 116,
@@ -113,8 +113,19 @@ fn directory_status_rejects_any_nonblank_space() {
                 }])),
                 &DecodeOptions::default(),
             )
-            .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)));
+            .unwrap();
+
+        let native = result.ir().native.namespace("iges").unwrap();
+        let quarantined = &native.arenas["quarantined_directory_records"];
+        let losses = &result.report().losses;
+        assert!(native.arenas["entities"].is_empty(), "{status}");
+        assert_eq!(quarantined.len(), 1, "{status}");
+        assert_eq!(quarantined[0].fields()["defect"], "status-number-invalid");
+        assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
+        assert_eq!(
+            losses[0].code,
+            IgesLossCode::DirectoryRecordQuarantined.kind()
+        );
     }
 }
 

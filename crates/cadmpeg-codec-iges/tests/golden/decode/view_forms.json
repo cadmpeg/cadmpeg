@@ -1587,6 +1587,8 @@
           "product_occurrences": [],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -1669,7 +1671,7 @@
             }
           ]
         },
-        "version": 2
+        "version": 3
       }
     },
     "source": {

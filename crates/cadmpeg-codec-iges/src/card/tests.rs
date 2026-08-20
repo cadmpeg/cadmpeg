@@ -140,20 +140,32 @@ fn decode_rejects_extended_physical_records_before_terminate() {
 }
 
 #[test]
-fn inspect_rejects_terminate_count_mismatch() {
+fn inspect_recovers_a_terminate_count_from_the_card_census() {
     let mut bytes = card(b"original fixture", b'S', 1);
     bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
     bytes.extend(card(b"S0000001G0000002D0000000P0000000", b'T', 1));
 
-    let error = IgesCodec
+    let summary = IgesCodec
         .inspect(
-            &mut Cursor::new(bytes),
+            &mut Cursor::new(bytes.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
+    assert_eq!(summary.entries[1].attributes["cards"], "1");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(
-        error.to_string(),
-        "malformed container: IGES Terminate count for global is 2, actual 1"
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::CardFramingRecovered.kind())
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
     );
 }
 
