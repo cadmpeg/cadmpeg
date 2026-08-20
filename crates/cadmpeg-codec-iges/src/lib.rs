@@ -98,68 +98,15 @@ impl CodecBackend for IgesCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
         match representation::classify(&mut reader)? {
+            representation::Representation::FixedAscii => reader::inspect(ctx, root.window()),
             representation @ (representation::Representation::CompressedAscii
             | representation::Representation::Binary) => {
-                return Ok(representation::unsupported_summary(representation));
+                Ok(representation::unsupported_summary(representation))
             }
-            representation::Representation::Unknown => {
-                return Err(CodecError::WrongFormat(
-                    "unrecognized IGES representation".into(),
-                ));
-            }
-            representation::Representation::FixedAscii => {}
+            representation::Representation::Unknown => Err(CodecError::WrongFormat(
+                "unrecognized IGES representation".into(),
+            )),
         }
-        ctx.charge_work(root.window().len() as u64, "iges_inspect_card_scan")?;
-        let _scan_storage = ctx.reserve_scoped(
-            root.window().len() as u64,
-            "iges_inspect_card_storage",
-            None,
-        )?;
-        let scan = card::scan_with_context(root.window(), Some(ctx))?;
-        let (global, global_losses) = global::parse(&scan)?;
-        let (directory, quarantined_directory) = directory::parse(&scan);
-        ctx.charge_entities(
-            (directory.len() + quarantined_directory.len()) as u64,
-            "iges_inspect_directory_entries",
-        )?;
-        let assembly = parameter::assemble_with_context(
-            &scan,
-            &directory,
-            &quarantined_directory,
-            &global,
-            Some(ctx),
-        )?;
-        let parameters = assembly.records;
-        let parameter_tokens = parameters
-            .iter()
-            .map(|record| record.tokens.len() as u64)
-            .sum();
-        ctx.charge_work(parameter_tokens, "iges_inspect_parameter_parse")?;
-        let references = graph::build(&directory);
-        let mut framing_recoveries = scan.recoveries.clone();
-        framing_recoveries.merge(assembly.recoveries);
-        let mut losses = Vec::new();
-        losses.extend(global.dialect_loss());
-        losses.extend(global_losses);
-        losses.extend(framing_recoveries.notes());
-        losses.extend(
-            quarantined_directory
-                .iter()
-                .map(directory::QuarantinedDirectoryRecord::loss_note),
-        );
-        losses.extend(
-            assembly
-                .quarantined
-                .iter()
-                .map(parameter::QuarantinedParameterRecord::loss_note),
-        );
-        let mut summary = card::summarize(&scan);
-        summary.notes.extend(global.summary_notes());
-        summary.notes.extend(directory::summary_notes(&directory));
-        summary.notes.extend(parameter::summary_notes(&parameters));
-        summary.notes.extend(graph::summary_notes(&references));
-        summary.notes.extend(loss::census(&losses));
-        Ok(summary)
     }
 
     fn decode_impl(
