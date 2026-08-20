@@ -8,7 +8,7 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchRelation, SketchRelationOperand, SketchText,
+    SketchPointClosure, SketchRelation, SketchRelationOperand, SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -19,6 +19,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
 };
+
+const EPS_POINT_PROJECTION: f64 = 1.0e-6;
 
 #[test]
 fn sketch_text_alignment_ordinals_project_to_named_positions() {
@@ -208,6 +210,83 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     assert!(entities.iter().any(
         |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
     ));
+}
+
+#[test]
+fn point_closure_does_not_mark_construction_geometry() {
+    let placement = DesignSketchPlacement {
+        id: "f3d:BulkStream.dat:placement#0".into(),
+        scope_record_index: None,
+        entity_id: "Sketch_42".into(),
+        entity_suffix: 42,
+        visibility: None,
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        frame_length: 0,
+        transform: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        transform_offset: None,
+        paired_class_tag: "257".into(),
+        paired_byte_offset: 0,
+        member_run_head: false,
+    };
+    let point = SketchPoint {
+        id: "f3d:BulkStream.dat:point#10".into(),
+        record_index: 10,
+        owner_reference: Some(42),
+        class_tag: "413".into(),
+        byte_offset: 10,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: false,
+        },
+        persistent_id: Some(10),
+        paired_reference: 11,
+        flags: [0; 8],
+        coordinates: Point2::new(0.0, 0.0),
+        depth: 0.0,
+        closure: Some(SketchPointClosure {
+            selector: 4,
+            state: 0,
+        }),
+        companion: None,
+    };
+    let curve = SketchCurveIdentity {
+        id: "f3d:BulkStream.dat:curve#20".into(),
+        record_index: 20,
+        owner_reference: Some(42),
+        class_tag: "375".into(),
+        byte_offset: 20,
+        geometry_offset: 0,
+        entity_genesis: Some(0),
+        primary_id: 20,
+        secondary_id: 0,
+        geometry: Some(SketchCurveGeometry::Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(10.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }),
+    };
+
+    let (sketches, entities) = project_sketch_design(
+        &[placement],
+        &[point],
+        &[curve],
+        &[],
+        &[],
+        EPS_POINT_PROJECTION,
+    );
+    assert_eq!(sketches.len(), 1);
+    assert!(sketches[0].profiles.is_empty());
+    assert_eq!(entities.len(), 2);
+    assert!(entities.iter().all(|entity| !entity.construction));
 }
 
 #[test]
