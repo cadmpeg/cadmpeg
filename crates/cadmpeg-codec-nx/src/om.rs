@@ -4701,6 +4701,26 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 return Vec::new();
             }
             at += 2;
+            let members_start = at;
+            let mut scan_at = members_start;
+            for _ in 0..count - 1 {
+                if record.bytes.get(scan_at) != Some(&0x2e) {
+                    return Vec::new();
+                }
+                scan_at += 1;
+                let Some((CompactIndex::Value(_), width)) =
+                    record.bytes.get(scan_at..).and_then(compact_index)
+                else {
+                    return Vec::new();
+                };
+                scan_at += width;
+                if record.bytes.get(scan_at) != Some(&0x00) {
+                    return Vec::new();
+                }
+                scan_at += 1;
+            }
+
+            at = members_start;
             let mut members = Vec::with_capacity(count - 1);
             for ordinal in 0..count - 1 {
                 if record.bytes.get(at) != Some(&0x2e) {
