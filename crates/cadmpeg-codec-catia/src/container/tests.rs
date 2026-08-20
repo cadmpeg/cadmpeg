@@ -142,7 +142,7 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
 }
 
 #[test]
-fn nested_fbb_only_spine_precedes_a_coherent_e5_stream() {
+fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
     let inner = InnerDir {
         inner: 0,
         descriptors: Vec::new(),
@@ -156,7 +156,7 @@ fn nested_fbb_only_spine_precedes_a_coherent_e5_stream() {
 
     assert_eq!(
         identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, true),
-        Variant::FbbOnly
+        Variant::E5Stream
     );
 }
 

@@ -1226,10 +1226,10 @@ fn unique_largest_descriptor<'a>(
 /// sufficient to distinguish them because FBB-only widths one and three reuse
 /// the standard delimiter. Zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
-/// census. A coherent E5 walk owns its bounded stream when no admitted nested
-/// FBB spine is present. A nested FBB spine owns route selection when both
-/// representations are present. Anything that matches no invariant is
-/// [`Variant::Unknown`].
+/// census. An admitted standard edge-table grammar is a complete nested FBB
+/// spine and owns route selection over a coherent E5 walk. An FBB-only grammar
+/// is a partial spine; when it coexists with a coherent E5 walk, E5 owns the
+/// route. Anything that matches no invariant is [`Variant::Unknown`].
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
@@ -1238,12 +1238,17 @@ fn identify_variant(
     coherent_e5: bool,
 ) -> Variant {
     match (inner, brep) {
-        // A nested FBB spine is an independently admitted body. It takes
-        // precedence over an unrelated E5 stream in the same container.
+        // A standard edge table establishes a complete nested FBB body. It
+        // takes precedence over an unrelated E5 stream in the same container.
         (Some(_), Some(brep)) if census.fbb_runs > 0 => {
-            identify_fbb_variant(main_data_stream.unwrap_or(brep), census)
+            let variant = identify_fbb_variant(main_data_stream.unwrap_or(brep), census);
+            if variant == Variant::FbbOnly && coherent_e5 {
+                Variant::E5Stream
+            } else {
+                variant
+            }
         }
-        // E5 is the geometry route when no nested FBB body is present.
+        // E5 is the geometry route when no complete nested FBB body is present.
         _ if coherent_e5 => Variant::E5Stream,
         // No nested container at all.
         (None, _) => {
