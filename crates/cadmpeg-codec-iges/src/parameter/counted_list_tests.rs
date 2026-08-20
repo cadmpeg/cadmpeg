@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Counted fixed-width lists and the IGES 5.3 §2.2.3 defaulted final item.
+
+use super::{ParameterRecord, Token, TokenValue};
+
+fn integer_record(values: &[i64], parameter_end: usize) -> ParameterRecord {
+    ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: values
+            .iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(*value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end,
+        comment: Vec::new(),
+    }
+}
+
+fn counted_record(declared: usize, item_tokens: usize) -> ParameterRecord {
+    let mut values = vec![0, declared as i64];
+    values.extend(std::iter::repeat_n(0, item_tokens));
+    let parameter_end = values.len();
+    integer_record(&values, parameter_end)
+}
+
+fn counted_record_with_suffix(
+    declared: usize,
+    item_tokens: usize,
+    suffix_tokens: usize,
+) -> (ParameterRecord, usize) {
+    let mut values = vec![0, declared as i64];
+    values.extend(std::iter::repeat_n(0, item_tokens));
+    let list_end = values.len();
+    values.extend(std::iter::repeat_n(0, suffix_tokens));
+    let parameter_end = values.len();
+    (integer_record(&values, parameter_end), list_end)
+}
+
+#[test]
+fn a_list_that_runs_to_the_record_end_holds_its_final_item_in_whole_or_in_part() {
+    for stride in [2, 12, 20] {
+        for complete in 0..4 {
+            for partial in 0..stride {
+                let item_tokens = complete * stride + partial;
+                let present = complete + usize::from(partial > 0);
+                let record = counted_record(present, item_tokens);
+                assert_eq!(
+                    record.items_before_default_tail(1, stride, record.parameter_end()),
+                    Some(present),
+                    "stride {stride}, {complete} complete items, {partial} trailing tokens"
+                );
+                assert_eq!(
+                    record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
+                    Some(present),
+                    "stride {stride}, {complete} complete items, {partial} trailing tokens"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_complete_item_before_a_partial_item_admits_both() {
+    let stride = 20;
+    let record = counted_record(2, stride + 9);
+
+    assert_eq!(
+        record.items_before_default_tail(1, stride, record.parameter_end()),
+        Some(2)
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
+        Some(2)
+    );
+}
+
+#[test]
+fn a_declared_count_above_the_items_present_in_whole_or_in_part_is_not_admitted() {
+    for stride in [2, 12, 20] {
+        for complete in 0..4 {
+            for partial in 0..stride {
+                let item_tokens = complete * stride + partial;
+                let present = complete + usize::from(partial > 0);
+                let record = counted_record(present + 1, item_tokens);
+                assert_eq!(
+                    record.items_before_default_tail(1, stride, record.parameter_end()),
+                    Some(present),
+                    "stride {stride}, {complete} complete items, {partial} trailing tokens"
+                );
+                assert_eq!(
+                    record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
+                    None,
+                    "stride {stride}, {complete} complete items, {partial} trailing tokens"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_count_below_the_items_present_leaves_the_surplus_tokens_unread() {
+    let stride = 12;
+    let record = counted_record(1, 3 * stride);
+
+    assert_eq!(
+        record.items_before_default_tail(1, stride, record.parameter_end()),
+        Some(3)
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
+        Some(1)
+    );
+}
+
+#[test]
+fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
+    let stride = 20;
+    let (record, list_end) = counted_record_with_suffix(2, stride + 9, 2);
+
+    assert_eq!(
+        record.items_before_default_tail(1, stride, list_end),
+        Some(1)
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, stride, list_end),
+        None
+    );
+
+    let (exact, exact_end) = counted_record_with_suffix(1, stride, 2);
+    assert_eq!(
+        exact.items_before_default_tail(1, stride, exact_end),
+        Some(1)
+    );
+    assert_eq!(
+        exact.count_with_stride_before_default_tail(1, stride, exact_end),
+        Some(1)
+    );
+}
+
+#[test]
+fn an_empty_list_admits_a_zero_count_and_no_item() {
+    let stride = 20;
+    let record = counted_record(0, 0);
+
+    assert_eq!(
+        record.items_before_default_tail(1, stride, record.parameter_end()),
+        Some(0)
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
+        Some(0)
+    );
+
+    let overdeclared = counted_record(1, 0);
+    assert_eq!(
+        overdeclared.count_with_stride_before_default_tail(1, stride, overdeclared.parameter_end()),
+        None
+    );
+}
+
+#[test]
+fn a_zero_stride_has_no_item_count_and_admits_no_declared_count() {
+    let record = counted_record(1, 20);
+
+    assert_eq!(
+        record.items_before_default_tail(1, 0, record.parameter_end()),
+        None
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, 0, record.parameter_end()),
+        None
+    );
+}
+
+#[test]
+fn a_negative_or_missing_count_admits_no_list() {
+    let stride = 12;
+    let negative = integer_record(&[0, -1, 0, 0], 4);
+    assert_eq!(
+        negative.count_with_stride_before_default_tail(1, stride, negative.parameter_end()),
+        None
+    );
+
+    let absent = integer_record(&[0], 1);
+    assert_eq!(
+        absent.count_with_stride_before_default_tail(1, stride, absent.parameter_end()),
+        None
+    );
+    assert_eq!(
+        absent.items_before_default_tail(1, stride, absent.parameter_end()),
+        Some(0)
+    );
+}

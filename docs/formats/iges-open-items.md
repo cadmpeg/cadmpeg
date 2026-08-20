@@ -596,16 +596,6 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 
 **Note.** The discriminating check is a corpus sweep for a file that declares version flag `6` and carries any line after its Terminate line, with the byte content of each such line recorded. A sweep that finds only all-blank trailing lines shows the divergence is unreachable in practice and the tolerance stays. A sweep that finds a trailing line with data shows that the 4.0 reading and the 5.3 reading disagree about the file content, and the trailing bytes then need their own disposition.
 
-### PH-05. A defaulted final list item is admitted only when it is the only item
-
-**Question.** How many items of a counted list may a record delimiter default under [IGES 5.3 §2.2.3](https://paulbourke.net/dataformats/iges/IGES.pdf)?
-
-**Known.** §2.2.3 states that a record delimiter supplies the default for every remaining field of the record, so the final item of a counted fixed-width list can be present in part. `parameter.rs::ParameterRecord::count_with_stride_before_default_tail` implements that allowance for the case where the whole list is one item. With `a` tokens available after the count and stride `s`, it admits a declared count up to `a / s`, and it admits the count `1` when `a` is between `1` and `s - 1`. It therefore rejects a declared count of two when the first item is complete and the second holds `1` through `s - 1` tokens, and the caller then reads no item at all. The one caller is the Type 213 New General Note native record in `native.rs`, with `s` of twenty and the count at Parameter index 12. `parameter/tests.rs::counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix` pins the admitted one-item case and the suffix case, and no test pins the rejected case.
-
-**Need.** The two readings differ about what a file states. Under the wider reading a Type 213 record whose last string omits trailing fields carries `count` strings, the last one defaulted; under the implemented reading it carries none, because the caller defaults the count to zero. The wider reading transfers the complete strings that the file does hold. The narrow reading is safe but drops them.
-
-**Note.** The discriminating check is a corpus sweep for a Type 213 record whose declared string count is two or more and whose token count is not `13 + 20 * count`, with the trailing token count recorded per record. A sweep that finds no such record leaves the narrow rule as it is. A sweep that finds one shows that the narrow rule drops complete strings, and the fix is `a / s` plus one when `a % s` is not zero, with the partial item's missing fields taking their entity defaults.
-
 ## 2. Global metadata
 
 ### GL-07. Conservative constants for the fields 9, 11, and 19 fallbacks

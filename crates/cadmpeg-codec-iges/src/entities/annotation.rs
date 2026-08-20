@@ -43,13 +43,15 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let Some(count) = record.count(1).filter(|count| *count > 0) else {
-        return false;
-    };
     let parameter_end = trailing_pointer_groups(record, entries)
         .map_or(record.parameter_end(), |groups| groups.token_start);
-    let last_string_start = 2 + (count - 1) * 12;
-    (last_string_start < parameter_end && parameter_end <= 2 + count * 12)
+    let Some(count) = record
+        .count_with_stride_before_default_tail(1, 12, parameter_end)
+        .filter(|count| *count > 0)
+    else {
+        return false;
+    };
+    parameter_end <= 2 + count * 12
         && (0..count).all(|index| {
             let start = 2 + index * 12;
             let text = record.string_or_empty(start + 11);
@@ -85,11 +87,14 @@ fn new_general_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let Some(count) = record.count(12).filter(|count| *count > 0) else {
-        return false;
-    };
     let parameter_end = trailing_pointer_groups(record, entries)
         .map_or(record.parameter_end(), |groups| groups.token_start);
+    let Some(count) = record
+        .count_with_stride_before_default_tail(12, 20, parameter_end)
+        .filter(|count| *count > 0)
+    else {
+        return false;
+    };
     parameter_end <= 13 + count * 20
         && (1..=2).all(|index| {
             record

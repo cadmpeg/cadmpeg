@@ -235,25 +235,35 @@ impl ParameterRecord {
         stride: usize,
         end: usize,
     ) -> Option<usize> {
-        if stride == 0 {
-            return None;
-        }
-        let end = end.min(self.parameter_end());
-        if end < self.tokens.len() {
-            return self.count_with_stride_before(index, stride, end);
-        }
-        let item_start = index.checked_add(1)?;
         let count = self
             .integer(index)
             .and_then(|value| usize::try_from(value).ok())?;
-        let available = end.saturating_sub(item_start);
-        let complete_count = available / stride;
-        let max_count = if available % stride == 0 || complete_count > 0 {
-            complete_count
-        } else {
-            1
-        };
+        let max_count = self.items_before_default_tail(index, stride, end)?;
         (count <= max_count).then_some(count)
+    }
+
+    /// Return the fixed-width items the record holds after the count at
+    /// `index` and before the entity-specific end. A list that runs to the
+    /// record end holds its final item in whole or in part, because the record
+    /// delimiter supplies every remaining field under IGES 5.3 §2.2.3. A list
+    /// that a trailing suffix follows holds only its complete items.
+    pub(crate) fn items_before_default_tail(
+        &self,
+        index: usize,
+        stride: usize,
+        end: usize,
+    ) -> Option<usize> {
+        if stride == 0 {
+            return None;
+        }
+        let item_start = index.checked_add(1)?;
+        let end = end.min(self.parameter_end());
+        let available = end.saturating_sub(item_start);
+        Some(if end < self.tokens.len() {
+            available / stride
+        } else {
+            available.div_ceil(stride)
+        })
     }
 }
 
@@ -2213,6 +2223,8 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
     ]
 }
 
+#[cfg(test)]
+mod counted_list_tests;
 #[cfg(test)]
 mod quarantine_tests;
 #[cfg(test)]

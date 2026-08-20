@@ -863,6 +863,7 @@ pub(crate) struct QuarantinedRecords<'a> {
 pub(crate) struct NativeStoreResult {
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize, bool)>,
+    pub(crate) overdeclared_count_sequences: Vec<(u32, usize, usize)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -4291,6 +4292,24 @@ pub(crate) fn store(
             ],
         }
     };
+    let overdeclared_count_sequences = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+        .filter_map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied()?;
+            let (index, stride) = if entry.entity_type == 212 {
+                (1, 12)
+            } else {
+                (12, 20)
+            };
+            let end = primary_end(entry.sequence, record);
+            let declared = record
+                .integer(index)
+                .and_then(|value| usize::try_from(value).ok())?;
+            let present = record.items_before_default_tail(index, stride, end)?;
+            (declared > present).then_some((entry.sequence, declared, present))
+        })
+        .collect::<Vec<_>>();
     let annotations = directory
         .iter()
         .filter(|entry| {
@@ -4310,7 +4329,11 @@ pub(crate) fn store(
             Some(if entry.entity_type == 212 {
                 let count = record
                     .and_then(|record| {
-                        record.count_with_stride_before(1, 12, primary_end(entry.sequence, record))
+                        record.count_with_stride_before_default_tail(
+                            1,
+                            12,
+                            primary_end(entry.sequence, record),
+                        )
                     })
                     .unwrap_or_default();
                 NativeAnnotation::GeneralNote {
@@ -5093,6 +5116,7 @@ pub(crate) fn store(
             malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
         },
         ambiguous_parameter_sequences,
+        overdeclared_count_sequences,
     })
 }
 

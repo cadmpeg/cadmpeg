@@ -187,6 +187,7 @@ fn decode_with_occurrence_limits(
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_sequences,
+        overdeclared_count_sequences,
     } = native::store(
         &mut ir,
         &scan,
@@ -280,6 +281,16 @@ fn decode_with_occurrence_limits(
                 } else {
                     "structural"
                 }
+            ),
+            source_sequence,
+            &directory,
+        ));
+    }
+    for (source_sequence, declared, present) in overdeclared_count_sequences {
+        losses.push(occurrence_loss(
+            IgesLossCode::ParameterCountOverdeclared,
+            format!(
+                "IGES entity D{source_sequence} declares a counted list of {declared} items; its Parameter Data record holds {present} in whole or in part, so the list was not read"
             ),
             source_sequence,
             &directory,

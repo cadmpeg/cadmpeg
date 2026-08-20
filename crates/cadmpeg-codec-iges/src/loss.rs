@@ -67,6 +67,8 @@ pub enum IgesLossCode {
     PointerUnresolved,
     /// Parameter Data has more than one structural trailing pointer-group boundary.
     ParameterBoundaryAmbiguous,
+    /// A counted list declares more items than its Parameter Data record holds.
+    ParameterCountOverdeclared,
     /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
     DirectoryRecordQuarantined,
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
@@ -119,6 +121,7 @@ impl IgesLossCode {
         Self::BoundaryPcurveOutsideSupportDomain,
         Self::PointerUnresolved,
         Self::ParameterBoundaryAmbiguous,
+        Self::ParameterCountOverdeclared,
         Self::DirectoryRecordQuarantined,
         Self::ParameterDataQuarantined,
         Self::CardFramingRecovered,
@@ -155,6 +158,7 @@ impl IgesLossCode {
             }
             Self::PointerUnresolved => "graph.pointer-unresolved",
             Self::ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
+            Self::ParameterCountOverdeclared => "parameter.count-overdeclared",
             Self::DirectoryRecordQuarantined => "directory.record-quarantined",
             Self::ParameterDataQuarantined => "parameter.data-quarantined",
             Self::CardFramingRecovered => "card.framing-recovered",
@@ -196,6 +200,7 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
+            | Self::ParameterCountOverdeclared
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
@@ -239,6 +244,7 @@ impl IgesLossCode {
             }
             Self::GlobalSemanticContextSubstituted
             | Self::GlobalNoncanonicalFraming
+            | Self::ParameterCountOverdeclared
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -289,6 +295,7 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
+                "parameter.count-overdeclared",
                 "directory.record-quarantined",
                 "parameter.data-quarantined",
                 "card.framing-recovered",
