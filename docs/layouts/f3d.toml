@@ -3828,6 +3828,47 @@ source = "spec"
 anchor = "offsets 34 through 44 are zero"
 
 [[record]]
+name = "fixed_pipe_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Primary-header offset 25 stores u32 `4`, which selects a new-body result"
+size = 31
+note = "Offsets are relative to the primary indexed header. The variable scope reference table and operand records follow this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the primary indexed header"
+
+[[record.gap]]
+offset = 11
+size = 14
+note = "The fixed Pipe prefix carries no admitted fields between its indexed header and the operation at offset 25."
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "Primary-header offset 25 stores u32 `4`, which selects a new-body result"
+
+[[record.field]]
+name = "section_shape"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "Offset 29 value `1` selects a circular section"
+
+[[record.field]]
+name = "filled"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "offset 30 value `1` selects a filled section"
+
+[[record]]
 name = "legacy_pipe_operation_prefix"
 kind = "byte"
 section = "3.1"

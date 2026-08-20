@@ -6129,11 +6129,11 @@ fn project_fixed_pipe(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let legacy_layout = matches!(
+    let legacy_reference_layout = matches!(
         (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-        ("405", "259") | ("475", "260")
+        ("405", "259") | ("421", "257") | ("475", "260")
     );
-    let path_group = if legacy_layout {
+    let path_group = if legacy_reference_layout {
         if groups.iter().any(|group| group.role != ROLE_0X5) {
             return None;
         }
@@ -6795,11 +6795,10 @@ fn project_delete_face(
                 ),
                 ("287", "270", 245, 135)
                     | ("287", "270", 256, 146)
-                    | ("327", "257", 250, 139)
+                    | ("327" | "545", "257", 250, 139)
                     | ("414", "263", 250, 140)
                     | ("497", "259", 257, 146)
                     | ("545", "257", 246, 135)
-                    | ("545", "257", 250, 139)
                     | ("545", "257", 257, 146)
             );
             if common_layout || class_layout {

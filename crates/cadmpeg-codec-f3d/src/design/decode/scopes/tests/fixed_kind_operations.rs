@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
 
 pub(super) fn continue_fixed_kind_operations(
@@ -1363,6 +1364,76 @@ pub(super) fn continue_fixed_kind_operations(
                 (pipe_scalar_start + ordinal * 111 + 40) as u64
             }),
         })
+    );
+
+    let owner_pipe_start = bytes.len();
+    let mut owner_pipe = vec![0; fixed_pipe_layout::FILLED + 1];
+    owner_pipe[fixed_pipe_layout::OPERATION..fixed_pipe_layout::OPERATION + 4]
+        .copy_from_slice(&4u32.to_le_bytes());
+    owner_pipe[fixed_pipe_layout::SECTION_SHAPE] = 1;
+    owner_pipe[fixed_pipe_layout::FILLED] = 1;
+    bytes.extend_from_slice(&owner_pipe);
+    let owner_pipe_values: [f64; 4] = [1.0, 0.0, 0.175, 0.0438];
+    let owner_pipe_record_indexes = [210, 211, 212, 213];
+    let owner_pipe_owners = owner_pipe_values
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, value)| DesignParameterOwner {
+            id: format!(
+                "f3d:Design/BulkStream.dat:parameter-owner#{}",
+                owner_pipe_record_indexes[ordinal]
+            ),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "342".into(),
+            record_index: owner_pipe_record_indexes[ordinal],
+            scope_record_index: scope.record_index,
+            local_ordinal: ordinal as u32,
+            evaluated_value: value,
+            evaluated_value_offset: 10_000 + ordinal as u64,
+            parameter_record_index: owner_pipe_record_indexes[ordinal] + 1,
+            owned_ordinal: ordinal as u32,
+            variant: None,
+            companion_record_index: owner_pipe_record_indexes[ordinal] + 2,
+        })
+        .collect::<Vec<_>>();
+    let mut owner_pipe_scope = scope.clone();
+    owner_pipe_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
+    owner_pipe_scope.byte_offset = owner_pipe_start as u64;
+    owner_pipe_scope.class_tag = "421".into();
+    owner_pipe_scope.paired_class_tag = "257".into();
+    owner_pipe_scope.kind = "Pipe".into();
+    owner_pipe_scope.frame_length = 405;
+    owner_pipe_scope.reference_members = owner_pipe_record_indexes.into();
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &owner_pipe_scope,
+            &owner_pipe_owners,
+        ),
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
+            section_shape: 1,
+            section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
+            filled: true,
+            filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
+            values: owner_pipe_values,
+            record_indexes: owner_pipe_record_indexes,
+            value_offsets: [10_000, 10_001, 10_002, 10_003],
+        })
+    );
+    let mut wrong_owner_class = owner_pipe_owners.clone();
+    wrong_owner_class[0].class_tag = "341".into();
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &owner_pipe_scope,
+            &wrong_owner_class,
+        ),
+        None
     );
 
     for (pair_ordinal, (class_tag, paired_class_tag)) in

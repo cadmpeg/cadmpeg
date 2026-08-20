@@ -1197,6 +1197,23 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
+## `fixed_pipe_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Offsets are relative to the primary indexed header. The variable scope reference table and operand records follow this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the primary indexed header |
+| 25 | 4 | `operation` | `u32` | little | spec | Primary-header offset 25 stores u32 `4`, which selects a new-body result |
+| 29 | 1 | `section_shape` | `u8` | little | spec | Offset 29 value `1` selects a circular section |
+| 30 | 1 | `filled` | `u8` | little | spec | offset 30 value `1` selects a filled section |
+
+Unstated regions:
+
+- `11..25` (14 B): The fixed Pipe prefix carries no admitted fields between its indexed header and the operation at offset 25.
+
 ## `legacy_pipe_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 32 B

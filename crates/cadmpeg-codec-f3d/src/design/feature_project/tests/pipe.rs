@@ -140,4 +140,26 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         &[],
     )
     .is_some());
+
+    scope.class_tag = "421".into();
+    scope.paired_class_tag = "257".into();
+    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 25,
+        section_shape: 1,
+        section_shape_offset: 29,
+        filled: true,
+        filled_offset: 30,
+        values: [1.0, 1.0, 0.6, 0.15],
+        record_indexes: [10, 11, 12, 13],
+        value_offsets: [40, 151, 262, 373],
+    });
+    assert!(crate::design::feature_project::project_fixed_pipe(
+        &scope,
+        &parameter_refs,
+        std::slice::from_ref(&path_group),
+        &[],
+        &[],
+    )
+    .is_some());
 }
