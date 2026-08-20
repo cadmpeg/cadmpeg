@@ -1353,8 +1353,9 @@ A feature-history operation record begins at the fixed operation-header marker a
 Within one feature-history record area, operation records are stored in reverse
 construction order. Exact native records and labels retain source order.
 Neutral feature ordinals and dependency precedence order labels by descending
-label source offset within each record area. Record areas are ordered by the
-ascending source offset of their first label. No sequence field, timestamp, or
+absolute label source offset within each record area. Record areas are ordered
+by the ascending absolute source offset of their first label. These serialized
+offsets are the construction-order fields; no sequence field, timestamp, or
 predecessor reference is required.
 
 A `SKETCH` operation carries one ordered counted-reference field beginning `01 00, nonempty:u8`. When `nonempty` is one, `declared_count:u8` follows and is nonzero, followed by `declared_count - 1` contiguous indices. When `nonempty` is zero, the declared count is zero and no leading indices follow. The field then contains `00 00`, one terminal index, and `01 00 00 00`. Each index uses a canonical width marker: `f0, value:u8` represents `0..255`, while `f1, value:u16 BE` represents `256..65535`. Each reference retains the exact two- or three-byte index token and its width-marker offset. The indices address offset-only OM data blocks; resolution is retained only when one indexed store contains the addressed block.
