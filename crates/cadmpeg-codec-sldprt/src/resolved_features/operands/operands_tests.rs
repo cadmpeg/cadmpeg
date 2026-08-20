@@ -269,6 +269,87 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
 }
 
 #[test]
+fn relation_point_operands_use_object_index_before_local_identifier() {
+    let marker = |id: &str, object_index, local_id, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id,
+        kind,
+        state_value: None,
+        coordinates_m: matches!(
+            kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+        .then_some([1.0, 2.0]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let indexed = marker("indexed", Some(7), Some(100), SketchInputKind::Point);
+    let local = marker("local", Some(8), Some(7), SketchInputKind::Point);
+    let colliding_line = marker(
+        "colliding-line",
+        Some(7),
+        Some(7),
+        SketchInputKind::LineOrCircle,
+    );
+    let relation = marker(
+        "relation",
+        Some(9),
+        Some(9),
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+    );
+    let markers = [&indexed, &local, &colliding_line, &relation];
+
+    for kind in [
+        FeatureInputOperandKind::Native(0x80ac),
+        FeatureInputOperandKind::Native(0x80d5),
+        FeatureInputOperandKind::Native(0x8138),
+    ] {
+        assert_eq!(
+            resolve_operand_marker(markers.iter().copied(), kind, 7)
+                .map(|resolved| resolved.id.as_str()),
+            Some("indexed")
+        );
+        assert_eq!(
+            resolve_operand_marker(markers.iter().copied(), kind, 9)
+                .map(|resolved| resolved.id.as_str()),
+            Some("relation")
+        );
+    }
+}
+
+#[test]
+fn relation_point_operand_rejects_ambiguous_indexed_points() {
+    let marker = |id: &str| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(7),
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: None,
+        coordinates_m: Some([1.0, 2.0]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let first = marker("first");
+    let second = marker("second");
+    for kind in [
+        FeatureInputOperandKind::Native(0x80ac),
+        FeatureInputOperandKind::Native(0x80d5),
+        FeatureInputOperandKind::Native(0x8138),
+    ] {
+        assert!(resolve_operand_marker([&first, &second], kind, 7).is_none());
+    }
+}
+
+#[test]
 fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
     let marker = |id: &str, local_id, kind, links: &[&str]| SketchInputEntity {
         id: id.into(),

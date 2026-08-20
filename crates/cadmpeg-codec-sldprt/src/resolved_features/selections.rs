@@ -2877,6 +2877,12 @@ pub(super) fn operand_accepts_marker(
                 | SketchInputKind::LineOrCircle
                 | SketchInputKind::Arc
         ),
+        FeatureInputOperandKind::Native(0x80ac | 0x80d5 | 0x8138) => matches!(
+            marker,
+            SketchInputKind::Point
+                | SketchInputKind::ConstrainedPoint
+                | SketchInputKind::Relation(_)
+        ),
         FeatureInputOperandKind::E1
         | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
             matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)

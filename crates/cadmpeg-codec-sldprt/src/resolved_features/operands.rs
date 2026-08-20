@@ -181,6 +181,41 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     }
     if matches!(
         kind,
+        FeatureInputOperandKind::Native(0x80ac | 0x80d5 | 0x8138)
+    ) {
+        // These class-scoped relation cells use the same address precedence
+        // as point references, but may also name a relation handle whose
+        // links resolve to a point locus. A line or arc sharing the address
+        // is not a candidate for this operand family.
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if entities.iter().any(|entity| {
+            entity.object_index == Some(u32::from(address))
+                && operand_accepts_marker(kind, entity.kind)
+        }) {
+            return match indexed.as_slice() {
+                [entity] => Some(*entity),
+                _ => None,
+            };
+        }
+        let local = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = local.as_slice() {
+            return Some(*entity);
+        }
+    }
+    if matches!(
+        kind,
         FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386)
     ) {
         let indexed = entities
