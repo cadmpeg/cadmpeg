@@ -874,7 +874,7 @@ unresolved.
 
 **Need.** We must know the condition to select the active bodies. The current decoder retains every image whose complete nonempty FACE, EDGE, and VERTEX node-ID set is a subset of the active set, but the format does not establish whether that subset relation is decisive, whether active IDs may be stale or unioned, or how multiple matching images should be handled. The selection deletes other bodies and their complete topology and geometry from the model, so an unsupported membership rule removes a current body permanently. The exact feature-history rule runs only when this condition declines, so membership semantics take precedence over it.
 
-**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1905-1945` selects every body whose complete nonempty topology-ID set is a subset of the active set. The subset rule, active-set authority, and union/stale behavior are not independently evidenced by a real NX file; the regression fixtures construct the sets consumed by the rule. The item is reopened.
+**Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:1306-1340` requires every participating FACE node ID and every EDGE or VERTEX identity referenced by a retained FIN to resolve before applying the subset relation. The subset rule, active-set authority, and union/stale behavior remain unresolved; a membership match is not promoted beyond that admission boundary.
 
 ### OM-34. OM registry schema-role precedence
 
