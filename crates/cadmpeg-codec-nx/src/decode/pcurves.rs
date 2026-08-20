@@ -3169,12 +3169,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             if second_fin.other != edge_fields.fin || second_fin.edge != xmt {
                 continue;
             }
-            let Some(edge) = ir
-                .model
-                .edges
-                .iter()
-                .find(|candidate| &candidate.id == edge_id)
-            else {
+            let Some(edge) = model_index.edges(edge_id.0.as_str()) else {
                 continue;
             };
             let Some(tolerance) = edge.tolerance else {
@@ -3185,24 +3180,11 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             }
             let support = |fin_xmt| {
                 let coedge_id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
-                ir.model
-                    .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == coedge_id && &coedge.edge == edge_id)
-                    .and_then(|coedge| {
-                        let face = ir
-                            .model
-                            .loops
-                            .iter()
-                            .find(|loop_| loop_.id == coedge.owner_loop)?
-                            .face
-                            .clone();
-                        ir.model
-                            .faces
-                            .iter()
-                            .find(|candidate| candidate.id == face)
-                            .map(|face| face.surface.clone())
-                    })
+                let coedge = model_index.coedges(coedge_id.0.as_str())?;
+                (&coedge.edge == edge_id).then_some(())?;
+                let loop_ = model_index.loops(coedge.owner_loop.0.as_str())?;
+                let face = model_index.faces(loop_.face.0.as_str())?;
+                Some(face.surface.clone())
             };
             let Some(first_support) = support(edge_fields.fin) else {
                 continue;
@@ -3214,17 +3196,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                 continue;
             }
             let endpoint = |vertex_id: &VertexId| {
-                let point_id = &ir
-                    .model
-                    .vertices
-                    .iter()
-                    .find(|vertex| &vertex.id == vertex_id)?
-                    .point;
-                ir.model
-                    .points
-                    .iter()
-                    .find(|point| &point.id == point_id)
-                    .map(|point| point.position)
+                let point_id = &model_index.vertices(vertex_id.0.as_str())?.point;
+                Some(model_index.points(point_id.0.as_str())?.position)
             };
             let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
                 continue;
