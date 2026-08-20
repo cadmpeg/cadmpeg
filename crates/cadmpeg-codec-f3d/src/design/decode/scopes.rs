@@ -1416,6 +1416,16 @@ pub(crate) fn exact_assembly_alignment(
             Some(exact.limits),
         )
     } else {
+        if matches!(scope.frame_length, 744 | 748)
+            && crate::design::assembly::operand_frame_variant(
+                scope.frame_length,
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            )
+            .is_none()
+        {
+            return None;
+        }
         let (alignment_start, alignment_end) =
             crate::design::assembly::alignment_lane_bounds(scope.frame_length, lanes.len())?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
@@ -1956,18 +1966,16 @@ fn exact_assembly_operand_frames(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
-    enum FrameVariant {
-        Standard,
-        Compact,
-        Axial,
-    }
-
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let (frame_offsets, frame_variant) = match scope.frame_length {
-        627 | 637 | 692 => ((28, 40, 168, 180), FrameVariant::Standard),
-        633 | 732 => ((24, 36, 164, 176), FrameVariant::Compact),
-        705 | 772 => ((28, 39, 167, 178), FrameVariant::Axial),
-        _ => return None,
+    let frame_variant = crate::design::assembly::operand_frame_variant(
+        scope.frame_length,
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    )?;
+    let frame_offsets = match frame_variant {
+        crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
+        crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
+        crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
     };
     if usize::try_from(scope.paired_byte_offset).ok()?
         != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
@@ -1975,7 +1983,10 @@ fn exact_assembly_operand_frames(
     {
         return None;
     }
-    if matches!(frame_variant, FrameVariant::Standard) {
+    if matches!(
+        frame_variant,
+        crate::design::assembly::AssemblyOperandFrameVariant::Standard
+    ) {
         if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
             || !matches!(bytes.get(start + 25), Some(0 | 1))
             || bytes.get(start + 26..start + 28)? != [0; 2]
@@ -1985,7 +1996,10 @@ fn exact_assembly_operand_frames(
         {
             return None;
         }
-    } else if matches!(frame_variant, FrameVariant::Compact) {
+    } else if matches!(
+        frame_variant,
+        crate::design::assembly::AssemblyOperandFrameVariant::Compact
+    ) {
         let compact_flags = bytes.get(start + 20..start + 24)?;
         if (compact_flags != [0; 4] && compact_flags != [0, 1, 0, 0])
             || bytes.get(start + 29..start + 36)? != [0; 7]
@@ -2203,7 +2217,7 @@ fn exact_assembly_operand_path(
     let mut identity_guids = Vec::new();
     let mut identity_guid_offsets = Vec::new();
     match class_tag.as_str() {
-        "294" => {
+        "294" | "299" => {
             let end = next_indexed_record_offset(bytes, start + 1)?;
             if end != limit
                 || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]

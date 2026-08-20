@@ -342,6 +342,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     ];
     let mut class_294_path_bytes = assembly_bytes[..648].to_vec();
     push_path_locator(&mut class_294_path_bytes, 64, 66);
+    let first_class_294_path_at = class_294_path_bytes.len();
     push_class_294_path(
         &mut class_294_path_bytes,
         65,
@@ -350,6 +351,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     );
     push_path_wrapper(&mut class_294_path_bytes, 66, 65);
     push_path_locator(&mut class_294_path_bytes, 67, 69);
+    let second_class_294_path_at = class_294_path_bytes.len();
     push_class_294_path(
         &mut class_294_path_bytes,
         68,
@@ -370,6 +372,26 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
         path.class_tag == "294"
+            && path.occurrence_guids.len() == 1
+            && path
+                .identity_guids
+                .iter()
+                .map(String::as_str)
+                .eq(class_294_identities.iter().copied())
+    }));
+    for path_at in [first_class_294_path_at, second_class_294_path_at] {
+        class_294_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"299");
+    }
+    let class_299_paths = exact_assembly_alignment(
+        &class_294_path_bytes,
+        &IndexedRecordOffsets::build(&class_294_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("class-299 identity-qualified assembly occurrence paths");
+    assert!(class_299_paths.iter().all(|path| {
+        path.class_tag == "299"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids

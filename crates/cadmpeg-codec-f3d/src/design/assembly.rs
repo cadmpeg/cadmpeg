@@ -27,6 +27,38 @@ pub(crate) enum LegacyAsBuilt421Generation {
     Class457,
 }
 
+/// Operand-frame form for a non-axial `Assemble` scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssemblyOperandFrameVariant {
+    Standard,
+    Compact,
+    Axial,
+}
+
+/// Select the exact operand-frame grammar admitted for an `Assemble` scope.
+///
+/// The class-430 generation is keyed by both class tags because its 744- and
+/// 748-byte spans are also used by other scope families with different
+/// payloads. Those spans must not become a frame-length-only admission.
+pub(crate) fn operand_frame_variant(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<AssemblyOperandFrameVariant> {
+    match frame_length {
+        627 | 637 | 692 => Some(AssemblyOperandFrameVariant::Standard),
+        633 | 732 => Some(AssemblyOperandFrameVariant::Compact),
+        744 if class_tag == "430" && paired_class_tag == "262" => {
+            Some(AssemblyOperandFrameVariant::Compact)
+        }
+        748 if class_tag == "430" && paired_class_tag == "262" => {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
+        705 | 772 => Some(AssemblyOperandFrameVariant::Axial),
+        _ => None,
+    }
+}
+
 impl LegacyAsBuilt421Generation {
     /// Owner-frame primary class for the six scalar lanes.
     pub(crate) const fn owner_class_tag(self) -> &'static str {
@@ -130,7 +162,7 @@ pub(crate) const fn alignment_lane_bounds(
 ) -> Option<(usize, usize)> {
     match (frame_length, owner_count) {
         (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
-        (604 | 732, 8) => Some((4, 8)),
+        (604 | 732 | 744 | 748, 8) => Some((4, 8)),
         (705, 6) => Some((4, 6)),
         (772, 10) => Some((8, 10)),
         _ => None,
@@ -142,8 +174,8 @@ pub(crate) const fn alignment_lane_bounds(
 pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
     match frame_length {
         399 => Some([51, 62]),
-        627 | 637 | 692 => Some([366, 377]),
-        633 | 732 => Some([362, 373]),
+        627 | 637 | 692 | 748 => Some([366, 377]),
+        633 | 732 | 744 => Some([362, 373]),
         _ => None,
     }
 }
@@ -574,6 +606,8 @@ mod tests {
             (692, 4, (0, 4)),
             (604, 8, (4, 8)),
             (732, 8, (4, 8)),
+            (744, 8, (4, 8)),
+            (748, 8, (4, 8)),
             (705, 6, (4, 6)),
             (772, 10, (8, 10)),
         ] {
@@ -592,13 +626,13 @@ mod tests {
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
-        for frame_length in [627, 637, 692] {
+        for frame_length in [627, 637, 692, 748] {
             assert_eq!(
                 super::operand_path_locator_offsets(frame_length),
                 Some([366, 377])
             );
         }
-        for frame_length in [633, 732] {
+        for frame_length in [633, 732, 744] {
             assert_eq!(
                 super::operand_path_locator_offsets(frame_length),
                 Some([362, 373])
@@ -607,6 +641,20 @@ mod tests {
         for frame_length in [604, 705, 772] {
             assert_eq!(super::operand_path_locator_offsets(frame_length), None);
         }
+    }
+
+    #[test]
+    fn class_430_operand_frames_are_scoped_by_class_pair() {
+        assert_eq!(
+            super::operand_frame_variant(744, "430", "262"),
+            Some(super::AssemblyOperandFrameVariant::Compact)
+        );
+        assert_eq!(
+            super::operand_frame_variant(748, "430", "262"),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(super::operand_frame_variant(744, "327", "262"), None);
+        assert_eq!(super::operand_frame_variant(748, "430", "261"), None);
     }
 
     #[test]
