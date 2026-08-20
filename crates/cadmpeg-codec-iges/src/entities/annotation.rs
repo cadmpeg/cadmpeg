@@ -12,6 +12,44 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnnotationKind {
+    AngularDimension,
+    CurveDimension,
+    DiameterDimension,
+    FlagNote,
+    GeneralLabel,
+    GeneralNote,
+    NewGeneralNote,
+    Leader,
+    LinearDimension,
+    OrdinateDimension,
+    PointDimension,
+    RadiusDimension,
+    GeneralSymbol,
+    SectionedArea,
+}
+
+pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
+    match (entity_type, form) {
+        (202, 0) => Some(AnnotationKind::AngularDimension),
+        (204, 0) => Some(AnnotationKind::CurveDimension),
+        (206, 0) => Some(AnnotationKind::DiameterDimension),
+        (208, 0) => Some(AnnotationKind::FlagNote),
+        (210, 0) => Some(AnnotationKind::GeneralLabel),
+        (212, 0) => Some(AnnotationKind::GeneralNote),
+        (213, 0) => Some(AnnotationKind::NewGeneralNote),
+        (214, 1..=12) => Some(AnnotationKind::Leader),
+        (216, 0..=2) => Some(AnnotationKind::LinearDimension),
+        (218, 0..=1) => Some(AnnotationKind::OrdinateDimension),
+        (220, 0) => Some(AnnotationKind::PointDimension),
+        (222, 0..=1) => Some(AnnotationKind::RadiusDimension),
+        (228, 0) => Some(AnnotationKind::GeneralSymbol),
+        (230, 0) => Some(AnnotationKind::SectionedArea),
+        _ => None,
+    }
+}
+
 fn finite(record: &ParameterRecord, index: usize) -> bool {
     record.number(index).is_some_and(f64::is_finite)
 }
@@ -681,15 +719,10 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory.iter().filter(|entry| {
-        (matches!(entry.entity_type, 202 | 204 | 206 | 208 | 210 | 212 | 213) && entry.form == 0)
-            || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
-            || matches!(
-                (entry.entity_type, entry.form),
-                (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
-            )
-            || matches!((entry.entity_type, entry.form), (228 | 230, 0))
-    }) {
+    for (entry, kind) in directory
+        .iter()
+        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
+    {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
             let transform_valid = resolve_transform(
@@ -704,16 +737,26 @@ pub(super) fn project(
             .is_ok();
             entry.status.use_flag == 1
                 && transform_valid
-                && match entry.entity_type {
-                    202 | 204 | 206 => dimension_valid(entry, record, &entries, &records),
-                    208 | 210 => flag_or_label_valid(entry, record, &entries, &records),
-                    212 => general_note_valid(record, &entries),
-                    213 => new_general_note_valid(record, &entries),
-                    214 => leader_valid(entry, record, &entries),
-                    216 | 218 | 220 | 222 => dimension_valid(entry, record, &entries, &records),
-                    228 => general_symbol_valid(record, &entries, &records),
-                    230 => sectioned_area_valid(record, &entries),
-                    _ => false,
+                && match kind {
+                    AnnotationKind::AngularDimension
+                    | AnnotationKind::CurveDimension
+                    | AnnotationKind::DiameterDimension
+                    | AnnotationKind::LinearDimension
+                    | AnnotationKind::OrdinateDimension
+                    | AnnotationKind::PointDimension
+                    | AnnotationKind::RadiusDimension => {
+                        dimension_valid(entry, record, &entries, &records)
+                    }
+                    AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
+                        flag_or_label_valid(entry, record, &entries, &records)
+                    }
+                    AnnotationKind::GeneralNote => general_note_valid(record, &entries),
+                    AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
+                    AnnotationKind::Leader => leader_valid(entry, record, &entries),
+                    AnnotationKind::GeneralSymbol => {
+                        general_symbol_valid(record, &entries, &records)
+                    }
+                    AnnotationKind::SectionedArea => sectioned_area_valid(record, &entries),
                 }
         });
         if valid {

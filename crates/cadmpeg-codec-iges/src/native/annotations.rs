@@ -2,7 +2,9 @@
 
 use super::OverdeclaredCount;
 use crate::directory::DirectoryEntry;
-use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
+use crate::entities::annotation::{
+    classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
+};
 use crate::graph::ParameterResolver;
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use serde::Serialize;
@@ -187,44 +189,408 @@ fn counted_tail_items(
     }
 }
 
-fn text_run(
-    parameter_resolver: &ParameterResolver<'_>,
-    source: u32,
-    record: Option<&ParameterRecord>,
-    start: usize,
-) -> NativeTextRun {
-    let font_code = record.and_then(|record| record.integer(start + 3));
-    NativeTextRun {
-        declared_character_count: record.and_then(|record| record.integer(start)),
-        text: record
-            .and_then(|record| record.string(start + 11))
-            .map(<[u8]>::to_vec),
-        box_size: [
-            record.and_then(|record| record.number(start + 1)),
-            record.and_then(|record| record.number(start + 2)),
-        ],
-        font_code,
-        font_definition: font_code
-            .filter(|value| *value < 0)
-            .and_then(|value| {
-                parameter_resolver.resolve_negative(
-                    source,
-                    start + 3,
-                    value,
-                    "type-310-form-0",
-                    |target| target.entity_type == 310 && target.form == 0,
+struct Subject<'a> {
+    sequence: u32,
+    form: i64,
+    record: Option<&'a ParameterRecord>,
+    primary_end: usize,
+    entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    parameter_resolver: &'a ParameterResolver<'a>,
+}
+
+impl Subject<'_> {
+    fn id(&self) -> String {
+        format!("iges:presentation:annotation#D{}", self.sequence)
+    }
+
+    fn source_entity(&self) -> String {
+        format!("iges:entity:directory#{}", self.sequence)
+    }
+
+    fn counted(&self, count_index: usize, stride: usize) -> usize {
+        self.record
+            .and_then(|record| {
+                record.count_with_stride_before(count_index, stride, self.primary_end)
+            })
+            .unwrap_or_default()
+    }
+
+    fn counted_tail(
+        &self,
+        count_index: usize,
+        stride: usize,
+        overdeclared: &mut Vec<OverdeclaredCount>,
+    ) -> usize {
+        let verdict = self.record.map_or(DefaultTailCount::Unreadable, |record| {
+            record.count_with_stride_before_default_tail(count_index, stride, self.primary_end)
+        });
+        counted_tail_items(self.sequence, verdict, overdeclared)
+    }
+
+    fn text_run(&self, start: usize) -> NativeTextRun {
+        let record = self.record;
+        let font_code = record.and_then(|record| record.integer(start + 3));
+        NativeTextRun {
+            declared_character_count: record.and_then(|record| record.integer(start)),
+            text: record
+                .and_then(|record| record.string(start + 11))
+                .map(<[u8]>::to_vec),
+            box_size: [
+                record.and_then(|record| record.number(start + 1)),
+                record.and_then(|record| record.number(start + 2)),
+            ],
+            font_code,
+            font_definition: font_code
+                .filter(|value| *value < 0)
+                .and_then(|value| {
+                    self.parameter_resolver.resolve_negative(
+                        self.sequence,
+                        start + 3,
+                        value,
+                        "type-310-form-0",
+                        |target| target.entity_type == 310 && target.form == 0,
+                    )
+                })
+                .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
+            slant_angle: record.and_then(|record| record.number(start + 4)),
+            rotation_angle: record.and_then(|record| record.number(start + 5)),
+            mirror: record.and_then(|record| record.integer(start + 6)),
+            vertical: record.and_then(|record| record.integer(start + 7)),
+            start: [
+                record.and_then(|record| record.number(start + 8)),
+                record.and_then(|record| record.number(start + 9)),
+                record.and_then(|record| record.number(start + 10)),
+            ],
+        }
+    }
+
+    fn note_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver
+                    .resolve_type(self.sequence, index, sequence, 212, &[0])
+            })
+            .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+    }
+
+    fn leader_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "type-214-form-1-through-12",
+                    |target| target.entity_type == 214 && matches!(target.form, 1..=12),
                 )
             })
-            .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
-        slant_angle: record.and_then(|record| record.number(start + 4)),
-        rotation_angle: record.and_then(|record| record.number(start + 5)),
-        mirror: record.and_then(|record| record.integer(start + 6)),
-        vertical: record.and_then(|record| record.integer(start + 7)),
-        start: [
-            record.and_then(|record| record.number(start + 8)),
-            record.and_then(|record| record.number(start + 9)),
-            record.and_then(|record| record.number(start + 10)),
+            .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+    }
+
+    fn leader_list(&self, count_index: usize, leader_start: usize) -> Vec<Option<String>> {
+        (0..self.counted(count_index, 1))
+            .map(|offset| self.leader_link(leader_start + offset))
+            .collect()
+    }
+
+    fn witness_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver
+                    .resolve_type(self.sequence, index, sequence, 106, &[40])
+            })
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    }
+
+    fn curve_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "parameterized-curve",
+                    |target| {
+                        parameterized_curve_type(target)
+                            && target.status.is_physically_dependent()
+                            && target.status.use_flag == 1
+                    },
+                )
+            })
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    }
+
+    fn ordinate_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "type-106-form-40-or-leader",
+                    |target| {
+                        (target.entity_type == 106 && target.form == 40)
+                            || (target.entity_type == 214 && matches!(target.form, 1..=12))
+                    },
+                )
+            })
+            .map(|sequence| {
+                self.entries
+                    .get(&sequence)
+                    .filter(|target| target.entity_type == 214)
+                    .map_or_else(
+                        || format!("iges:entity:directory#{sequence}"),
+                        |_| format!("iges:presentation:annotation#D{sequence}"),
+                    )
+            })
+    }
+
+    fn enclosure_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .filter(|sequence| *sequence != 0)
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "point-dimension-enclosure",
+                    |target| {
+                        matches!(
+                            (target.entity_type, target.form),
+                            (100 | 102, 0) | (106, 63)
+                        ) && target.status.is_physically_dependent()
+                            && target.status.use_flag == 1
+                    },
+                )
+            })
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    }
+
+    fn geometry_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "subordinate-annotation-geometry",
+                    |target| target.status.is_physically_dependent() && target.status.use_flag == 1,
+                )
+            })
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    }
+
+    fn section_boundary_link(&self, index: usize) -> Option<String> {
+        self.record
+            .and_then(|record| record.integer(index))
+            .and_then(|sequence| {
+                self.parameter_resolver.resolve(
+                    self.sequence,
+                    index,
+                    sequence,
+                    "section-boundary-entity",
+                    section_boundary_type,
+                )
+            })
+            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    }
+}
+
+fn general_note(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut Vec<OverdeclaredCount>,
+) -> NativeAnnotation {
+    let record = subject.record;
+    let count = subject.counted_tail(1, 12, overdeclared);
+    NativeAnnotation::GeneralNote {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        declared_string_count: record.and_then(|record| record.integer(1)),
+        strings: (0..count)
+            .map(|index| subject.text_run(2 + index * 12))
+            .collect(),
+        transformation,
+    }
+}
+
+fn new_general_note(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut Vec<OverdeclaredCount>,
+) -> NativeAnnotation {
+    let record = subject.record;
+    let count = subject.counted_tail(12, 20, overdeclared);
+    NativeAnnotation::NewGeneralNote {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        containment_size: [
+            record.and_then(|record| record.number(1)),
+            record.and_then(|record| record.number(2)),
         ],
+        justification: record.and_then(|record| record.integer(3)),
+        containment_origin: [
+            record.and_then(|record| record.number(4)),
+            record.and_then(|record| record.number(5)),
+            record.and_then(|record| record.number(6)),
+        ],
+        containment_angle: record.and_then(|record| record.number(7)),
+        baseline_origin: [
+            record.and_then(|record| record.number(8)),
+            record.and_then(|record| record.number(9)),
+            record.and_then(|record| record.number(10)),
+        ],
+        normal_interline_spacing: record.and_then(|record| record.number(11)),
+        declared_string_count: record.and_then(|record| record.integer(12)),
+        strings: (0..count)
+            .map(|index| {
+                let start = 13 + index * 20;
+                NativeNewTextRun {
+                    fixed_or_variable: record.and_then(|record| record.integer(start)),
+                    character_size: [
+                        record.and_then(|record| record.number(start + 1)),
+                        record.and_then(|record| record.number(start + 2)),
+                    ],
+                    character_spacing: record.and_then(|record| record.number(start + 3)),
+                    line_spacing: record.and_then(|record| record.number(start + 4)),
+                    font_style: record.and_then(|record| record.integer(start + 5)),
+                    character_angle: record.and_then(|record| record.number(start + 6)),
+                    control_codes: record
+                        .and_then(|record| record.string(start + 7))
+                        .map(<[u8]>::to_vec),
+                    text: subject.text_run(start + 8),
+                }
+            })
+            .collect(),
+        transformation,
+    }
+}
+
+fn leader(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+    let record = subject.record;
+    let count = subject.counted(1, 2);
+    let z = record.and_then(|record| record.number(4));
+    NativeAnnotation::Leader {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        form: subject.form,
+        declared_segment_count: record.and_then(|record| record.integer(1)),
+        arrowhead_size: [
+            record.and_then(|record| record.number(2)),
+            record.and_then(|record| record.number(3)),
+        ],
+        arrowhead: [
+            record.and_then(|record| record.number(5)),
+            record.and_then(|record| record.number(6)),
+            z,
+        ],
+        segment_tails: (0..count)
+            .map(|index| {
+                [
+                    record.and_then(|record| record.number(7 + index * 2)),
+                    record.and_then(|record| record.number(8 + index * 2)),
+                    z,
+                ]
+            })
+            .collect(),
+        transformation,
+    }
+}
+
+fn flag_note(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+    let record = subject.record;
+    let leaders = subject.leader_list(6, 7);
+    NativeAnnotation::FlagNote {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        origin: [
+            record.and_then(|record| record.number(1)),
+            record.and_then(|record| record.number(2)),
+            record.and_then(|record| record.number(3)),
+        ],
+        rotation: record.and_then(|record| record.number(4)),
+        note: subject.note_link(5),
+        declared_leader_count: record.and_then(|record| record.integer(6)),
+        leaders,
+        transformation,
+    }
+}
+
+fn general_label(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+    let record = subject.record;
+    let leaders = subject.leader_list(2, 3);
+    NativeAnnotation::GeneralLabel {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        note: subject.note_link(1),
+        declared_leader_count: record.and_then(|record| record.integer(2)),
+        leaders,
+        transformation,
+    }
+}
+
+fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+    let record = subject.record;
+    let end = subject.primary_end;
+    let counts = record
+        .and_then(|record| record.count_with_stride_before(2, 1, end))
+        .and_then(|geometry_count| {
+            let leader_count_index = 3_usize.checked_add(geometry_count)?;
+            let leader_count = record
+                .and_then(|record| record.count_with_stride_before(leader_count_index, 1, end))?;
+            let finish = leader_count_index
+                .checked_add(1)?
+                .checked_add(leader_count)?;
+            (finish <= end).then_some((geometry_count, leader_count))
+        })
+        .unwrap_or_default();
+    let (geometry_count, leader_count) = counts;
+    let leader_count_index = 3 + geometry_count;
+    NativeAnnotation::GeneralSymbol {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        note: subject.note_link(1),
+        geometry: (0..geometry_count)
+            .map(|offset| subject.geometry_link(3 + offset))
+            .collect(),
+        leaders: (0..leader_count)
+            .map(|offset| subject.leader_link(leader_count_index + 1 + offset))
+            .collect(),
+        transformation,
+    }
+}
+
+fn sectioned_area(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+    let record = subject.record;
+    let island_count = subject.counted(8, 1);
+    NativeAnnotation::SectionedArea {
+        id: subject.id(),
+        source_entity: subject.source_entity(),
+        boundary: subject.section_boundary_link(1),
+        fill_pattern: record.and_then(|record| record.integer(2)),
+        pattern_anchor: [
+            record.and_then(|record| record.number(3)),
+            record.and_then(|record| record.number(4)),
+            record.and_then(|record| record.number(5)),
+        ],
+        pattern_spacing: record.and_then(|record| record.number(6)),
+        pattern_angle: record.and_then(|record| record.number(7)),
+        islands: (0..island_count)
+            .map(|offset| subject.section_boundary_link(9 + offset))
+            .collect(),
+        transformation,
     }
 }
 
@@ -238,500 +604,110 @@ pub(super) fn build(
     let mut overdeclared_counts = Vec::new();
     let annotations = directory
         .iter()
-        .filter(|entry| {
-            (matches!(entry.entity_type, 202 | 204 | 206 | 208 | 210 | 212 | 213)
-                && entry.form == 0)
-                || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
-                || matches!(
-                    (entry.entity_type, entry.form),
-                    (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
-                )
-                || matches!((entry.entity_type, entry.form), (228 | 230, 0))
-        })
-        .filter_map(|entry| {
+        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
+        .map(|(entry, kind)| {
             let record = by_directory.get(&entry.sequence).copied();
+            let subject = Subject {
+                sequence: entry.sequence,
+                form: entry.form,
+                record,
+                primary_end: record.map_or(0, |record| primary_end(entry.sequence, record)),
+                entries,
+                parameter_resolver,
+            };
             let transformation = (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
-            Some(if entry.entity_type == 212 {
-                let verdict = record.map_or(DefaultTailCount::Unreadable, |record| {
-                    record.count_with_stride_before_default_tail(
-                        1,
-                        12,
-                        primary_end(entry.sequence, record),
-                    )
-                });
-                let count = counted_tail_items(entry.sequence, verdict, &mut overdeclared_counts);
-                NativeAnnotation::GeneralNote {
-                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    declared_string_count: record.and_then(|record| record.integer(1)),
-                    strings: (0..count)
-                        .map(|index| {
-                            text_run(parameter_resolver, entry.sequence, record, 2 + index * 12)
-                        })
-                        .collect(),
-                    transformation,
+            match kind {
+                AnnotationKind::GeneralNote => {
+                    general_note(&subject, transformation, &mut overdeclared_counts)
                 }
-            } else if entry.entity_type == 213 {
-                let verdict = record.map_or(DefaultTailCount::Unreadable, |record| {
-                    record.count_with_stride_before_default_tail(
-                        12,
-                        20,
-                        primary_end(entry.sequence, record),
-                    )
-                });
-                let count = counted_tail_items(entry.sequence, verdict, &mut overdeclared_counts);
-                NativeAnnotation::NewGeneralNote {
-                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    containment_size: [
-                        record.and_then(|record| record.number(1)),
-                        record.and_then(|record| record.number(2)),
-                    ],
-                    justification: record.and_then(|record| record.integer(3)),
-                    containment_origin: [
+                AnnotationKind::NewGeneralNote => {
+                    new_general_note(&subject, transformation, &mut overdeclared_counts)
+                }
+                AnnotationKind::Leader => leader(&subject, transformation),
+                AnnotationKind::FlagNote => flag_note(&subject, transformation),
+                AnnotationKind::GeneralLabel => general_label(&subject, transformation),
+                AnnotationKind::GeneralSymbol => general_symbol(&subject, transformation),
+                AnnotationKind::SectionedArea => sectioned_area(&subject, transformation),
+                AnnotationKind::AngularDimension => NativeAnnotation::AngularDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    note: subject.note_link(1),
+                    witnesses: [subject.witness_link(2), subject.witness_link(3)],
+                    vertex: [
                         record.and_then(|record| record.number(4)),
                         record.and_then(|record| record.number(5)),
-                        record.and_then(|record| record.number(6)),
                     ],
-                    containment_angle: record.and_then(|record| record.number(7)),
-                    baseline_origin: [
-                        record.and_then(|record| record.number(8)),
-                        record.and_then(|record| record.number(9)),
-                        record.and_then(|record| record.number(10)),
-                    ],
-                    normal_interline_spacing: record.and_then(|record| record.number(11)),
-                    declared_string_count: record.and_then(|record| record.integer(12)),
-                    strings: (0..count)
-                        .map(|index| {
-                            let start = 13 + index * 20;
-                            let font_code = record.and_then(|record| record.integer(start + 11));
-                            NativeNewTextRun {
-                                fixed_or_variable: record.and_then(|record| record.integer(start)),
-                                character_size: [
-                                    record.and_then(|record| record.number(start + 1)),
-                                    record.and_then(|record| record.number(start + 2)),
-                                ],
-                                character_spacing: record
-                                    .and_then(|record| record.number(start + 3)),
-                                line_spacing: record.and_then(|record| record.number(start + 4)),
-                                font_style: record.and_then(|record| record.integer(start + 5)),
-                                character_angle: record.and_then(|record| record.number(start + 6)),
-                                control_codes: record
-                                    .and_then(|record| record.string(start + 7))
-                                    .map(<[u8]>::to_vec),
-                                text: NativeTextRun {
-                                    declared_character_count: record
-                                        .and_then(|record| record.integer(start + 8)),
-                                    text: record
-                                        .and_then(|record| record.string(start + 19))
-                                        .map(<[u8]>::to_vec),
-                                    box_size: [
-                                        record.and_then(|record| record.number(start + 9)),
-                                        record.and_then(|record| record.number(start + 10)),
-                                    ],
-                                    font_code,
-                                    font_definition: font_code
-                                        .filter(|value| *value < 0)
-                                        .and_then(|value| {
-                                            parameter_resolver.resolve_negative(
-                                                entry.sequence,
-                                                start + 11,
-                                                value,
-                                                "type-310-form-0",
-                                                |target| {
-                                                    target.entity_type == 310 && target.form == 0
-                                                },
-                                            )
-                                        })
-                                        .map(|sequence| {
-                                            format!("iges:presentation:text-font#D{sequence}")
-                                        }),
-                                    slant_angle: record
-                                        .and_then(|record| record.number(start + 12)),
-                                    rotation_angle: record
-                                        .and_then(|record| record.number(start + 13)),
-                                    mirror: record.and_then(|record| record.integer(start + 14)),
-                                    vertical: record.and_then(|record| record.integer(start + 15)),
-                                    start: [
-                                        record.and_then(|record| record.number(start + 16)),
-                                        record.and_then(|record| record.number(start + 17)),
-                                        record.and_then(|record| record.number(start + 18)),
-                                    ],
-                                },
-                            }
-                        })
-                        .collect(),
+                    radius: record.and_then(|record| record.number(6)),
+                    leaders: [subject.leader_link(7), subject.leader_link(8)],
                     transformation,
-                }
-            } else if entry.entity_type == 214 {
-                let count = record
-                    .and_then(|record| {
-                        record.count_with_stride_before(1, 2, primary_end(entry.sequence, record))
-                    })
-                    .unwrap_or_default();
-                let z = record.and_then(|record| record.number(4));
-                NativeAnnotation::Leader {
-                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    form: entry.form,
-                    declared_segment_count: record.and_then(|record| record.integer(1)),
-                    arrowhead_size: [
-                        record.and_then(|record| record.number(2)),
-                        record.and_then(|record| record.number(3)),
-                    ],
-                    arrowhead: [
+                },
+                AnnotationKind::CurveDimension => NativeAnnotation::CurveDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    note: subject.note_link(1),
+                    curves: [subject.curve_link(2), subject.curve_link(3)],
+                    leaders: [subject.leader_link(4), subject.leader_link(5)],
+                    witnesses: [subject.witness_link(6), subject.witness_link(7)],
+                    transformation,
+                },
+                AnnotationKind::DiameterDimension => NativeAnnotation::DiameterDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    note: subject.note_link(1),
+                    leaders: [subject.leader_link(2), subject.leader_link(3)],
+                    center: [
+                        record.and_then(|record| record.number(4)),
                         record.and_then(|record| record.number(5)),
-                        record.and_then(|record| record.number(6)),
-                        z,
                     ],
-                    segment_tails: (0..count)
-                        .map(|index| {
-                            [
-                                record.and_then(|record| record.number(7 + index * 2)),
-                                record.and_then(|record| record.number(8 + index * 2)),
-                                z,
-                            ]
-                        })
-                        .collect(),
                     transformation,
-                }
-            } else {
-                let note_link = |index| {
-                    record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .and_then(|sequence| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                212,
-                                &[0],
-                            )
-                        })
-                        .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
-                };
-                let leader_link = |index| {
-                    record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .and_then(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                "type-214-form-1-through-12",
-                                |target| target.entity_type == 214 && matches!(target.form, 1..=12),
-                            )
-                        })
-                        .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
-                };
-                let witness_link = |index| {
-                    record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .and_then(|sequence| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                106,
-                                &[40],
-                            )
-                        })
-                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                };
-                let curve_link = |index| {
-                    record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .and_then(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                "parameterized-curve",
-                                |target| {
-                                    parameterized_curve_type(target)
-                                        && target.status.is_physically_dependent()
-                                        && target.status.use_flag == 1
-                                },
-                            )
-                        })
-                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                };
-                let ordinate_link = |index| {
-                    record
-                        .and_then(|record| record.integer(index))
-                        .filter(|sequence| *sequence != 0)
-                        .and_then(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                "type-106-form-40-or-leader",
-                                |target| {
-                                    (target.entity_type == 106 && target.form == 40)
-                                        || (target.entity_type == 214
-                                            && matches!(target.form, 1..=12))
-                                },
-                            )
-                        })
-                        .map(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .filter(|target| target.entity_type == 214)
-                                .map_or_else(
-                                    || format!("iges:entity:directory#{sequence}"),
-                                    |_| format!("iges:presentation:annotation#D{sequence}"),
-                                )
-                        })
-                };
-                let id = format!("iges:presentation:annotation#D{}", entry.sequence);
-                let source_entity = format!("iges:entity:directory#{}", entry.sequence);
-                match entry.entity_type {
-                    202 => NativeAnnotation::AngularDimension {
-                        id,
-                        source_entity,
-                        note: note_link(1),
-                        witnesses: [witness_link(2), witness_link(3)],
-                        vertex: [
-                            record.and_then(|record| record.number(4)),
-                            record.and_then(|record| record.number(5)),
-                        ],
-                        radius: record.and_then(|record| record.number(6)),
-                        leaders: [leader_link(7), leader_link(8)],
-                        transformation,
-                    },
-                    204 => NativeAnnotation::CurveDimension {
-                        id,
-                        source_entity,
-                        note: note_link(1),
-                        curves: [curve_link(2), curve_link(3)],
-                        leaders: [leader_link(4), leader_link(5)],
-                        witnesses: [witness_link(6), witness_link(7)],
-                        transformation,
-                    },
-                    206 => NativeAnnotation::DiameterDimension {
-                        id,
-                        source_entity,
-                        note: note_link(1),
-                        leaders: [leader_link(2), leader_link(3)],
-                        center: [
-                            record.and_then(|record| record.number(4)),
-                            record.and_then(|record| record.number(5)),
-                        ],
-                        transformation,
-                    },
-                    208 | 210 => {
-                        let (note_index, count_index, leader_start) = if entry.entity_type == 208 {
-                            (5, 6, 7)
-                        } else {
-                            (1, 2, 3)
-                        };
-                        let leader_count = record
-                            .and_then(|record| {
-                                record.count_with_stride_before(
-                                    count_index,
-                                    1,
-                                    primary_end(entry.sequence, record),
-                                )
-                            })
-                            .unwrap_or_default();
-                        let leaders = (0..leader_count)
-                            .map(|offset| leader_link(leader_start + offset))
-                            .collect();
-                        if entry.entity_type == 208 {
-                            NativeAnnotation::FlagNote {
-                                id,
-                                source_entity,
-                                origin: [
-                                    record.and_then(|record| record.number(1)),
-                                    record.and_then(|record| record.number(2)),
-                                    record.and_then(|record| record.number(3)),
-                                ],
-                                rotation: record.and_then(|record| record.number(4)),
-                                note: note_link(note_index),
-                                declared_leader_count: record
-                                    .and_then(|record| record.integer(count_index)),
-                                leaders,
-                                transformation,
-                            }
-                        } else {
-                            NativeAnnotation::GeneralLabel {
-                                id,
-                                source_entity,
-                                note: note_link(note_index),
-                                declared_leader_count: record
-                                    .and_then(|record| record.integer(count_index)),
-                                leaders,
-                                transformation,
-                            }
-                        }
-                    }
-                    216 => NativeAnnotation::LinearDimension {
-                        id,
-                        source_entity,
-                        form: entry.form,
-                        note: note_link(1),
-                        leaders: [leader_link(2), leader_link(3)],
-                        witnesses: [witness_link(4), witness_link(5)],
-                        transformation,
-                    },
-                    218 => NativeAnnotation::OrdinateDimension {
-                        id,
-                        source_entity,
-                        form: entry.form,
-                        note: note_link(1),
-                        ordinate: ordinate_link(2),
-                        supplemental_leader: (entry.form == 1).then(|| leader_link(3)).flatten(),
-                        transformation,
-                    },
-                    220 => NativeAnnotation::PointDimension {
-                        id,
-                        source_entity,
-                        note: note_link(1),
-                        leader: leader_link(2),
-                        enclosure: record
-                            .and_then(|record| record.integer(3))
-                            .filter(|sequence| *sequence != 0)
-                            .and_then(|sequence| {
-                                parameter_resolver.resolve(
-                                    entry.sequence,
-                                    3,
-                                    sequence,
-                                    "point-dimension-enclosure",
-                                    |target| {
-                                        matches!(
-                                            (target.entity_type, target.form),
-                                            (100 | 102, 0) | (106, 63)
-                                        ) && target.status.is_physically_dependent()
-                                            && target.status.use_flag == 1
-                                    },
-                                )
-                            })
-                            .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                        transformation,
-                    },
-                    222 => NativeAnnotation::RadiusDimension {
-                        id,
-                        source_entity,
-                        form: entry.form,
-                        note: note_link(1),
-                        leaders: [
-                            leader_link(2),
-                            (entry.form == 1).then(|| leader_link(5)).flatten(),
-                        ],
-                        center: [
-                            record.and_then(|record| record.number(3)),
-                            record.and_then(|record| record.number(4)),
-                        ],
-                        transformation,
-                    },
-                    228 => {
-                        let end = record.map_or(0, |record| primary_end(entry.sequence, record));
-                        let counts = record
-                            .and_then(|record| record.count_with_stride_before(2, 1, end))
-                            .and_then(|geometry_count| {
-                                let leader_count_index = 3_usize.checked_add(geometry_count)?;
-                                let leader_count = record.and_then(|record| {
-                                    record.count_with_stride_before(leader_count_index, 1, end)
-                                })?;
-                                let finish = leader_count_index
-                                    .checked_add(1)?
-                                    .checked_add(leader_count)?;
-                                (finish <= end).then_some((geometry_count, leader_count))
-                            })
-                            .unwrap_or_default();
-                        let (geometry_count, leader_count) = counts;
-                        let leader_count_index = 3 + geometry_count;
-                        NativeAnnotation::GeneralSymbol {
-                            id,
-                            source_entity,
-                            note: note_link(1),
-                            geometry: (0..geometry_count)
-                                .map(|offset| {
-                                    let index = 3 + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                "subordinate-annotation-geometry",
-                                                |target| {
-                                                    target.status.is_physically_dependent()
-                                                        && target.status.use_flag == 1
-                                                },
-                                            )
-                                        })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect(),
-                            leaders: (0..leader_count)
-                                .map(|offset| leader_link(leader_count_index + 1 + offset))
-                                .collect(),
-                            transformation,
-                        }
-                    }
-                    230 => {
-                        let island_count = record
-                            .and_then(|record| {
-                                record.count_with_stride_before(
-                                    8,
-                                    1,
-                                    primary_end(entry.sequence, record),
-                                )
-                            })
-                            .unwrap_or_default();
-                        NativeAnnotation::SectionedArea {
-                            id,
-                            source_entity,
-                            boundary: record
-                                .and_then(|record| record.integer(1))
-                                .and_then(|sequence| {
-                                    parameter_resolver.resolve(
-                                        entry.sequence,
-                                        1,
-                                        sequence,
-                                        "section-boundary-entity",
-                                        section_boundary_type,
-                                    )
-                                })
-                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                            fill_pattern: record.and_then(|record| record.integer(2)),
-                            pattern_anchor: [
-                                record.and_then(|record| record.number(3)),
-                                record.and_then(|record| record.number(4)),
-                                record.and_then(|record| record.number(5)),
-                            ],
-                            pattern_spacing: record.and_then(|record| record.number(6)),
-                            pattern_angle: record.and_then(|record| record.number(7)),
-                            islands: (0..island_count)
-                                .map(|offset| {
-                                    let index = 9 + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                "section-boundary-entity",
-                                                section_boundary_type,
-                                            )
-                                        })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect(),
-                            transformation,
-                        }
-                    }
-                    _ => return None,
-                }
-            })
+                },
+                AnnotationKind::LinearDimension => NativeAnnotation::LinearDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    form: subject.form,
+                    note: subject.note_link(1),
+                    leaders: [subject.leader_link(2), subject.leader_link(3)],
+                    witnesses: [subject.witness_link(4), subject.witness_link(5)],
+                    transformation,
+                },
+                AnnotationKind::OrdinateDimension => NativeAnnotation::OrdinateDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    form: subject.form,
+                    note: subject.note_link(1),
+                    ordinate: subject.ordinate_link(2),
+                    supplemental_leader: (subject.form == 1)
+                        .then(|| subject.leader_link(3))
+                        .flatten(),
+                    transformation,
+                },
+                AnnotationKind::PointDimension => NativeAnnotation::PointDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    note: subject.note_link(1),
+                    leader: subject.leader_link(2),
+                    enclosure: subject.enclosure_link(3),
+                    transformation,
+                },
+                AnnotationKind::RadiusDimension => NativeAnnotation::RadiusDimension {
+                    id: subject.id(),
+                    source_entity: subject.source_entity(),
+                    form: subject.form,
+                    note: subject.note_link(1),
+                    leaders: [
+                        subject.leader_link(2),
+                        (subject.form == 1)
+                            .then(|| subject.leader_link(5))
+                            .flatten(),
+                    ],
+                    center: [
+                        record.and_then(|record| record.number(3)),
+                        record.and_then(|record| record.number(4)),
+                    ],
+                    transformation,
+                },
+            }
         })
         .collect::<Vec<_>>();
     (annotations, overdeclared_counts)
