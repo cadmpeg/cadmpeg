@@ -3532,13 +3532,90 @@ pub fn pattern_payload_transform_lane(
         ),
         _ => return None,
     };
-    let decode = |start: usize| {
+    let validate_scalar = |start: usize| {
         (record.payload.get(start) == Some(&0x01)).then_some(())?;
         let declared_count = *record.payload.get(start + 1)?;
         (declared_count >= 2).then_some(())?;
-        let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
         let row_schema_index = *record.payload.get(at)?;
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
+                .then_some(())?;
+            at += 1 + prefix_tail.len();
+            let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            (encoding != PayloadScalarEncoding::Zero).then_some(())?;
+            at += width;
+            (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
+                .then_some(())?;
+            at += scalar_suffix.len();
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
+        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
+        Some((declared_count, row_schema_index))
+    };
+    let validate_wide = |start: usize| {
+        (record.label.value == "Pattern Feature").then_some(())?;
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            at += 1;
+            for value_ordinal in 0..4 {
+                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
+                at += width;
+                if value_ordinal == 1 {
+                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
+                    at += 2;
+                }
+            }
+            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
+            at += 4;
+            let width = if record.payload.get(at) == Some(&0x01) {
+                1
+            } else {
+                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary32).then_some(())?;
+                width
+            };
+            at += width;
+            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
+                .then_some(())?;
+            at += 7;
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
+        Some((declared_count, row_schema_index))
+    };
+    let decode = |start: usize| {
+        let (declared_count, row_schema_index) = validate_scalar(start)?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + 2;
         let mut encodings = Vec::with_capacity(row_count);
         let mut values = Vec::with_capacity(row_count);
         let mut value_offsets = Vec::with_capacity(row_count);
@@ -3598,13 +3675,9 @@ pub fn pattern_payload_transform_lane(
         })
     };
     let decode_wide = |start: usize| {
-        (record.label.value == "Pattern Feature").then_some(())?;
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 1)?;
-        (declared_count >= 2).then_some(())?;
+        let (declared_count, row_schema_index) = validate_wide(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
-        let row_schema_index = *record.payload.get(at)?;
         let mut encodings = Vec::with_capacity(row_count * 5);
         let mut values = Vec::with_capacity(row_count * 5);
         let mut value_offsets = Vec::with_capacity(row_count * 5);
@@ -3704,10 +3777,40 @@ pub fn multi_instance_output_payload_lane(
     if record.label.value != "Multi Instance Output" {
         return None;
     }
-    let decode = |start: usize| {
+    let validate = |start: usize| {
         (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
         let declared_count = *record.payload.get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
+        let mut at = start + ENVELOPE.len() + 1;
+        let mut instance_count = 0;
+        for expected_row_index in 2..=declared_count {
+            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
+            at += ROW_PREFIX.len();
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
+            let ordinal = *record.payload.get(at + 1)?;
+            (ordinal >= 2).then_some(())?;
+            instance_count = instance_count.max(ordinal);
+            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            at += 3;
+        }
+        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
+            .then_some(())?;
+        at += REFERENCE_PREFIX.len();
+        for _ in 1..instance_count {
+            let (Some(_), end) = feature_object_index(record.payload, at)? else {
+                return None;
+            };
+            at = end;
+        }
+        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        Some((declared_count, instance_count))
+    };
+    let decode = |start: usize| {
+        let (declared_count, instance_count) = validate(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
         let mut selectors = Vec::with_capacity(row_count);
@@ -3735,7 +3838,7 @@ pub fn multi_instance_output_payload_lane(
             row_indices.push(expected_row_index);
             at += 3;
         }
-        let instance_count = *ordinals.iter().max()?;
+        (ordinals.iter().copied().max() == Some(instance_count)).then_some(())?;
         let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
         let mut distinct_selectors = Vec::new();
         for selector in &selectors {
@@ -3801,7 +3904,7 @@ pub fn identical_instance_output_payload_lane(
     if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
         return None;
     }
-    let decode = |start: usize| {
+    let validate = |start: usize| {
         let leading_schema_index = *record.payload.get(start)?;
         let count_schema_index = *record.payload.get(start + 1)?;
         (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
@@ -3810,6 +3913,39 @@ pub fn identical_instance_output_payload_lane(
         let first_schema_index = count_schema_index.checked_add(1)?;
         let second_schema_index = count_schema_index.checked_add(2)?;
         let third_schema_index = count_schema_index.checked_add(3)?;
+        let mut at = start + 4;
+        for ordinal in 2..=declared_count {
+            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
+            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
+            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
+            at += 5;
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            at += 2;
+        }
+        let terminal_count = declared_count.checked_add(1)?;
+        (record.payload.get(at) == Some(&0x00)).then_some(())?;
+        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
+        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
+        Some((
+            leading_schema_index,
+            count_schema_index,
+            declared_count,
+            [first_schema_index, second_schema_index, third_schema_index],
+        ))
+    };
+    let decode = |start: usize| {
+        let (
+            leading_schema_index,
+            count_schema_index,
+            declared_count,
+            [first_schema_index, second_schema_index, third_schema_index],
+        ) = validate(start)?;
         let mut at = start + 4;
         let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
         let mut raw_selectors = Vec::with_capacity(usize::from(declared_count - 1));
@@ -4196,18 +4332,12 @@ fn surface_feature_branch_paths(
     let Some(declared_count @ 2..) = payload.get(at + 2).copied() else {
         return Vec::new();
     };
-    let mut cursor = at + 3;
-    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    let members_start = at + 3;
+    let mut cursor = members_start;
     for _ in 1..declared_count {
-        let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index)
-        else {
+        let Some((_, width)) = payload.get(cursor..).and_then(payload_object_index) else {
             return Vec::new();
         };
-        members.push(PayloadObjectReference {
-            offset: payload_offset + cursor,
-            object_index,
-            raw_object_index: payload[cursor..cursor + width].to_vec(),
-        });
         cursor += width;
     }
     let witnessed = payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count]);
@@ -4233,11 +4363,8 @@ fn surface_feature_branch_paths(
     let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index) else {
         return Vec::new();
     };
-    let terminal = PayloadObjectReference {
-        offset: payload_offset + cursor,
-        object_index,
-        raw_object_index: payload[cursor..cursor + width].to_vec(),
-    };
+    let terminal_offset = cursor;
+    let terminal_width = width;
     cursor += width;
     if payload.get(cursor) != Some(&0x00) {
         return Vec::new();
@@ -4257,6 +4384,29 @@ fn surface_feature_branch_paths(
                 .collect::<Vec<_>>()
         } else {
             surface_feature_branch_paths(payload, payload_offset, next, remaining - 1, terminator)
+        };
+        if continuations.is_empty() {
+            continue;
+        }
+        let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+        let mut member_cursor = members_start;
+        for _ in 1..declared_count {
+            let Some((object_index, width)) =
+                payload.get(member_cursor..).and_then(payload_object_index)
+            else {
+                return Vec::new();
+            };
+            members.push(PayloadObjectReference {
+                offset: payload_offset + member_cursor,
+                object_index,
+                raw_object_index: payload[member_cursor..member_cursor + width].to_vec(),
+            });
+            member_cursor += width;
+        }
+        let terminal = PayloadObjectReference {
+            offset: payload_offset + terminal_offset,
+            object_index,
+            raw_object_index: payload[terminal_offset..terminal_offset + terminal_width].to_vec(),
         };
         for mut continuation in continuations {
             let branch = SurfaceFeaturePayloadBranch {
@@ -5783,6 +5933,15 @@ fn extrude_profile_reference_field(
         return None;
     }
     let references_start = start + 5;
+    let mut scan_at = references_start;
+    for _ in 1..count {
+        let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+        scan_at += width;
+    }
+    if record.payload.get(scan_at..scan_at + 3) != Some(&[0x01, 0x03, 0x79]) {
+        return None;
+    }
+
     let mut at = references_start;
     let mut references = Vec::with_capacity(usize::from(count - 1));
     for _ in 1..count {
@@ -5793,9 +5952,6 @@ fn extrude_profile_reference_field(
             raw_object_index: record.payload[at..at + width].to_vec(),
         });
         at += width;
-    }
-    if record.payload.get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
-        return None;
     }
     let encoded_references = record.payload.get(references_start..at)?;
     let witness_len = 2 + encoded_references.len() + 2;
