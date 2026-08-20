@@ -8566,26 +8566,25 @@ fn unique_offset_data_store(
     if object_indices.is_empty() || object_indices.contains(&0) {
         return None;
     }
-    let candidates = indexed
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, candidate))| {
-            candidate
-                .records
-                .first()
-                .is_some_and(|record| record.object_id.is_none())
-                && object_indices.iter().all(|object_index| {
-                    usize::try_from(*object_index)
-                        .ok()
-                        .is_some_and(|ordinal| ordinal <= candidate.records.len())
-                })
-        })
-        .map(|(section_ordinal, _)| section_ordinal)
-        .collect::<Vec<_>>();
-    let [section_ordinal] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*section_ordinal)
+    let mut unique = None;
+    for (section_ordinal, (_, candidate)) in indexed.iter().enumerate() {
+        let matches = candidate
+            .records
+            .first()
+            .is_some_and(|record| record.object_id.is_none())
+            && object_indices.iter().all(|object_index| {
+                usize::try_from(*object_index)
+                    .ok()
+                    .is_some_and(|ordinal| ordinal <= candidate.records.len())
+            });
+        if !matches {
+            continue;
+        }
+        if unique.replace(section_ordinal).is_some() {
+            return None;
+        }
+    }
+    unique
 }
 
 /// Join operation input lanes to uniquely resolved parameter declarations.

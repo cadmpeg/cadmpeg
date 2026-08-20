@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 
 use std::io::{Cursor, Write};
+use std::sync::Arc;
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -17,11 +18,47 @@ use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::Exactness;
 
 use crate::container;
+use crate::container::{DirEntry, Region};
+use crate::om::{EntityRecord, IndexedSection};
 use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
 use crate::NxCodec;
 
 use super::*;
+
+#[test]
+fn unique_offset_data_store_rejects_a_second_matching_section() {
+    let entry = DirEntry {
+        name: "section".into(),
+        region: Region::Header,
+        file_span: None,
+    };
+    let section = || IndexedSection {
+        base: 0,
+        entity_index_offset: 0,
+        object_id_table_offset: 0,
+        types: Arc::from([]),
+        fields: Arc::from([]),
+        control: None,
+        column_storage: None,
+        records: Arc::from([EntityRecord {
+            object_id: None,
+            object_id_offset: None,
+            offset: 0,
+            bytes: &[],
+        }]),
+    };
+    let first = section();
+    let second = section();
+    let single = section();
+    assert_eq!(
+        super::unique_offset_data_store(&[(&entry, single)], &[1]),
+        Some(0)
+    );
+    let indexed = [(&entry, first), (&entry, second)];
+
+    assert_eq!(super::unique_offset_data_store(&indexed, &[1]), None);
+}
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
