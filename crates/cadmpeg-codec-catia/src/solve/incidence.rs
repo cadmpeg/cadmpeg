@@ -26,6 +26,7 @@ use crate::solve::UnionFind;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 type MeshEndpointSolutionVisitor<'a> = &'a mut dyn FnMut(&[MeshEndpointPair]) -> ControlFlow<()>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
@@ -690,7 +691,7 @@ enum IncidenceConstraintOptions {
 struct AppliedFaceConfiguration {
     assigned: Vec<(usize, [usize; 2])>,
     affected_faces: Vec<usize>,
-    coordinate_domains: Option<MeshCoordinateRootDomains>,
+    coordinate_domains: Option<Arc<MeshCoordinateRootDomains>>,
     factor_checkpoint: Option<FaceFactorCheckpoint>,
 }
 
@@ -1802,19 +1803,26 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn refine_coordinate_domains(
         &self,
-        domains: &MeshCoordinateRootDomains,
+        domains: &Arc<MeshCoordinateRootDomains>,
         edge: usize,
         pair: [usize; 2],
-    ) -> Option<MeshCoordinateRootDomains> {
+    ) -> Option<Arc<MeshCoordinateRootDomains>> {
         if self.coordinate_propagation_budget.exhausted() {
-            return Some(domains.clone());
+            return Some(Arc::clone(domains));
+        }
+        if domains
+            .edge_candidates()
+            .get(edge)
+            .is_some_and(|candidates| candidates.as_slice() == [pair])
+        {
+            return Some(Arc::clone(domains));
         }
         let refined =
             domains.refine_edge_candidate_arc(edge, pair, Some(self.coordinate_propagation_budget));
-        refined.or_else(|| {
+        refined.map(Arc::new).or_else(|| {
             self.coordinate_propagation_budget
                 .exhausted()
-                .then(|| domains.clone())
+                .then(|| Arc::clone(domains))
         })
     }
 
@@ -2647,7 +2655,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         mut options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
         if options.len() == 1 {
@@ -2687,7 +2695,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn apply_face_configuration(
         &mut self,
         option: Vec<(usize, [usize; 2])>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
     ) -> Option<AppliedFaceConfiguration> {
         let mut assigned = Vec::new();
         let mut affected_faces = Vec::new();
@@ -2722,8 +2730,11 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         affected_faces.sort_unstable();
         affected_faces.dedup();
-        if !self.degree_frontiers_supported(&affected_faces, None, next_coordinate_domains.as_ref())
-        {
+        if !self.degree_frontiers_supported(
+            &affected_faces,
+            None,
+            next_coordinate_domains.as_deref(),
+        ) {
             if self.budget.exhausted() {
                 self.exhausted = true;
             }
@@ -2759,7 +2770,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         mut option: Vec<(usize, [usize; 2])>,
         quotient_states: &[MeshQuotientGaugeState],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
         let mut assigned = Vec::new();
@@ -2824,14 +2835,21 @@ impl IncidenceComponentSearch<'_, '_> {
             vec![(quotient.clone(), HashSet::new())]
         });
         let component_faces = self.component_faces();
-        self.search_with_quotient(&quotient_states, self.coordinate_domains, &component_faces);
+        let coordinate_domains = self
+            .coordinate_domains
+            .map(|domains| Arc::new(domains.clone()));
+        self.search_with_quotient(
+            &quotient_states,
+            coordinate_domains.as_ref(),
+            &component_faces,
+        );
         self.exhausted |= self.budget.exhausted();
     }
 
     fn search_with_quotient(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
         if self.exhausted || self.stopped {
@@ -2859,7 +2877,7 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
         const MAX_SOLUTIONS: usize = 256;
@@ -2892,10 +2910,10 @@ impl IncidenceComponentSearch<'_, '_> {
     fn search_edge_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
-        let branch = self.branch(coordinate_domains);
+        let branch = self.branch(coordinate_domains.map(Arc::as_ref));
         if self.budget.exhausted() {
             self.exhausted = true;
             return;
@@ -2944,14 +2962,14 @@ impl IncidenceComponentSearch<'_, '_> {
             if self.assignment[edge].is_some() {
                 continue;
             }
-            if !self.candidate_fits_in(edge, pair, coordinate_domains) {
+            if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref)) {
                 if self.budget.exhausted() {
                     self.exhausted = true;
                     return;
                 }
                 continue;
             }
-            let next_coordinate_domains = if let Some(domains) = coordinate_domains {
+            let next_coordinate_domains = if let Some(domains) = coordinate_domains.as_ref() {
                 let Some(refined) = self.refine_coordinate_domains(domains, edge, pair) else {
                     continue;
                 };
