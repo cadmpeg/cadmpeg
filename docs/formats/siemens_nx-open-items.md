@@ -493,6 +493,15 @@ semantic role relation is serialized.
 
 **Need.** We must map each retained nested frame to its owning feature relation before constructing feature dependencies or selections. The link tag and endpoint identities alone do not establish a body, operand, input, or output role.
 
+**Conflict.** Nested relation tags and direct reference tags retain endpoint
+identities and serialized order, but no endpoint owner or semantic role. Shared
+operation-header input blocks establish operation identity groups only; they do
+not join an unowned endpoint to a body, tool, input, or output.
+
+**Note.** The decoder retains every complete object-relation and direct
+reference frame as native data. No feature dependency or selection is emitted
+until one unique endpoint-role relation is serialized.
+
 ### OM-09. Embedded operation common-frame ownership
 
 **Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
