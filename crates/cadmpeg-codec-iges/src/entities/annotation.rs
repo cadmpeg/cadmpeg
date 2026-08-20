@@ -7,7 +7,7 @@ use super::presentation::{
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
-use crate::parameter::{trailing_pointer_groups, DefaultTailCount, ParameterRecord};
+use crate::parameter::{end_before_trailing_pointer_groups, DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -59,9 +59,7 @@ fn exact_parameter_count(
     expected: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    trailing_pointer_groups(record, entries)
-        .map_or(record.parameter_end(), |groups| groups.token_start)
-        == expected
+    end_before_trailing_pointer_groups(record, entries) == expected
 }
 
 fn justification_valid(value: i64) -> bool {
@@ -81,8 +79,7 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.parameter_end(), |groups| groups.token_start);
+    let parameter_end = end_before_trailing_pointer_groups(record, entries);
     let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
         _ => return false,
@@ -123,8 +120,7 @@ fn new_general_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.parameter_end(), |groups| groups.token_start);
+    let parameter_end = end_before_trailing_pointer_groups(record, entries);
     let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
         _ => return false,

@@ -583,7 +583,7 @@ pub(super) fn build(
     by_directory: &BTreeMap<u32, &ParameterRecord>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     parameter_resolver: &ParameterResolver<'_>,
-    primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
+    clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
 ) -> (Vec<NativeAnnotation>, Vec<OverdeclaredCount>) {
     let mut overdeclared_counts = Vec::new();
     let annotations = directory
@@ -595,7 +595,7 @@ pub(super) fn build(
                 sequence: entry.sequence,
                 form: entry.form,
                 record,
-                primary_end: record.map_or(0, |record| primary_end(entry.sequence, record)),
+                primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
             };

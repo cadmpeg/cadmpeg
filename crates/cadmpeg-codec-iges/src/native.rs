@@ -1398,7 +1398,7 @@ pub(crate) fn store(
         .iter()
         .map(|(sequence, record)| (*sequence, trailing_pointer_groups(record, &entries)))
         .collect::<BTreeMap<_, _>>();
-    let primary_end = |sequence: u32, record: &ParameterRecord| {
+    let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
         trailing_by_directory
             .get(&sequence)
             .and_then(|groups| groups.as_ref())
@@ -1417,7 +1417,7 @@ pub(crate) fn store(
         let record = by_directory.get(&group.sequence).copied();
         let count = record
             .and_then(|record| {
-                record.count_with_stride_before(1, 1, primary_end(group.sequence, record))
+                record.count_with_stride_before(1, 1, clamped_primary_end(group.sequence, record))
             })
             .unwrap_or_default();
         for index in 0..count {
@@ -1604,7 +1604,7 @@ pub(crate) fn store(
             let tuples = layout
                 .and_then(|(start, width)| {
                     parameters.map(|record| {
-                        let end = primary_end(entry.sequence, record);
+                        let end = clamped_primary_end(entry.sequence, record);
                         let count = record
                             .count_with_stride_at(2, start, width, end)
                             .unwrap_or_default();
@@ -1715,7 +1715,11 @@ pub(crate) fn store(
             } else {
                 let count = parameters
                     .and_then(|record| {
-                        record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                        record.count_with_stride_before(
+                            1,
+                            1,
+                            clamped_primary_end(entry.sequence, record),
+                        )
                     })
                     .unwrap_or_default();
                 NativeLineFontDefinition::VisibleBlankPattern {
@@ -1779,7 +1783,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(5, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        5,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             let supersedes_code = record.and_then(|record| record.integer(3));
@@ -1799,7 +1807,7 @@ pub(crate) fn store(
                 let motion_count = record.count_with_stride_before(
                     count_index,
                     3,
-                    primary_end(entry.sequence, record),
+                    clamped_primary_end(entry.sequence, record),
                 );
                 let Some(motion_count) = motion_count else {
                     malformed = true;
@@ -1865,7 +1873,11 @@ pub(crate) fn store(
             let parameters = by_directory.get(&entry.sequence).copied();
             let count = parameters
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeDefinitionLevels {
@@ -1999,7 +2011,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             let terms = (0..count)
@@ -2093,7 +2109,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 2, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        2,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeSolidAssembly {
@@ -2210,7 +2230,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(3, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        3,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeSubfigureDefinition {
@@ -2265,7 +2289,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let member_count = record.and_then(|record| {
-                let end = primary_end(entry.sequence, record);
+                let end = clamped_primary_end(entry.sequence, record);
                 let count = record.count_with_stride_before(3, 1, end)?;
                 let type_flag = 4 + count;
                 let primary_reference_designator = type_flag + 1;
@@ -2279,7 +2303,11 @@ pub(crate) fn store(
             });
             let connect_count_index = member_count.map(|count| 7 + count);
             let connect_count = record.zip(connect_count_index).and_then(|(record, index)| {
-                record.count_with_stride_before(index, 1, primary_end(entry.sequence, record))
+                record.count_with_stride_before(
+                    index,
+                    1,
+                    clamped_primary_end(entry.sequence, record),
+                )
             });
             NativeNetworkDefinition {
                 id: format!("iges:product:network-definition#D{}", entry.sequence),
@@ -2363,7 +2391,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let connect_count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(11, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        11,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeNetworkInstance {
@@ -2495,7 +2527,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(11, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        11,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeRectangularArray {
@@ -2540,7 +2576,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(9, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        9,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeCircularArray {
@@ -2620,7 +2660,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             NativeGroup {
@@ -2648,9 +2692,9 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let class_count = record.and_then(|record| {
-                record.count_with_stride_before(1, 1, primary_end(entry.sequence, record))
+                record.count_with_stride_before(1, 1, clamped_primary_end(entry.sequence, record))
             });
-            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let mut cursor = 2_usize;
             let classes = class_count.map_or_else(Vec::new, |class_count| {
                 let mut classes = Vec::with_capacity(class_count);
@@ -2725,7 +2769,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     1,
                                     7,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2784,7 +2828,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     2,
                                     1,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2815,7 +2859,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     2,
                                     1,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2833,7 +2877,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     1,
                                     2,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2860,7 +2904,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     2,
                                     1,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2894,7 +2938,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     2,
                                     1,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -2919,7 +2963,8 @@ pub(crate) fn store(
                         }
                     }
                     18 | 20 => {
-                        let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+                        let end =
+                            record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
                         let first_list_index = if entry.form == 18 { 10 } else { 9 };
                         let count_options = (2..=7)
                             .map(|index| {
@@ -3106,7 +3151,7 @@ pub(crate) fn store(
                                 record.count_with_stride_before(
                                     2,
                                     5,
-                                    primary_end(entry.sequence, record),
+                                    clamped_primary_end(entry.sequence, record),
                                 )
                             })
                             .unwrap_or_default();
@@ -3159,7 +3204,7 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = record.and_then(|record| {
                 let stride = if entry.form == 0 { 3 } else { 1 };
                 record.count_with_stride_before(3, stride, end)
@@ -3276,7 +3321,11 @@ pub(crate) fn store(
                         entries
                             .get(&sequence)
                             .map_or(1, |entry| if entry.form == 0 { 3 } else { 1 });
-                    record.count_with_stride_before(3, stride, primary_end(sequence, record))
+                    record.count_with_stride_before(
+                        3,
+                        stride,
+                        clamped_primary_end(sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             let values_per_row = (0..attribute_count)
@@ -3307,7 +3356,7 @@ pub(crate) fn store(
                             record.count_with_stride_before(
                                 1,
                                 values_per_row,
-                                primary_end(entry.sequence, record),
+                                clamped_primary_end(entry.sequence, record),
                             )
                         })
                     })
@@ -3316,7 +3365,8 @@ pub(crate) fn store(
             };
             let value_start = if entry.form == 0 { 1 } else { 2 };
             let row_count = record.map_or(0, |record| {
-                let available = primary_end(entry.sequence, record).saturating_sub(value_start);
+                let available =
+                    clamped_primary_end(entry.sequence, record).saturating_sub(value_start);
                 if values_per_row == 0 || row_count > available / values_per_row {
                     0
                 } else {
@@ -3388,7 +3438,7 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
-            let end = primary_end(entry.sequence, record);
+            let end = clamped_primary_end(entry.sequence, record);
             let count_before = |index, stride| record.count_with_stride_before(index, stride, end);
             let bounded_count = |index, stride| count_before(index, stride).unwrap_or_default();
             let count = bounded_count(1, 1);
@@ -3729,7 +3779,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 3, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        3,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             let owners = by_directory
@@ -3843,7 +3897,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let width = if entry.form == 3 { 1 } else { 5 };
-            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let view_count = record
                 .and_then(|record| record.count_with_stride_before(1, width, end))
                 .and_then(|view_count| {
@@ -3938,7 +3992,11 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(1, 6, primary_end(entry.sequence, record))
+                    record.count_with_stride_before(
+                        1,
+                        6,
+                        clamped_primary_end(entry.sequence, record),
+                    )
                 })
                 .unwrap_or_default();
             let value = |index| {
@@ -4007,7 +4065,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let width = if entry.form == 0 { 3 } else { 4 };
-            let end = record.map_or(0, |record| primary_end(entry.sequence, record));
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let counts = record
                 .and_then(|record| record.count_with_stride_before(1, width, end))
                 .and_then(|view_count| {
@@ -4117,7 +4175,7 @@ pub(crate) fn store(
         &by_directory,
         &entries,
         &parameter_resolver,
-        &primary_end,
+        &clamped_primary_end,
     );
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
@@ -4131,7 +4189,7 @@ pub(crate) fn store(
                 return None;
             };
             let Some(count) =
-                record.count_with_stride_before(3, 1, primary_end(entry.sequence, record))
+                record.count_with_stride_before(3, 1, clamped_primary_end(entry.sequence, record))
             else {
                 malformed_definition_sequences.push(entry.sequence);
                 return Some((

@@ -295,6 +295,14 @@ pub(crate) fn trailing_pointer_groups(
         .filter(|groups| groups.fully_valid)
 }
 
+pub(crate) fn end_before_trailing_pointer_groups(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> usize {
+    trailing_pointer_groups(record, directory)
+        .map_or(record.parameter_end(), |groups| groups.token_start)
+}
+
 pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,

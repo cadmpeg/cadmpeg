@@ -4,7 +4,9 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use crate::parameter::{
+    end_before_trailing_pointer_groups, trailing_pointer_groups, ParameterRecord, TokenValue,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -204,14 +206,6 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
         b"SOLID" => value == b"C",
         _ => false,
     }
-}
-
-fn entity_parameter_end(
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> usize {
-    trailing_pointer_groups(record, entries)
-        .map_or(record.parameter_end(), |groups| groups.token_start)
 }
 
 fn generic_property_value_valid(
@@ -555,7 +549,7 @@ fn predefined_associativity_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> bool {
-    let end = entity_parameter_end(record, entries);
+    let end = end_before_trailing_pointer_groups(record, entries);
     match entry.form {
         5 => {
             let Some(count) = record.count(1).filter(|count| *count > 0) else {
@@ -844,7 +838,7 @@ fn flow_associativity(
                 has_association_back_pointer(member, entry.sequence, entries)
             }))
     });
-    (cursor == entity_parameter_end(record, entries)
+    (cursor == end_before_trailing_pointer_groups(record, entries)
         && associated_valid
         && connections_valid
         && joins_valid
@@ -904,7 +898,7 @@ pub(super) fn project(
         let fields_valid = property_fields_valid(
             entry,
             record,
-            entity_parameter_end(record, &entries),
+            end_before_trailing_pointer_groups(record, &entries),
             &entries,
         );
         let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
@@ -1226,7 +1220,7 @@ pub(super) fn project(
         let count = record.count(1).filter(|count| *count > 0);
         let mut types = BTreeSet::<Vec<u8>>::new();
         let units_valid = count.is_some_and(|count| {
-            entity_parameter_end(record, &entries) == 2 + count * 3
+            end_before_trailing_pointer_groups(record, &entries) == 2 + count * 3
                 && (0..count).all(|offset| {
                     let start = 2 + offset * 3;
                     record
@@ -1294,7 +1288,10 @@ pub(super) fn project(
             && entry.label_display == 0
             && entry.line_weight == 0
             && entry.color == 0;
-        if directory_valid && classes_valid && cursor == entity_parameter_end(record, &entries) {
+        if directory_valid
+            && classes_valid
+            && cursor == end_before_trailing_pointer_groups(record, &entries)
+        {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
