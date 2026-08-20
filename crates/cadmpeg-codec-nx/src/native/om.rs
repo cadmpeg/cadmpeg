@@ -294,6 +294,9 @@ pub struct ObjectRecord {
     pub byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
     pub sha256: String,
+    /// Content-backed identity when the scoped exact bytes are unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Ordered distinct same-section records referenced by this record.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
@@ -304,6 +307,23 @@ pub struct ObjectRecord {
     pub source_entry: String,
     /// Absolute file offset of the record start.
     pub source_offset: u64,
+}
+
+/// Return a content-backed identity for one indexed OM object record.
+///
+/// The source entry scopes the exact bytes. Callers must only admit the value
+/// when this key is unique in that scope; equal records have no stable
+/// position-independent identity without another serialized owner.
+pub(crate) fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
+    let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 20);
+    seed.extend_from_slice(b"nx:om:object-record\0");
+    seed.extend_from_slice(source_entry.as_bytes());
+    seed.push(0);
+    seed.extend_from_slice(bytes);
+    format!(
+        "nx:om:object-record:{}",
+        cadmpeg_ir::hash::sha256_hex(&seed)
+    )
 }
 
 /// Counted active-object membership table from `RMFastLoad`.
@@ -1987,74 +2007,101 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
 
 /// Catalog every externally bounded NX OM entity record.
 pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
-    container
-        .indexed_om_sections()
+    let mut candidates = Vec::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        if section
+            .records
+            .first()
+            .is_none_or(|record| record.object_id.is_none())
+        {
+            continue;
+        }
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let section_offset = entry_offset + section.base_offset() as u64;
+        let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
+        let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
+        for (source, _, _, reference) in section.references() {
+            if reference.kind != crate::om::ReferenceKind::RecordOrdinal16 {
+                continue;
+            }
+            let target = reference.value as usize;
+            let outgoing = dependencies.entry(source).or_default();
+            if !outgoing.contains(&target) {
+                outgoing.push(target);
+            }
+            let incoming = dependents.entry(target).or_default();
+            if !incoming.contains(&source) {
+                incoming.push(source);
+            }
+        }
+        for (record_ordinal, record) in section.records.iter().cloned().enumerate() {
+            let record_id =
+                |ordinal| format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}");
+            candidates.push((
+                section_ordinal,
+                record_ordinal,
+                section_offset,
+                entry_offset,
+                entry.name.clone(),
+                record,
+                dependencies
+                    .get(&record_ordinal)
+                    .into_iter()
+                    .flatten()
+                    .map(|ordinal| record_id(*ordinal))
+                    .collect::<Vec<_>>(),
+                dependents
+                    .get(&record_ordinal)
+                    .into_iter()
+                    .flatten()
+                    .map(|ordinal| record_id(*ordinal))
+                    .collect::<Vec<_>>(),
+            ));
+        }
+    }
+
+    let mut identity_counts = BTreeMap::<String, usize>::new();
+    for (_, _, _, _, source_entry, record, _, _) in &candidates {
+        let identity = stable_object_record_identity(source_entry, record.bytes);
+        *identity_counts.entry(identity).or_default() += 1;
+    }
+
+    candidates
         .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_none())
-            {
-                return Vec::new();
-            }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let section_offset = entry_offset + section.base_offset() as u64;
-            let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
-            let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
-            for (source, _, _, reference) in section.references() {
-                if reference.kind != crate::om::ReferenceKind::RecordOrdinal16 {
-                    continue;
+        .map(
+            |(
+                section_ordinal,
+                record_ordinal,
+                section_offset,
+                entry_offset,
+                source_entry,
+                record,
+                dependencies,
+                dependents,
+            )| {
+                let stable_identity = stable_object_record_identity(&source_entry, record.bytes);
+                ObjectRecord {
+                    id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
+                    object_id: record.object_id,
+                    object_id_source_offset: record
+                        .object_id_offset
+                        .map(|offset| entry_offset + offset as u64),
+                    section_ordinal: section_ordinal as u32,
+                    record_ordinal: record_ordinal as u32,
+                    section_offset,
+                    byte_len: record.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    stable_identity: (identity_counts.get(&stable_identity) == Some(&1))
+                        .then_some(stable_identity),
+                    dependencies,
+                    dependents,
+                    source_entry,
+                    source_offset: entry_offset + record.offset as u64,
                 }
-                let target = reference.value as usize;
-                let outgoing = dependencies.entry(source).or_default();
-                if !outgoing.contains(&target) {
-                    outgoing.push(target);
-                }
-                let incoming = dependents.entry(target).or_default();
-                if !incoming.contains(&source) {
-                    incoming.push(source);
-                }
-            }
-            section
-                .records
-                .iter()
-                .cloned()
-                .enumerate()
-                .map(move |(record_ordinal, record)| {
-                    let record_id = |ordinal| {
-                        format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}")
-                    };
-                    ObjectRecord {
-                        id: record_id(record_ordinal),
-                        object_id: record.object_id,
-                        object_id_source_offset: record
-                            .object_id_offset
-                            .map(|offset| entry_offset + offset as u64),
-                        section_ordinal: section_ordinal as u32,
-                        record_ordinal: record_ordinal as u32,
-                        section_offset,
-                        byte_len: record.bytes.len() as u64,
-                        sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                        dependencies: dependencies
-                            .get(&record_ordinal)
-                            .into_iter()
-                            .flatten()
-                            .map(|ordinal| record_id(*ordinal))
-                            .collect(),
-                        dependents: dependents
-                            .get(&record_ordinal)
-                            .into_iter()
-                            .flatten()
-                            .map(|ordinal| record_id(*ordinal))
-                            .collect(),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + record.offset as u64,
-                    }
-                })
-                .collect()
-        })
+            },
+        )
         .collect()
 }
 
@@ -5819,5 +5866,40 @@ mod tests {
         let mut duplicate = references.clone();
         duplicate.push(references[0].clone());
         assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod object_record_identity_tests {
+    use crate::test_support::prt_with_indexed_om_section;
+
+    #[test]
+    fn stable_object_record_identity_excludes_position_and_scopes_entry() {
+        let bytes = [0x04, 0x05, 0x06];
+        let identity = super::stable_object_record_identity("/Root/UG_PART/UG_PART", &bytes);
+        assert_eq!(
+            identity,
+            super::stable_object_record_identity("/Root/UG_PART/UG_PART", &bytes)
+        );
+        assert_ne!(
+            identity,
+            super::stable_object_record_identity("/Root/other", &bytes)
+        );
+        assert_ne!(
+            identity,
+            super::stable_object_record_identity("/Root/UG_PART/UG_PART", &[0x04, 0x05, 0x07])
+        );
+    }
+
+    #[test]
+    fn unique_indexed_object_records_receive_stable_identities() {
+        let container = crate::container::scan_bytes(prt_with_indexed_om_section())
+            .expect("required invariant");
+        let records = super::object_records(&container);
+        assert_eq!(records.len(), 2);
+        assert!(records
+            .iter()
+            .all(|record| record.stable_identity.is_some()));
+        assert_ne!(records[0].stable_identity, records[1].stable_identity);
     }
 }
