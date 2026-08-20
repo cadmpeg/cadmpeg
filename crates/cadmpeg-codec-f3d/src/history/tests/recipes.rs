@@ -1127,7 +1127,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        } if bodies == &[body.id] && native == group_id
+        } if bodies == &[body.id.clone()] && native == group_id
     ));
 }
 

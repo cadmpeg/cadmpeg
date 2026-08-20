@@ -866,13 +866,6 @@ pub(crate) fn bind_feature_body_selections(
         })
         .collect::<HashMap<_, _>>();
 
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -1180,17 +1173,32 @@ pub(crate) fn bind_feature_body_selections(
             bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             continue;
         };
-        let Some(Some(state)) = states.get(&state_id) else {
+        let Some((history, state, _previous)) =
+            unique_history_state_pair(histories, state_id, previous_state_id)
+        else {
             bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             continue;
         };
+        let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+        for history_state in &history.states {
+            history_states
+                .entry(history_state.state_id)
+                .and_modify(|state| *state = None)
+                .or_insert(Some(history_state));
+        }
         let body = match proof {
             BodySelectionProof::TopologyStableRevision => {
-                singleton_body_revision_across_state_chain(state, previous_state_id, &states)
+                singleton_body_revision_across_state_chain(
+                    state,
+                    previous_state_id,
+                    &history_states,
+                )
             }
-            BodySelectionProof::RevisedInput => {
-                singleton_revised_input_body_across_state_chain(state, previous_state_id, &states)
-            }
+            BodySelectionProof::RevisedInput => singleton_revised_input_body_across_state_chain(
+                state,
+                previous_state_id,
+                &history_states,
+            ),
         };
         let Some(body) = body else {
             continue;

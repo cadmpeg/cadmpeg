@@ -2,6 +2,7 @@
 //! History-module unit tests.
 
 mod body_recipe;
+mod body_selection;
 mod draft;
 mod hole;
 mod mirror;
