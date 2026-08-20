@@ -210,6 +210,40 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
 }
 
 #[test]
+fn face_namespace_resolves_ambiguous_reference_boundaries() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        0x80, 0x90, // curve 144
+        0x00, 0x28, 0x01, 0xf6, // type, feature, direction flags
+        0xff, // opaque parameter byte
+        0x80, 0x8f, 0x80, 0x8d, 0x81, 0x11, 0x2c, 0x00, 0x00, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3,
+    ]);
+
+    assert!(topology_rows(&payload).is_empty());
+    assert!(parameter_records(&payload).is_empty());
+
+    let face_ids = std::collections::BTreeSet::from([141, 143]);
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(
+        rows,
+        vec![CurveTopologyRow {
+            id: 144,
+            type_byte: 0,
+            feature_id: 40,
+            directions: [1, 0xf6],
+            faces: [143, 141],
+            next_edges: [273, 44],
+            offset: 15,
+        }]
+    );
+
+    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].curve_id, 144);
+    assert_eq!(parameters[0].body, [0xff]);
+}
+
+#[test]
 fn parameter_records_withhold_rows_with_ambiguous_terminal_suffixes() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 8, 4, 1, 0xf6]);
