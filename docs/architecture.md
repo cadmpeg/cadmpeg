@@ -24,7 +24,7 @@ A successful dump is not a checked model.
 
 ## Decode session
 
-The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`.
+The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`. Its strict gate evaluates full-decode reports only: a container-only report keeps its losses and is never refused by that gate.
 
 `DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`. Classify a named `MAX_*` cap with [decode-resource-caps.md](decode-resource-caps.md) before adding a bound or a `ResourceLimits` field.
 
