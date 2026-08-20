@@ -12,6 +12,7 @@ use super::relation_loci::{
     marker_transform_candidates_by_feature, point_line_distance_value, profile_loci_by_marker,
     profile_locus_point, relation_constraint_is_inactive, relation_operand_marker,
     same_dimension_angle, same_dimension_length, typed_relation_definition,
+    unoriented_line_line_angle,
 };
 use super::relation_records::{circle_dimension_handle_driver, relation_uses_dynamic_operands};
 use super::transforms::{
@@ -640,8 +641,14 @@ pub(crate) fn project_relation_solved_line_geometry(
                     _ => false,
                 },
                 FeatureInputRelationFamily::Angle => match lines.as_slice() {
-                    [(_, _, first), (_, _, second)] => line_line_angle(first, second)
-                        .is_some_and(|measured| same_dimension_angle(measured, expected)),
+                    [(_, _, first), (_, _, second)] => {
+                        let angle = if relation_uses_dynamic_operands(relation) {
+                            unoriented_line_line_angle(first, second)
+                        } else {
+                            line_line_angle(first, second)
+                        };
+                        angle.is_some_and(|measured| same_dimension_angle(measured, expected))
+                    }
                     _ => false,
                 },
                 _ => false,

@@ -741,9 +741,12 @@ pub(super) fn typed_relation_definition(
             };
             let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
-            if !line_line_angle(first_line, second_line)
-                .is_some_and(|measured| same_dimension_angle(measured, expected.0))
-            {
+            let angle = if dynamic {
+                unoriented_line_line_angle(first_line, second_line)
+            } else {
+                line_line_angle(first_line, second_line)
+            };
+            if !angle.is_some_and(|measured| same_dimension_angle(measured, expected.0)) {
                 if dynamic {
                     return None;
                 }
@@ -1444,6 +1447,14 @@ pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Op
             .clamp(-1.0, 1.0)
             .acos(),
     )
+}
+
+pub(super) fn unoriented_line_line_angle(
+    first: &SketchEntity,
+    second: &SketchEntity,
+) -> Option<f64> {
+    let angle = line_line_angle(first, second)?;
+    Some(angle.min(std::f64::consts::PI - angle))
 }
 
 pub(super) fn same_dimension_angle(left: f64, right: f64) -> bool {

@@ -535,6 +535,8 @@ Operand-cell tags `d6 80`, `cc 80`, `b6 8a`, `cb 8d`, `9d 92`, and `69 bd` addre
 
 A two-cell dimensional relation scalar whose cells are native tags outside a fixed family signature is a family-scoped pair. The relation family and operand position define each cell's point or curve role; the tag has no global marker-kind meaning. A point role selects a finite point or constrained-point marker, and a curve role selects a finite line-or-circle or arc marker. Address and identifier matches precede the feature-local compatible-marker ordinal. When an explicit reference does not supply the required role, the operand may use the complete finite point roster for a point role or the solver-line roster for a curve role. A typed relation requires exactly one ordered geometry match at the scalar's length or angle; zero or multiple matches retain the native relation and its ordered operand cells.
 
+For a family-scoped angular curve role, a solver-line pair is an unoriented line carrier. If `theta` is the endpoint-direction angle in `[0, pi]`, its angular witness is `min(theta, pi - theta)`. This rule applies only to the solver-line carrier; a resolved profile line keeps its stored endpoint direction.
+
 An `sgCircleDim` operand-cell tag `4c 81` addresses the unique finite point or constrained-point marker with the same feature-local object index. This form does not use the marker's local identifier or a compatible-family ordinal.
 
 A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering. A referenced coordinate-bearing point handle remains a distinct point locus when its coordinate coincides with profile geometry.

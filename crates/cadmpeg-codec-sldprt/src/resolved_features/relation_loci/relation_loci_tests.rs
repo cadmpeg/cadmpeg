@@ -9,7 +9,7 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
+    Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -421,6 +421,51 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
         ),
         None
     );
+}
+
+#[test]
+fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
+    let sketch = SketchId("sketch".into());
+    let mut first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(1.0, 0.0),
+    );
+    first.geometry_ref = Some("feature:solver-line:0".into());
+    let mut second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(-1.0, 1.0),
+    );
+    second.geometry_ref = Some("feature:solver-line:1".into());
+    let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "45deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert!(matches!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first, second],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Angle { .. })
+    ));
 }
 
 #[test]

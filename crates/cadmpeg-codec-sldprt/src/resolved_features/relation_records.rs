@@ -1240,6 +1240,56 @@ mod relation_records_tests {
             .iter()
             .all(|operand| operand.entity_ref.is_none()));
     }
+
+    #[test]
+    fn dynamic_angle_accepts_reversed_solver_line_direction() {
+        let driving = dynamic_scalar(
+            40,
+            FeatureInputOperandKind::Native(0x812a),
+            &[0, 1],
+            std::f64::consts::FRAC_PI_4,
+        );
+        let mut lane = lane(vec![class(10, "sgAnglDim")], vec![driving]);
+        lane.sketch_entities = vec![
+            sketch_marker(
+                "first-start",
+                0,
+                10,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "first-end",
+                1,
+                20,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 0.0]),
+            ),
+            sketch_marker(
+                "second-start",
+                2,
+                30,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "second-end",
+                3,
+                40,
+                crate::records::SketchInputKind::Point,
+                Some([-1.0, 1.0]),
+            ),
+        ];
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged angle relation");
+        };
+        assert!(relation
+            .operands
+            .iter()
+            .all(|operand| operand.entity_ref.is_none()));
+    }
 }
 
 pub(super) fn bind_circle_dimension_centers(
@@ -1780,6 +1830,11 @@ fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
     )
 }
 
+pub(super) fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let angle = line_line_angle(first, second)?;
+    Some(angle.min(std::f64::consts::PI - angle))
+}
+
 fn same_relation_dimension(left: f64, right: f64) -> bool {
     (left - right).abs() <= SKETCH_POINT_TOLERANCE * left.abs().max(right.abs()).max(1.0)
 }
@@ -2011,7 +2066,7 @@ fn bind_dynamic_line_relation(
         return;
     };
     let measured = if angle {
-        line_line_angle(
+        dynamic_line_line_angle(
             [first_line_first, first_line_second],
             [second_line_first, second_line_second],
         )
