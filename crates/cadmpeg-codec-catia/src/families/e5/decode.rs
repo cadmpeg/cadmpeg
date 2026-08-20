@@ -34,6 +34,7 @@ use crate::solve::UnionFind;
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
 const EPS_AXIS_ALIGN: f64 = 1e-8;
 const E5_PARAMETER_RELATIVE_TOLERANCE: f64 = 1e-9;
+const E5_CARRIER_AXIS_COSINE_TOLERANCE: f64 = 1e-9;
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -2169,6 +2170,14 @@ fn e5_occurrence_intersection_cache(
     {
         return Some((left_curve.clone(), *left_range));
     }
+    if e5_circle_carriers_have_same_ordered_sweep(
+        left_curve,
+        *left_range,
+        right_curve,
+        *right_range,
+    ) {
+        return Some((left_curve.clone(), *left_range));
+    }
     match (
         is_exact_e5_analytic_curve(left_curve),
         is_exact_e5_analytic_curve(right_curve),
@@ -2230,6 +2239,58 @@ fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Optio
         return None;
     }
     Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale)
+}
+
+fn e5_circle_carriers_have_same_ordered_sweep(
+    left: &CurveGeometry,
+    left_range: [f64; 2],
+    right: &CurveGeometry,
+    right_range: [f64; 2],
+) -> bool {
+    let (
+        CurveGeometry::Circle {
+            center: left_center,
+            axis: left_axis,
+            radius: left_radius,
+            ..
+        },
+        CurveGeometry::Circle {
+            center: right_center,
+            axis: right_axis,
+            radius: right_radius,
+            ..
+        },
+    ) = (left, right)
+    else {
+        return false;
+    };
+    if (*left_center).distance(*right_center) > E5_ENDPOINT_MATCH_TOLERANCE
+        || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
+        || (*left_axis).dot(*right_axis) < 1.0 - E5_CARRIER_AXIS_COSINE_TOLERANCE
+    {
+        return false;
+    }
+    let left_span = left_range[1] - left_range[0];
+    let right_span = right_range[1] - right_range[0];
+    if left_span.signum() != right_span.signum()
+        || parameter_span_agreement(left_range, right_range).is_none()
+    {
+        return false;
+    }
+    let Some(left_start) = cadmpeg_ir::eval::curve_point(left, left_range[0]) else {
+        return false;
+    };
+    let Some(left_end) = cadmpeg_ir::eval::curve_point(left, left_range[1]) else {
+        return false;
+    };
+    let Some(right_start) = cadmpeg_ir::eval::curve_point(right, right_range[0]) else {
+        return false;
+    };
+    let Some(right_end) = cadmpeg_ir::eval::curve_point(right, right_range[1]) else {
+        return false;
+    };
+    left_start.distance(right_start) <= E5_ENDPOINT_MATCH_TOLERANCE
+        && left_end.distance(right_end) <= E5_ENDPOINT_MATCH_TOLERANCE
 }
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
@@ -2468,12 +2529,13 @@ pub(crate) fn e5_ownership_plan(
 mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
-        e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_cache,
-        e5_occurrence_intersection_context, e5_ownership_plan, e5_pcurve_on_surface,
-        e5_stored_pcurve_reversed, e5_support_occurrence_intersection_context,
-        equivalent_e5_curve_carriers, fit_e5_plane_axes, fit_rank_one_e5_plane_axes,
-        parameter_range_agreement_tolerance, parameter_ranges_reversed, plan_e5_boundary,
-        solve_e5_plane_frame, E5OccurrenceIntersectionSide,
+        e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep, e5_native_uv_endpoints,
+        e5_occurrence_intersection_cache, e5_occurrence_intersection_context, e5_ownership_plan,
+        e5_pcurve_on_surface, e5_stored_pcurve_reversed,
+        e5_support_occurrence_intersection_context, equivalent_e5_curve_carriers,
+        fit_e5_plane_axes, fit_rank_one_e5_plane_axes, parameter_range_agreement_tolerance,
+        parameter_ranges_reversed, plan_e5_boundary, solve_e5_plane_frame,
+        E5OccurrenceIntersectionSide,
     };
 
     use crate::families::e5::graph::{
@@ -3689,6 +3751,18 @@ mod route_tests {
             radius: 4.0,
         };
         assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
+        assert!(e5_circle_carriers_have_same_ordered_sweep(
+            &left,
+            [0.0, std::f64::consts::PI],
+            &shifted_reference,
+            [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+        ));
+        assert!(!e5_circle_carriers_have_same_ordered_sweep(
+            &left,
+            [0.0, std::f64::consts::PI],
+            &shifted_reference,
+            [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
+        ));
         let displaced = CurveGeometry::Circle {
             center: Point3::new(1.0, 2.0, 3.01),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -4104,6 +4178,28 @@ mod route_tests {
             [0.0, 1.0],
         ));
         assert!(e5_occurrence_intersection_cache(&sides).is_none());
+
+        let left_circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        let right_circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 4.0,
+        };
+        sides[0].curve = Some((left_circle.clone(), [0.0, std::f64::consts::PI]));
+        sides[1].curve = Some((
+            right_circle,
+            [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+        ));
+        let (cache, range) =
+            e5_occurrence_intersection_cache(&sides).expect("frame-gauged circle cache");
+        assert_eq!(cache, left_circle);
+        assert_eq!(range, [0.0, std::f64::consts::PI]);
     }
 
     #[test]
