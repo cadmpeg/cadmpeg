@@ -8650,27 +8650,10 @@ fn resolve_mesh_selection_from_quotient(
     if edge_vertices.len() != edge_candidates.len() {
         return None;
     }
-    let roots = (0..quotient.union.len())
-        .filter(|node| quotient.union.find(*node) == *node)
-        .collect::<Vec<_>>();
-    let domains = roots
-        .iter()
-        .map(|root| {
-            let mut domain = quotient.domains[*root].iter().copied().collect::<Vec<_>>();
-            domain.sort_unstable();
-            domain
-        })
-        .collect::<Vec<_>>();
-    let root_assignment = distinct_domain_matching_with_budget(
-        domains.iter().map(Vec::as_slice),
-        vertex_points.len(),
-        Some(budget),
-        None,
-    )?;
-    let root_points = roots
-        .into_iter()
-        .zip(root_assignment)
-        .collect::<HashMap<_, _>>();
+    // The direct path is a fast path only for a unique coordinate matching.
+    // Non-unique matchings defer to the full search, which applies the mesh gauge.
+    let root_points =
+        quotient.point_assignment(vertex_points.len(), edge_candidates, Some(budget))?;
     let mut point_assignment = alloc_filled(
         topology.logical_vertex_count,
         None,
@@ -10430,4 +10413,68 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     };
     assert_eq!(topology.logical_vertex_count, 1);
     assert_eq!(point_assignment, vec![0]);
+}
+
+#[cfg(test)]
+mod direct_matching_tests {
+    use super::*;
+
+    #[test]
+    fn direct_mesh_quotient_defers_non_unique_matching() {
+        let edge_rows = (0..3)
+            .map(|edge| EdgeRow {
+                kind: 1,
+                handles: vec![edge as u32],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            })
+            .collect::<Vec<_>>();
+        let topology = StandardTopology {
+            faces: vec![crate::families::standard::topology::FaceTopology {
+                boundaries: vec![crate::families::standard::topology::Boundary {
+                    coedges: vec![
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 2,
+                        },
+                        crate::families::standard::topology::CoedgeUse {
+                            edge_row: 2,
+                            reversed: false,
+                            start_vertex: 2,
+                            end_vertex: 0,
+                        },
+                    ],
+                }],
+            }],
+            edge_rows,
+            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            logical_vertex_count: 3,
+        };
+        let edge_candidates = vec![
+            vec![[0, 1], [0, 2], [1, 2]],
+            vec![[0, 1], [0, 2], [1, 2]],
+            vec![[0, 1], [0, 2], [1, 2]],
+        ];
+        let port_identities = vec![[0, 1], [1, 2], [2, 0]];
+        let quotient = initial_mesh_quotient(&edge_candidates, 3, &port_identities)
+            .expect("triangle quotient");
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+        assert!(resolve_mesh_selection_from_quotient(
+            topology,
+            quotient,
+            &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            &edge_candidates,
+            &port_identities,
+            &budget,
+        )
+        .is_none());
+    }
 }
