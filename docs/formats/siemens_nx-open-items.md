@@ -844,6 +844,20 @@ each control-geometry and continuity field.
 
 **Need.** We must know the ownership relation to use a cached body as the correct feature result or tool.
 
+**Conflict.** The tuple identifies the stream wrapper, classification, two
+aliases, and role word. A primary-body field or resolved segment operand can
+establish a unique alias-use relation, and ordered feature history can
+establish the latest writer and consumer for that alias component. Neither
+the tuple nor its role word identifies the feature that authored a plain
+cached-body image when no unique primary or operand relation exists. Stream
+order and alias equality do not assign feature ownership.
+
+**Note.** Preserve every plain cached-body binding and each unique
+primary/operand relation independently. Use terminal lineage only after the
+complete status relation resolves. Do not assign a cached stream to a feature
+result or tool without a unique feature-field relation; retain ownership as
+unresolved.
+
 ### OM-29. `RMFastLoad` class records
 
 **Question.** What is the per-class entity-record grammar in `RMFastLoad` outside its object-ID membership table?
