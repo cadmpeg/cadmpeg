@@ -12,7 +12,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use super::{
     admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
     native_parameter_loop_polygon, ordered_native_parameter_face_loops,
-    split_neutral_component_shells, transfer_native_brep, NeutralShellSpec,
+    split_neutral_component_shells, transfer_native_brep, NativeCurveEvidence, NeutralShellSpec,
 };
 
 #[test]
@@ -273,18 +273,128 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
             &incidence,
             &solved_vertices,
             &native_pcurves,
+            &BTreeSet::new(),
         ),
         Some(outer_polygon.into_iter().collect())
     );
     let ordered = ordered_native_parameter_face_loops(
-        vec![&inner, &outer],
+        &[&inner, &outer],
         5,
         &surface,
         &incidence,
         &solved_vertices,
         &native_pcurves,
+        NativeCurveEvidence {
+            typed_nonlinear_curve_ids: &BTreeSet::new(),
+            model_curves: &[],
+        },
     )
     .expect("one parameter-space outer loop");
+    assert_eq!(ordered[0].half_edges[0].curve_id, 10);
+    assert_eq!(ordered[1].half_edges[0].curve_id, 20);
+}
+
+#[test]
+fn native_parameter_loops_admit_proven_two_edge_circles() {
+    let surface = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let outer = crate::topology::Loop {
+        face_id: 5,
+        half_edges: [10_u32, 11]
+            .into_iter()
+            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .collect(),
+    };
+    let inner = crate::topology::Loop {
+        face_id: 5,
+        half_edges: [20_u32, 21]
+            .into_iter()
+            .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
+            .collect(),
+    };
+    let bindings = [(10, 1, 2), (11, 2, 1), (20, 3, 4), (21, 4, 3)]
+        .into_iter()
+        .map(|(curve_id, start_vertex_id, end_vertex_id)| {
+            crate::topology::HalfEdgeVertexIncidence {
+                half_edge: crate::topology::HalfEdgeId { curve_id, side: 0 },
+                start_vertex_id,
+                end_vertex_id: Some(end_vertex_id),
+            }
+        })
+        .collect::<Vec<_>>();
+    let incidence = bindings
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let solved_vertices = BTreeMap::from([
+        (1, [2.0, 0.0, 0.0]),
+        (2, [-2.0, 0.0, 0.0]),
+        (3, [1.0, 0.0, 0.0]),
+        (4, [-1.0, 0.0, 0.0]),
+    ]);
+    let native_pcurves = BTreeMap::from([
+        ((10, 5), vec![([[2.0, 0.0], [-2.0, 0.0]], 0)]),
+        ((11, 5), vec![([[-2.0, 0.0], [2.0, 0.0]], 0)]),
+        ((20, 5), vec![([[1.0, 0.0], [-1.0, 0.0]], 0)]),
+        ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
+    ]);
+    let circle = |id, radius| Curve {
+        id: CurveId(format!("creo:visibgeom:curve#{id}")),
+        geometry: CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        },
+        source_object: None,
+    };
+    let model_curves = vec![
+        circle(10, 2.0),
+        circle(11, 2.0),
+        circle(20, 1.0),
+        circle(21, 1.0),
+    ];
+    let typed_nonlinear_curve_ids = BTreeSet::from([10, 11, 20, 21]);
+
+    assert_eq!(
+        native_parameter_loop_polygon(
+            &outer,
+            5,
+            &surface,
+            &incidence,
+            &solved_vertices,
+            &native_pcurves,
+            &typed_nonlinear_curve_ids,
+        ),
+        Some(vec![[2.0, 0.0], [-2.0, 0.0]])
+    );
+    assert!(native_parameter_loop_polygon(
+        &outer,
+        5,
+        &surface,
+        &incidence,
+        &solved_vertices,
+        &native_pcurves,
+        &BTreeSet::new(),
+    )
+    .is_none());
+
+    let ordered = ordered_native_parameter_face_loops(
+        &[&inner, &outer],
+        5,
+        &surface,
+        &incidence,
+        &solved_vertices,
+        &native_pcurves,
+        NativeCurveEvidence {
+            typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+            model_curves: &model_curves,
+        },
+    )
+    .expect("concentric two-edge circles have a proven outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges[0].curve_id, 20);
 }

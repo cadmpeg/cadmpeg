@@ -679,11 +679,17 @@ parameter-space envelope slots, and an intermediate `e3` or terminal `e1`
 close; an optional `f7` separator reference may precede the next entry.
 Parameter-space containment can classify loops only when complete pcurves and a
 surface chart are available. The stored chain fields do not yet identify an
-outer or inner loop.
+outer or inner loop. A plane with complete two-edge typed circular loops can
+instead prove outer-to-inner order from a common center, distinct radii, and
+antipodal pcurve endpoints.
 
 **Need.** We must know the field to classify loops when containment is unavailable.
 
-**Note.** The closure commit derives a common plane from solved boundary vertices and uses geometric containment. It does not identify the byte-backed field asked by this item, and its hand-built point test does not establish that coplanarity is the native ownership rule. Reopen until a native topology witness settles loop ownership.
+**Note.** The neutral path admits the circular exception only from decoded curve
+geometry and complete pcurve endpoint evidence. It does not identify the
+byte-backed field asked by this item or settle loop ownership for other
+multi-loop families. Reopen until a native topology witness settles the
+general loop-ownership field.
 
 ### TP-04. Vertex-coordinate binding
 

@@ -36,6 +36,7 @@ use super::super::uniqueness::exactly_one;
 use super::fc05_model_frame;
 
 const EPS_PARAMETER_AGREE: f64 = 1e-9;
+const EPS_GEOMETRY_AGREE: f64 = 1e-9;
 
 #[derive(Debug, PartialEq, Eq)]
 struct NeutralShellSpec {
@@ -168,6 +169,194 @@ fn parameter_points_agree(first: [f64; 2], second: [f64; 2]) -> bool {
         .all(|(first, second)| (first - second).abs() <= EPS_PARAMETER_AGREE * scale)
 }
 
+fn curve_geometry_is_typed_nonlinear(geometry: &CurveGeometry) -> bool {
+    match geometry {
+        CurveGeometry::Circle { .. }
+        | CurveGeometry::Ellipse { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. } => true,
+        CurveGeometry::Transformed { basis, .. } => curve_geometry_is_typed_nonlinear(basis),
+        _ => false,
+    }
+}
+
+fn model_typed_nonlinear_curve_ids(ir: &CadIr) -> BTreeSet<u32> {
+    ir.model
+        .curves
+        .iter()
+        .filter_map(|curve| {
+            let id = curve
+                .id
+                .0
+                .strip_prefix("creo:visibgeom:curve#")?
+                .parse()
+                .ok()?;
+            curve_geometry_is_typed_nonlinear(&curve.geometry).then_some(id)
+        })
+        .collect()
+}
+
+fn scalar_values_agree(first: f64, second: f64) -> bool {
+    if !first.is_finite() || !second.is_finite() {
+        return false;
+    }
+    let scale = first.abs().max(second.abs()).max(1.0);
+    (first - second).abs() <= EPS_GEOMETRY_AGREE * scale
+}
+
+fn points_are_geometrically_coincident(first: Point3, second: Point3) -> bool {
+    let scale = [first.x, first.y, first.z, second.x, second.y, second.z]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    first.distance(second) <= EPS_GEOMETRY_AGREE * scale
+}
+
+fn vectors_are_parallel(first: Vector3, second: Vector3) -> bool {
+    let scale = first.norm() * second.norm();
+    scale.is_finite() && scale > 0.0 && first.cross(second).norm() <= EPS_GEOMETRY_AGREE * scale
+}
+
+#[derive(Clone, Copy)]
+struct NativeCircleLoop {
+    center: Point3,
+    axis: Vector3,
+    radius: f64,
+}
+
+#[derive(Clone, Copy)]
+struct NativeCurveEvidence<'a> {
+    typed_nonlinear_curve_ids: &'a BTreeSet<u32>,
+    model_curves: &'a [Curve],
+}
+
+fn native_circle_loop_geometry(
+    lp: &crate::topology::Loop,
+    model_curves: &[Curve],
+) -> Option<NativeCircleLoop> {
+    let [first, second] = lp.half_edges.as_slice() else {
+        return None;
+    };
+    if first.curve_id == second.curve_id {
+        return None;
+    }
+    let first_id = CurveId(format!("creo:visibgeom:curve#{}", first.curve_id));
+    let second_id = CurveId(format!("creo:visibgeom:curve#{}", second.curve_id));
+    let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
+    let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
+    let (
+        CurveGeometry::Circle {
+            center: first_center,
+            axis: first_axis,
+            radius: first_radius,
+            ..
+        },
+        CurveGeometry::Circle {
+            center: second_center,
+            axis: second_axis,
+            radius: second_radius,
+            ..
+        },
+    ) = (&first.geometry, &second.geometry)
+    else {
+        return None;
+    };
+    if !first_radius.is_finite()
+        || *first_radius <= 0.0
+        || !scalar_values_agree(*first_radius, *second_radius)
+        || !points_are_geometrically_coincident(*first_center, *second_center)
+        || !vectors_are_parallel(*first_axis, *second_axis)
+    {
+        return None;
+    }
+    Some(NativeCircleLoop {
+        center: *first_center,
+        axis: *first_axis,
+        radius: *first_radius,
+    })
+}
+
+fn ordered_two_edge_circle_loops<'a>(
+    loops: &[&'a crate::topology::Loop],
+    polygons: &[Vec<[f64; 2]>],
+    surface: &SurfaceGeometry,
+    model_curves: &[Curve],
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if loops.len() < 2 || loops.len() != polygons.len() {
+        return None;
+    }
+    let SurfaceGeometry::Plane { origin, normal, .. } = surface else {
+        return None;
+    };
+    let circle_loops = loops
+        .iter()
+        .map(|lp| native_circle_loop_geometry(lp, model_curves))
+        .collect::<Option<Vec<_>>>()?;
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= 0.0 {
+        return None;
+    }
+    let reference = circle_loops[0];
+    if circle_loops.iter().any(|circle| {
+        let center_scale = reference
+            .radius
+            .max(circle.radius)
+            .max(1.0)
+            .max(circle.center.x.abs())
+            .max(circle.center.y.abs())
+            .max(circle.center.z.abs());
+        let distance_from_surface = circle.center.vector_from(*origin).dot(*normal).abs();
+        !points_are_geometrically_coincident(circle.center, reference.center)
+            || !vectors_are_parallel(circle.axis, reference.axis)
+            || !vectors_are_parallel(circle.axis, *normal)
+            || distance_from_surface > EPS_GEOMETRY_AGREE * normal_length * center_scale
+    }) {
+        return None;
+    }
+    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center)?;
+    for (circle, polygon) in circle_loops.iter().zip(polygons) {
+        let [first, second] = polygon.as_slice() else {
+            return None;
+        };
+        if [first[0], first[1], second[0], second[1]]
+            .into_iter()
+            .any(|value| !value.is_finite())
+        {
+            return None;
+        }
+        let first_delta = [first[0] - center_uv.u, first[1] - center_uv.v];
+        let second_delta = [second[0] - center_uv.u, second[1] - center_uv.v];
+        let radius_squared = circle.radius * circle.radius;
+        let first_radius_squared =
+            first_delta[0].mul_add(first_delta[0], first_delta[1] * first_delta[1]);
+        let second_radius_squared =
+            second_delta[0].mul_add(second_delta[0], second_delta[1] * second_delta[1]);
+        let endpoints_dot =
+            first_delta[0].mul_add(second_delta[0], first_delta[1] * second_delta[1]);
+        if !scalar_values_agree(first_radius_squared, radius_squared)
+            || !scalar_values_agree(second_radius_squared, radius_squared)
+            || !scalar_values_agree(endpoints_dot, -radius_squared)
+        {
+            return None;
+        }
+    }
+    if circle_loops.iter().enumerate().any(|(index, first)| {
+        circle_loops
+            .iter()
+            .skip(index + 1)
+            .any(|second| scalar_values_agree(first.radius, second.radius))
+    }) {
+        return None;
+    }
+    let mut order = (0..loops.len()).collect::<Vec<_>>();
+    order.sort_by(|first, second| {
+        circle_loops[*second]
+            .radius
+            .total_cmp(&circle_loops[*first].radius)
+    });
+    Some(order.into_iter().map(|index| loops[index]).collect())
+}
+
 fn native_parameter_loop_polygon(
     lp: &crate::topology::Loop,
     face_id: u32,
@@ -175,6 +364,7 @@ fn native_parameter_loop_polygon(
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
+    typed_nonlinear_curve_ids: &BTreeSet<u32>,
 ) -> Option<Vec<[f64; 2]>> {
     let segments = lp
         .half_edges
@@ -192,6 +382,15 @@ fn native_parameter_loop_polygon(
         })
         .collect::<Option<Vec<_>>>()?;
     if segments.len() < 3
+        && (segments.len() != 2
+            || lp.half_edges[0].curve_id == lp.half_edges[1].curve_id
+            || lp
+                .half_edges
+                .iter()
+                .any(|half_edge| !typed_nonlinear_curve_ids.contains(&half_edge.curve_id))
+            || segments
+                .iter()
+                .any(|segment| parameter_points_agree(segment[0], segment[1])))
         || segments
             .iter()
             .flatten()
@@ -208,12 +407,13 @@ fn native_parameter_loop_polygon(
 }
 
 fn ordered_native_parameter_face_loops<'a>(
-    loops: Vec<&'a crate::topology::Loop>,
+    loops: &[&'a crate::topology::Loop],
     face_id: u32,
     surface: &SurfaceGeometry,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
+    curve_evidence: NativeCurveEvidence<'_>,
 ) -> Option<Vec<&'a crate::topology::Loop>> {
     let polygons = loops
         .iter()
@@ -225,10 +425,13 @@ fn ordered_native_parameter_face_loops<'a>(
                 incidence,
                 solved_vertices,
                 native_pcurves,
+                curve_evidence.typed_nonlinear_curve_ids,
             )
         })
         .collect::<Option<Vec<_>>>()?;
-    ordered_parameter_face_loops(loops, &polygons)
+    ordered_parameter_face_loops(loops.to_owned(), &polygons).or_else(|| {
+        ordered_two_edge_circle_loops(loops, &polygons, surface, curve_evidence.model_curves)
+    })
 }
 
 #[cfg(test)]
@@ -341,6 +544,7 @@ pub(in super::super) fn transfer_native_brep(
             (*face_id, count)
         })
         .collect::<BTreeMap<_, _>>();
+    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir);
     let admitted_face_ids = face_orientations
         .keys()
         .copied()
@@ -362,6 +566,32 @@ pub(in super::super) fn transfer_native_brep(
                         .all(|half_edge| admitted_edge_curves.contains(&half_edge.curve_id))
                 })
                 .then_some(())?;
+            let two_edge_loops_are_proven =
+                loops
+                    .iter()
+                    .filter(|lp| lp.half_edges.len() == 2)
+                    .all(|lp| {
+                        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                        let Some(surface) = exactly_one(
+                            ir.model
+                                .surfaces
+                                .iter()
+                                .filter(|candidate| candidate.id == surface_id),
+                        ) else {
+                            return false;
+                        };
+                        native_parameter_loop_polygon(
+                            lp,
+                            face_id,
+                            &surface.geometry,
+                            &incidence,
+                            &solved_vertices,
+                            &native_pcurves,
+                            &typed_nonlinear_curve_ids,
+                        )
+                        .is_some()
+                    });
+            two_edge_loops_are_proven.then_some(())?;
             let ordered = ordered_face_loops(
                 loops.clone(),
                 planes.get(&face_id).copied(),
@@ -377,12 +607,16 @@ pub(in super::super) fn transfer_native_brep(
                         .filter(|candidate| candidate.id == surface_id),
                 )?;
                 ordered_native_parameter_face_loops(
-                    loops,
+                    &loops,
                     face_id,
                     &surface.geometry,
                     &incidence,
                     &solved_vertices,
                     &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                        model_curves: &ir.model.curves,
+                    },
                 )
             })?;
             Some((face_id, ordered))

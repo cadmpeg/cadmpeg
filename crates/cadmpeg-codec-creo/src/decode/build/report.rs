@@ -141,8 +141,8 @@ pub(in super::super) fn build_report(
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
         "General model B-rep transfer remains incomplete. Native face components transfer \
          when every boundary edge has solved vertex orbits, face orientation is unique, and \
-         every loop is complete; a multi-loop planar face additionally requires one strict \
-         containment outer boundary. Selected \
+         every loop is complete; a multi-loop face additionally requires strict parameter-space \
+         containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected \
          cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
          a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
          square cap outline establishes the complete axis placement and radius, or a compact \
