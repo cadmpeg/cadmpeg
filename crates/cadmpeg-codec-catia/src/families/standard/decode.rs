@@ -1083,7 +1083,6 @@ pub(crate) fn try_decode_standard(
         .iter()
         .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
         .collect::<Vec<_>>();
-
     let mut surfaces = Vec::new();
     let mut surface_annotations = Vec::new();
     let mut face_bindings = Vec::new();
