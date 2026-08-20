@@ -2105,7 +2105,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
-    let (model_name, model_name_offset) =
+    let (mut model_name, mut model_name_offset) =
         model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
@@ -2148,6 +2148,15 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             })
         }));
         framing.persistence = legacy::scan(&data, scopes);
+    }
+    if model_name.is_none() {
+        if let Some((name, offset)) = legacy_ascii
+            .as_ref()
+            .and_then(|framing| framing.persistence.model_name())
+        {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
     }
     let expanded_sections = expanded_sections(&data, &sections);
     let double_xar_tables = expanded_sections

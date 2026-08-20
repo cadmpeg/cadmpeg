@@ -380,6 +380,54 @@ pub struct Persistence {
 }
 
 impl Persistence {
+    /// Resolve one unambiguous native model identity from legacy string rows.
+    ///
+    /// A legacy persistence tree can carry `model_name` in more than one
+    /// object, including null placeholders on view records. Prefer a
+    /// non-empty value owned by a root `Solid` object. If that role is absent,
+    /// accept one distinct non-empty value across the remaining rows; distinct
+    /// identities remain unresolved.
+    pub fn model_name(&self) -> Option<(String, usize)> {
+        let objects = self
+            .objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<BTreeMap<_, _>>();
+        let mut all = BTreeMap::<String, usize>::new();
+        let mut preferred = BTreeMap::<String, usize>::new();
+        for record in self
+            .string_values
+            .iter()
+            .filter(|record| record.name == "model_name")
+        {
+            let StringPayload::Scalar {
+                value: StringValue::Utf8 { text },
+            } = &record.payload
+            else {
+                continue;
+            };
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            all.entry(text.to_string()).or_insert(record.offset);
+            let is_root_solid = record
+                .parent
+                .as_deref()
+                .and_then(|parent| objects.get(parent))
+                .is_some_and(|object| {
+                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
+                });
+            if is_root_solid {
+                preferred.entry(text.to_string()).or_insert(record.offset);
+            }
+        }
+        let selected = if preferred.is_empty() { all } else { preferred };
+        let mut values = selected.into_iter();
+        let first = values.next()?;
+        values.next().is_none().then_some(first)
+    }
+
     /// Number of unique local attribute declarations across all scopes.
     pub fn declaration_count(&self) -> usize {
         self.scopes
