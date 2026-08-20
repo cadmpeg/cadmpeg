@@ -751,16 +751,21 @@ impl Graph {
     /// authoritative. Invalidate the identity instead of ranking candidates
     /// by topology shape, reference counts, or scan position.
     fn select_unique_candidates(candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
-        let mut by_key = BTreeMap::<(u8, u32), Vec<NodeCandidate>>::new();
+        let mut by_key = BTreeMap::<(u8, u32), Option<NodeCandidate>>::new();
         for node in candidates {
-            by_key.entry((node.kind, node.xmt)).or_default().push(node);
+            match by_key.entry((node.kind, node.xmt)) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(node));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    // A duplicate identity is invalid. Retain only the fact
+                    // that it is ambiguous; do not retain every overlapping
+                    // physical interpretation of the same identity.
+                    entry.insert(None);
+                }
+            }
         }
-        by_key
-            .into_values()
-            .filter_map(|mut nodes| {
-                (nodes.len() == 1).then(|| nodes.pop().expect("candidate length is one"))
-            })
-            .collect()
+        by_key.into_values().flatten().collect()
     }
 
     /// Discard overlapping candidates when no serialized ownership boundary
