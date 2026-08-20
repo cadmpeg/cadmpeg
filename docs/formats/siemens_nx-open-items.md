@@ -510,7 +510,16 @@ until one unique endpoint-role relation is serialized.
 
 **Need.** We must know ownership and field roles to attach the state to the correct operation.
 
-**Note.** Commit `80222d179` removed this item from the ledger without a serialized witness; its relevant change is documentation and common-frame handling, not an independent ownership record. Matching the frame shape across synthetic operations does not prove which operation owns an embedded frame or the meaning of every lane. The item is reopened.
+**Conflict.** The bounded operation record owns the serialized frame span and
+the frame ordinal preserves byte order. A record with multiple common frames
+does not serialize a nested semantic operation owner for each frame. The
+state lane assigns only the four documented fields; no additional role is
+encoded by the frame prefix or terminal link.
+
+**Note.** Common frames remain attached to their bounded operation record with
+all raw state bytes and typed fields that have settled meanings. No frame is
+assigned to a nested operation or a new state field without an independent
+owner relation.
 
 ### OM-10. Operation suppression fields
 
