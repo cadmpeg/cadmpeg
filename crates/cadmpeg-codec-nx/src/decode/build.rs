@@ -1236,7 +1236,7 @@ pub(crate) fn topology_body_node_ids(
         .collect();
     body_xmts
         .into_iter()
-        .map(|body_xmt| {
+        .filter_map(|body_xmt| {
             let shells: BTreeSet<_> = graph
                 .of_kind(13)
                 .filter(|shell| {
@@ -1278,23 +1278,38 @@ pub(crate) fn topology_body_node_ids(
                 .iter()
                 .filter_map(|fin| fin.fin_fields().map(|fields| fields.vertex))
                 .collect();
-            let ids = faces
+            let face_ids = faces
+                .iter()
+                .map(|face| face.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let edges = graph
+                .of_kind(16)
+                .filter(|edge| edge_xmts.contains(&edge.xmt))
+                .collect::<Vec<_>>();
+            if edges.len() != edge_xmts.len() {
+                return None;
+            }
+            let edge_ids = edges
+                .iter()
+                .map(|edge| edge.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let vertices = graph
+                .of_kind(18)
+                .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
+                .collect::<Vec<_>>();
+            if vertices.len() != vertex_xmts.len() {
+                return None;
+            }
+            let vertex_ids = vertices
+                .iter()
+                .map(|vertex| vertex.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let ids = face_ids
                 .into_iter()
-                .filter_map(|face| face.u32_at(4))
-                .chain(
-                    graph
-                        .of_kind(16)
-                        .filter(|edge| edge_xmts.contains(&edge.xmt))
-                        .filter_map(|edge| edge.u32_at(4)),
-                )
-                .chain(
-                    graph
-                        .of_kind(18)
-                        .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
-                        .filter_map(|vertex| vertex.u32_at(4)),
-                )
+                .chain(edge_ids)
+                .chain(vertex_ids)
                 .collect();
-            (BodyId(format!("{prefix}:body#{body_xmt}")), ids)
+            Some((BodyId(format!("{prefix}:body#{body_xmt}")), ids))
         })
         .collect()
 }
