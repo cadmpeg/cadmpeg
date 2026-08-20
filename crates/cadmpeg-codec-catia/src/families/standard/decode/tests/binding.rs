@@ -736,6 +736,48 @@ fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
 }
 
 #[test]
+fn cached_face_point_membership_matches_the_source_predicate() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.extend([
+        Point {
+            id: PointId("point-0".into()),
+            position: Point3::new(1.0, 2.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("point-1".into()),
+            position: Point3::new(1.0, 2.0, 1.0),
+            source_object: None,
+        },
+    ]);
+    let surface_id = SurfaceId("surface-0".into());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let bindings = [(surface_id.clone(), false, 0)];
+    let surface_indices = HashMap::from([(surface_id, 0)]);
+    let membership = standard_face_point_membership(&ir, &bindings, &surface_indices, None)
+        .expect("complete face membership");
+
+    assert!(membership[0][0]);
+    assert!(!membership[0][1]);
+    assert!(membership[0].iter().enumerate().all(|(point, cached)| {
+        *cached
+            == point_on_standard_face(
+                ir.model.points[point].position,
+                &ir.model.surfaces[0].geometry,
+                None,
+            )
+    }));
+}
+
+#[test]
 fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     let bounds = StandardFaceBounds {
         aabb_center: [2.0, 3.0, 4.0],

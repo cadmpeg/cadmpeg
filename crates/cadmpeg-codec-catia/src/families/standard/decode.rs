@@ -3046,6 +3046,8 @@ fn attach_standard_topology(
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
+    let face_point_membership =
+        standard_face_point_membership(ir, bindings, &surface_indices, face_bounds);
     let limit_curve_bindings =
         standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
     let mut ordered_endpoint_pairs =
@@ -3771,6 +3773,27 @@ fn attach_standard_topology(
                     || !limit_curve_bindings[edge].is_empty()
             })
             .collect::<Vec<_>>();
+        let point_on_face = |face: usize, point: usize| {
+            if let Some(membership) = face_point_membership.as_ref() {
+                return membership
+                    .get(face)
+                    .and_then(|points| points.get(point))
+                    .copied()
+                    .unwrap_or(false);
+            }
+            let Some(position) = ir.model.points.get(point).map(|point| point.position) else {
+                return false;
+            };
+            face_surface(ir, bindings, &surface_indices, face).is_some_and(|surface| {
+                point_on_standard_face(
+                    position,
+                    &surface.geometry,
+                    face_bounds
+                        .and_then(|bounds| bounds.get(face).copied())
+                        .flatten(),
+                )
+            })
+        };
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
@@ -3803,22 +3826,10 @@ fn attach_standard_topology(
                             return true;
                         };
                         pair.iter().all(|point| {
-                            let Some(position) =
-                                ir.model.points.get(*point).map(|point| point.position)
-                            else {
-                                return false;
-                            };
-                            selected_supports[edge].faces.iter().all(|face| {
-                                face_surface(ir, bindings, &surface_indices, *face).is_some_and(
-                                    |surface| {
-                                        point_on_standard_face(
-                                            position,
-                                            &surface.geometry,
-                                            face_bounds.as_ref().and_then(|bounds| bounds[*face]),
-                                        )
-                                    },
-                                )
-                            })
+                            selected_supports[edge]
+                                .faces
+                                .iter()
+                                .all(|face| point_on_face(*face, *point))
                         })
                     })
                 };
@@ -6185,6 +6196,36 @@ pub(crate) fn face_surface<'a>(
 ) -> Option<&'a Surface> {
     let id = &bindings.get(face)?.0;
     ir.model.surfaces.get(*surface_indices.get(id)?)
+}
+
+/// Cache the exact face-membership predicate used by endpoint search.
+///
+/// Face geometry and standard face bounds are immutable while a topology
+/// candidate is searched. The cache changes only lookup cost; allocation
+/// failure returns `None`, and callers retain the original predicate.
+pub(crate) fn standard_face_point_membership(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+) -> Option<Vec<Vec<bool>>> {
+    bindings
+        .iter()
+        .enumerate()
+        .map(|(face, _)| {
+            let surface = face_surface(ir, bindings, surface_indices, face)?;
+            let bounds = face_bounds
+                .and_then(|bounds| bounds.get(face).copied())
+                .flatten();
+            let mut membership =
+                alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
+            for (point, candidate) in ir.model.points.iter().enumerate() {
+                membership[point] =
+                    point_on_standard_face(candidate.position, &surface.geometry, bounds);
+            }
+            Some(membership)
+        })
+        .collect()
 }
 
 pub(crate) fn point_on_standard_face(
