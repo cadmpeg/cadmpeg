@@ -271,6 +271,65 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
 }
 
 #[test]
+fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
+    for knot_type in 1u8..=6 {
+        let mut surface = bspline_partition_stream();
+        let surface_descriptor = surface
+            .windows(4)
+            .position(|window| window == [0, 126, 0, 20])
+            .expect("surface descriptor");
+        surface[surface_descriptor + 18] = knot_type;
+        surface[surface_descriptor + 19] = knot_type;
+        let [surface] = crate::nurbs::surfaces(&surface)
+            .try_into()
+            .expect("one surface");
+        let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+            panic!("expected NURBS surface");
+        };
+        assert!(!surface.u_periodic && !surface.v_periodic);
+
+        let mut curve = bspline_partition_stream();
+        let curve_descriptor = curve
+            .windows(4)
+            .position(|window| window == [0, 136, 0, 40])
+            .expect("curve descriptor");
+        curve[curve_descriptor + 16] = knot_type;
+        let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
+        let CurveGeometry::Nurbs(curve) = curve.geometry else {
+            panic!("expected NURBS curve");
+        };
+        assert!(!curve.periodic);
+        assert!(curve.weights.is_none());
+
+        let mut pcurve = bspline_partition_stream();
+        let pcurve_descriptor = pcurve
+            .windows(4)
+            .position(|window| window == [0, 136, 0, 40])
+            .expect("curve descriptor");
+        put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+        pcurve[pcurve_descriptor + 16] = knot_type;
+        let payload = pcurve
+            .windows(4)
+            .position(|window| window == [0, 135, 0, 41])
+            .expect("pcurve payload");
+        for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+            put_f64(&mut pcurve, payload + 15 + index * 8, value);
+        }
+        let [pcurve] = crate::nurbs::pcurves(&pcurve)
+            .try_into()
+            .expect("one pcurve");
+        let PcurveGeometry::Nurbs {
+            periodic, weights, ..
+        } = pcurve.geometry
+        else {
+            panic!("expected NURBS pcurve");
+        };
+        assert!(!periodic);
+        assert_eq!(weights.as_deref(), Some([1.0, 1.0].as_slice()));
+    }
+}
+
+#[test]
 fn nurbs_scanners_defer_unreferenced_lane_materialization() {
     const ARRAY_CANDIDATES: usize = 128;
     const ARRAY_COUNT: usize = u16::MAX as usize;
