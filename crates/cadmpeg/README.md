@@ -231,8 +231,8 @@ error count and exits 1 on the same `error` and `blocking` findings.
 `query` projects one named view from a JSON artifact without `jq`: it reads a
 command report, a decoded CADIR document, or a `<stem>.fidelity.json` decode
 sidecar, detects which one it was given, and prints the view. Aggregate views
-print tab-separated rows with a header; `item` prints pretty-printed JSON
-records.
+print tab-separated rows with a header; `item`, `graph`, and `join` print
+pretty-printed JSON records.
 
 ```sh
 cadmpeg check bracket.f3d -o report.json
@@ -241,9 +241,13 @@ cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json model.faces FACE_ID  # one record; alias: record
-cadmpeg query summary report.json      # artifact kind and section counts
 cadmpeg query schema model.features    # the arena's IR record type (no FILE)
 cadmpeg query schema part.cadir.json native.nx.class_definitions  # inferred native fields
+cadmpeg query graph bracket.cadir.json model.features ID --hops 1
+cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --reverse
+cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \
+  --left-key native_ref --right-key id
+cadmpeg query summary report.json      # artifact kind and section counts
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
 cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 ```
@@ -254,15 +258,27 @@ cadmpeg query fidelity part.cadir.fidelity.json --stream S -o s.bin  # extract
 (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
 `model.<arena>`). It matches the JSON-string `id` field exactly or as a unique
 suffix, accepts several IDs in one call, and with no ID prints the first
-record (`--head N` for the first N). Follow `links` and run `item` again to
-join. `--fields a,b.c` projects those paths as TSV (projection only — no
-`--where`). `schema` with no file prints the IR's compile-time record type
+record (`--head N` for the first N). `--fields a,b.c` projects those paths as TSV
+(projection only — no `--where`). `graph` starts from the same FILE ARENA
+[ID...] selection and walks identity references: a string is an edge when it
+equals another record's `id` in this document. `--hops N` (default 1) is the
+maximum edge length; `0` emits only the starts. `--follow PATH,...` keeps
+those field paths only (exact match). `--reverse` walks incoming references.
+`--max-paths` (default 10000) truncates with a note on standard error and
+still exits 0. `join` matches two arenas on required `--left-key` and
+`--right-key` paths (`matched` inner join, `unmatched` left anti-join, `all`
+grouped rights). `--right-file` joins two documents by key value only. `schema`
+with no file prints the IR's compile-time record type
 for a model arena — every field, whether it is required, and every variant of
 a tagged union — or, bare, every model arena and its element type (`sidecar`
 prints the decode-sidecar shape). `schema FILE ARENA` infers native (and
 other) arena fields from the records: each dotted path's presence, JSON type,
-and an example. An unknown arena name lists every addressable arena and its
-entry count. Which arenas a document actually has also comes from `counts`.
+an example, and a `relation` column (`id` for the record identity, `ref` /
+`refs` for fields whose values resolve to a record id in this document or
+match the identity grammar). Use `relation=ref|refs` paths as graph
+`--follow` fields and as join keys. An unknown arena name lists every
+addressable arena and its entry count. Which arenas a document actually has
+also comes from `counts`.
 `fidelity` lists a decode sidecar's retained source records (the extraction
 address space) and, with `--stream NAME`, reassembles that stream's retained
 bytes byte-exactly into `-o FILE` — refusing gapped extents and extent-only

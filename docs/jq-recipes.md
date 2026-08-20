@@ -3,10 +3,48 @@
 Reach for `cadmpeg query` first: `summary` names the artifact kind,
 `counts` lists the arenas this document actually has, and
 `item FILE ARENA [ID...]` fetches records (`--fields a,b.c` projects TSV
-with empty cells for absent values). jq is for what those nouns do not
-express: field predicates, aggregation, and cross-arena joins. These
+with empty cells for absent values). Walk identity references with
+`query graph FILE ARENA [ID...]` (`--hops`, `--follow`, `--reverse`).
+Join two arenas with `query join FILE LEFT RIGHT --left-key PATH
+--right-key PATH`. Discover those paths with `query schema FILE ARENA`
+(`relation=ref|refs` marks graph `--follow` fields and join keys). jq is
+for field predicates and aggregation after those nouns. These
 recipes exist because every mistake below has been made repeatedly; copy
 the shapes instead of re-deriving them.
+
+## Prefer graph and join
+
+Feature `native_ref` to a native record, after `query schema FILE ARENA`
+shows `native_ref` as `ref`:
+
+```sh
+cadmpeg query join doc.json model.features native.rhino.unknowns \
+  --left-key native_ref --right-key id
+```
+
+Walk a nested parameter object, after schema shows
+`definition.parameters.segment_0_object` as `ref`:
+
+```sh
+cadmpeg query graph doc.json model.features ID \
+  --follow definition.parameters.segment_0_object --hops 1
+```
+
+Walk BREP children (`body.regions` → `region.shells` → `shell.faces`):
+
+```sh
+cadmpeg query graph doc.json model.bodies BODY_ID --hops 3
+```
+
+Incoming references to one record:
+
+```sh
+cadmpeg query graph doc.json model.faces FACE_ID --reverse --hops 1
+```
+
+jq remains for predicates (`select(.kind == "extrude")`) and
+aggregates that `query` does not name. The recipes below are that
+fallback.
 
 ## Ground rules
 

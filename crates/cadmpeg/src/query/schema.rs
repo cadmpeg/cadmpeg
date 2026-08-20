@@ -5,7 +5,7 @@
 //! generated from the `cadmpeg-ir` derives: every field, which are
 //! optional, and every variant of a tagged union. With a CADIR FILE it
 //! infers native (and other) arena fields from the records themselves —
-//! presence, JSON type, and an example per dotted path.
+//! presence, JSON type, an example, and a `relation` column per dotted path.
 
 use std::path::Path;
 

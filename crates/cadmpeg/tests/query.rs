@@ -888,10 +888,10 @@ fn schema_infers_native_fields_from_a_document() {
         .assert()
         .success()
         .stdout(
-            "path\tpresence\ttype\texample\n\
-             feature_id\t2/2\tnumber\t11372\n\
-             id\t2/2\tstring\tcreo:curve#818\n\
-             type_byte\t2/2\tnumber\t8\n",
+            "path\tpresence\ttype\texample\trelation\n\
+             feature_id\t2/2\tnumber\t11372\t\n\
+             id\t2/2\tstring\tcreo:curve#818\tid\n\
+             type_byte\t2/2\tnumber\t8\t\n",
         )
         .stderr(predicate::str::contains(
             "inferred from 2 records in native.creo.curve_parameters",
@@ -904,7 +904,7 @@ fn schema_infers_native_fields_from_a_document() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.starts_with("path\tpresence\ttype\texample\n"),
+        stdout.starts_with("path\tpresence\ttype\texample\trelation\n"),
         "{stdout}"
     );
     assert!(
@@ -915,6 +915,10 @@ fn schema_infers_native_fields_from_a_document() {
     assert!(stdout.contains("meta.tag\t4/4\tstring\ta"), "{stdout}");
     assert!(stdout.contains("links\t1/4\tarray\t[1,2]"), "{stdout}");
     assert!(!stdout.contains("links.0"), "{stdout}");
+    assert!(
+        stdout.contains("id\t4/4\tstring\tns:sketch_entity#offset:1299062:skamp:2\tid"),
+        "{stdout}"
+    );
 
     let json = cadmpeg()
         .args([
@@ -937,6 +941,9 @@ fn schema_infers_native_fields_from_a_document() {
     assert_eq!(fields[0]["path"], "feature_id");
     assert_eq!(fields[0]["present"], 2);
     assert_eq!(fields[0]["type"], "number");
+    assert_eq!(fields[0]["relation"], serde_json::Value::Null);
+    assert_eq!(fields[1]["path"], "id");
+    assert_eq!(fields[1]["relation"], "id");
 }
 
 #[test]
@@ -976,7 +983,7 @@ fn schema_document_unknown_arena_lists_counts() {
         .args(["query", "schema", path, "model.empty_arena"])
         .assert()
         .success()
-        .stdout("path\tpresence\ttype\texample\n")
+        .stdout("path\tpresence\ttype\texample\trelation\n")
         .stderr(predicate::str::contains("(arena is empty)"));
 
     let report = write(dir.path(), "report.json", CHECK_REPORT);

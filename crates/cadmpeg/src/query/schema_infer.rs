@@ -3,23 +3,24 @@
 //!
 //! Native arena records have no compile-time JSON Schema in this binary.
 //! This view walks every record in the named arena and reports each dotted
-//! path's presence, JSON type(s), and a truncated example — the inventory
-//! `--fields` guessing reconstructed from empty-path errors.
+//! path's presence, JSON type(s), a truncated example, and whether the
+//! path holds the record identity (`id`) or identity references
+//! (`ref` / `refs`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use serde_json::Value;
 
-use super::item::{field_cell, snapshot_arena, ArenaTarget};
+use cadmpeg_ir::ids::is_valid_identity;
+
+use super::document::CadirDocument;
+use super::item::{field_cell, ArenaTarget};
 use super::{cell, print_json, Artifact};
 
 /// Cap on the example cell so a byte array does not flood the table.
 const EXAMPLE_MAX: usize = 80;
-
-/// Impossible model arena name: matches nothing, so the walk only inventories.
-const INVENTORY_ONLY: &str = "";
 
 /// Infers a field table from a decoded CADIR document.
 pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
@@ -42,53 +43,52 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
         ),
     }
 
-    let text = std::str::from_utf8(&bytes)
-        .with_context(|| format!("{} is not valid UTF-8", path.display()))?;
+    let doc = CadirDocument::from_bytes(&bytes, path)?;
 
     let Some(spec) = arena else {
-        let snap = snapshot_arena(
-            text,
-            &ArenaTarget::Model {
-                arena: INVENTORY_ONLY.to_owned(),
-            },
-        )?;
-        bail!("{}", need_arena_message(&snap.addressable));
+        bail!("{}", need_arena_message(&doc.addressable));
     };
 
     let target = ArenaTarget::parse(spec)?;
-    let snap = snapshot_arena(text, &target)?;
-    if !snap.found_array {
-        bail!("{}", unknown_arena_message(&target, &snap.addressable));
-    }
+    let Some(arena_rec) = doc
+        .arenas
+        .iter()
+        .find(|arena| arena.dotted == target.dotted())
+    else {
+        bail!("{}", unknown_arena_message(&target, &doc.addressable));
+    };
 
-    let rows = infer_fields(&snap.records);
+    let entry_count = arena_rec.records.len() as u64;
+    let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
         print_json(
             "schema",
-            &json_payload(&target.dotted(), snap.entry_count, &rows),
+            &json_payload(&target.dotted(), entry_count, &rows),
         );
         return Ok(());
     }
-    println!("path\tpresence\ttype\texample");
+    println!("path\tpresence\ttype\texample\trelation");
     for row in &rows {
         println!(
-            "{}\t{}/{}\t{}\t{}",
+            "{}\t{}/{}\t{}\t{}\t{}",
             cell(&row.path),
             row.present,
-            snap.entry_count,
+            entry_count,
             cell(&row.type_label),
-            cell(&row.example)
+            cell(&row.example),
+            row.relation.unwrap_or("")
         );
     }
-    if snap.entry_count == 0 {
+    if entry_count == 0 {
         eprintln!("(arena is empty)");
     } else {
         eprintln!(
             "inferred from {} records in {}",
-            snap.entry_count,
+            entry_count,
             target.dotted()
         );
     }
+    eprintln!("relation=ref|refs paths are graph --follow fields and join keys");
     Ok(())
 }
 
@@ -97,6 +97,7 @@ struct FieldRow {
     present: u64,
     type_label: String,
     example: String,
+    relation: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -136,55 +137,111 @@ struct PathStat {
     present: u64,
     types: BTreeSet<JsonType>,
     example: Option<String>,
+    strings: BTreeSet<String>,
 }
 
-fn infer_fields(records: &[Value]) -> Vec<FieldRow> {
+fn infer_fields(records: &[Value], doc_ids: &BTreeSet<String>) -> Vec<FieldRow> {
     let mut stats: BTreeMap<String, PathStat> = BTreeMap::new();
     for record in records {
         ingest_record(&mut stats, record);
     }
     stats
         .into_iter()
-        .map(|(path, stat)| FieldRow {
-            path,
-            present: stat.present,
-            type_label: stat
-                .types
-                .iter()
-                .map(|kind| kind.as_str())
-                .collect::<Vec<_>>()
-                .join("|"),
-            example: stat.example.unwrap_or_default(),
+        .map(|(path, stat)| {
+            let relation = relation_of(&path, &stat, doc_ids);
+            FieldRow {
+                path,
+                present: stat.present,
+                type_label: stat
+                    .types
+                    .iter()
+                    .map(|kind| kind.as_str())
+                    .collect::<Vec<_>>()
+                    .join("|"),
+                example: stat.example.unwrap_or_default(),
+                relation,
+            }
         })
         .collect()
 }
 
+fn relation_of(path: &str, stat: &PathStat, doc_ids: &BTreeSet<String>) -> Option<&'static str> {
+    let is_ref = |s: &str| doc_ids.contains(s) || is_valid_identity(s);
+    if path == "id" && stat.types.contains(&JsonType::String) {
+        return Some("id");
+    }
+    if stat.types.contains(&JsonType::Array) && stat.strings.iter().any(|s| is_ref(s)) {
+        return Some("refs");
+    }
+    if stat.types.contains(&JsonType::String) && stat.strings.iter().any(|s| is_ref(s)) {
+        return Some("ref");
+    }
+    None
+}
+
 fn ingest_record(stats: &mut BTreeMap<String, PathStat>, value: &Value) {
+    let mut seen = BTreeSet::new();
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                ingest_node(stats, key, child);
+                ingest_node(stats, key, child, &mut seen);
             }
         }
         Value::Null => {}
-        other => ingest_node(stats, ".", other),
+        other => ingest_node(stats, ".", other, &mut seen),
     }
 }
 
-fn ingest_node(stats: &mut BTreeMap<String, PathStat>, path: &str, value: &Value) {
+fn ingest_node(
+    stats: &mut BTreeMap<String, PathStat>,
+    path: &str,
+    value: &Value,
+    seen: &mut BTreeSet<String>,
+) {
     let Some(kind) = JsonType::of(value) else {
         return;
     };
-    let stat = stats.entry(path.to_owned()).or_default();
-    stat.present += 1;
-    stat.types.insert(kind);
-    if stat.example.is_none() {
-        stat.example = Some(example_cell(value));
-    }
-    if let Value::Object(map) = value {
-        for (key, child) in map {
-            ingest_node(stats, &format!("{path}.{key}"), child);
+    {
+        let first = seen.insert(path.to_owned());
+        let stat = stats.entry(path.to_owned()).or_default();
+        if first {
+            stat.present += 1;
         }
+        stat.types.insert(kind);
+        if stat.example.is_none() {
+            stat.example = Some(example_cell(value));
+        }
+        match value {
+            Value::String(s) => {
+                stat.strings.insert(s.clone());
+            }
+            Value::Array(items) => {
+                for item in items {
+                    if let Value::String(s) = item {
+                        stat.strings.insert(s.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                ingest_node(stats, &format!("{path}.{key}"), child, seen);
+            }
+        }
+        Value::Array(items) => {
+            // Index-free nested paths, matching graph `--follow` (`pcurves.pcurve`).
+            for item in items {
+                if let Value::Object(map) = item {
+                    for (key, child) in map {
+                        ingest_node(stats, &format!("{path}.{key}"), child, seen);
+                    }
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -214,6 +271,7 @@ fn json_payload(arena: &str, records: u64, rows: &[FieldRow]) -> Value {
                 "records": records,
                 "type": row.type_label,
                 "example": row.example,
+                "relation": row.relation,
             })
         })
         .collect();
@@ -283,7 +341,7 @@ mod tests {
             }),
             json!(null),
         ];
-        let rows = infer_fields(&records);
+        let rows = infer_fields(&records, &BTreeSet::new());
         let by_path: BTreeMap<&str, &FieldRow> =
             rows.iter().map(|row| (row.path.as_str(), row)).collect();
 
@@ -309,7 +367,7 @@ mod tests {
     #[test]
     fn mixed_types_join_and_null_is_absent() {
         let records = vec![json!({"x": 1}), json!({"x": "a"}), json!({"x": null})];
-        let rows = infer_fields(&records);
+        let rows = infer_fields(&records, &BTreeSet::new());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].path, "x");
         assert_eq!(rows[0].present, 2);
@@ -319,7 +377,7 @@ mod tests {
 
     #[test]
     fn root_non_object_uses_dot_path() {
-        let rows = infer_fields(&[json!(1), json!(2)]);
+        let rows = infer_fields(&[json!(1), json!(2)], &BTreeSet::new());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].path, ".");
         assert_eq!(rows[0].present, 2);
@@ -329,8 +387,66 @@ mod tests {
     #[test]
     fn example_truncates_long_values() {
         let long = "n".repeat(EXAMPLE_MAX + 20);
-        let rows = infer_fields(&[json!({ "name": long })]);
+        let rows = infer_fields(&[json!({ "name": long })], &BTreeSet::new());
         assert!(rows[0].example.ends_with("..."));
         assert_eq!(rows[0].example.chars().count(), EXAMPLE_MAX + 3);
+    }
+
+    #[test]
+    fn schema_relation_marks_id_ref_refs_and_empty() {
+        let records = vec![json!({
+            "id": "feat#1",
+            "native_ref": "nat#1",
+            "links": ["nat#1", "nat#2"],
+            "numeric_links": [1, 2],
+            "name": "plain",
+            "identity_shaped": "cadmpeg:model:feature#zz",
+            "child": {"id": "not-an-id"}
+        })];
+        let mut doc_ids = BTreeSet::new();
+        doc_ids.insert("feat#1".to_owned());
+        doc_ids.insert("nat#1".to_owned());
+        doc_ids.insert("nat#2".to_owned());
+        let rows = infer_fields(&records, &doc_ids);
+        let by_path: BTreeMap<&str, Option<&'static str>> = rows
+            .iter()
+            .map(|row| (row.path.as_str(), row.relation))
+            .collect();
+        assert_eq!(by_path["id"], Some("id"));
+        assert_eq!(by_path["native_ref"], Some("ref"));
+        assert_eq!(by_path["links"], Some("refs"));
+        assert_eq!(by_path["numeric_links"], None);
+        assert_eq!(by_path["name"], None);
+        assert_eq!(by_path["identity_shaped"], Some("ref"));
+        assert_eq!(by_path["child.id"], None);
+        assert!(!by_path.contains_key("links.0"));
+    }
+
+    #[test]
+    fn array_of_objects_emits_index_free_nested_paths() {
+        let records = vec![json!({
+            "id": "f1",
+            "pcurves": [
+                {"pcurve": "c1", "isoparametric": true},
+                {"pcurve": "c2"}
+            ]
+        })];
+        let mut doc_ids = BTreeSet::new();
+        doc_ids.insert("f1".to_owned());
+        doc_ids.insert("c1".to_owned());
+        doc_ids.insert("c2".to_owned());
+        let rows = infer_fields(&records, &doc_ids);
+        let by_path: BTreeMap<&str, &FieldRow> =
+            rows.iter().map(|row| (row.path.as_str(), row)).collect();
+
+        assert_eq!(by_path["pcurves"].present, 1);
+        assert_eq!(by_path["pcurves"].type_label, "array");
+        assert_eq!(by_path["pcurves"].relation, None);
+        assert_eq!(by_path["pcurves.pcurve"].present, 1);
+        assert_eq!(by_path["pcurves.pcurve"].type_label, "string");
+        assert_eq!(by_path["pcurves.pcurve"].relation, Some("ref"));
+        assert_eq!(by_path["pcurves.isoparametric"].present, 1);
+        assert!(!by_path.contains_key("pcurves.0"));
+        assert!(!by_path.contains_key("pcurves.0.pcurve"));
     }
 }
