@@ -1414,13 +1414,13 @@ fn offset_plane_reference_matches_parallel_frame_at_declared_distance() {
 }
 
 #[test]
-fn constraint_midplane_uses_its_normal_form_equation() {
+fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
     const CLASS: &str = "moConstraintMidPlaneRefplaneData_c";
     let mut payload = vec![0xaa; 19];
     payload.extend(CLASS_MARKER);
     payload.extend((CLASS.len() as u16).to_le_bytes());
     payload.extend(CLASS.as_bytes());
-    payload.extend([0; 8]);
+    payload.extend([1, 2, 3, 4, 5, 6, 7, 8]);
     payload.extend(1.0e-16f64.to_le_bytes());
     payload.extend(0.145f64.to_le_bytes());
     payload.extend(0.0f64.to_le_bytes());

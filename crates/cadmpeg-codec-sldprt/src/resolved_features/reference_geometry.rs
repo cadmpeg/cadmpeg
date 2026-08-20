@@ -2495,9 +2495,7 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
             .then_some(offset + record_len)
         })
         .filter_map(|body| {
-            if payload.get(body..body + 8)?.iter().any(|byte| *byte != 0) {
-                return None;
-            }
+            payload.get(body..body + 8)?;
             let scalar = |relative| {
                 let value = View::f64_le_at(payload, body + relative)?;
                 value.is_finite().then_some(value)
