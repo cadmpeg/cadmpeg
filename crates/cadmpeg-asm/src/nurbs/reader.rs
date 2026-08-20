@@ -120,8 +120,10 @@ pub(crate) fn read_knots(
         multiplicity_offsets.push(*pos + 1);
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
-    let sum: i64 = mults.iter().sum();
-    let n_poles = sum - (degree - 1);
+    let sum = mults
+        .iter()
+        .try_fold(0_i64, |sum, &multiplicity| sum.checked_add(multiplicity))?;
+    let n_poles = sum.checked_sub(degree.checked_sub(1)?)?;
     if !(2..=100_000).contains(&n_poles) {
         return None;
     }
@@ -129,7 +131,7 @@ pub(crate) fn read_knots(
     let mut expanded_run_lengths = Vec::new();
     for (i, (kv, m)) in knots.iter().zip(&mults).enumerate() {
         let extra = i64::from(i == 0 || i == n - 1);
-        let run_length = usize::try_from((*m + extra).max(0)).ok()?;
+        let run_length = usize::try_from(m.checked_add(extra)?.max(0)).ok()?;
         expanded_run_lengths.push(run_length);
         for _ in 0..run_length {
             expanded.push(*kv);

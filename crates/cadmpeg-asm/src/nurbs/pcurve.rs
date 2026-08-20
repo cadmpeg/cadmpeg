@@ -312,14 +312,18 @@ mod width_tests {
 
     /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
     fn curve_block(int_width: usize) -> Vec<u8> {
+        curve_block_with_multiplicities(int_width, &[1, 1])
+    }
+
+    fn curve_block_with_multiplicities(int_width: usize, multiplicities: &[i64]) -> Vec<u8> {
         let mut b = NUBS_MARKER.to_vec();
         push_int(&mut b, 0x04, 1, int_width); // degree
         push_int(&mut b, 0x15, 0, int_width); // open closure
-        push_int(&mut b, 0x04, 2, int_width); // unique knot count
-        push_f64(&mut b, 0.0);
-        push_int(&mut b, 0x04, 1, int_width);
-        push_f64(&mut b, 1.0);
-        push_int(&mut b, 0x04, 1, int_width);
+        push_int(&mut b, 0x04, multiplicities.len() as i64, int_width);
+        for (index, multiplicity) in multiplicities.iter().enumerate() {
+            push_f64(&mut b, index as f64);
+            push_int(&mut b, 0x04, *multiplicity, int_width);
+        }
         for component in [0.0, 0.0, 0.0, 1.0, 2.0, 3.0] {
             push_f64(&mut b, component);
         }
@@ -424,6 +428,23 @@ mod width_tests {
                     .is_none()
             );
         }
+    }
+
+    #[test]
+    fn curve_cache_rejects_overflowing_knot_arithmetic() {
+        assert!(decode_curve_cache(&curve_block_with_multiplicities(8, &[i64::MAX, 1],)).is_none());
+        assert!(decode_curve_cache(&curve_block_with_multiplicities(
+            8,
+            &[i64::MAX, i64::MIN + 1, 2],
+        ))
+        .is_none());
+
+        // The 4-byte stream's largest multiplicity cannot overflow the i64
+        // accumulator, but it must still be rejected by the pole-count bound.
+        assert!(
+            decode_curve_cache(&curve_block_with_multiplicities(4, &[i32::MAX.into(), 1],))
+                .is_none()
+        );
     }
 
     #[test]
