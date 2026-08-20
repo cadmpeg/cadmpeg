@@ -845,10 +845,13 @@ field joins an external-reference record or handle to one FastLoad occurrence
 ordinal. Equal child names, repeated handles, and equal UUID groups do not
 establish that instance-level relation.
 
-**Note.** Preserve the complete child binding and the FastLoad occurrence lane
-as separate native relations. Do not construct neutral occurrences or assign
-placements until a unique child-to-occurrence join and a transform owner are
-decoded.
+**Note.** A complete FastLoad roster produces a nonempty native occurrence
+lane; an empty neutral occurrence arena therefore does not mean that the
+occurrence bytes were skipped. Preserve the complete child binding and the
+FastLoad occurrence lane as separate native relations. A UUID group with equal
+cardinality preserves two ordered sets but does not pair their members. Do not
+construct neutral occurrences or assign placements until a unique
+child-to-occurrence join and a transform owner are decoded.
 
 ### AM-08. Residual `EXTREFSTREAM` tail fields
 
