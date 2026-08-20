@@ -404,7 +404,20 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §7.1 "A `DATUM_PLANE` payload begins" and `siemens_nx.md` §7.1 "A datum-plane object scalar-pair frame is" and `siemens_nx.md` §7.1 "A datum-plane descriptor block is exactly 40 bytes:" define datum-plane branches, resolved blocks, scalar-pair framing, descriptors, and feature identity.
 
-**Need.** We must know the roles to construct the model-space reference plane.
+**Need.** We must know one complete relation that assigns the framed scalar
+pairs and descriptor or object records to a model-space origin, unit normal,
+and in-plane axis.
+
+**Conflict.** The branch indices select descriptor and object blocks but do not
+assign plane-frame roles. Descriptor blocks carry an identity, schema index,
+and label; scalar-pair frames carry two values. Equal descriptor identities
+between `DATUM_PLANE` and `DATUM_CSYS` records do not assign either operation
+as the source of an origin, axis, or normal.
+
+**Note.** A `DatumPlane` definition requires one unique finite origin, normal,
+and in-plane axis with the frame invariants established. Until that relation is
+serialized, the operation remains `DatumPlaneUnresolved` while every admitted
+branch, block, descriptor, and scalar-pair record remains native data.
 
 ### OM-04. `DATUM_CSYS` scalar-pair geometry
 
