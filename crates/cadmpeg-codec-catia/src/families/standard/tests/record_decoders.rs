@@ -875,10 +875,11 @@ fn plane_bounds_record(
 }
 
 #[test]
-fn plane_bounds_withhold_duplicate_tags_and_slack_only_containment() {
+fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
     let duplicate_tag = 0x0001_0203;
     let invalid_tag = 0x0004_0506;
     let valid_tag = 0x0007_0809;
+    let rounded_tag = 0x000a_0b0c;
     let mut bytes = plane_bounds_record(
         duplicate_tag,
         [1.0, 2.0, 3.0],
@@ -907,17 +908,34 @@ fn plane_bounds_withhold_duplicate_tags_and_slack_only_containment() {
         [0.0, 0.0, 5.0],
         2.0,
     ));
+    bytes.extend(plane_bounds_record(
+        rounded_tag,
+        [0.0, 0.0, 50.0],
+        [2.5, 2.5, 0.0],
+        [5.210_867_5e-7, 1.554_135_7e-7, 50.0],
+        2.5,
+    ));
     let normals = HashMap::from([
         (duplicate_tag, [1.0, 0.0, 0.0]),
         (invalid_tag, [0.0, 1.0, 0.0]),
         (valid_tag, [0.0, 0.0, 1.0]),
+        (rounded_tag, [0.0, 0.0, 1.0]),
     ]);
 
     let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
-    assert_eq!(planes.len(), 1);
+    assert_eq!(planes.len(), 2);
     assert_eq!(planes[0].target, valid_tag);
     assert_eq!(planes[0].origin, Point3::new(0.0, 0.0, 5.0));
+    assert_eq!(planes[1].target, rounded_tag);
+    assert_eq!(
+        planes[1].origin,
+        Point3::new(
+            f64::from(5.210_867_5e-7_f32),
+            f64::from(1.554_135_7e-7_f32),
+            50.0,
+        )
+    );
 }
 
 #[test]

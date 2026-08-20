@@ -92,8 +92,20 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
     if values.iter().any(|value| !value.is_finite())
         || values[3..6].iter().any(|extent| *extent < 0.0)
         || values[9] < 0.0
-        || (0..3).any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
     {
+        return None;
+    }
+    if (0..3).any(|axis| {
+        let containment_error = (f64::from(values[axis]) - f64::from(values[6 + axis])).abs()
+            + f64::from(values[3 + axis])
+            - f64::from(values[9]);
+        let rounding_slack = MAX_F32_CONTAINMENT_ULPS
+            * [values[axis], values[6 + axis], values[3 + axis], values[9]]
+                .into_iter()
+                .map(f32_ulp)
+                .fold(0.0, f64::max);
+        containment_error > rounding_slack
+    }) {
         return None;
     }
     Some(StandardFaceBounds {
@@ -114,6 +126,20 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
         ],
         sphere_radius: f64::from(values[9]),
     })
+}
+
+/// Maximum per-coordinate mismatch admitted for independently computed
+/// binary32 bounds before the bounds are considered malformed.
+const MAX_F32_CONTAINMENT_ULPS: f64 = 3.0;
+
+/// Return the spacing between adjacent finite binary32 values at `value`.
+fn f32_ulp(value: f32) -> f64 {
+    let exponent = (value.abs().to_bits() >> 23) & 0xff;
+    if exponent == 0 {
+        f64::from(f32::from_bits(1))
+    } else {
+        2.0_f64.powi(exponent as i32 - 127 - 23)
+    }
 }
 
 /// Read the spatial bounds of one complete face-local surface record.
