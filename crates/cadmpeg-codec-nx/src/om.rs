@@ -6450,7 +6450,6 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         };
         if !is_product_record(bytes.get(table_end..).unwrap_or_default())
             || View::u32_le_at(bytes, index_start) != Some(0)
-            || !seen_record_starts.insert(table_end)
         {
             continue;
         }
@@ -6461,28 +6460,20 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        let mut offsets = Vec::with_capacity(count + 1);
-        for index in 0..=count {
-            let Some(value) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
-            else {
-                offsets.clear();
-                break;
-            };
-            offsets.push(value);
+        if !entity_index_is_valid(bytes, index_start, count, base) {
+            continue;
         }
-        if offsets.len() != count + 1
-            || offsets[1] == 0
-            || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
-            || base
-                .checked_add(offsets[count])
-                .is_none_or(|end| end > bytes.len())
-        {
+        if !seen_record_starts.insert(table_end) {
             continue;
         }
         let mut records = Vec::with_capacity(count - 1);
         for index in 1..count {
-            let start = base + offsets[index];
-            let end = base + offsets[index + 1];
+            let start_offset = entity_index_offset(bytes, index_start, index)
+                .expect("validated entity index remains readable");
+            let end_offset = entity_index_offset(bytes, index_start, index + 1)
+                .expect("validated entity index remains readable");
+            let start = base + start_offset;
+            let end = base + end_offset;
             let Some(payload) = bytes.get(start..end) else {
                 records.clear();
                 break;
@@ -6562,51 +6553,103 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if product_record_count != 1 {
             continue;
         }
-        let mut offsets = Vec::with_capacity(offset_count);
-        for index in 0..offset_count {
-            let Some(offset) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
-            else {
-                offsets.clear();
-                break;
-            };
-            offsets.push(offset);
-        }
-        if offsets.len() != offset_count
-            || offsets[0] < count_offset + 4
-            || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
-            || offsets.last().is_none_or(|end| *end > bytes.len())
-        {
+        if !offset_only_index_is_valid(bytes, index_start, offset_count, count_offset) {
             continue;
         }
-        if !seen_record_starts.insert(offsets[1]) {
+        let first_record = second;
+        if !seen_record_starts.insert(first_record) {
             continue;
         }
-        let records = offsets[1..]
-            .windows(2)
-            .map(|bounds| EntityRecord {
-                object_id: None,
-                object_id_offset: None,
-                offset: bounds[0],
-                bytes: &bytes[bounds[0]..bounds[1]],
+        let records = (0..record_count)
+            .map(|index| {
+                let start = entity_index_offset(bytes, index_start, index + 1)
+                    .expect("validated offset-only index remains readable");
+                let end = entity_index_offset(bytes, index_start, index + 2)
+                    .expect("validated offset-only index remains readable");
+                EntityRecord {
+                    object_id: None,
+                    object_id_offset: None,
+                    offset: start,
+                    bytes: &bytes[start..end],
+                }
             })
             .collect::<Vec<_>>();
         out.push(IndexedSection {
             base: 0,
             entity_index_offset: index_start,
-            object_id_table_offset: offsets[0],
+            object_id_table_offset: first,
             types: type_definitions(bytes, 0, index_start).into(),
             fields: all_field_definitions(bytes, 0, index_start).into(),
             control: Some(EntityRecord {
                 object_id: None,
                 object_id_offset: None,
-                offset: offsets[0],
-                bytes: &bytes[offsets[0]..offsets[1]],
+                offset: first,
+                bytes: &bytes[first..first_record],
             }),
-            column_storage: Some(&bytes[offsets[1]..*offsets.last().expect("nonempty offsets")]),
+            column_storage: Some(&bytes[first_record..last]),
             records: records.into(),
         });
     }
     out
+}
+
+fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option<usize> {
+    let offset = index_start.checked_add(index.checked_mul(4)?)?;
+    usize::try_from(View::u32_le_at(bytes, offset)?).ok()
+}
+
+// Validate candidate offset tables through borrowed words. A count word is
+// only a framing hint; do not allocate an offset table until every word is
+// monotone and its terminal range is in bounds.
+fn entity_index_is_valid(bytes: &[u8], index_start: usize, count: usize, base: usize) -> bool {
+    let Some(mut previous) = entity_index_offset(bytes, index_start, 0) else {
+        return false;
+    };
+    if previous != 0 {
+        return false;
+    }
+    let Some(first) = entity_index_offset(bytes, index_start, 1) else {
+        return false;
+    };
+    if first == 0 {
+        return false;
+    }
+    previous = first;
+    for index in 2..=count {
+        let Some(current) = entity_index_offset(bytes, index_start, index) else {
+            return false;
+        };
+        if current < previous {
+            return false;
+        }
+        previous = current;
+    }
+    base.checked_add(previous)
+        .is_some_and(|end| end <= bytes.len())
+}
+
+fn offset_only_index_is_valid(
+    bytes: &[u8],
+    index_start: usize,
+    offset_count: usize,
+    count_offset: usize,
+) -> bool {
+    let Some(mut previous) = entity_index_offset(bytes, index_start, 0) else {
+        return false;
+    };
+    if previous < count_offset.saturating_add(4) {
+        return false;
+    }
+    for index in 1..offset_count {
+        let Some(current) = entity_index_offset(bytes, index_start, index) else {
+            return false;
+        };
+        if current < previous {
+            return false;
+        }
+        previous = current;
+    }
+    previous <= bytes.len()
 }
 
 /// Parse indexed sections once and retain only their source ranges.
