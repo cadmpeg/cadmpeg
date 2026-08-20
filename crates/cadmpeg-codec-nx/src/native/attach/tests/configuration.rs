@@ -789,6 +789,7 @@ fn operation_source_properties_require_unique_owned_structures() {
         raw_local_ordinal: vec![0x29],
         object_index: Some(65),
         raw_object_index: vec![0x41],
+        data_block: None,
         byte_len: 20,
         source_offset: 101,
         index_source_offsets: [101, 102, 104],
@@ -804,6 +805,7 @@ fn operation_source_properties_require_unique_owned_structures() {
         raw_local_ordinal: vec![0x29],
         object_index: Some(65),
         raw_object_index: vec![0x41],
+        data_block: None,
         source_offset: 117,
         object_index_source_offset: 119,
     };

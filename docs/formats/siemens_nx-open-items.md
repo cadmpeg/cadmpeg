@@ -411,9 +411,9 @@ until one unique endpoint-role relation is serialized.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
-**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. The OM declarations do not provide a relation from an operation feature identity to an active state object. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A common or terminal frame may resolve its nullable object index to one offset-store data block, but that object-storage relation does not provide a relation from an operation feature identity to an active state object. The OM declarations do not provide that operation-to-state relation. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
 
-**Note.** A suppression assignment requires a unique relation from an operation feature identity to a serialized state object and a second relation from that object to a typed state value. A common-frame field, toggle entry, OM declaration, or Parasolid topology attribute without both joins does not assign `suppressed`; operations outside a proven active closure remain unresolved.
+**Note.** A suppression assignment requires a unique relation from an operation feature identity to a serialized state object and a second relation from that object to a typed state value. A common-frame field, resolved data-block target, toggle entry, OM declaration, or Parasolid topology attribute without both joins does not assign `suppressed`; operations outside a proven active closure remain unresolved.
 
 ### OM-11. `DELETE` nullable-reference roles
 

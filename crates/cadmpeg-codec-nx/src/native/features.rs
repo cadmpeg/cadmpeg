@@ -221,6 +221,9 @@ pub struct FeatureOperationCommonFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Exact serialized frame byte length.
     pub byte_len: u64,
     /// Absolute offset of the first compact index token.
@@ -253,6 +256,9 @@ pub struct FeatureOperationTerminalFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
     pub source_offset: u64,
     /// Absolute offset of the object-reference token.
@@ -3121,6 +3127,7 @@ pub fn feature_operation_data_block_references(
 
 /// Decode every exact common frame from bounded feature operations.
 pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -3150,6 +3157,9 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,
                     raw_object_index: frame.raw_object_index,
+                    data_block: frame
+                        .object_index
+                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
                     byte_len: (frame.end_offset - frame.offset) as u64,
                     source_offset: entry_offset + frame.offset as u64,
                     index_source_offsets: frame
@@ -3191,6 +3201,7 @@ pub fn feature_operation_terminal_frames(
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Vec<FeatureOperationTerminalFrame> {
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -3224,6 +3235,9 @@ pub fn feature_operation_terminal_frames(
                 raw_local_ordinal: frame.raw_local_ordinal,
                 object_index: frame.object_index,
                 raw_object_index: frame.raw_object_index,
+                data_block: frame
+                    .object_index
+                    .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
                 source_offset: entry_offset + frame.offset as u64,
                 object_index_source_offset: entry_offset + frame.object_index_offset as u64,
             });

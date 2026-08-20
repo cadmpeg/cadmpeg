@@ -1599,6 +1599,12 @@ false, `01` is true, and another value retains the state lane without a typed
 Boolean value. The sixth and seventh state bytes are the exact two-byte
 `m_splitTrackingData` representation. The eighth state byte is the unsigned
 `m_groupCount`.
+When the nullable object index is non-null and exactly one offset-only store
+contains that ordinal in its indexed block range, the common frame retains the
+corresponding native data-block identity. Otherwise it retains the exact
+object-index lane without a data-block target. A terminal suffix applies the
+same rule to its object index. This data-block relation identifies serialized
+object storage only; it does not assign an operation state or suppression role.
 Legacy module inactivity does not assign feature suppression. A terminal suffix
 links the common frame ending at that suffix. Absence of that link does not
 invalidate the terminal suffix because an outer terminal suffix may follow a

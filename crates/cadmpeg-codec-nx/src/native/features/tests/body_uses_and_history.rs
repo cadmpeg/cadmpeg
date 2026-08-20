@@ -940,3 +940,44 @@ fn operation_common_frame_types_the_legacy_inactive_modules_field() {
     state[3] = 2;
     assert_eq!(operation_legacy_inactive_modules(state), None);
 }
+
+#[test]
+fn decoded_operation_frames_resolve_unique_offset_store_targets() {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let common_and_terminal = vec![
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x29, 0x29, 0x41, 0x00,
+    ];
+    let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload = composed_feature_history_payload(
+        &[(input_slots, "FSET", common_and_terminal)],
+        &store_records,
+    );
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("required invariant");
+    let namespace = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("required invariant");
+    let common_frames = namespace
+        .arena_as::<super::FeatureOperationCommonFrame>("feature_operation_common_frames")
+        .expect("required invariant");
+    assert_eq!(common_frames.len(), 1);
+    assert_eq!(common_frames[0].object_index, Some(65));
+    assert_eq!(
+        common_frames[0].data_block.as_deref(),
+        Some("nx:om-data-blocks-0:block#65")
+    );
+    let terminal_frames = namespace
+        .arena_as::<super::FeatureOperationTerminalFrame>("feature_operation_terminal_frames")
+        .expect("required invariant");
+    assert_eq!(terminal_frames.len(), 1);
+    assert_eq!(terminal_frames[0].object_index, Some(65));
+    assert_eq!(
+        terminal_frames[0].data_block.as_deref(),
+        Some("nx:om-data-blocks-0:block#65")
+    );
+}
