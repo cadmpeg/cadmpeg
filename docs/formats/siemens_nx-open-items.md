@@ -876,16 +876,6 @@ unresolved.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:1306-1340` requires every participating FACE node ID and every EDGE or VERTEX identity referenced by a retained FIN to resolve before applying the subset relation. The subset rule, active-set authority, and union/stale behavior remain unresolved; a membership match is not promoted beyond that admission boundary.
 
-### OM-34. OM registry schema-role precedence
-
-**Question.** Which schema role does a linked OM registry take when it declares more than one role marker?
-
-**Known.** `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" names `UGS::Solid::Topol` for the model store, `UGS::FEATURE_RECORD` for feature history, `UGS::EXP_expression` for expressions, and `UGS::OM::SaveAuditTrail` for audit data when no preceding specialized marker applies. It orders the audit-data marker against the others. It does not order the first three against each other.
-
-**Need.** We must know the precedence, or the rule that makes the first three markers mutually exclusive. The decoder tests them in a fixed order and takes the first present marker without testing the others. The role selects which sections the feature-history extractors walk, so a registry that carries two markers can supply operation labels, body references, and lineage from a store that is not feature history.
-
-**Note.** `crates/cadmpeg-codec-nx/src/native/segments.rs:498-512` now rejects multiple role markers as ambiguous, but that is a conservative policy, not evidence that multiple markers are invalid or that one role has precedence. The closure test uses synthetic marker combinations. No serialized role discriminator was found, so this item is reopened.
-
 ### OM-35. Tagged-reference admission in a bounded record
 
 **Question.** Which field separates a tagged-reference stream from per-class field data inside one bounded OM record?
