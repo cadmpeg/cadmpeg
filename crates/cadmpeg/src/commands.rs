@@ -17,7 +17,7 @@ use crate::application::{
     EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError,
     ResolvedSource, SidecarPersistOutcome, SourceRequest, Transcoder,
 };
-use crate::loader::{self, read_prefix, LoadNotice, DETECTION_PREFIX_LEN};
+use crate::loader::{self, read_detection_input, LoadNotice, DETECTION_PREFIX_LEN};
 use crate::{DecodeArgs, Format};
 
 /// CLI command-report envelope version.
@@ -117,7 +117,7 @@ pub fn inspect(
     if matches!(forced, Some(ForcedInput::Cadir)) {
         bail!("inspect requires a container input, not cadir");
     }
-    let prefix = read_prefix(path, DETECTION_PREFIX_LEN)?;
+    let prefix = read_detection_input(path, DETECTION_PREFIX_LEN, limits.max_input_bytes)?;
     let (codec, confidence) = match catalogs.inputs.resolve_source(&prefix, forced) {
         Ok(ResolvedSource::Native {
             codec, confidence, ..

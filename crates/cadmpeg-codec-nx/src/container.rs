@@ -1,27 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parse the SPLMSSTR header and its `HEADER` and `FOOTER` directories.
+//! Parse the modern SPLMSSTR header and legacy Compound File Binary wrapper.
 //!
-//! An NX part begins with the eight-byte `SPLMSSTR` signature. Container integers
-//! are little-endian. Directory entries name `/Root/...` paths and may carry an
-//! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
-//! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
+//! A modern NX part begins with the eight-byte `SPLMSSTR` signature. Legacy NX
+//! parts use a Compound File Binary envelope whose directory contains the
+//! `UG_PART/UG_PART` stream. Modern container integers are little-endian.
+//! Directory entries name `/Root/...` paths and may carry an in-bounds file
+//! offset and size. [`crate::parasolid`] uses the canonical modern
+//! `/Root/UG_PART/UG_PART` span or the opened legacy `UG_PART/UG_PART` stream
+//! to locate Parasolid data.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
+use cadmpeg_container::compound::{CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
 use crate::layout::extrefstream_handle_set_record as handle_set;
+use crate::layout::legacy_ugii_payload_prefix;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
+
+const CFB_MAGIC: &[u8; 8] = &[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const LEGACY_UGII_PREFIX: &[u8; legacy_ugii_payload_prefix::VERSION] = b"\x0d\x01UGII  ";
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +199,11 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
+    /// Return whether the source uses the legacy Compound File Binary wrapper.
+    pub(crate) fn is_legacy_cfb(&self) -> bool {
+        self.data.starts_with(CFB_MAGIC)
+    }
+
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
@@ -760,19 +773,24 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
 pub struct Container<'a> {
     /// The whole file image.
     pub data: Cow<'a, [u8]>,
-    /// Version byte at file offset 8.
+    /// Modern version byte at file offset 8, or the legacy UGII payload
+    /// version when the source is a CFB wrapper.
     pub version: u8,
-    /// File-specific 24-bit little-endian value at offset 9.
+    /// Modern file-specific 24-bit little-endian value at offset 9; zero for
+    /// a legacy CFB wrapper.
     pub file_tag: u32,
-    /// Offset of the `FOOTER` region.
+    /// Modern `FOOTER` region offset; zero for a legacy CFB wrapper.
     pub footer_offset: u64,
-    /// Declared HEADER directory entry count.
+    /// Modern declared HEADER entry count, or the CFB entry count for legacy
+    /// input.
     pub header_entry_count: u32,
-    /// Declared FOOTER directory entry count.
+    /// Modern declared FOOTER directory entry count; zero for legacy input.
     pub footer_entry_count: u32,
-    /// Exact four-byte value following the counted FOOTER directory.
+    /// Modern exact four-byte value following the counted FOOTER directory;
+    /// zero for legacy input.
     pub footer_fingerprint: [u8; 4],
-    /// Enumerated directory entries from both regions, in serialized order.
+    /// Modern entries from both regions or legacy CFB paths, in serialized
+    /// order.
     pub entries: Vec<DirEntry>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
@@ -851,6 +869,21 @@ fn parse_framed_section_cache<'bytes>(
 /// Return whether `prefix` starts with [`MAGIC`].
 pub fn looks_like_nx(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
+}
+
+/// Return whether a CFB prefix contains the NX directory evidence required for
+/// legacy detection.
+///
+/// The CFB signature alone is not sufficient: Inventor and other CAD formats
+/// use the same envelope. Requiring the canonical `UG_PART/UG_PART` path keeps
+/// detection tied to the NX payload namespace.
+pub fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
+    let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix) else {
+        return false;
+    };
+    paths
+        .iter()
+        .any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART"))
 }
 
 fn u24_le(d: &[u8], at: usize) -> u32 {
@@ -946,6 +979,68 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         om_operation_label_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     })
+}
+
+/// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
+pub fn scan_legacy<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<(Container<'a>, View<'a>), CodecError> {
+    let snapshot = CompoundSnapshot::new(ctx, root)?;
+    let part = snapshot
+        .stream("UG_PART/UG_PART")
+        .ok_or_else(|| CodecError::WrongFormat("missing legacy UG_PART/UG_PART stream".into()))?;
+    let part_view = snapshot.open(ctx, part)?;
+    let payload_prefix = part_view
+        .window()
+        .get(..legacy_ugii_payload_prefix::LEN)
+        .ok_or_else(|| {
+            CodecError::WrongFormat("legacy UG_PART/UG_PART stream has no UGII prefix".into())
+        })?;
+    if payload_prefix[..legacy_ugii_payload_prefix::VERSION] != LEGACY_UGII_PREFIX[..] {
+        return Err(CodecError::WrongFormat(
+            "legacy UG_PART/UG_PART stream is not a UGII payload".into(),
+        ));
+    }
+    let mut entries = Vec::new();
+    for entry in snapshot.entries() {
+        ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
+        let retained = "/Root/"
+            .len()
+            .checked_add(entry.path().len())
+            .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
+            .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
+        ctx.charge_retained(
+            retained as u64,
+            "retain legacy NX directory entry",
+            Some(root.location()),
+        )?;
+        entries.push(DirEntry {
+            name: format!("/Root/{}", entry.path()),
+            region: Region::Header,
+            // CFB sectors are not one contiguous SPLMSSTR file span. The
+            // opened legacy Parasolid stream is passed separately to the
+            // stream extractor below.
+            file_span: None,
+        });
+    }
+    let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
+    let header_entry_count = u32::try_from(entries.len())
+        .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
+    let container = Container {
+        data: Cow::Borrowed(root.window()),
+        version,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        entries,
+        indexed_section_layouts: OnceLock::new(),
+        om_operation_label_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
+    };
+    Ok((container, part_view))
 }
 
 fn directory_region(

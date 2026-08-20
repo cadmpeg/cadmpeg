@@ -22,6 +22,51 @@ use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]
+fn legacy_stream_boundaries_require_complete_transmit_headers() {
+    let mut bytes = b"prefix".to_vec();
+    bytes.extend_from_slice(b"PS\x00\x00not a header");
+    let first = bytes.len();
+    let first_description = b": TRANSMIT FILE (partition) created by test";
+    bytes.extend_from_slice(b"PS");
+    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(first_description);
+    bytes.extend_from_slice(b"payload PS\x00\x00not a header");
+    let second = bytes.len();
+    let second_description = b": TRANSMIT FILE (deltas) created by test";
+    bytes.extend_from_slice(b"PS");
+    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(second_description);
+
+    assert_eq!(super::legacy_stream_start(&bytes, 0), Some(first));
+    assert_eq!(super::legacy_stream_start(&bytes, first + 4), Some(second));
+    assert_eq!(super::legacy_stream_start(&bytes, second + 4), None);
+}
+
+#[test]
+fn legacy_short_section_does_not_stall_boundary_scanning() {
+    let mut bytes = Vec::new();
+    let first_description = b": TRANSMIT FILE (partition)";
+    bytes.extend_from_slice(b"PS");
+    bytes.extend_from_slice(&(first_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(first_description);
+    let second = bytes.len();
+    let second_description = b": TRANSMIT FILE (deltas)";
+    bytes.extend_from_slice(b"PS");
+    bytes.extend_from_slice(&(second_description.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(second_description);
+    bytes.extend_from_slice(&[0; 64]);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let streams = super::extract_legacy_streams(&ctx, root).unwrap();
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].file_offset, second);
+}
+
+#[test]
 fn parasolid_entity_51_records_retain_layout_selected_references() {
     let mut bytes = vec![0, 0x51];
     bytes.extend_from_slice(&1u32.to_be_bytes());

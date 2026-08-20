@@ -12,6 +12,7 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_ir::codec::ExportPlan;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
@@ -30,21 +31,65 @@ impl ArtifactStore {
         decode_sidecar_path(cadir_path)
     }
 
-    /// Read at most `n` leading bytes for content-based format detection.
-    pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
-        let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let mut buf = Vec::with_capacity(n);
+    /// Read the bytes used for native-format detection.
+    ///
+    /// Most codecs need only the leading prefix. A Compound File Binary
+    /// directory may be physically remote from the header, so its codec
+    /// evidence cannot be established from a short prefix. Extend such inputs
+    /// until the bounded CFB probe reaches the directory or the configured
+    /// input ceiling.
+    pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
+        let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+        let mut bytes = Vec::with_capacity(prefix_len);
         let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
-        while buf.len() < n {
-            let remaining = n - buf.len();
-            let chunk_len = remaining.min(chunk.len());
-            let read = f.read(&mut chunk[..chunk_len])?;
+        while bytes.len() < prefix_len {
+            let chunk_len = (prefix_len - bytes.len()).min(chunk.len());
+            let read = file.read(&mut chunk[..chunk_len])?;
             if read == 0 {
                 break;
             }
-            buf.extend_from_slice(&chunk[..read]);
+            bytes.extend_from_slice(&chunk[..read]);
         }
-        Ok(buf)
+        if matches!(
+            CompoundPrefixProbe::inspect(&bytes),
+            CompoundPrefixProbe::NotCompound
+        ) {
+            return Ok(bytes);
+        }
+        if bytes.len() as u64 > max_bytes {
+            return Err(anyhow!(
+                "{} exceeds the configured {}-byte input limit",
+                path.display(),
+                max_bytes
+            ));
+        }
+
+        loop {
+            if !matches!(
+                CompoundPrefixProbe::inspect(&bytes),
+                CompoundPrefixProbe::Incomplete
+            ) {
+                return Ok(bytes);
+            }
+            if bytes.len() as u64 >= max_bytes {
+                let read = file.read(&mut [0_u8; 1])?;
+                if read != 0 {
+                    return Err(anyhow!(
+                        "{} exceeds the configured {}-byte input limit",
+                        path.display(),
+                        max_bytes
+                    ));
+                }
+                return Ok(bytes);
+            }
+            let remaining = max_bytes - bytes.len() as u64;
+            let chunk_len = remaining.min(chunk.len() as u64) as usize;
+            let read = file.read(&mut chunk[..chunk_len])?;
+            if read == 0 {
+                return Ok(bytes);
+            }
+            bytes.extend_from_slice(&chunk[..read]);
+        }
     }
 
     /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
@@ -300,5 +345,17 @@ mod tests {
         std::fs::write(&path, "12345").unwrap();
         let error = ArtifactStore::read_bounded_text(&path, 4).unwrap_err();
         assert!(error.to_string().contains("4-byte input limit"));
+    }
+
+    #[test]
+    fn compound_detection_probes_beyond_a_short_prefix() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.prt");
+        let mut bytes = vec![0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+        bytes.extend(std::iter::repeat_n(0x5a, 128));
+        std::fs::write(&path, &bytes).unwrap();
+
+        let detected = ArtifactStore::read_detection_input(&path, 8, 1024).unwrap();
+        assert_eq!(detected, bytes);
     }
 }

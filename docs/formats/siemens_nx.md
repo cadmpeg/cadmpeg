@@ -1,4 +1,4 @@
-# Siemens NX `.prt` (SPLMSSTR + Parasolid): Format Specification
+# Siemens NX `.prt` (SPLMSSTR or CFB + Parasolid): Format Specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
@@ -8,7 +8,7 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Format overview
 
-`.prt` is the native part format of Siemens NX. NX uses the **SPLMSSTR** (Siemens PLM Software Master Storage) hierarchical name-to-stream container. Geometry uses zlib-compressed Parasolid neutral-binary streams.
+`.prt` is the native part format of Siemens NX. NX uses either the **SPLMSSTR** (Siemens PLM Software Master Storage) hierarchical name-to-stream container or a Compound File Binary envelope. Geometry uses Parasolid neutral-binary streams. SPLMSSTR geometry members are zlib-compressed; the legacy CFB `UG_PART/UG_PART` stream stores clear Parasolid sections.
 
 **Part and assembly storage.** A part stores geometry as Parasolid partition and deltas stream pairs. An assembly stores child part names and paths in `EXTREFSTREAM`.
 
@@ -480,6 +480,30 @@ catalog atomically.
 `EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
+
+### 2.4 Legacy CFB envelope
+
+Legacy NX parts use the Compound File Binary envelope with the eight-byte header
+signature `d0 cf 11 e0 a1 b1 1a e1`. The CFB directory contains the
+`UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
+`UG_PART/UG_PART` directory path is required.
+
+The opened `UG_PART/UG_PART` payload begins with:
+
+```text
+0x00..0x01   bytes `0d 01`
+0x02..0x05   ASCII `UGII`
+0x06..0x07   ASCII two spaces
+0x08         UGII version byte
+```
+
+Clear Parasolid sections follow the UGII prefix. Each section begins with
+`PS 00 00`, `description_length:u32 BE` at the section start plus 2, and a
+printable description at plus 6. The description contains `TRANSMIT FILE`.
+Sections are concatenated in stream order. A complete transmit header starts
+the next section; the final section ends at the `UG_PART/UG_PART` stream
+boundary. A description-shaped byte sequence without a complete printable
+transmit header does not split a section.
 
 ---
 

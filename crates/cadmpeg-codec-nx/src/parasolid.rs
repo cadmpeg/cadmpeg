@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Extract and classify compressed streams in an NX part payload.
+//! Extract and classify Parasolid streams in an NX part payload.
 //!
 //! [`extract_streams`] scans the canonical `/Root/UG_PART/UG_PART` file span for
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
-//! Other inflated payloads are classified as [`StreamKind::Preview`].
+//! Legacy CFB parts use [`extract_legacy_streams`] to split the same prologue
+//! from clear `UG_PART/UG_PART` bytes. Other inflated payloads are classified
+//! as [`StreamKind::Preview`].
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeSet;
@@ -62,11 +64,16 @@ impl StreamKind {
 /// A located and inflated stream from the canonical part payload.
 #[derive(Debug, Clone)]
 pub struct Stream {
-    /// Byte offset of the `78 01` zlib header in the source file.
-    pub file_offset: usize,
-    /// Compressed input bytes the decoder consumed at `file_offset`.
+    /// Byte offset of the stream start in the source file.
     ///
-    /// The physical extent `[file_offset, file_offset + consumed)` in the source.
+    /// Modern streams start at a zlib header. Legacy streams start at a clear
+    /// Parasolid transmit header.
+    pub file_offset: usize,
+    /// Source bytes consumed by the stream at `file_offset`.
+    ///
+    /// For modern streams this is the compressed member length. For legacy
+    /// streams it is the clear section length. The physical extent
+    /// `[file_offset, file_offset + consumed)` is source-owned.
     pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
@@ -1088,6 +1095,89 @@ pub fn extract_streams<'a>(
         i += 1;
     }
     Ok(streams)
+}
+
+/// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
+/// stream.
+///
+/// Legacy NX stores multiple self-describing Parasolid sections consecutively.
+/// A section begins with `PS`, its big-endian description length, and a
+/// printable `TRANSMIT FILE` description. Only those complete transmit headers
+/// are admitted as boundaries; arbitrary `PS\0\0` bytes in the payload do not
+/// split a stream.
+pub fn extract_legacy_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part: View<'a>,
+) -> Result<Vec<Stream>, CodecError> {
+    let bytes = part.window();
+    let mut streams = Vec::new();
+    let mut search = 0;
+    while let Some(start) = legacy_stream_start(bytes, search) {
+        let next = legacy_stream_start(bytes, start.saturating_add(4));
+        let end = next.unwrap_or(bytes.len());
+        let payload = bytes.get(start..end).ok_or_else(|| {
+            CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
+        })?;
+        if payload.len() >= MIN_INFLATED {
+            let inflated = ctx.copy_retained(
+                payload,
+                "retain legacy NX Parasolid stream",
+                Some(part.location()),
+            )?;
+            let (kind, schema) = classify(&inflated);
+            let consumed = u64::try_from(payload.len()).map_err(|_| {
+                CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
+            })?;
+            let file_offset = part.start().checked_add(start).ok_or_else(|| {
+                CodecError::Malformed("legacy Parasolid stream offset overflow".into())
+            })?;
+            streams.push(Stream {
+                file_offset,
+                consumed,
+                inflated,
+                kind,
+                schema,
+            });
+        }
+        let Some(next) = next else {
+            break;
+        };
+        search = next;
+    }
+    Ok(streams)
+}
+
+fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
+    while let Some(relative) = find(bytes.get(search..).unwrap_or_default(), b"PS\x00\x00") {
+        let start = search.checked_add(relative)?;
+        if legacy_transmit_header(bytes, start) {
+            return Some(start);
+        }
+        search = start.saturating_add(4);
+    }
+    None
+}
+
+fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
+    let Some(description_len) = View::u32_be_at(bytes, start.saturating_add(2)) else {
+        return false;
+    };
+    let Ok(description_len) = usize::try_from(description_len) else {
+        return false;
+    };
+    let Some(description_start) = start.checked_add(6) else {
+        return false;
+    };
+    let Some(description_end) = description_start.checked_add(description_len) else {
+        return false;
+    };
+    let Some(description) = bytes.get(description_start..description_end) else {
+        return false;
+    };
+    description
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        && contains(description, b"TRANSMIT FILE")
 }
 
 /// Inflates one zlib member that meets [`MIN_INFLATED`].

@@ -1177,13 +1177,10 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 
 pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
+    let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
         "file_size".to_string(),
         scan.container.data.len().to_string(),
-    );
-    attributes.insert(
-        "footer_offset".to_string(),
-        scan.container.footer_offset.to_string(),
     );
     attributes.insert(
         "directory_entries".to_string(),
@@ -1193,17 +1190,29 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         "header_entry_count".to_string(),
         scan.container.header_entry_count.to_string(),
     );
-    attributes.insert(
-        "footer_entry_count".to_string(),
-        scan.container.footer_entry_count.to_string(),
-    );
-    attributes.insert(
-        "footer_fingerprint".to_string(),
-        format!(
-            "{:08x}",
-            u32::from_be_bytes(scan.container.footer_fingerprint)
-        ),
-    );
+    if legacy_cfb {
+        attributes.insert("container_kind".to_string(), "cfb".to_string());
+        attributes.insert(
+            "ugii_version".to_string(),
+            scan.container.version.to_string(),
+        );
+    } else {
+        attributes.insert(
+            "footer_offset".to_string(),
+            scan.container.footer_offset.to_string(),
+        );
+        attributes.insert(
+            "footer_entry_count".to_string(),
+            scan.container.footer_entry_count.to_string(),
+        );
+        attributes.insert(
+            "footer_fingerprint".to_string(),
+            format!(
+                "{:08x}",
+                u32::from_be_bytes(scan.container.footer_fingerprint)
+            ),
+        );
+    }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if control_count != 0 {
         attributes.insert(

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Build IR and diagnostics from an NX SPLMSSTR container.
+//! Build IR and diagnostics from an NX native container.
 //!
 //! [`scan`] parses the container and inflates its embedded streams. [`decode`]
 //! converts supported analytic and NURBS carriers to millimetres, resolves
@@ -213,8 +213,15 @@ impl Scan<'_> {
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
-    let container = container::scan_bytes(root.window())?;
-    let streams = parasolid::extract_streams(ctx, root, &container)?;
+    let (container, streams) = if container::looks_like_nx(root.window()) {
+        let container = container::scan_bytes(root.window())?;
+        let streams = parasolid::extract_streams(ctx, root, &container)?;
+        (container, streams)
+    } else {
+        let (container, part) = container::scan_legacy(ctx, root)?;
+        let streams = parasolid::extract_legacy_streams(ctx, part)?;
+        (container, streams)
+    };
     Ok(Scan { container, streams })
 }
 
@@ -490,15 +497,28 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 pub fn summary_notes(scan: &Scan) -> Vec<String> {
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
-    let mut notes = vec![format!(
-        "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
-        c.version,
-        c.file_tag,
-        c.footer_offset,
-        c.header_entry_count,
-        c.footer_entry_count,
-        u32::from_be_bytes(c.footer_fingerprint),
-    )];
+    let mut notes = if c.is_legacy_cfb() {
+        vec![format!(
+            "legacy CFB container: UGII payload version {:#04x}, {} directory entr{}",
+            c.version,
+            c.header_entry_count,
+            if c.header_entry_count == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+        )]
+    } else {
+        vec![format!(
+            "SPLMSSTR container: version {:#04x}, file tag {}, footer offset {}, {} HEADER and {} FOOTER directory entry/ies, fingerprint {:08x}",
+            c.version,
+            c.file_tag,
+            c.footer_offset,
+            c.header_entry_count,
+            c.footer_entry_count,
+            u32::from_be_bytes(c.footer_fingerprint),
+        )]
+    };
     notes.push(format!(
         "embedded streams: {} partition, {} deltas, {} plain (cached body), {} preview/non-Parasolid",
         scan.count(StreamKind::Partition),
