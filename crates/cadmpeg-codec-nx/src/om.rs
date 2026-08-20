@@ -2966,7 +2966,7 @@ pub fn hole_package_construction_group_lane(
     if record.label.value != "HOLE PACKAGE" {
         return None;
     }
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
         if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
             continue;
@@ -3016,12 +3016,12 @@ pub fn hole_package_construction_group_lane(
         })() else {
             continue;
         };
-        matches.push(lane);
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(lane);
     }
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    candidate
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
@@ -3031,19 +3031,14 @@ pub fn sketch_payload_references(
     if record.label.value != "SKETCH" {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(3) {
-        if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
-            continue;
-        }
-        if let Some(references) = sketch_reference_field(record, start) {
-            matches.push(references);
-        }
-    }
-    let [references] = matches.as_slice() else {
-        return None;
-    };
-    Some(references.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(3)).filter_map(|start| {
+            if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
+                return None;
+            }
+            sketch_reference_field(record, start)
+        }),
+    )
 }
 
 fn sketch_reference_field(
@@ -3196,19 +3191,14 @@ pub fn projected_curve_payload_references(
         "CPROJ_CMB" => &CMB_PREFIX[..],
         _ => return None,
     };
-    let mut matches = Vec::new();
-    for start in 0..=record.payload.len().saturating_sub(marker.len()) {
-        if record.payload.get(start..start + marker.len()) != Some(marker) {
-            continue;
-        }
-        if let Some(field) = decode_field(start) {
-            matches.push(field);
-        }
-    }
-    let [field] = matches.as_slice() else {
-        return None;
-    };
-    Some(field.clone())
+    unique_candidate(
+        (0..=record.payload.len().saturating_sub(marker.len())).filter_map(|start| {
+            if record.payload.get(start..start + marker.len()) != Some(marker) {
+                return None;
+            }
+            decode_field(start)
+        }),
+    )
 }
 
 /// Decode the unique exactly framed construction-reference field in a bounded
@@ -3321,26 +3311,27 @@ pub fn pattern_payload_references(
             references: vec![reference],
         })
     };
-    let matches = match record.label.value {
-        "Pattern Feature" | "Pattern Geometry" => (0..record.payload.len())
-            .filter_map(|start| match record.payload.get(start) {
-                Some(0x61) => decode_graph(start),
-                Some(0x3b) => decode_compact_graph(start),
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-        "Geometry Instance" => (0..=record.payload.len().saturating_sub(INSTANCE_PREFIX.len()))
-            .filter(|&start| {
-                record.payload.get(start..start + INSTANCE_PREFIX.len()) == Some(&INSTANCE_PREFIX)
-            })
-            .filter_map(decode_instance)
-            .collect::<Vec<_>>(),
+    let field = match record.label.value {
+        "Pattern Feature" | "Pattern Geometry" => {
+            unique_candidate((0..record.payload.len()).filter_map(|start| {
+                match record.payload.get(start) {
+                    Some(0x61) => decode_graph(start),
+                    Some(0x3b) => decode_compact_graph(start),
+                    _ => None,
+                }
+            }))
+        }
+        "Geometry Instance" => unique_candidate(
+            (0..=record.payload.len().saturating_sub(INSTANCE_PREFIX.len()))
+                .filter(|&start| {
+                    record.payload.get(start..start + INSTANCE_PREFIX.len())
+                        == Some(&INSTANCE_PREFIX)
+                })
+                .filter_map(decode_instance),
+        ),
         _ => return None,
     };
-    let [field] = matches.as_slice() else {
-        return None;
-    };
-    Some(field.clone())
+    field
 }
 
 /// Decode the unique exactly terminated counted reference lane in a bounded
@@ -3392,13 +3383,7 @@ pub fn pattern_payload_counted_reference_lane(
             references,
         })
     };
-    let matches = (0..record.payload.len())
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate((0..record.payload.len()).filter_map(decode))
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`
@@ -3434,8 +3419,8 @@ pub fn fset_payload_reference_graph(
             && record.payload.get(body_start) == Some(&0x3c)
             && record.payload.get(body_end.checked_sub(1)?) == Some(&0x3e))
         .then_some(())?;
-        let first = (body_start + 2..body_end - 1)
-            .filter_map(|selector_end| {
+        let (selector, first) =
+            unique_candidate((body_start + 2..body_end - 1).filter_map(|selector_end| {
                 let selector = record.payload.get(body_start + 1..selector_end)?;
                 (!selector.is_empty()
                     && selector
@@ -3446,11 +3431,7 @@ pub fn fset_payload_reference_graph(
                 let first = [decode_reference(&mut at)?, decode_reference(&mut at)?];
                 (at == body_end - 1)
                     .then_some((std::str::from_utf8(selector).ok()?.to_string(), first))
-            })
-            .collect::<Vec<_>>();
-        let [(selector, first)] = first.as_slice() else {
-            return None;
-        };
+            }))?;
         let mut at = body_end;
         let second = [
             decode_reference(&mut at)?,
@@ -3459,19 +3440,13 @@ pub fn fset_payload_reference_graph(
         ];
         (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
         Some(FsetPayloadReferenceGraph {
-            selector: selector.clone(),
-            first: first.clone(),
+            selector,
+            first,
             second,
             offset: record.payload_offset + start,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(1))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [graph] = matches.as_slice() else {
-        return None;
-    };
-    Some(graph.clone())
+    unique_candidate((0..record.payload.len().saturating_sub(1)).filter_map(decode))
 }
 
 /// Decode the exactly counted nullable construction-reference field at the
@@ -3755,14 +3730,11 @@ pub fn pattern_payload_transform_lane(
             selector_offsets,
         })
     };
-    let mut matches = (0..record.payload.len().saturating_sub(1))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    matches.extend((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide));
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(1))
+            .filter_map(decode)
+            .chain((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide)),
+    )
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
@@ -3884,13 +3856,7 @@ pub fn multi_instance_output_payload_lane(
             trailing_references,
         })
     };
-    let matches = (0..=record.payload.len().saturating_sub(ENVELOPE.len()))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate((0..=record.payload.len().saturating_sub(ENVELOPE.len())).filter_map(decode))
 }
 
 /// Decode the unique exactly counted selector lane in an
@@ -3984,13 +3950,7 @@ pub fn identical_instance_output_payload_lane(
             selector_offsets,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(3))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate((0..record.payload.len().saturating_sub(3)).filter_map(decode))
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
@@ -4116,16 +4076,13 @@ pub fn draft_feature_payload_references(
             references: [first, second, third, fourth],
         })
     };
-    let matches = (PAYLOAD_PREFIX.len()..=record.payload.len().saturating_sub(GRAPH_PREFIX.len()))
-        .filter(|&start| {
-            record.payload.get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
-        })
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [field] = matches.as_slice() else {
-        return None;
-    };
-    Some(field.clone())
+    unique_candidate(
+        (PAYLOAD_PREFIX.len()..=record.payload.len().saturating_sub(GRAPH_PREFIX.len()))
+            .filter(|&start| {
+                record.payload.get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
+            })
+            .filter_map(decode),
+    )
 }
 
 /// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
@@ -4183,7 +4140,7 @@ pub fn draft_feature_terminal_lane(
     if record.label.value != "DRAFT" {
         return None;
     }
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len() {
         let mut at = start;
         let first_offset = at;
@@ -4229,7 +4186,7 @@ pub fn draft_feature_terminal_lane(
         if at + 1 != record.payload.len() || record.payload.get(at) != Some(&0x00) {
             continue;
         }
-        matches.push(DraftFeatureTerminalLane {
+        let lane = DraftFeatureTerminalLane {
             indices: [first, second],
             raw_indices: [
                 record.payload[first_offset..first_offset + first_width]
@@ -4245,12 +4202,13 @@ pub fn draft_feature_terminal_lane(
             ],
             tail,
             offset: record.payload_offset + start,
-        });
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(lane);
     }
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    candidate
 }
 
 /// Decode the exact common construction-reference envelope in a bounded
@@ -4296,15 +4254,13 @@ pub fn surface_feature_payload_references(
         references.push(decode_reference(&mut at)?);
     }
 
-    let trailing_starts = record
-        .payload
-        .windows(TRAILING_PREFIX.len())
-        .enumerate()
-        .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start))
-        .collect::<Vec<_>>();
-    let [trailing_start] = trailing_starts.as_slice() else {
-        return None;
-    };
+    let trailing_start = unique_candidate(
+        record
+            .payload
+            .windows(TRAILING_PREFIX.len())
+            .enumerate()
+            .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start)),
+    )?;
     at = trailing_start + TRAILING_PREFIX.len();
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
@@ -4442,7 +4398,7 @@ pub fn surface_feature_payload_branches(
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return None,
     };
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len().saturating_sub(6) {
         if record.payload.get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
@@ -4469,16 +4425,17 @@ pub fn surface_feature_payload_branches(
         let [branches] = paths.as_slice() else {
             continue;
         };
-        matches.push(SurfaceFeaturePayloadBranches {
+        let group = SurfaceFeaturePayloadBranches {
             family,
             header_code,
             branches: branches.clone(),
-        });
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(group);
     }
-    let [group] = matches.as_slice() else {
-        return None;
-    };
-    Some(group.clone())
+    candidate
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
@@ -4488,20 +4445,14 @@ pub fn extrude_profile_references(
     if record.label.value != "EXTRUDE" {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(6) {
-        if record.payload.get(start..start + 4) != Some(&[0x01, 0x02, 0x16, 0x01]) {
-            continue;
-        }
-        let Some(references) = extrude_profile_reference_field(record, start) else {
-            continue;
-        };
-        matches.push(references);
-    }
-    let [references] = matches.as_slice() else {
-        return None;
-    };
-    Some(references.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(6)).filter_map(|start| {
+            if record.payload.get(start..start + 4) != Some(&[0x01, 0x02, 0x16, 0x01]) {
+                return None;
+            }
+            extrude_profile_reference_field(record, start)
+        }),
+    )
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
@@ -5718,7 +5669,7 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
 pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBlock> {
-    let mut matches = Vec::new();
+    let mut candidate = None;
     let mut at = 0;
     while at < bytes.len() {
         if !(bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at])) {
@@ -5731,17 +5682,18 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
             at += 1;
         }
         if (30..=32).contains(&(at - start)) {
-            matches.push((start, at));
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((start, at));
         }
     }
-    let [(start, end)] = matches.as_slice() else {
-        return None;
-    };
+    let (start, end) = candidate?;
     Some(DatumCsysDescriptorBlock {
-        prefix: bytes[..*start].to_vec(),
-        identity: std::str::from_utf8(&bytes[*start..*end]).ok()?.to_string(),
-        suffix: bytes[*end..].to_vec(),
-        identity_offset: *start,
+        prefix: bytes[..start].to_vec(),
+        identity: std::str::from_utf8(&bytes[start..end]).ok()?.to_string(),
+        suffix: bytes[end..].to_vec(),
+        identity_offset: start,
     })
 }
 
@@ -5992,8 +5944,9 @@ fn extrude_profile_reference_field(
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
 pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
-    let mut matches = Vec::new();
-    let mut literals = Vec::new();
+    let mut declaration = None;
+    let mut literal = None;
+    let mut multiple_literals = false;
     for at in 0..bytes.len().saturating_sub(4) {
         if bytes[at] != 0x04 {
             continue;
@@ -6015,63 +5968,59 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
             continue;
         };
         let Some((parameter_index, qualifier)) = parameter_name_parts(value) else {
-            if evaluate_constant_expression(value).is_some() {
-                literals.push(value);
+            if evaluate_constant_expression(value).is_some() && literal.replace(value).is_some() {
+                multiple_literals = true;
             }
             continue;
         };
-        matches.push(ExpressionDeclarationName {
+        let next = ExpressionDeclarationName {
             offset: at,
             value,
             parameter_index,
             qualifier,
             literal: None,
-        });
+        };
+        if declaration.replace(next).is_some() {
+            return None;
+        }
     }
-    let [declaration] = matches.as_slice() else {
-        return None;
-    };
-    let literal = match literals.as_slice() {
-        [literal] => Some(*literal),
-        _ => None,
-    };
+    let declaration = declaration?;
+    let literal = (!multiple_literals).then_some(literal).flatten();
     Some(ExpressionDeclarationName {
         literal,
-        ..*declaration
+        ..declaration
     })
 }
 
 /// Decode the unique `01 02 10 index ff` primary-body field in one operation.
 pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
-    let matches = operation_body_references(record);
-    let [reference] = matches.as_slice() else {
-        return None;
-    };
-    Some(reference.clone())
+    unique_candidate(operation_body_reference_candidates(record))
 }
 
-/// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
-pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
-    let mut matches = Vec::new();
-    for marker in record
+fn operation_body_reference_candidates(
+    record: OperationRecord<'_>,
+) -> impl Iterator<Item = OperationBodyReference> + '_ {
+    record
         .bytes
         .windows(3)
         .enumerate()
         .filter_map(|(offset, window)| (window == [0x01, 0x02, 0x10]).then_some(offset))
-    {
-        let token = marker + 3;
-        let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
-            continue;
-        };
-        if record.bytes.get(end) == Some(&0xff) {
-            matches.push(OperationBodyReference {
+        .filter_map(move |marker| {
+            let token = marker + 3;
+            let (Some(object_index), end) = feature_object_index(record.bytes, token)? else {
+                return None;
+            };
+            (record.bytes.get(end) == Some(&0xff)).then_some(OperationBodyReference {
                 offset: record.offset + token,
                 object_index,
                 raw_object_index: record.bytes[token..end].to_vec(),
-            });
-        }
-    }
-    matches
+            })
+        })
+}
+
+/// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
+pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
+    operation_body_reference_candidates(record).collect()
 }
 
 /// Decode every exact nested `01 02 tag index 97 75 01 02 11 index ff` frame.
@@ -6239,6 +6188,24 @@ fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
             | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
             | (Some(0x1000..=0xffff), [0x90, _, _])
     )
+}
+
+/// Return one decoded candidate only when the scan produced exactly one.
+///
+/// A number of OM fields are discovered by probing every byte in an already
+/// bounded payload. Materializing all successful probes lets overlapping
+/// malformed framing turn a linear scan into an allocation proportional to
+/// the number of hits. The parser needs only the uniqueness decision, so keep
+/// the first candidate and reject as soon as a second one is complete.
+fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
+    let mut candidate = None;
+    for next in candidates {
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(next);
+    }
+    candidate
 }
 
 /// Decode every exact common frame in one bounded operation payload.
@@ -7207,14 +7174,10 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
 }
 
 fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
-    let matches = (0..bytes.len())
-        .filter(|offset| is_product_record(&bytes[*offset..]))
-        .collect::<Vec<_>>();
-    let [product_offset] = matches.as_slice() else {
-        return None;
-    };
-    let leading_width = *product_offset % 4;
-    (*product_offset > leading_width).then_some(())?;
+    let product_offset =
+        unique_candidate((0..bytes.len()).filter(|offset| is_product_record(&bytes[*offset..])))?;
+    let leading_width = product_offset % 4;
+    (product_offset > leading_width).then_some(())?;
     let leading_value = (leading_width != 0).then(|| {
         bytes[..leading_width]
             .iter()
@@ -7223,7 +7186,7 @@ fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControl
                 value | (u32::from(*byte) << (shift * 8))
             })
     });
-    let values = (0..(*product_offset - leading_width) / 4)
+    let values = (0..(product_offset - leading_width) / 4)
         .map(|index| View::u32_le_at(bytes, leading_width + index * 4).expect("four-byte chunk"))
         .collect();
     Some(OffsetStoreControlForm::ProductAnchored {
