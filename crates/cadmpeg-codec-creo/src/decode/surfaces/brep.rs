@@ -186,12 +186,52 @@ impl BrepTransferDiagnostics {
             self.vertex_solve.carrier_points,
         );
         coverage.insert(
+            "brep_pcurve_record_count".to_string(),
+            self.vertex_solve.pcurve.records,
+        );
+        coverage.insert(
+            "brep_pcurve_path_count".to_string(),
+            self.vertex_solve.pcurve.paths,
+        );
+        coverage.insert(
+            "brep_pcurve_missing_surface_path_count".to_string(),
+            self.vertex_solve.pcurve.missing_surfaces,
+        );
+        coverage.insert(
+            "brep_pcurve_unevaluable_path_count".to_string(),
+            self.vertex_solve.pcurve.unevaluable_paths,
+        );
+        coverage.insert(
+            "brep_pcurve_mapped_path_count".to_string(),
+            self.vertex_solve.pcurve.mapped_paths,
+        );
+        coverage.insert(
+            "brep_pcurve_unmapped_record_count".to_string(),
+            self.vertex_solve.pcurve.unmapped_records,
+        );
+        coverage.insert(
+            "brep_pcurve_inconsistent_record_count".to_string(),
+            self.vertex_solve.pcurve.inconsistent_records,
+        );
+        coverage.insert(
+            "brep_pcurve_accepted_record_count".to_string(),
+            self.vertex_solve.pcurve.accepted_records,
+        );
+        coverage.insert(
+            "brep_pcurve_complete_record_count".to_string(),
+            self.vertex_solve.pcurve.complete_records,
+        );
+        coverage.insert(
+            "brep_pcurve_conflicting_curve_count".to_string(),
+            self.vertex_solve.pcurve.conflicting_curves,
+        );
+        coverage.insert(
             "brep_vertex_pcurve_endpoint_evidence_count".to_string(),
-            self.vertex_solve.pcurve_endpoint_evidence,
+            self.vertex_solve.pcurve.evidence,
         );
         coverage.insert(
             "brep_vertex_complete_pcurve_endpoint_evidence_count".to_string(),
-            self.vertex_solve.complete_pcurve_endpoint_evidence,
+            self.vertex_solve.pcurve.complete_evidence,
         );
         coverage.insert(
             "brep_vertex_pcurve_constraint_count".to_string(),

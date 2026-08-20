@@ -20,7 +20,8 @@ use super::equations::{
     PlaneConicEquation, PlaneEquation,
 };
 use super::pcurves::{
-    directed_pcurve_points, pcurve_edge_endpoint_evidence, solve_pcurve_vertex_domains,
+    directed_pcurve_points, pcurve_edge_endpoint_evidence_with_diagnostics,
+    solve_pcurve_vertex_domains, PcurveEndpointDiagnostics,
 };
 use super::planes::solve_carriers_with_diagnostics;
 
@@ -349,8 +350,7 @@ pub struct TopologicalVertexSolveDiagnostics {
     pub carrier_zero_candidate_vertices: usize,
     pub carrier_ambiguous_candidate_vertices: usize,
     pub carrier_points: usize,
-    pub pcurve_endpoint_evidence: usize,
-    pub complete_pcurve_endpoint_evidence: usize,
+    pub pcurve: PcurveEndpointDiagnostics,
     pub pcurve_constraints: usize,
     pub directed_endpoint_assignments: usize,
     pub directed_endpoint_conflicts: usize,
@@ -406,12 +406,9 @@ pub fn solve_topological_vertices(
         }
     }
     diagnostics.carrier_points = carrier_points.len();
-    let endpoint_evidence = pcurve_edge_endpoint_evidence(scan, ir);
-    diagnostics.pcurve_endpoint_evidence = endpoint_evidence.len();
-    diagnostics.complete_pcurve_endpoint_evidence = endpoint_evidence
-        .values()
-        .filter(|evidence| evidence.complete)
-        .count();
+    let (endpoint_evidence, pcurve_diagnostics) =
+        pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir);
+    diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()
         .map(|(curve_id, evidence)| (curve_id, evidence.points))

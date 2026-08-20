@@ -84,29 +84,61 @@ pub struct PcurveEndpointEvidence {
     pub complete: bool,
 }
 
-fn mapped_pcurve_endpoint_evidence(
-    ir: &CadIr,
-    faces: [u32; 2],
-    endpoint_sets: [[[f64; 2]; 2]; 2],
-) -> Option<PcurveEndpointEvidence> {
-    mapped_pcurve_endpoint_evidence_for_paths(ir, faces.into_iter().zip(endpoint_sets))
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PcurveEndpointDiagnostics {
+    pub records: usize,
+    pub paths: usize,
+    pub missing_surfaces: usize,
+    pub unevaluable_paths: usize,
+    pub mapped_paths: usize,
+    pub unmapped_records: usize,
+    pub inconsistent_records: usize,
+    pub accepted_records: usize,
+    pub complete_records: usize,
+    pub conflicting_curves: usize,
+    pub evidence: usize,
+    pub complete_evidence: usize,
 }
 
-fn mapped_pcurve_endpoint_evidence_for_paths(
+struct MappedPcurvePaths {
+    mapped: Vec<[[f64; 3]; 2]>,
+    paths: usize,
+    missing_surfaces: usize,
+    unevaluable_paths: usize,
+}
+
+fn map_pcurve_paths(
     ir: &CadIr,
     paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
+) -> MappedPcurvePaths {
+    let mut result = MappedPcurvePaths {
+        mapped: Vec::new(),
+        paths: 0,
+        missing_surfaces: 0,
+        unevaluable_paths: 0,
+    };
+    for (face_id, endpoints) in paths {
+        result.paths += 1;
+        let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+            result.missing_surfaces += 1;
+            continue;
+        };
+        let [first, second] = endpoints.map(|uv| {
+            cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
+                .map(|point| [point.x, point.y, point.z])
+        });
+        let [Some(first), Some(second)] = [first, second] else {
+            result.unevaluable_paths += 1;
+            continue;
+        };
+        result.mapped.push([first, second]);
+    }
+    result
+}
+
+fn pcurve_endpoint_evidence_from_mapped(
+    mapped: &[[[f64; 3]; 2]],
 ) -> Option<PcurveEndpointEvidence> {
-    let mapped = paths
-        .into_iter()
-        .filter_map(|(face_id, endpoints)| {
-            let surface = unique_model_surface(&ir.model.surfaces, face_id)?;
-            let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
-                    .map(|point| [point.x, point.y, point.z])
-            });
-            Some([first?, second?])
-        })
-        .collect::<Vec<[[f64; 3]; 2]>>();
     let first = *mapped.first()?;
     mapped
         .iter()
@@ -119,13 +151,40 @@ fn mapped_pcurve_endpoint_evidence_for_paths(
         })
 }
 
+fn mapped_pcurve_endpoint_evidence(
+    ir: &CadIr,
+    faces: [u32; 2],
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+) -> Option<PcurveEndpointEvidence> {
+    mapped_pcurve_endpoint_evidence_for_paths(ir, faces.into_iter().zip(endpoint_sets))
+}
+
+fn mapped_pcurve_endpoint_evidence_for_paths(
+    ir: &CadIr,
+    paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
+) -> Option<PcurveEndpointEvidence> {
+    let mapped = map_pcurve_paths(ir, paths);
+    pcurve_endpoint_evidence_from_mapped(&mapped.mapped)
+}
+
 pub fn pcurve_edge_endpoint_evidence(
     scan: &ContainerScan,
     ir: &CadIr,
 ) -> BTreeMap<u32, PcurveEndpointEvidence> {
+    pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir).0
+}
+
+pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
+    scan: &ContainerScan,
+    ir: &CadIr,
+) -> (
+    BTreeMap<u32, PcurveEndpointEvidence>,
+    PcurveEndpointDiagnostics,
+) {
     let ignored_surface_ids =
         topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
+    let mut diagnostics = PcurveEndpointDiagnostics::default();
     for (curve_id, faces, first, second) in scan
         .curves
         .pcurves
@@ -149,33 +208,49 @@ pub fn pcurve_edge_endpoint_evidence(
             (pcurve.curve_id, pcurve.faces, first, second)
         }))
     {
+        diagnostics.records += 1;
         let paths = faces
             .into_iter()
             .zip([first, second])
             .filter(|(face_id, _)| !ignored_surface_ids.contains(face_id));
-        if let Some(evidence) = mapped_pcurve_endpoint_evidence_for_paths(ir, paths) {
-            candidates.entry(curve_id).or_default().push(evidence);
+        let mapped = map_pcurve_paths(ir, paths);
+        diagnostics.paths += mapped.paths;
+        diagnostics.missing_surfaces += mapped.missing_surfaces;
+        diagnostics.unevaluable_paths += mapped.unevaluable_paths;
+        diagnostics.mapped_paths += mapped.mapped.len();
+        match pcurve_endpoint_evidence_from_mapped(&mapped.mapped) {
+            Some(evidence) => {
+                diagnostics.accepted_records += 1;
+                diagnostics.complete_records += usize::from(evidence.complete);
+                candidates.entry(curve_id).or_default().push(evidence);
+            }
+            None if mapped.mapped.is_empty() => diagnostics.unmapped_records += 1,
+            None => diagnostics.inconsistent_records += 1,
         }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(curve_id, candidates)| {
-            let first = *candidates.first()?;
-            candidates
-                .iter()
-                .all(|candidate| {
-                    model_points_agree(first.points[0], candidate.points[0])
-                        && model_points_agree(first.points[1], candidate.points[1])
-                })
-                .then_some((
-                    curve_id,
-                    PcurveEndpointEvidence {
-                        points: first.points,
-                        complete: candidates.iter().any(|candidate| candidate.complete),
-                    },
-                ))
-        })
-        .collect()
+    let mut evidence = BTreeMap::new();
+    for (curve_id, candidates) in candidates {
+        let Some(first) = candidates.first().copied() else {
+            continue;
+        };
+        if candidates.iter().all(|candidate| {
+            model_points_agree(first.points[0], candidate.points[0])
+                && model_points_agree(first.points[1], candidate.points[1])
+        }) {
+            evidence.insert(
+                curve_id,
+                PcurveEndpointEvidence {
+                    points: first.points,
+                    complete: candidates.iter().any(|candidate| candidate.complete),
+                },
+            );
+        } else {
+            diagnostics.conflicting_curves += 1;
+        }
+    }
+    diagnostics.evidence = evidence.len();
+    diagnostics.complete_evidence = evidence.values().filter(|value| value.complete).count();
+    (evidence, diagnostics)
 }
 
 pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {

@@ -192,9 +192,11 @@ pub(super) fn push_brep_transfer_note(
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
          {} carrier-bearing vertices, {} pair-intersection candidate(s), {} triple-intersection \
          candidate(s), {} validated carrier candidate(s), {} carrier vertices with no candidate, \
-         {} ambiguous carrier vertices, {} pcurve endpoint evidence ({} complete), {} pcurve \
-         constraint(s), {} analytic domain(s), {} NURBS endpoint constraint(s), {} directed \
-         endpoint conflict(s), {} solved.",
+         {} ambiguous carrier vertices, {} pcurve record(s), {} pcurve path(s), {} path(s) without \
+         a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
+         inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
+         pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -208,8 +210,18 @@ pub(super) fn push_brep_transfer_note(
         diagnostics
             .vertex_solve
             .carrier_ambiguous_candidate_vertices,
-        diagnostics.vertex_solve.pcurve_endpoint_evidence,
-        diagnostics.vertex_solve.complete_pcurve_endpoint_evidence,
+        diagnostics.vertex_solve.pcurve.records,
+        diagnostics.vertex_solve.pcurve.paths,
+        diagnostics.vertex_solve.pcurve.missing_surfaces,
+        diagnostics.vertex_solve.pcurve.unevaluable_paths,
+        diagnostics.vertex_solve.pcurve.mapped_paths,
+        diagnostics.vertex_solve.pcurve.unmapped_records,
+        diagnostics.vertex_solve.pcurve.inconsistent_records,
+        diagnostics.vertex_solve.pcurve.accepted_records,
+        diagnostics.vertex_solve.pcurve.complete_records,
+        diagnostics.vertex_solve.pcurve.conflicting_curves,
+        diagnostics.vertex_solve.pcurve.evidence,
+        diagnostics.vertex_solve.pcurve.complete_evidence,
         diagnostics.vertex_solve.pcurve_constraints,
         diagnostics.vertex_solve.analytic_domain_vertices,
         diagnostics.vertex_solve.nurbs_endpoint_constraints,
