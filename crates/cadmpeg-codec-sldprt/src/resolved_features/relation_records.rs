@@ -67,12 +67,14 @@ pub(super) fn relation_declaration_candidates<'a>(
             let family = relation_family(&class.name)?;
             let scalar = scalars
                 .iter()
-                .filter(|scalar| scalar.offset > class.offset)
+                .filter(|scalar| {
+                    scalar.offset > class.offset
+                        && scalar.offset - class.offset <= 128
+                        && relation_signature(family, &scalar.operands)
+                })
                 .min_by_key(|scalar| scalar.offset)?;
-            if scalar.offset - class.offset > 128
-                || (!intervals.is_empty()
-                    && feature_at_offset(class.offset, intervals) != scalar.feature_ref.as_deref())
-                || !relation_signature(family, &scalar.operands)
+            if !intervals.is_empty()
+                && feature_at_offset(class.offset, intervals) != scalar.feature_ref.as_deref()
             {
                 return None;
             }
@@ -503,6 +505,23 @@ mod relation_records_tests {
             FeatureInputRelationFamily::PointLineDistance,
             &point_tagged
         ));
+    }
+
+    #[test]
+    fn declaration_skips_nearer_incompatible_scalar() {
+        let relation_class = class(10, "sgPntPntHorDist");
+        let mut native = scalar(20, FeatureInputScalarRole::Native);
+        native.operands.clear();
+        native.entity_indices.clear();
+        let driving = scalar(40, FeatureInputScalarRole::Driving);
+        let lane = lane(vec![relation_class], vec![native, driving.clone()]);
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one relation instance");
+        };
+        assert_eq!(relation.parameter_scalar_ref, Some(driving.id.clone()));
+        assert_eq!(relation.scalar_refs, vec![driving.id]);
     }
 
     #[test]
