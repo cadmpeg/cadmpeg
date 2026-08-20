@@ -462,9 +462,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved.
+**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved. `siemens_nx.md` §7.1 assigns the common-frame state bytes to legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
+
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. The `ObjectStateCollection` and `ObjectState` declarations identify object-model classes, but do not by themselves identify an operation owner, a state value, or a value domain.
+
+**Note.** A suppression assignment requires one unique relation from an operation feature identity to a serialized state value, with the value domain decoded. A common-frame, toggle entry, or object-state declaration without all three joins does not assign `suppressed`; operations outside a proven active closure remain unresolved.
 
 ### OM-11. `DELETE` nullable-reference roles
 
