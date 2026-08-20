@@ -8,8 +8,8 @@ use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
-    feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
-    resolved_edge_treatment_group,
+    feature_input_topology_id, project_fixed_fillet, resolved_edge_flange_group,
+    resolved_edge_group, resolved_edge_treatment_group,
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
@@ -3513,7 +3513,7 @@ pub(crate) fn project_edge_flange(
             {
                 return None;
             }
-            Some(crate::design::edge_resolve::resolved_edge_group(
+            Some(resolved_edge_flange_group(
                 edge_group,
                 groups,
                 edge_operands,

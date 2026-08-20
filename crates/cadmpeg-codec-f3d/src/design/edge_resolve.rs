@@ -27,6 +27,110 @@ pub(crate) fn resolved_edge_group(
     )
 }
 
+/// Resolve a selectorless `EdgeFlange` group from its updated source edges.
+///
+/// An `EdgeFlange` operation preserves the selected source edge as an updated
+/// edge. This fallback is admitted only when each group member has exactly one
+/// such edge and carries no selector or reference-context evidence. A
+/// multi-edge update therefore remains native instead of assigning every
+/// changed boundary edge to the group.
+pub(crate) fn resolved_edge_flange_group(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> cadmpeg_ir::features::EdgeSelection {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let selection = resolved_edge_group(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+    );
+    if !matches!(selection, EdgeSelection::Native(_)) {
+        return selection;
+    }
+    let Some(previous_state_id) = previous_state_id else {
+        return selection;
+    };
+    let stream = native_stream(&group.id);
+    let mut members = HashSet::new();
+    let candidate_sets = group
+        .members
+        .iter()
+        .map(|member| {
+            if !members.insert(*member) {
+                return None;
+            }
+            let matching = operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                })
+                .collect::<Vec<_>>();
+            let [operand] = matching.as_slice() else {
+                return None;
+            };
+            edge_flange_updated_edge_candidate(operand)
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(candidate_sets) = candidate_sets else {
+        return selection;
+    };
+    let Some(edges) = unique_bipartite_assignment(&candidate_sets) else {
+        return selection;
+    };
+    if edges.is_empty() {
+        return selection;
+    }
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let state = feature_input_topology_id(feature_id, previous_state_id);
+    EdgeSelection::Historical {
+        state,
+        edges: edges
+            .into_iter()
+            .map(|edge_slot| {
+                ids::history_input_edge_id(
+                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    edge_slot,
+                )
+            })
+            .collect(),
+        native: group.id.clone(),
+    }
+}
+
+fn edge_flange_updated_edge_candidate(operand: &DesignEdgeOperand) -> Option<Vec<i64>> {
+    if !operand.recipe_references.is_empty()
+        || !operand.recipe_selectors.is_empty()
+        || !operand.recipe_reference_contexts.is_empty()
+        || operand.local_topology_references.is_some()
+    {
+        return None;
+    }
+    let [edge] = operand.updated_boundary_edge_slots.as_slice() else {
+        return None;
+    };
+    if !operand.preceding_boundary_edge_slots.contains(edge)
+        || !operand.changed_boundary_edge_slots.contains(edge)
+        || operand.deleted_boundary_edge_slots.contains(edge)
+        || !operand.result_boundary_edge_slots.contains(edge)
+    {
+        return None;
+    }
+    Some(vec![*edge])
+}
+
 /// Resolve an edge-treatment group with the exact transition chain available
 /// to Fillet and Chamfer operations.
 pub(crate) fn resolved_edge_treatment_group(

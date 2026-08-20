@@ -363,6 +363,56 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
 }
 
 #[test]
+fn edge_flange_uses_one_updated_edge_without_recipe_context() {
+    let group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.preceding_boundary_edge_slots = vec![17, 18, 19];
+    operand.changed_boundary_edge_slots = vec![17, 18];
+    operand.updated_boundary_edge_slots = vec![17];
+    operand.result_boundary_edge_slots = vec![17, 20];
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#edge-flange".into());
+
+    let selection = resolved_edge_flange_group(
+        &group,
+        std::slice::from_ref(&group),
+        &[operand],
+        &[],
+        Some(7),
+        &feature_id,
+    );
+    assert!(matches!(
+        selection,
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+            if edges == [cadmpeg_ir::ids::HistoricalEdgeId(
+                "f3d:history-input:edge#11:edge-flange:7:17".into()
+            )]
+    ));
+}
+
+#[test]
+fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
+    let group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.preceding_boundary_edge_slots = vec![17, 18, 19];
+    operand.changed_boundary_edge_slots = vec![17, 18];
+    operand.updated_boundary_edge_slots = vec![17, 18];
+    operand.result_boundary_edge_slots = vec![17, 18, 20];
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#edge-flange".into());
+
+    assert!(matches!(
+        resolved_edge_flange_group(
+            &group,
+            std::slice::from_ref(&group),
+            &[operand],
+            &[],
+            Some(7),
+            &feature_id,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+}
+
+#[test]
 fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
     let first = recipe_edge_operand(10, &[17], &[17]);
     let second = recipe_edge_operand(11, &[], &[]);
