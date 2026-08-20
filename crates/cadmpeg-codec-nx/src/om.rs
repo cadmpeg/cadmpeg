@@ -4356,84 +4356,97 @@ pub fn operation_terminal_discriminator(
     if record.payload.last() != Some(&0) {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(18) {
+
+    let decode = |start: usize| {
         if record.payload.get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
-            continue;
+            return None;
         }
         let mut at = start + 3;
+        let mut type_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 2];
         let mut type_indices = [0; 2];
-        let mut raw_type_indices = Vec::with_capacity(2);
-        let mut type_index_offsets = Vec::with_capacity(2);
-        let mut valid = true;
-        for value in &mut type_indices {
-            let Some((CompactIndex::Value(index), width)) =
-                record.payload.get(at..).and_then(compact_index)
-            else {
-                valid = false;
-                break;
+        let mut type_index_offsets = [0; 2];
+        for slot in 0..2 {
+            let token = compact_value_token(record.payload, at)?;
+            type_indices[slot] = match token.value {
+                CompactIndex::Value(value) => value,
+                CompactIndex::Null => return None,
             };
-            *value = index;
-            raw_type_indices.push(record.payload[at..at + width].to_vec());
-            type_index_offsets.push(record.payload_offset + at);
-            at += width;
+            type_index_offsets[slot] = record.payload_offset + at;
+            type_tokens[slot] = token;
+            at += token.width;
         }
-        let Ok(raw_type_indices) = raw_type_indices.try_into() else {
-            continue;
-        };
-        let Ok(type_index_offsets) = type_index_offsets.try_into() else {
-            continue;
-        };
-        if !valid || record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
-            continue;
+        if record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
+            return None;
         }
         at += 4;
-        let Some(flags) = record
+        let flags = record
             .payload
             .get(at..at + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-        else {
-            continue;
-        };
+            .and_then(|bytes| bytes.try_into().ok())?;
         at += 4;
         if record.payload.get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
-            continue;
+            return None;
         }
         at += 5;
+
         let trailing_end = record.payload.len() - 1;
-        let mut trailing_indices = Vec::new();
-        let mut raw_trailing_indices = Vec::new();
-        let mut trailing_index_offsets = Vec::new();
-        while at < trailing_end {
-            let Some((CompactIndex::Value(value), width)) =
-                record.payload.get(at..trailing_end).and_then(compact_index)
-            else {
-                valid = false;
-                break;
+        let mut trailing_at = at;
+        let mut trailing_count = 0;
+        while trailing_at < trailing_end {
+            let token = compact_value_token(record.payload, trailing_at)?;
+            trailing_at += token.width;
+            trailing_count += 1;
+        }
+        (trailing_at == trailing_end).then_some(())?;
+
+        // Validate the complete trailing lane before allocating its owned
+        // representation. A terminal candidate is tested at every payload
+        // offset, so malformed prefixes must remain allocation-free.
+        let mut trailing_indices = Vec::with_capacity(trailing_count);
+        let mut raw_trailing_indices = Vec::with_capacity(trailing_count);
+        let mut trailing_index_offsets = Vec::with_capacity(trailing_count);
+        trailing_at = at;
+        while trailing_at < trailing_end {
+            let token = compact_value_token(record.payload, trailing_at)?;
+            let value = match token.value {
+                CompactIndex::Value(value) => value,
+                CompactIndex::Null => return None,
             };
             trailing_indices.push(value);
-            raw_trailing_indices.push(record.payload[at..at + width].to_vec());
-            trailing_index_offsets.push(record.payload_offset + at);
-            at += width;
+            raw_trailing_indices.push(raw_compact_token(record.payload, token));
+            trailing_index_offsets.push(record.payload_offset + trailing_at);
+            trailing_at += token.width;
         }
-        if !valid || at != trailing_end {
-            continue;
-        }
-        matches.push(OperationTerminalDiscriminator {
+
+        Some(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
             type_indices,
-            raw_type_indices,
+            raw_type_indices: std::array::from_fn(|slot| {
+                raw_compact_token(record.payload, type_tokens[slot])
+            }),
             type_index_offsets,
             flags,
             trailing_indices,
             raw_trailing_indices,
             trailing_index_offsets,
-        });
-    }
-    let [footer] = matches.as_slice() else {
-        return None;
+        })
     };
-    Some(footer.clone())
+
+    let mut found = None;
+    for start in 0..record.payload.len().saturating_sub(18) {
+        let Some(lane) = decode(start) else {
+            continue;
+        };
+        if found.is_some() {
+            return None;
+        }
+        found = Some(lane);
+    }
+    found
 }
 
 fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
@@ -5983,23 +5996,38 @@ pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationComm
         if marker == [0x01, 0x01, 0x01] && record.label.value != "DELETE" {
             return None;
         }
+
+        // The compact prefix has fixed widths for each frame family. Check the
+        // discriminator at its exact position before decoding any token. This
+        // scan visits every payload byte, so a candidate must not own heap
+        // storage until all of its framing and suffix invariants pass.
+        let prefix_width = widths.into_iter().sum::<usize>();
+        let marker_start = prefix_start.checked_add(prefix_width)?;
+        (record
+            .payload
+            .get(marker_start..marker_start + marker.len())
+            == Some(&marker))
+        .then_some(())?;
+
         let mut at = prefix_start;
-        let mut indices = Vec::with_capacity(3);
-        let mut raw_indices = Vec::with_capacity(3);
-        let mut index_offsets = Vec::with_capacity(3);
-        for width in widths {
-            let token = record.payload.get(at..at + width)?;
-            let (index, end) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(index) = index else {
+        let mut tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut indices = [0; 3];
+        let mut index_offsets = [0; 3];
+        for (slot, width) in widths.into_iter().enumerate() {
+            let token = compact_token(record.payload, at)?;
+            let CompactIndex::Value(index) = token.value else {
                 return None;
             };
-            (end == width).then_some(())?;
-            indices.push(index);
-            raw_indices.push(token.to_vec());
-            index_offsets.push(record.payload_offset + at);
+            (token.width == width).then_some(())?;
+            tokens[slot] = token;
+            indices[slot] = index;
+            index_offsets[slot] = record.payload_offset + at;
             at += width;
         }
-        (record.payload.get(at..at + marker.len()) == Some(&marker)).then_some(())?;
         at += marker.len();
         let state_offset = at;
         let state = record.payload.get(at..at + 8)?.try_into().ok()?;
@@ -6020,12 +6048,11 @@ pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationComm
         let object_raw = &record.payload[second_end..object_end];
         canonical_feature_object_index(object_index, object_raw).then_some(())?;
         (record.payload.get(object_end) == Some(&0)).then_some(())?;
-        let indices: [u32; 3] = indices.try_into().ok()?;
-        let raw_indices: [Vec<u8>; 3] = raw_indices.try_into().ok()?;
-        let index_offsets: [usize; 3] = index_offsets.try_into().ok()?;
         Some(OperationCommonFrame {
             indices,
-            raw_indices,
+            raw_indices: std::array::from_fn(|slot| {
+                raw_compact_token(record.payload, tokens[slot])
+            }),
             marker,
             state,
             offset: record.payload_offset + prefix_start,
