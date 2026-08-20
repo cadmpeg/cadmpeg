@@ -853,6 +853,55 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
     ));
 
+    for (class_tag, paired_class_tag, base_frame, base_kind) in [
+        ("287", "270", 245_u64, 135_u64),
+        ("287", "270", 256, 146),
+        ("327", "257", 250, 139),
+        ("414", "263", 250, 140),
+        ("497", "259", 257, 146),
+        ("545", "257", 246, 135),
+        ("545", "257", 250, 139),
+        ("545", "257", 257, 146),
+    ] {
+        surface_scope.class_tag = class_tag.into();
+        surface_scope.paired_class_tag = paired_class_tag.into();
+        surface_scope.frame_length = base_frame + reference_bytes;
+        surface_scope.kind_offset = surface_scope.byte_offset + base_kind + reference_bytes;
+        let (features, _) = project_parameter_design(
+            &[],
+            &[],
+            std::slice::from_ref(&surface_scope),
+            std::slice::from_ref(&delete_group),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::DeleteFace { heal: false, .. }
+        ));
+    }
+
+    surface_scope.class_tag = "327".into();
+    surface_scope.paired_class_tag = "258".into();
+    surface_scope.frame_length = 250 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+    ));
+
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
         delete_scope.kind = "DeleteFace".into();
         delete_scope.class_tag = class_tag.into();

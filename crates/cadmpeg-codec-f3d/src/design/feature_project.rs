@@ -6768,17 +6768,46 @@ fn project_delete_face(
         .kind_offset
         .checked_sub(scope.byte_offset)?
         .checked_sub(reference_bytes)?;
-    let heal = match (scope.kind.as_str(), (base_frame_length, base_kind_offset)) {
-        ("DeleteFace", (236, 139) | (241, 143)) => true,
-        ("DeleteFace", (232, 135))
-            if matches!(
-                (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-                ("264", "262") | ("383", "263")
-            ) =>
-        {
-            true
+    let heal = match scope.kind.as_str() {
+        "DeleteFace" => match (base_frame_length, base_kind_offset) {
+            (236, 139) | (241, 143) => true,
+            (232, 135)
+                if matches!(
+                    (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+                    ("264", "262") | ("383", "263")
+                ) =>
+            {
+                true
+            }
+            _ => return None,
+        },
+        "SurfaceDeleteFace" => {
+            let common_layout = matches!(
+                (base_frame_length, base_kind_offset),
+                (250, 140) | (251, 139)
+            );
+            let class_layout = matches!(
+                (
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
+                    base_frame_length,
+                    base_kind_offset,
+                ),
+                ("287", "270", 245, 135)
+                    | ("287", "270", 256, 146)
+                    | ("327", "257", 250, 139)
+                    | ("414", "263", 250, 140)
+                    | ("497", "259", 257, 146)
+                    | ("545", "257", 246, 135)
+                    | ("545", "257", 250, 139)
+                    | ("545", "257", 257, 146)
+            );
+            if common_layout || class_layout {
+                false
+            } else {
+                return None;
+            }
         }
-        ("SurfaceDeleteFace", (250, 140) | (251, 139)) => false,
         _ => return None,
     };
     if reference_count < 2 {
