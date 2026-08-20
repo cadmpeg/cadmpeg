@@ -1550,6 +1550,28 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
 }
 
 #[test]
+fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
+    use cadmpeg_ir::features::BodySelection;
+    use std::collections::BTreeMap;
+
+    let selection = super::feature_body_selection_with_offset_blocks(
+        &[94],
+        &BTreeMap::from([(94, 94)]),
+        &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
+        &BTreeMap::new(),
+        "nx:om-object-index#94".to_string(),
+    );
+
+    assert_eq!(
+        selection.selection,
+        BodySelection::Local {
+            bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
+            native: "nx:om-object-index#94".to_string(),
+        }
+    );
+}
+
+#[test]
 fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::features::{
         FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBodySegmentUse, FeatureInputBlock,
