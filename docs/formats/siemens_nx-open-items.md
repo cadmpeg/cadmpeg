@@ -492,25 +492,6 @@ not join an unowned endpoint to a body, tool, input, or output.
 reference frame as native data. No feature dependency or selection is emitted
 until one unique endpoint-role relation is serialized.
 
-### OM-09. Embedded operation common-frame ownership
-
-**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
-
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The sixth and seventh state bytes are the exact two-byte `m_splitTrackingData` representation. The eighth state byte is the unsigned `m_groupCount` field. Legacy module inactivity is not feature suppression.
-
-**Need.** We must know ownership and field roles to attach the state to the correct operation.
-
-**Conflict.** The bounded operation record owns the serialized frame span and
-the frame ordinal preserves byte order. A record with multiple common frames
-does not serialize a nested semantic operation owner for each frame. The
-state lane assigns only the four documented fields; no additional role is
-encoded by the frame prefix or terminal link.
-
-**Note.** Common frames remain attached to their bounded operation record with
-all raw state bytes and typed fields that have settled meanings. No frame is
-assigned to a nested operation or a new state field without an independent
-owner relation.
-
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?
