@@ -684,7 +684,10 @@ impl Graph {
 
         let selected = Self::select_unique_candidates(candidates);
         let mut graph = Self::default();
-        for node in Self::select_non_overlapping_candidates(stream, selected) {
+        for candidate in Self::select_non_overlapping_candidates(stream, selected) {
+            let Some(node) = candidate.materialize(stream) else {
+                continue;
+            };
             let key = (node.kind, node.xmt);
             graph.by_pos.insert(node.pos, key);
             graph.nodes.insert(key, node);
@@ -692,32 +695,40 @@ impl Graph {
         graph
     }
 
-    fn fixed_record_candidates(stream: &[u8], pos: usize, kind: u8, len: usize) -> Vec<Node> {
+    fn fixed_record_candidates(
+        stream: &[u8],
+        pos: usize,
+        kind: u8,
+        len: usize,
+    ) -> Vec<NodeCandidate> {
         let candidates = framed_record_candidates(stream, pos, kind, len)
             .into_iter()
             .filter_map(|frame| {
-                let bytes = stream.get(pos..frame.end)?;
-                let node = Node {
+                candidate_has_valid_family_framing(stream, pos, kind, frame.shift, frame.end)?;
+                Some(NodeCandidate {
                     kind,
                     xmt: frame.xmt,
                     pos,
                     shift: frame.shift,
-                    bytes: bytes.to_vec(),
-                };
-                node.has_valid_family_framing().then_some(node)
+                    end: frame.end,
+                })
             })
             .collect::<Vec<_>>();
         if candidates.len() < 2 {
             return candidates;
         }
 
-        let boundary_candidates = candidates
+        let mut boundary_candidates = candidates
             .iter()
-            .filter(|candidate| fixed_record_boundary(stream, candidate.end()))
-            .collect::<Vec<_>>();
-        match boundary_candidates.as_slice() {
-            [candidate] => vec![(*candidate).clone()],
-            _ => Vec::new(),
+            .copied()
+            .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
+        let Some(candidate) = boundary_candidates.next() else {
+            return Vec::new();
+        };
+        if boundary_candidates.next().is_none() {
+            vec![candidate]
+        } else {
+            Vec::new()
         }
     }
 
@@ -727,23 +738,25 @@ impl Graph {
     /// the fixed-record grammar provides no discriminator that can make one
     /// authoritative. Invalidate the identity instead of ranking candidates
     /// by topology shape, reference counts, or scan position.
-    fn select_unique_candidates(candidates: Vec<Node>) -> Vec<Node> {
-        let mut by_key = BTreeMap::<(u8, u32), Vec<Node>>::new();
+    fn select_unique_candidates(candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
+        let mut by_key = BTreeMap::<(u8, u32), Vec<NodeCandidate>>::new();
         for node in candidates {
             by_key.entry((node.kind, node.xmt)).or_default().push(node);
         }
         by_key
             .into_values()
-            .filter_map(|nodes| match nodes.as_slice() {
-                [node] => Some(node.clone()),
-                _ => None,
+            .filter_map(|mut nodes| {
+                (nodes.len() == 1).then(|| nodes.pop().expect("candidate length is one"))
             })
             .collect()
     }
 
     /// Discard overlapping candidates when no serialized ownership boundary
     /// identifies which record owns the bytes.
-    fn select_non_overlapping_candidates(stream: &[u8], mut nodes: Vec<Node>) -> Vec<Node> {
+    fn select_non_overlapping_candidates(
+        stream: &[u8],
+        mut nodes: Vec<NodeCandidate>,
+    ) -> Vec<NodeCandidate> {
         nodes.sort_by(|left, right| {
             left.pos
                 .cmp(&right.pos)
@@ -751,10 +764,10 @@ impl Graph {
         });
         let mut selected = Vec::new();
         let mut start = 0;
-        while let Some(first) = nodes.get(start) {
+        while let Some(first) = nodes.get(start).copied() {
             if fixed_record_boundary(stream, first.end()) {
                 let end = first.end();
-                selected.push(first.clone());
+                selected.push(first);
                 start += 1;
                 while nodes
                     .get(start)
@@ -775,35 +788,23 @@ impl Graph {
             }
             let cluster = &nodes[start..end];
             if let [node] = cluster {
-                selected.push(node.clone());
+                selected.push(*node);
             } else {
-                let boundary_candidates = cluster
+                let mut boundary_candidates = cluster
                     .iter()
-                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()))
-                    .collect::<Vec<_>>();
-                if let [node] = boundary_candidates.as_slice() {
-                    selected.push((*node).clone());
+                    .copied()
+                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
+                let Some(node) = boundary_candidates.next() else {
+                    start = end;
+                    continue;
+                };
+                if boundary_candidates.next().is_none() {
+                    selected.push(node);
                 }
             }
             start = end;
         }
         selected
-    }
-
-    fn has_node_id(node: &Node) -> bool {
-        matches!(
-            node.kind,
-            13..=16
-                | 18..=19
-                | 29..=32
-                | 38
-                | 50..=54
-                | 56
-                | 60
-                | 124
-                | 133..=134
-                | 137
-        ) && node.u32_at(4).is_some_and(|node_id| node_id <= 1_000_000)
     }
 
     /// Look up a node by record type and XMT identifier.
@@ -1078,41 +1079,101 @@ impl Graph {
     }
 }
 
-impl Node {
-    fn has_valid_family_framing(&self) -> bool {
-        if matches!(
-            self.kind,
-            13..=16
-                | 18..=19
-                | 29..=32
-                | 38
-                | 50..=54
-                | 56
-                | 60
-                | 124
-                | 133..=134
-                | 137
-        ) && !Graph::has_node_id(self)
-        {
-            return false;
-        }
-        match self.kind {
-            13 => self.shell_fields().is_some(),
-            14 => self
-                .face_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            15 => self.loop_fields().is_some(),
-            16 => self
-                .edge_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            17 => self.fin_fields().is_some(),
-            18 => self
-                .vertex_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            29 => self.point_position().is_some(),
-            _ => true,
-        }
+#[derive(Debug, Clone, Copy)]
+struct NodeCandidate {
+    kind: u8,
+    xmt: u32,
+    pos: usize,
+    shift: usize,
+    end: usize,
+}
+
+impl NodeCandidate {
+    fn end(self) -> usize {
+        self.end
     }
+
+    fn materialize(self, stream: &[u8]) -> Option<Node> {
+        Some(Node {
+            kind: self.kind,
+            xmt: self.xmt,
+            pos: self.pos,
+            shift: self.shift,
+            bytes: stream.get(self.pos..self.end)?.to_vec(),
+        })
+    }
+}
+
+fn candidate_has_valid_family_framing(
+    stream: &[u8],
+    pos: usize,
+    kind: u8,
+    shift: usize,
+    end: usize,
+) -> Option<()> {
+    let bytes = stream.get(pos..end)?;
+    if matches!(
+        kind,
+        13..=16
+            | 18..=19
+            | 29..=32
+            | 38
+            | 50..=54
+            | 56
+            | 60
+            | 124
+            | 133..=134
+            | 137
+    ) && View::u32_be_at(bytes, 4 + shift).is_none_or(|node_id| node_id > 1_000_000)
+    {
+        return None;
+    }
+    match kind {
+        13 => {
+            let mut at = 8 + shift;
+            read_sequence_at(bytes, &mut at, 8)?;
+        }
+        14 => {
+            let mut at = 8 + shift;
+            read_and_advance(bytes, &mut at)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+            at += 8;
+            read_sequence_at(bytes, &mut at, 5)?;
+            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+        }
+        15 => {
+            let mut at = 8 + shift;
+            read_sequence_at(bytes, &mut at, 4)?;
+        }
+        16 => {
+            let mut at = 8 + shift;
+            read_and_advance(bytes, &mut at)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+            at += 8;
+            read_sequence_at(bytes, &mut at, 7)?;
+        }
+        17 => {
+            let mut at = 4 + shift;
+            read_sequence_at(bytes, &mut at, 9)?;
+            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+        }
+        18 => {
+            let mut at = 8 + shift;
+            read_sequence_at(bytes, &mut at, 5)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+        }
+        29 => {
+            let mut at = 8 + shift;
+            read_sequence_at(bytes, &mut at, 4)?;
+            let point = vec3_be_at(bytes, at)?;
+            point
+                .iter()
+                .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
+                .then_some(())?;
+        }
+        _ => {}
+    }
+    Some(())
 }
 
 #[cfg(test)]

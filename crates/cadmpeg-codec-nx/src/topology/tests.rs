@@ -286,19 +286,19 @@ fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
 
 #[test]
 fn topology_rejects_overlapping_candidates_without_ranking() {
-    let first = Node {
+    let first = NodeCandidate {
         kind: 29,
         xmt: 11,
         pos: 0,
         shift: 0,
-        bytes: vec![0; 24],
+        end: 24,
     };
-    let second = Node {
+    let second = NodeCandidate {
         kind: 29,
         xmt: 12,
         pos: 8,
         shift: 0,
-        bytes: vec![0; 24],
+        end: 32,
     };
 
     assert!(Graph::select_non_overlapping_candidates(&[], vec![first, second]).is_empty());
