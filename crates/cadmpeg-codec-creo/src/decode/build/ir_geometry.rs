@@ -32,7 +32,8 @@ use super::super::surfaces::{
     transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
     transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
     transfer_positional_tori, transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
-    transfer_tabulated_cylinder_spline_extrusions,
+    transfer_tabulated_cylinder_spline_extrusions, BrepTransferDiagnostics,
+    NativeBrepTransferSummary,
 };
 use super::super::sweep::{
     transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
@@ -46,6 +47,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut BTreeMap<String, usize>,
+    brep_diagnostics: &mut BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
     let first_instance_prototype_surface_count =
@@ -105,7 +107,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
         annotations,
         &nurbs_boundary_curves.endpoint_witnesses,
     ));
-    let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
+    let NativeBrepTransferSummary {
+        topological_point_count,
+        native_topological_edge_count,
+        diagnostics,
+    } = transfer_native_brep(
         scan,
         ir,
         annotations,
@@ -113,6 +119,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &analytic_pcurve_carriers,
         &nurbs_boundary_curves.endpoint_witnesses,
     );
+    diagnostics.record_coverage(coverage);
+    *brep_diagnostics = diagnostics;
     let feature_revolution_brep_count = transfer_resolved_revolution_breps(scan, ir, annotations);
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
@@ -573,6 +581,8 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
+    use crate::decode::surfaces::BrepTransferDiagnostics;
+
     use super::transfer_and_record_scanned_geometry;
 
     #[test]
@@ -656,8 +666,16 @@ mod tests {
             .expect("test decode context");
         let mut annotations = AnnotationBuilder::new();
         let mut coverage = BTreeMap::new();
-        transfer_and_record_scanned_geometry(&ctx, &scan, &mut ir, &mut annotations, &mut coverage)
-            .expect("synthetic geometry transfer");
+        let mut brep_diagnostics = BrepTransferDiagnostics::default();
+        transfer_and_record_scanned_geometry(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut coverage,
+            &mut brep_diagnostics,
+        )
+        .expect("synthetic geometry transfer");
 
         let curve = ir
             .model

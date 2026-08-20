@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
+use crate::decode::surfaces::{BrepTransferDiagnostics, FaceAdmissionRejection};
 use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
@@ -128,6 +129,88 @@ pub(super) fn push_legacy_value_losses(
             )),
         );
     }
+}
+
+pub(super) fn push_brep_transfer_note(
+    losses: &mut Vec<LossNote>,
+    diagnostics: &BrepTransferDiagnostics,
+    geometry_section_count: usize,
+) {
+    let rejected_face_count = diagnostics
+        .rejected_faces
+        .values()
+        .map(|evidence| evidence.count)
+        .sum::<usize>();
+    let rejection_details = FaceAdmissionRejection::ALL
+        .into_iter()
+        .filter_map(|reason| {
+            let evidence = diagnostics.rejected_faces.get(&reason)?;
+            let samples = evidence
+                .sample_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            Some(if samples.is_empty() {
+                format!("{}={}", reason.label(), evidence.count)
+            } else {
+                format!(
+                    "{}={} (sample face ids: {samples})",
+                    reason.label(),
+                    evidence.count
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rejection_details = if rejection_details.is_empty() {
+        "none".to_string()
+    } else {
+        rejection_details
+    };
+    let mut component_gate_reasons = Vec::new();
+    if diagnostics.body_count_mismatch {
+        component_gate_reasons.push("selected body count mismatch".to_string());
+    }
+    if diagnostics.legacy_body_ownership_ambiguous {
+        component_gate_reasons.push("legacy body ownership ambiguous".to_string());
+    }
+    if diagnostics.empty_component_count != 0 {
+        component_gate_reasons.push(format!(
+            "{} empty admitted component(s)",
+            diagnostics.empty_component_count
+        ));
+    }
+    let component_gate = component_gate_reasons.join(", ");
+    let component_gate = if component_gate.is_empty() {
+        "passed".to_string()
+    } else {
+        component_gate
+    };
+
+    losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
+        "General model B-rep transfer remains incomplete. Native face components transfer \
+         when every boundary edge has solved vertex orbits, face orientation is unique, and \
+         every loop is complete; a multi-loop face additionally requires strict parameter-space \
+         containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected \
+         cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
+         a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+         square cap outline establishes the complete axis placement and radius, or a compact \
+         class-911 table owns a complete positional cylinder carrier, a class-911 \
+         counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
+         patches have complementary square outline bounds on one axis-normal plane. Later positional \
+         instances do not inherit prototype placement or scalar \
+         defaults; they require their per-instance parameter bodies \
+         ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). \
+         Face admission considered {} candidate(s): {} passed, {} emitted, and {} were rejected. \
+         First-failure rejection counts are: {rejection_details}. Component admission gate: \
+         {component_gate}. {geometry_section_count} PSB geometry section(s) were preserved \
+         verbatim as unknown records.",
+        diagnostics.candidate_face_count,
+        diagnostics.admitted_face_count,
+        diagnostics.emitted_face_count,
+        rejected_face_count,
+    )));
 }
 
 pub(super) fn push_carrier_transfer_notes(

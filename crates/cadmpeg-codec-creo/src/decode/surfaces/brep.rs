@@ -38,6 +38,141 @@ use super::fc05_model_frame;
 
 const EPS_PARAMETER_AGREE: f64 = 1e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1e-9;
+const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
+
+/// The first admission predicate that rejected one native face candidate.
+///
+/// The order is part of the diagnostic contract: one candidate contributes to
+/// one bucket, so corpus totals can be compared without double-counting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(in super::super) enum FaceAdmissionRejection {
+    /// No unique native orientation exists for the candidate face.
+    MissingOrientation,
+    /// More than one typed model surface claims the candidate face identity.
+    AmbiguousSurfaceCarrier,
+    /// The topology component names the face but no closed native loop decoded.
+    MissingLoops,
+    /// At least one boundary curve lacks a solved endpoint vertex pair.
+    UnresolvedBoundaryVertices,
+    /// At least one boundary curve has more than one typed model carrier.
+    AmbiguousBoundaryCurve,
+    /// A two-edge loop did not satisfy the strict native parameter proof.
+    TwoEdgeParameterProof,
+    /// No deterministic loop order was established from geometry or pcurves.
+    LoopOrdering,
+}
+
+impl FaceAdmissionRejection {
+    pub(in super::super) const ALL: [Self; 7] = [
+        Self::MissingOrientation,
+        Self::AmbiguousSurfaceCarrier,
+        Self::MissingLoops,
+        Self::UnresolvedBoundaryVertices,
+        Self::AmbiguousBoundaryCurve,
+        Self::TwoEdgeParameterProof,
+        Self::LoopOrdering,
+    ];
+
+    pub(in super::super) const fn key(self) -> &'static str {
+        match self {
+            Self::MissingOrientation => "missing_orientation",
+            Self::AmbiguousSurfaceCarrier => "ambiguous_surface_carrier",
+            Self::MissingLoops => "missing_loops",
+            Self::UnresolvedBoundaryVertices => "unresolved_boundary_vertices",
+            Self::AmbiguousBoundaryCurve => "ambiguous_boundary_curve",
+            Self::TwoEdgeParameterProof => "two_edge_parameter_proof",
+            Self::LoopOrdering => "loop_ordering",
+        }
+    }
+
+    pub(in super::super) const fn label(self) -> &'static str {
+        match self {
+            Self::MissingOrientation => "missing orientation",
+            Self::AmbiguousSurfaceCarrier => "ambiguous surface carrier",
+            Self::MissingLoops => "missing loops",
+            Self::UnresolvedBoundaryVertices => "unresolved boundary vertices",
+            Self::AmbiguousBoundaryCurve => "ambiguous boundary curve",
+            Self::TwoEdgeParameterProof => "two-edge parameter proof",
+            Self::LoopOrdering => "loop ordering",
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(in super::super) struct FaceAdmissionEvidence {
+    pub(in super::super) count: usize,
+    pub(in super::super) sample_ids: Vec<u32>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(in super::super) struct BrepTransferDiagnostics {
+    pub(in super::super) candidate_face_count: usize,
+    pub(in super::super) admitted_face_count: usize,
+    pub(in super::super) emitted_face_count: usize,
+    pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
+    pub(in super::super) body_count_mismatch: bool,
+    pub(in super::super) legacy_body_ownership_ambiguous: bool,
+    pub(in super::super) empty_component_count: usize,
+}
+
+impl BrepTransferDiagnostics {
+    fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
+        let evidence = self.rejected_faces.entry(reason).or_default();
+        evidence.count += 1;
+        if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
+            evidence.sample_ids.push(face_id);
+        }
+    }
+
+    pub(in super::super) fn record_coverage(&self, coverage: &mut BTreeMap<String, usize>) {
+        coverage.insert(
+            "brep_candidate_face_count".to_string(),
+            self.candidate_face_count,
+        );
+        coverage.insert(
+            "brep_admitted_face_count".to_string(),
+            self.admitted_face_count,
+        );
+        coverage.insert(
+            "brep_emitted_face_count".to_string(),
+            self.emitted_face_count,
+        );
+        coverage.insert(
+            "brep_rejected_face_count".to_string(),
+            self.rejected_faces
+                .values()
+                .map(|evidence| evidence.count)
+                .sum(),
+        );
+        for reason in FaceAdmissionRejection::ALL {
+            coverage.insert(
+                format!("brep_rejected_face_{}_count", reason.key()),
+                self.rejected_faces
+                    .get(&reason)
+                    .map_or(0, |evidence| evidence.count),
+            );
+        }
+        coverage.insert(
+            "brep_body_count_mismatch_count".to_string(),
+            usize::from(self.body_count_mismatch),
+        );
+        coverage.insert(
+            "brep_legacy_body_ownership_ambiguous_count".to_string(),
+            usize::from(self.legacy_body_ownership_ambiguous),
+        );
+        coverage.insert(
+            "brep_empty_component_count".to_string(),
+            self.empty_component_count,
+        );
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(in super::super) struct NativeBrepTransferSummary {
+    pub(in super::super) topological_point_count: usize,
+    pub(in super::super) native_topological_edge_count: usize,
+    pub(in super::super) diagnostics: BrepTransferDiagnostics,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 struct NeutralShellSpec {
@@ -445,7 +580,7 @@ pub(in super::super) fn transfer_native_brep(
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> (usize, usize) {
+) -> NativeBrepTransferSummary {
     let carriers = placed_carriers(scan, ir);
     let planes = carriers
         .iter()
@@ -544,8 +679,21 @@ pub(in super::super) fn transfer_native_brep(
         .copied()
         .filter(|curve_id| model_curve_counts[curve_id] <= 1)
         .collect::<BTreeSet<_>>();
-    let model_surface_counts = face_orientations
-        .keys()
+    let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
+    for lp in &scan.topology.loops {
+        if lp.face_id != 0 {
+            loops_by_face.entry(lp.face_id).or_default().push(lp);
+        }
+    }
+    let candidate_face_ids = scan
+        .topology
+        .face_components
+        .iter()
+        .flat_map(|component| component.face_ids.iter().copied())
+        .chain(loops_by_face.keys().copied())
+        .collect::<BTreeSet<_>>();
+    let model_surface_counts = candidate_face_ids
+        .iter()
         .map(|face_id| {
             let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
             let count = ir
@@ -558,83 +706,107 @@ pub(in super::super) fn transfer_native_brep(
         })
         .collect::<BTreeMap<_, _>>();
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir);
-    let admitted_face_ids = face_orientations
-        .keys()
-        .copied()
-        .filter(|face_id| model_surface_counts[face_id] <= 1)
-        .collect::<BTreeSet<_>>();
-    let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
-    for lp in &scan.topology.loops {
-        loops_by_face.entry(lp.face_id).or_default().push(lp);
-    }
-    let eligible_faces = loops_by_face
-        .into_iter()
-        .filter_map(|(face_id, loops)| {
-            admitted_face_ids.contains(&face_id).then_some(())?;
+    let mut diagnostics = BrepTransferDiagnostics {
+        candidate_face_count: candidate_face_ids.len(),
+        ..BrepTransferDiagnostics::default()
+    };
+    let mut eligible_faces = BTreeMap::new();
+    for face_id in candidate_face_ids {
+        if !face_orientations.contains_key(&face_id) {
+            diagnostics.reject_face(FaceAdmissionRejection::MissingOrientation, face_id);
+            continue;
+        }
+        if model_surface_counts[&face_id] > 1 {
+            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousSurfaceCarrier, face_id);
+            continue;
+        }
+        let Some(loops) = loops_by_face.get(&face_id) else {
+            diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
+            continue;
+        };
+        let has_unresolved_boundary_vertices = loops.iter().any(|lp| {
+            lp.half_edges
+                .iter()
+                .any(|half_edge| !edge_vertices.contains_key(&half_edge.curve_id))
+        });
+        if has_unresolved_boundary_vertices {
+            diagnostics.reject_face(FaceAdmissionRejection::UnresolvedBoundaryVertices, face_id);
+            continue;
+        }
+        let has_ambiguous_boundary_curve = loops.iter().any(|lp| {
+            lp.half_edges.iter().any(|half_edge| {
+                model_curve_counts
+                    .get(&half_edge.curve_id)
+                    .is_some_and(|count| *count > 1)
+            })
+        });
+        if has_ambiguous_boundary_curve {
+            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
+            continue;
+        }
+        let two_edge_loops_are_proven =
             loops
                 .iter()
+                .filter(|lp| lp.half_edges.len() == 2)
                 .all(|lp| {
-                    lp.half_edges
-                        .iter()
-                        .all(|half_edge| admitted_edge_curves.contains(&half_edge.curve_id))
-                })
-                .then_some(())?;
-            let two_edge_loops_are_proven =
-                loops
+                    let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                    let Some(surface) = exactly_one(
+                        ir.model
+                            .surfaces
+                            .iter()
+                            .filter(|candidate| candidate.id == surface_id),
+                    ) else {
+                        return false;
+                    };
+                    native_parameter_loop_polygon(
+                        lp,
+                        face_id,
+                        &surface.geometry,
+                        &incidence,
+                        &solved_vertices,
+                        &native_pcurves,
+                        &typed_nonlinear_curve_ids,
+                    )
+                    .is_some()
+                });
+        if !two_edge_loops_are_proven {
+            diagnostics.reject_face(FaceAdmissionRejection::TwoEdgeParameterProof, face_id);
+            continue;
+        }
+        let ordered = ordered_face_loops(
+            loops.clone(),
+            planes.get(&face_id).copied(),
+            &incidence,
+            &solved_vertices,
+        )
+        .or_else(|| {
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            let surface = exactly_one(
+                ir.model
+                    .surfaces
                     .iter()
-                    .filter(|lp| lp.half_edges.len() == 2)
-                    .all(|lp| {
-                        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
-                        let Some(surface) = exactly_one(
-                            ir.model
-                                .surfaces
-                                .iter()
-                                .filter(|candidate| candidate.id == surface_id),
-                        ) else {
-                            return false;
-                        };
-                        native_parameter_loop_polygon(
-                            lp,
-                            face_id,
-                            &surface.geometry,
-                            &incidence,
-                            &solved_vertices,
-                            &native_pcurves,
-                            &typed_nonlinear_curve_ids,
-                        )
-                        .is_some()
-                    });
-            two_edge_loops_are_proven.then_some(())?;
-            let ordered = ordered_face_loops(
-                loops.clone(),
-                planes.get(&face_id).copied(),
+                    .filter(|candidate| candidate.id == surface_id),
+            )?;
+            ordered_native_parameter_face_loops(
+                loops,
+                face_id,
+                &surface.geometry,
                 &incidence,
                 &solved_vertices,
+                &native_pcurves,
+                NativeCurveEvidence {
+                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                    model_curves: &ir.model.curves,
+                },
             )
-            .or_else(|| {
-                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
-                let surface = exactly_one(
-                    ir.model
-                        .surfaces
-                        .iter()
-                        .filter(|candidate| candidate.id == surface_id),
-                )?;
-                ordered_native_parameter_face_loops(
-                    &loops,
-                    face_id,
-                    &surface.geometry,
-                    &incidence,
-                    &solved_vertices,
-                    &native_pcurves,
-                    NativeCurveEvidence {
-                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                        model_curves: &ir.model.curves,
-                    },
-                )
-            })?;
-            Some((face_id, ordered))
-        })
-        .collect::<BTreeMap<_, _>>();
+        });
+        let Some(ordered) = ordered else {
+            diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
+            continue;
+        };
+        eligible_faces.insert(face_id, ordered);
+    }
+    diagnostics.admitted_face_count = eligible_faces.len();
     let eligible_loops = eligible_faces
         .values()
         .flatten()
@@ -739,14 +911,24 @@ pub(in super::super) fn transfer_native_brep(
             }),
         });
     }
-    if selected_body_count != Some(body_components.len())
-        || !legacy_body_ownership_is_unambiguous(scan, admitted_components.len())
-        || body_components
-            .iter()
-            .any(|(faces, curves)| faces.is_empty() && curves.is_empty())
+    diagnostics.body_count_mismatch = selected_body_count != Some(body_components.len());
+    diagnostics.legacy_body_ownership_ambiguous =
+        !legacy_body_ownership_is_unambiguous(scan, admitted_components.len());
+    diagnostics.empty_component_count = body_components
+        .iter()
+        .filter(|(faces, curves)| faces.is_empty() && curves.is_empty())
+        .count();
+    if diagnostics.body_count_mismatch
+        || diagnostics.legacy_body_ownership_ambiguous
+        || diagnostics.empty_component_count != 0
     {
-        return (solved_point_count, 0);
+        return NativeBrepTransferSummary {
+            topological_point_count: solved_point_count,
+            diagnostics,
+            ..NativeBrepTransferSummary::default()
+        };
     }
+    diagnostics.emitted_face_count = body_components.iter().map(|(faces, _)| faces.len()).sum();
 
     let used_vertices = neutral_edge_curves
         .iter()
@@ -1279,7 +1461,11 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
     }
-    (solved_point_count, neutral_edge_curves.len())
+    NativeBrepTransferSummary {
+        topological_point_count: solved_point_count,
+        native_topological_edge_count: neutral_edge_curves.len(),
+        diagnostics,
+    }
 }
 
 pub(in super::super) fn transfer_cap_pair_cylinders(

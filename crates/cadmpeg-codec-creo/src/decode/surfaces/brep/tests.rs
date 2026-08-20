@@ -12,8 +12,33 @@ use cadmpeg_ir::AnnotationBuilder;
 use super::{
     admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
     native_parameter_loop_polygon, ordered_native_parameter_face_loops,
-    split_neutral_component_shells, transfer_native_brep, NativeCurveEvidence, NeutralShellSpec,
+    split_neutral_component_shells, transfer_native_brep, BrepTransferDiagnostics,
+    FaceAdmissionRejection, NativeCurveEvidence, NeutralShellSpec,
 };
+
+#[test]
+fn face_admission_diagnostics_bound_samples_and_record_counts() {
+    let mut diagnostics = BrepTransferDiagnostics {
+        candidate_face_count: 6,
+        admitted_face_count: 1,
+        emitted_face_count: 1,
+        ..BrepTransferDiagnostics::default()
+    };
+    for face_id in 10..16 {
+        diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
+    }
+
+    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingLoops];
+    assert_eq!(evidence.count, 6);
+    assert_eq!(evidence.sample_ids, vec![10, 11, 12, 13]);
+    let mut coverage = BTreeMap::new();
+    diagnostics.record_coverage(&mut coverage);
+    assert_eq!(coverage["brep_candidate_face_count"], 6);
+    assert_eq!(coverage["brep_admitted_face_count"], 1);
+    assert_eq!(coverage["brep_emitted_face_count"], 1);
+    assert_eq!(coverage["brep_rejected_face_count"], 6);
+    assert_eq!(coverage["brep_rejected_face_missing_loops_count"], 6);
+}
 
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
@@ -543,7 +568,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
     );
 
-    assert_eq!(counts, (3, 0));
+    assert_eq!(counts.topological_point_count, 3);
+    assert_eq!(counts.native_topological_edge_count, 0);
     assert_eq!(
         ir.model
             .points
@@ -623,7 +649,8 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
     );
 
-    assert_eq!(counts, (3, 3));
+    assert_eq!(counts.topological_point_count, 3);
+    assert_eq!(counts.native_topological_edge_count, 3);
     assert!(ir.model.faces.is_empty());
     assert!(ir.model.loops.is_empty());
     assert!(ir.model.coedges.is_empty());

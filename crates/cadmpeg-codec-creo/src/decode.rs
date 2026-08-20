@@ -80,6 +80,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         annotations,
         unknowns,
         coverage,
+        brep_diagnostics,
     } = if ctx.container_only() {
         build_container_ir(&scan)?
     } else {
@@ -90,7 +91,13 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         &mut admitted_entities,
         "admit Creo entities",
     )?;
-    let report = build_report(&scan, &ir, coverage, ctx.container_only());
+    let report = build_report(
+        &scan,
+        &ir,
+        coverage,
+        &brep_diagnostics,
+        ctx.container_only(),
+    );
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
