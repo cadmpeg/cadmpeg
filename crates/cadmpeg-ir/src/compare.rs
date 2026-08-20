@@ -31,9 +31,12 @@
 //! fractional. An integer pair, and a value that moved between integer and
 //! fractional form, compare exactly.
 //!
-//! String values compare exactly except for embedded fractional tokens
-//! (decimal or `E`/`D` exponent form), which use the same tolerance. Encode
-//! goldens pin writer text that still carries platform libm bits.
+//! String values compare exactly except for embedded numeric tokens. Two
+//! fractional tokens use the same tolerance. An integer zero and a fractional
+//! token also agree when the fractional value is within that tolerance of
+//! zero, because one libm can return exact zero where another returns a tiny
+//! residual. All other integer tokens remain exact. Encode goldens pin writer
+//! text that still carries platform libm bits.
 //!
 //! ## Non-transitive relation
 //!
@@ -121,10 +124,10 @@ pub fn values_agree(left: &Value, right: &Value) -> Result<(), String> {
 
 /// Whether two texts agree, tolerating last-place drift in fractional tokens.
 ///
-/// Non-numeric spans and integer-only tokens must match byte-exactly. A
-/// fractional token (mantissa with a decimal point, optional `E`/`D` exponent)
-/// may differ by [`FLOAT_TOLERANCE`]. IGES writer output uses `D` exponents; both
-/// `E` and `D` parse.
+/// Non-numeric spans and integer tokens must match byte-exactly, except that an
+/// integer zero agrees with a fractional token within [`FLOAT_TOLERANCE`] of
+/// zero. A pair of fractional tokens may differ by the same tolerance. IGES
+/// writer output uses `D` exponents; both `E` and `D` parse.
 #[must_use]
 pub fn texts_agree(left: &str, right: &str) -> bool {
     if left == right {
@@ -133,15 +136,15 @@ pub fn texts_agree(left: &str, right: &str) -> bool {
     let mut left_rest = left;
     let mut right_rest = right;
     loop {
-        let left_next = next_fractional_token(left_rest);
-        let right_next = next_fractional_token(right_rest);
+        let left_next = next_numeric_token(left_rest);
+        let right_next = next_numeric_token(right_rest);
         match (left_next, right_next) {
             (None, None) => return left_rest == right_rest,
             (
-                Some((left_prefix, left_value, left_after)),
-                Some((right_prefix, right_value, right_after)),
+                Some((left_prefix, left_token, left_after)),
+                Some((right_prefix, right_token, right_after)),
             ) => {
-                if left_prefix != right_prefix || !floats_agree(left_value, right_value) {
+                if left_prefix != right_prefix || !numeric_tokens_agree(left_token, right_token) {
                     return false;
                 }
                 left_rest = left_after;
@@ -152,26 +155,56 @@ pub fn texts_agree(left: &str, right: &str) -> bool {
     }
 }
 
-/// First fractional token in `text`: prefix before it, parsed value, and the
-/// remainder after it. Integer-only digit runs are not tokens.
-fn next_fractional_token(text: &str) -> Option<(&str, f64, &str)> {
+#[derive(Clone, Copy)]
+struct NumericToken<'a> {
+    text: &'a str,
+    value: f64,
+    fractional: bool,
+}
+
+fn numeric_tokens_agree(left: NumericToken<'_>, right: NumericToken<'_>) -> bool {
+    match (left.fractional, right.fractional) {
+        (true, true) => floats_agree(left.value, right.value),
+        (false, false) => left.text == right.text,
+        _ => {
+            let (integer, fractional) = if left.fractional {
+                (right, left)
+            } else {
+                (left, right)
+            };
+            integer.text == "0" && floats_agree(0.0, fractional.value)
+        }
+    }
+}
+
+/// First numeric token in `text`: prefix before it, token metadata, and the
+/// remainder after it.
+fn next_numeric_token(text: &str) -> Option<(&str, NumericToken<'_>, &str)> {
     let bytes = text.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
-        if let Some((end, value)) = match_fractional_at(bytes, index) {
+        if let Some((end, value, fractional)) = match_numeric_at(bytes, index) {
             let prefix = &text[..index];
             let after = &text[end..];
-            return Some((prefix, value, after));
+            return Some((
+                prefix,
+                NumericToken {
+                    text: &text[index..end],
+                    value,
+                    fractional,
+                },
+                after,
+            ));
         }
         index += 1;
     }
     None
 }
 
-/// Fractional token starting at `start`, or `None` when that byte is not the
-/// start of one. Requires a decimal point so directory-section `D` markers and
-/// bare integers stay outside the tolerance path.
-fn match_fractional_at(bytes: &[u8], start: usize) -> Option<(usize, f64)> {
+/// Numeric token starting at `start`, or `None` when that byte is not the start
+/// of one. Directory-section `D` markers stay outside tokens because a `D`
+/// exponent is accepted only after a decimal point.
+fn match_numeric_at(bytes: &[u8], start: usize) -> Option<(usize, f64, bool)> {
     if start > 0 {
         let previous = bytes[start - 1];
         if previous.is_ascii_alphanumeric() || previous == b'.' {
@@ -202,11 +235,11 @@ fn match_fractional_at(bytes: &[u8], start: usize) -> Option<(usize, f64)> {
             index += 1;
         }
     }
-    if !saw_dot || !saw_digit {
+    if !saw_digit {
         return None;
     }
 
-    if index < bytes.len() && matches!(bytes[index], b'e' | b'E' | b'd' | b'D') {
+    if saw_dot && index < bytes.len() && matches!(bytes[index], b'e' | b'E' | b'd' | b'D') {
         let exponent_mark = index;
         index += 1;
         if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
@@ -224,7 +257,7 @@ fn match_fractional_at(bytes: &[u8], start: usize) -> Option<(usize, f64)> {
     let token = std::str::from_utf8(&bytes[start..index]).ok()?;
     let normalized = token.replace(['d', 'D'], "e");
     let value = normalized.parse().ok()?;
-    Some((index, value))
+    Some((index, value, saw_dot))
 }
 
 /// Walks two values in step, recording the path to the first disagreement.
@@ -449,6 +482,25 @@ mod tests {
             &format!("{{\"output\":{right:?}}}"),
         )
         .is_ok());
+    }
+
+    #[test]
+    fn exact_zero_and_a_tiny_fractional_residual_agree_in_text() {
+        let residual = FLOAT_TOLERANCE / 2.0;
+        let fractional = format!("{residual:.16e}").replace('e', "D");
+
+        assert!(texts_agree("120,0,1;", &format!("120,{fractional},1;")));
+        assert!(texts_agree(&format!("120,{fractional},1;"), "120,0,1;"));
+    }
+
+    #[test]
+    fn integer_and_fractional_tokens_stay_exact_outside_the_zero_residual_case() {
+        assert!(!texts_agree("entity 5", "entity 5.0"));
+        assert!(!texts_agree(
+            "120,0,1;",
+            &format!("120,{:.16e},1;", FLOAT_TOLERANCE * 10.0)
+        ));
+        assert!(!texts_agree("120,-0,1;", "120,0.0,1;"));
     }
 
     #[test]
