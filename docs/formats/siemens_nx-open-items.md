@@ -650,6 +650,16 @@ independent relation for every source and control role.
 
 **Need.** We must know the roles to construct the selected face or feature set.
 
+**Conflict.** The printable selector is retained as an opaque value, and the
+two groups are distinguished only by their serialized first/second position.
+Every reference uses the same object-index form and resolves only to an
+offset-store block. No selector vocabulary, target schema, or relation to a
+face or feature set assigns either group a selection role.
+
+**Note.** Preserve the selector, group order, resolved references, and both
+logical payloads as native data. A neutral selection requires a unique
+selector domain and object-family relation for each group.
+
 ### OM-18. Pattern construction-reference roles
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
