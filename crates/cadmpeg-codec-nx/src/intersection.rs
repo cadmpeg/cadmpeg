@@ -220,6 +220,8 @@ pub struct UnchartedIntersection {
 /// solved chart carrier is incomplete or inconsistent.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RejectionCounts {
+    /// The construction did not resolve a valid primary support relation.
+    pub missing_support: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub missing_chart: usize,
     /// The start term-use reference did not resolve.
@@ -233,7 +235,8 @@ pub struct RejectionCounts {
 impl RejectionCounts {
     /// Total rejected construction count.
     pub fn total(self) -> usize {
-        self.missing_chart
+        self.missing_support
+            + self.missing_chart
             + self.missing_start_term
             + self.missing_end_term
             + self.endpoint_mismatch
@@ -241,6 +244,7 @@ impl RejectionCounts {
 
     fn add(&mut self, rejection: Rejection) {
         match rejection {
+            Rejection::MissingSupport => self.missing_support += 1,
             Rejection::MissingChart => self.missing_chart += 1,
             Rejection::MissingStartTerm => self.missing_start_term += 1,
             Rejection::MissingEndTerm => self.missing_end_term += 1,
@@ -250,6 +254,7 @@ impl RejectionCounts {
 
     /// Add another stream's rejection census.
     pub fn extend(&mut self, other: Self) {
+        self.missing_support += other.missing_support;
         self.missing_chart += other.missing_chart;
         self.missing_start_term += other.missing_start_term;
         self.missing_end_term += other.missing_end_term;
@@ -277,6 +282,7 @@ pub struct CurveScan {
 
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
+    MissingSupport,
     MissingChart,
     MissingStartTerm,
     MissingEndTerm,
@@ -424,6 +430,9 @@ fn scan_with_auxiliaries(
                 }
                 result.rejected.add(rejection);
             }
+            Err(Rejection::MissingSupport) if referenced_curves.contains(&construction.xmt) => {
+                result.rejected.add(Rejection::MissingSupport);
+            }
             Err(_) => {}
         }
     }
@@ -488,12 +497,12 @@ fn enrich(
             });
         }
     }
+    let supports = construction_supports(construction, uv_markers, bridges, graph)
+        .ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
         .cloned()
         .unwrap_or([None, None]);
-    let supports =
-        construction_supports(construction, uv_markers, bridges, graph).unwrap_or([1, 1]);
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,

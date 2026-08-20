@@ -253,6 +253,22 @@ fn intersection_rejection_census_requires_resolved_supports() {
 }
 
 #[test]
+fn intersection_chart_rejects_unresolved_support_relation() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 19, 998);
+
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_support, 1);
+    assert_eq!(scan.rejected.total(), 1);
+}
+
+#[test]
 fn uncharted_intersection_requires_exact_topology_bounds() {
     let mut stream = two_support_charted_intersection_curve_stream();
     let intersection = stream
