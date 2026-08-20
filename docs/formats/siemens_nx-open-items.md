@@ -756,6 +756,16 @@ cross-record identity relation.
 
 **Need.** We must know the roles to select the point construction method and its operand.
 
+**Conflict.** The header reference selects one bounded six-scalar lane and
+the mode selects a serialized branch, but neither field names an operand
+family or construction method. The header-to-lane boundary proves ownership
+only; it does not assign the lane to a model point, support, or other datum
+construction role.
+
+**Note.** Preserve the header, mode, selected lane, and exact cross-block
+ownership as native point data. A neutral point construction requires a
+mode-domain and operand-role relation.
+
 ### OM-24. `POINT` scalar triples
 
 **Question.** What coordinate spaces and construction roles do the two ordered scalar triples in the selected six-scalar `POINT` lane use?
@@ -764,6 +774,15 @@ cross-record identity relation.
 
 **Need.** We must know the roles to construct the datum point at its authored model-space position.
 
+**Conflict.** The selected lane contains two ordered triples of finite scalar
+values and no coordinate-space, axis, unit, or role discriminator. Byte
+continuity across the preceding and selected blocks establishes one lane, not
+which triple is the authored point or how the other triple participates.
+
+**Note.** Retain both triples with their exact scalar encodings and offsets.
+Do not project either triple to model-space geometry without a unique role and
+coordinate-frame relation.
+
 ### OM-25. `DRAFT` construction roles
 
 **Question.** Which counted leading indices, ordered references, terminal indices, and tail fields select the drafted faces, neutral plane, pull direction, and draft angle?
@@ -771,6 +790,16 @@ cross-record identity relation.
 **Known.** `siemens_nx.md` §7.1 "The `DRAFT` operation payload begins" and `siemens_nx.md` §7.1 "The same payload contains exactly one four-reference construction graph." define the leading index lane, four-reference graph, terminal lanes, scalar encodings, store resolution, and exact boundaries.
 
 **Need.** We must know the roles to construct a neutral draft operation.
+
+**Conflict.** The leading lane, four-reference graph, identity frames,
+scalar lanes, and terminal indices are separately framed and store-resolved,
+but no field-role relation assigns faces, plane, pull direction, angle, or
+termination semantics. Shared store identity and serialized order establish
+construction ownership only.
+
+**Note.** Preserve every complete draft lane and graph as native data. Neutral
+draft projection requires independent relations for the drafted selection,
+reference plane, direction, angle, and result controls.
 
 ### OM-26. `SKIN` construction roles
 
