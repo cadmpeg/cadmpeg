@@ -892,14 +892,15 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
-    let sketch = super::attach_sketch_points(
+    let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[&point_use],
             point_groups: std::slice::from_ref(&group),
             points: &[],
             payload_scalars: &[],
+            coordinate_pairs: &[],
         },
         &mut annotations,
         stream,
@@ -916,14 +917,15 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
-    assert!(super::attach_sketch_points(
+    assert!(super::attach_sketch_graph(
         &mut rejected_ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[&point_use, &point_use],
             point_groups: &[group],
             points: &[],
             payload_scalars: &[],
+            coordinate_pairs: &[],
         },
         &mut rejected_annotations,
         rejected_stream,
@@ -979,14 +981,15 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
-    let sketch = super::attach_sketch_points(
+    let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[],
             point_groups: std::slice::from_ref(&group),
             points: std::slice::from_ref(&point),
             payload_scalars: &scalars,
+            coordinate_pairs: &[],
         },
         &mut annotations,
         stream,

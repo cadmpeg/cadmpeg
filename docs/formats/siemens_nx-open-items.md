@@ -354,6 +354,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct neutral sketch geometry and constraints.
 
+**Note.** A complete coordinate-pair record is retained as one native sketch
+geometry record by its operation and pair identity when the sketch has no
+stronger typed sketch entity graph. The retention does not assign a point,
+curve, constraint, unit, coordinate frame, or profile role; the neutral sketch
+placement remains unresolved. A separate named-point graph does not merge with
+coordinate-pair records without an explicit pair-to-entity relation.
+
 ### OM-03. `DATUM_PLANE` scalar-pair geometry
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_PLANE` construction payload represent?

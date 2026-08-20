@@ -38,7 +38,7 @@ geometry in the cumulative L0–L6 gates.
 | L1   | Pass in the current envelope | Representative release and layout fixtures with closed logical ledgers for every classified stream family.                                              |
 | L2   | Pass                         | The declared geometry carriers, parameterization rules, and witnessed terminal branches pass the current envelope.                                      |
 | L3   | Pass                         | Connected topology, revision replay, active-body selection, and the available terminal lineage pass the current envelope.                               |
-| L4   | Incomplete                   | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
+| L4   | Incomplete                   | Resolve suppression, sketch placement and neutral geometry, complete operands and outputs, configuration body state, and every admitted operation construction. |
 | L5   | Incomplete                   | Body/face appearance evidence passes; the cumulative gate remains pending until the lower L4 design-domain gate closes.                                 |
 | L6   | Incomplete                   | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence.        |
 

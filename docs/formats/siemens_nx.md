@@ -1774,6 +1774,8 @@ An object-payload scalar-pair frame is `08 02 03 01, branch, c0 45 04 00 80 86 0
 
 Each sketch feature links its ordered typed coordinate-pair records by payload ordinal. Source-block boundaries do not delimit sketch entities and cannot assign coordinate ownership; a coordinate frame crossing a block boundary remains one field in the owning logical sketch payload.
 
+A complete coordinate-pair record is retained as one native sketch geometry record linked by its pair identity when the sketch has no stronger typed sketch entity graph. This retention assigns no point, curve, constraint, unit, or model-space frame role. The sketch placement remains unresolved and the record does not enter a profile chain. A separate named-point graph does not merge with coordinate-pair records without an explicit pair-to-entity relation.
+
 Each of datum-coordinate-system construction lanes 5–7 is an independently bounded descriptor block. A typed block contains exactly one maximal run of 30–32 lowercase hexadecimal digits. Bytes before and after the identity remain exact prefix and suffix fields. The descriptor retains its construction lane, resolved block, identity, exact prefix and suffix, block offset, and identity offset. A block with no qualifying run or multiple qualifying runs remains untyped.
 
 Equal typed descriptor identities join datum-plane and datum-coordinate-system constructions. The relation retains both typed descriptors, both operations, the shared identity, and the coordinate-system lane ordinal. Feature dependency follows serialized operation order: the later operation depends on the earlier operation. Identity equality does not impose a fixed plane-to-coordinate-system ownership direction.

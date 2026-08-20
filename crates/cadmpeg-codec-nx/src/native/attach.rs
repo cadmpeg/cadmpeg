@@ -3240,16 +3240,19 @@ fn attach_feature_operations(
         let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
         let sketch = (label.value == "SKETCH")
             .then(|| {
-                attach_sketch_points(
+                attach_sketch_graph(
                     ir,
                     label,
-                    &SketchPointSources {
+                    &SketchSources {
                         point_uses: sketch_point_uses_by_operation
                             .get(label.id.as_str())
                             .map_or([].as_slice(), Vec::as_slice),
                         point_groups: sketch_point_groups,
                         points: sketch_points,
                         payload_scalars: sketch_payload_scalars,
+                        coordinate_pairs: sketch_coordinate_pairs_by_operation
+                            .get(label.id.as_str())
+                            .map_or([].as_slice(), Vec::as_slice),
                     },
                     annotations,
                     stream,
@@ -3486,10 +3489,10 @@ fn native_primary_body_references<'a>(
         .collect()
 }
 
-fn attach_sketch_points(
+fn attach_sketch_graph(
     ir: &mut CadIr,
     label: &crate::native::features::FeatureOperationLabel,
-    sources: &SketchPointSources<'_>,
+    sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
     stream: cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
@@ -3498,8 +3501,87 @@ fn attach_sketch_points(
         .iter()
         .filter(|group| group.operation_label == label.id)
         .collect::<Vec<_>>();
+    let operation_key = label
+        .id
+        .strip_prefix("nx:feature-history:operation-label#")
+        .unwrap_or(label.id.as_str());
+    let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
     if operation_groups.is_empty() {
-        return None;
+        let coordinate_pairs = sources
+            .coordinate_pairs
+            .iter()
+            .filter(|pair| pair.operation_label == label.id)
+            .copied()
+            .collect::<Vec<_>>();
+        if coordinate_pairs.is_empty() {
+            return None;
+        }
+        let mut entities = Vec::with_capacity(coordinate_pairs.len());
+        let mut pair_ids = BTreeSet::new();
+        let mut pair_entity_keys = BTreeSet::new();
+        let mut pair_ordinals = BTreeSet::new();
+        for pair in coordinate_pairs {
+            if !pair.values.iter().all(|value| value.is_finite())
+                || !pair_ids.insert(pair.id.as_str())
+                || !pair_ordinals.insert((pair.construction_payload.as_str(), pair.ordinal))
+            {
+                return None;
+            }
+            let pair_key = pair
+                .id
+                .rsplit_once('#')
+                .map_or(pair.id.as_str(), |(_, key)| key);
+            if pair_key.is_empty()
+                || pair_key.chars().any(char::is_whitespace)
+                || !pair_entity_keys.insert(pair_key)
+            {
+                return None;
+            }
+            entities.push((
+                pair.source_offset,
+                SketchEntity {
+                    id: SketchEntityId(format!(
+                        "nx:feature-history:sketch-entity#coordinate-pair-{pair_key}"
+                    )),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: Some(pair.id.clone()),
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Native {
+                        native_kind: "nx-coordinate-pair".into(),
+                    },
+                },
+            ));
+        }
+        entities.sort_by(|(first_offset, first), (second_offset, second)| {
+            first_offset
+                .cmp(second_offset)
+                .then_with(|| first.id.0.cmp(&second.id.0))
+        });
+        for (source_offset, entity) in &entities {
+            annotations
+                .note(&entity.id.0, stream, *source_offset)
+                .tag("SKETCH_NATIVE_COORDINATE_PAIR");
+            annotations.exactness(&entity.id.0, Exactness::ByteExact);
+        }
+        annotations
+            .note(&sketch_id.0, stream, label.source_offset)
+            .tag("SKETCH");
+        annotations.exactness(&sketch_id.0, Exactness::Derived);
+        ir.model
+            .sketch_entities
+            .extend(entities.into_iter().map(|(_, entity)| entity));
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: Some(label.value.clone()),
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Unresolved,
+            profiles: Vec::new(),
+            native_ref: Some(label.id.clone()),
+        });
+        return Some(sketch_id);
     }
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
@@ -3538,11 +3620,6 @@ fn attach_sketch_points(
             return None;
         }
     }
-    let operation_key = label
-        .id
-        .strip_prefix("nx:feature-history:operation-label#")
-        .unwrap_or(label.id.as_str());
-    let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
     let mut entities = Vec::new();
     let mut represented_groups = BTreeSet::new();
     for group in operation_groups {
@@ -3662,11 +3739,12 @@ fn attach_sketch_points(
     Some(sketch_id)
 }
 
-struct SketchPointSources<'a> {
+struct SketchSources<'a> {
     point_uses: &'a [&'a crate::native::features::FeatureSketchPointUse],
     point_groups: &'a [crate::native::features::FeatureSketchPointGroup],
     points: &'a [crate::native::features::FeatureSketchPoint],
     payload_scalars: &'a [crate::native::features::FeatureSketchPayloadScalar],
+    coordinate_pairs: &'a [&'a crate::native::features::FeatureSketchPayloadCoordinatePair],
 }
 
 fn records_by_operation<'a, T>(
