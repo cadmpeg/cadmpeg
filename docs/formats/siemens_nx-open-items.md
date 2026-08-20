@@ -703,6 +703,15 @@ pattern-family schema assigns those roles.
 
 **Need.** We must know the roles to bind each row to its seed or transform operand.
 
+**Conflict.** A row selector is a non-null compact value retained with its
+row ordinal and token offset. The counted reference lane has its own ordered
+object indices, but no serialized equality or ownership field joins either
+lane to a construction-graph reference, seed, or transform operand.
+
+**Note.** Preserve selectors and counted references as separate native lanes.
+Selector equality or ordinal proximity alone does not establish a seed or
+transform binding.
+
 ### OM-21. `Multi Instance Output` roles
 
 **Question.** What does each selector group and trailing reference in a `Multi Instance Output` lane mean?
@@ -710,6 +719,16 @@ pattern-family schema assigns those roles.
 **Known.** `siemens_nx.md` §7.1 "`Multi Instance Output` payloads contain at most one counted output lane" defines the ordered lane framing and retains its exact selectors and references.
 
 **Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
+
+**Conflict.** The lane provides selector values, serialized instance and row
+ordinals, an instance count, and trailing object references. These fields are
+bound only by row order and count invariants; no relation identifies a
+selector target, an output-body namespace, or the geometry represented by a
+trailing reference.
+
+**Note.** Preserve the complete lane as native instance-output data. Do not
+create output bodies or geometry bindings without an independent target and
+instance relation.
 
 ### OM-22. Equal pattern and profile labels
 
@@ -719,7 +738,15 @@ pattern-family schema assigns those roles.
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
-**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. The closure cited no pattern/profile record from the corpus, so the item is reopened.
+**Conflict.** A canonical line label is payload content, not a persistent
+object identity. Pattern and profile construction blocks retain separate
+operation-owned block identities; only an exact shared input block or another
+unique serialized relation can join them. Equal text labels do not provide
+that relation.
+
+**Note.** Keep equal-label blocks separate and preserve each operation's
+native references. A pattern seed join requires one unique block or explicit
+cross-record identity relation.
 
 ### OM-23. `POINT` header fields
 
