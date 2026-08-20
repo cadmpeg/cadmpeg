@@ -406,6 +406,11 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     {
         return Vec::new();
     }
+    if let Some(endpoints) =
+        legacy_compact_92_profile_object_endpoint_markers(payload, curve, markers)
+    {
+        return endpoints;
+    }
     if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
         return compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers);
     }
@@ -5611,6 +5616,78 @@ fn class_declaration_at(payload: &[u8], offset: usize) -> bool {
                 name.iter()
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
             })
+}
+
+fn legacy_compact_92_profile_object_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<Vec<&'a SketchInputEntity>> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if !legacy_compact_92_profile_line(payload, offset) {
+        return None;
+    }
+    let roster = coordinate_roster_curve_endpoint_markers_at(payload, curve, markers, Some(64));
+    if roster.len() == 2 {
+        return None;
+    }
+    let endpoint = |relative| {
+        let object_index = u32::from(View::u16_le_at(payload, offset + relative)?);
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && marker.object_index == Some(object_index)
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        });
+        let marker = candidates.next()?;
+        candidates.next().is_none().then_some(marker)
+    };
+    let [first, second] = [endpoint(64)?, endpoint(66)?];
+    (first.id != second.id).then_some(vec![first, second])
+}
+
+fn legacy_compact_92_profile_line(payload: &[u8], offset: usize) -> bool {
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .is_some_and(|bytes| bytes != [0; 4] && bytes != [0xff; 4])
+    };
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && matches!(marker_native_code(payload, offset), Some(0 | 1))
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && matches!(
+            payload.get(offset + 31..offset + 39),
+            Some([0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04 | 0x44 | 0x84, 0x00])
+        )
+        && payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && matches!(
+            [
+                View::u16_le_at(payload, offset + 64),
+                View::u16_le_at(payload, offset + 66),
+            ],
+            [Some(first), Some(second)]
+                if first != second
+                    && first != 0
+                    && second != 0
+                    && first != u16::MAX
+                    && second != u16::MAX
+        )
+        && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 80..offset + 84) == Some(&[0; 4])
+        && (payload.get(offset + 84..offset + 92) == Some(&[0; 8]) || identity(84) && identity(88))
+        && (sketch_marker_prefix_at(payload, offset.saturating_add(92))
+            || payload.get(offset + 80..offset + 128) == Some(&[0; 48]))
 }
 
 pub(super) fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
