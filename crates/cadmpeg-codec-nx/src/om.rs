@@ -128,6 +128,13 @@ pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
     Some(values)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CompactToken {
+    value: CompactIndex,
+    offset: usize,
+    width: usize,
+}
+
 fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     let prefix = *bytes.first()?;
     if prefix == 0xff {
@@ -138,6 +145,24 @@ fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     } else {
         Some((CompactIndex::Value(u32::from(prefix)), 1))
     }
+}
+
+fn compact_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
+    let (value, width) = compact_index(bytes.get(offset..)?)?;
+    Some(CompactToken {
+        value,
+        offset,
+        width,
+    })
+}
+
+fn compact_value_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
+    let token = compact_token(bytes, offset)?;
+    matches!(token.value, CompactIndex::Value(_)).then_some(token)
+}
+
+fn raw_compact_token(bytes: &[u8], token: CompactToken) -> Vec<u8> {
+    bytes[token.offset..token.offset + token.width].to_vec()
 }
 
 /// One counted compact-index lane ending in the exact `01 11` marker.
@@ -357,16 +382,16 @@ pub struct ColorTable<'a> {
     pub definitions: Vec<ColorTableDefinition<'a>>,
 }
 
-fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+fn color_component_layout(bytes: &[u8]) -> Option<(f32, usize)> {
     match bytes.first().copied()? {
-        0x00 => Some((0.0, vec![0x00], 1)),
-        0x01 => Some((1.0, vec![0x01], 1)),
+        0x00 => Some((0.0, 1)),
+        0x01 => Some((1.0, 1)),
         marker @ (0x20..=0x3f | 0xa0..=0xbf) => {
             let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
             let value = shifted_ieee_f64(&raw)? / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
-                (value as f32, raw.to_vec(), 8)
+                (value as f32, 8)
             })
         }
         marker @ (0x40..=0x5f | 0xc0..=0xdf) => {
@@ -376,100 +401,174 @@ fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
             let value = f32::from_be_bytes(decoded) / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
-                (value, raw.to_vec(), 4)
+                (value, 4)
             })
         }
         _ => None,
     }
 }
 
+fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+    let (value, width) = color_component_layout(bytes)?;
+    Some((value, bytes.get(..width)?.to_vec(), width))
+}
+
+fn color_name_frame(bytes: &[u8], offset: usize) -> Option<(&str, usize)> {
+    let byte_len = usize::from(bytes.get(offset).copied()?);
+    if byte_len < 2 {
+        return None;
+    }
+    let end = offset.checked_add(byte_len)?;
+    let text = bytes.get(offset + 1..end)?.strip_suffix(&[0])?;
+    if text.is_empty()
+        || !text
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return None;
+    }
+    Some((std::str::from_utf8(text).ok()?, byte_len))
+}
+
+const COLOR_TABLE_NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
+const COLOR_TABLE_DEFINITION_PREAMBLE: [u8; 21] = [
+    0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a, 0xc6,
+    0x01, 0x80, 0xd9, 0x80, 0xc8,
+];
+
+// Validate a complete palette through borrowed names, component widths, and
+// index tokens. The owning color vectors are materialized only after this
+// self-framed candidate has passed every check.
+fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER) {
+        return None;
+    }
+    let mut at = start + COLOR_TABLE_NAME_HEADER.len();
+    for ordinal in 0..=216 {
+        let (name, width) = color_name_frame(bytes, at)?;
+        if ordinal == 0 && name != "Background" {
+            return None;
+        }
+        at += width;
+    }
+    if bytes.get(at..at + COLOR_TABLE_DEFINITION_PREAMBLE.len())
+        != Some(&COLOR_TABLE_DEFINITION_PREAMBLE)
+    {
+        return None;
+    }
+    at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
+    for _ in 0..3 {
+        at += color_component_layout(bytes.get(at..)?)?.1;
+    }
+    for color_index in 1u16..=216 {
+        if bytes.get(at) != Some(&0x05) {
+            return None;
+        }
+        at += 1;
+        let token = if color_index < 128 {
+            [color_index as u8, 0]
+        } else {
+            [0x80, (color_index - 1) as u8]
+        };
+        let token_width = if color_index < 128 { 1 } else { 2 };
+        if bytes.get(at..at + token_width) != Some(&token[..token_width]) {
+            return None;
+        }
+        at += token_width;
+        if bytes.get(at..at + 3) != Some(&[0x01, 0x80, 0xc8]) {
+            return None;
+        }
+        at += 3;
+        for _ in 0..3 {
+            at += color_component_layout(bytes.get(at..)?)?.1;
+        }
+    }
+    Some(at)
+}
+
+fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
+    let mut at = start + COLOR_TABLE_NAME_HEADER.len();
+    let mut names = Vec::with_capacity(217);
+    for _ in 0..217 {
+        let (name, width) = color_name_frame(bytes, at)?;
+        names.push(name);
+        at += width;
+    }
+    at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
+
+    let mut background_rgb = Vec::with_capacity(3);
+    let mut raw_background_components = Vec::with_capacity(3);
+    let mut background_component_offsets = Vec::with_capacity(3);
+    for _ in 0..3 {
+        background_component_offsets.push(at);
+        let (value, raw, width) = color_component(bytes.get(at..)?)?;
+        background_rgb.push(value);
+        raw_background_components.push(raw);
+        at += width;
+    }
+
+    let mut definitions = Vec::with_capacity(216);
+    for color_index in 1u16..=216 {
+        let offset = at;
+        at += 1;
+        let raw_color_index = if color_index < 128 {
+            vec![color_index as u8]
+        } else {
+            vec![0x80, (color_index - 1) as u8]
+        };
+        at += raw_color_index.len();
+        at += 3;
+
+        let mut rgb = Vec::with_capacity(3);
+        let mut raw_components = Vec::with_capacity(3);
+        let mut component_offsets = Vec::with_capacity(3);
+        for _ in 0..3 {
+            component_offsets.push(at);
+            let (value, raw, width) = color_component(bytes.get(at..)?)?;
+            rgb.push(value);
+            raw_components.push(raw);
+            at += width;
+        }
+        definitions.push(ColorTableDefinition {
+            color_index,
+            name: names[usize::from(color_index)],
+            rgb: rgb.try_into().ok()?,
+            raw_color_index,
+            raw_components: raw_components.try_into().ok()?,
+            offset,
+            component_offsets: component_offsets.try_into().ok()?,
+        });
+    }
+    Some(ColorTable {
+        offset: start,
+        background_name: names[0],
+        background_rgb: background_rgb.try_into().ok()?,
+        raw_background_components: raw_background_components.try_into().ok()?,
+        background_component_offsets: background_component_offsets.try_into().ok()?,
+        definitions,
+    })
+}
+
 /// Decode every complete NX part color table in a bounded byte region.
 pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
-    const NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
-    const DEFINITION_PREAMBLE: [u8; 21] = [
-        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
-        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8,
-    ];
-
-    (0..bytes.len().saturating_sub(NAME_HEADER.len()))
-        .filter_map(|start| {
-            (bytes.get(start..start + NAME_HEADER.len()) == Some(&NAME_HEADER)).then_some(())?;
-            let mut at = start + NAME_HEADER.len();
-            let mut names = Vec::with_capacity(217);
-            for _ in 0..217 {
-                let byte_len = usize::from(*bytes.get(at)?);
-                (byte_len >= 2).then_some(())?;
-                let text = bytes.get(at + 1..at + byte_len)?;
-                let text = text.strip_suffix(&[0])?;
-                (!text.is_empty()
-                    && text
-                        .iter()
-                        .all(|byte| byte.is_ascii_graphic() || *byte == b' '))
-                .then_some(())?;
-                names.push(std::str::from_utf8(text).ok()?);
-                at += byte_len;
-            }
-            (names.first().copied() == Some("Background")).then_some(())?;
-            (bytes.get(at..at + DEFINITION_PREAMBLE.len()) == Some(&DEFINITION_PREAMBLE))
-                .then_some(())?;
-            at += DEFINITION_PREAMBLE.len();
-            let mut background_rgb = Vec::with_capacity(3);
-            let mut raw_background_components = Vec::with_capacity(3);
-            let mut background_component_offsets = Vec::with_capacity(3);
-            for _ in 0..3 {
-                background_component_offsets.push(at);
-                let (value, raw, width) = color_component(bytes.get(at..)?)?;
-                background_rgb.push(value);
-                raw_background_components.push(raw);
-                at += width;
-            }
-
-            let mut definitions = Vec::with_capacity(216);
-            for color_index in 1u16..=216 {
-                (bytes.get(at) == Some(&0x05)).then_some(())?;
-                let offset = at;
-                at += 1;
-                let raw_color_index = if color_index < 128 {
-                    vec![color_index as u8]
-                } else {
-                    vec![0x80, (color_index - 1) as u8]
-                };
-                (bytes.get(at..at + raw_color_index.len()) == Some(raw_color_index.as_slice()))
-                    .then_some(())?;
-                at += raw_color_index.len();
-                (bytes.get(at..at + 3) == Some(&[0x01, 0x80, 0xc8])).then_some(())?;
-                at += 3;
-
-                let mut rgb = Vec::with_capacity(3);
-                let mut raw_components = Vec::with_capacity(3);
-                let mut component_offsets = Vec::with_capacity(3);
-                for _ in 0..3 {
-                    component_offsets.push(at);
-                    let (value, raw, width) = color_component(bytes.get(at..)?)?;
-                    rgb.push(value);
-                    raw_components.push(raw);
-                    at += width;
-                }
-                definitions.push(ColorTableDefinition {
-                    color_index,
-                    name: names[usize::from(color_index)],
-                    rgb: rgb.try_into().ok()?,
-                    raw_color_index,
-                    raw_components: raw_components.try_into().ok()?,
-                    offset,
-                    component_offsets: component_offsets.try_into().ok()?,
-                });
-            }
-            Some(ColorTable {
-                offset: start,
-                background_name: names[0],
-                background_rgb: background_rgb.try_into().ok()?,
-                raw_background_components: raw_background_components.try_into().ok()?,
-                background_component_offsets: background_component_offsets.try_into().ok()?,
-                definitions,
-            })
-        })
-        .collect()
+    let mut tables = Vec::new();
+    let mut start = 0;
+    while start + COLOR_TABLE_NAME_HEADER.len() <= bytes.len() {
+        if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER)
+        {
+            start += 1;
+            continue;
+        }
+        let Some(end) = color_table_end(bytes, start) else {
+            start += 1;
+            continue;
+        };
+        if let Some(table) = color_table_at(bytes, start) {
+            tables.push(table);
+        }
+        start = end;
+    }
+    tables
 }
 
 /// Decode complete self-framed index rows from contiguous column storage.
@@ -478,55 +577,71 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
     const MIDDLE: [u8; 2] = [0x93, 0x8a];
     const SUFFIX: [u8; 9] = [0x00, 0x47, 0x04, 0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+    let mut start = 0;
+    while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            start += 1;
             continue;
         }
         let first_index_offset = start + PREFIX.len();
-        let Some((CompactIndex::Value(first_index), first_width)) =
-            bytes.get(first_index_offset..).and_then(compact_index)
-        else {
+        let Some(first_token) = compact_value_token(bytes, first_index_offset) else {
+            start += 1;
             continue;
         };
-        let marker = first_index_offset + first_width;
-        let raw_first_index = bytes[first_index_offset..marker].to_vec();
+        let CompactIndex::Value(first_index) = first_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
+            start += 1;
             continue;
         }
         let Some(flag @ (0x03 | 0x07)) = bytes.get(marker + 2).copied() else {
+            start += 1;
             continue;
         };
         let mut at = marker + 3;
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..4 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 4];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
+            continue;
+        }
+        let Some(end) = at.checked_add(SUFFIX.len()) else {
+            start += 1;
             continue;
         };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
-        if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+        if bytes.get(at..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreIndexRow {
             offset: start,
             first_index,
-            raw_first_index,
+            raw_first_index: raw_compact_token(bytes, first_token),
             first_index_offset,
             flag,
-            indices,
-            raw_indices,
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
         });
+        start = end;
     }
     rows
 }
@@ -536,78 +651,99 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
     const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(2) {
+    let mut start = 0;
+    while start + 2 <= bytes.len() {
         if bytes.get(start..start + 2) != Some(&[0x02, 0x0b]) {
+            start += 1;
             continue;
         }
         let first_offset = start + 2;
-        let Some((CompactIndex::Value(first_index), first_width)) =
-            bytes.get(first_offset..).and_then(compact_index)
-        else {
+        let Some(first_token) = compact_value_token(bytes, first_offset) else {
+            start += 1;
             continue;
         };
-        let marker = first_offset + first_width;
-        let raw_first_index = bytes[first_offset..marker].to_vec();
+        let CompactIndex::Value(first_index) = first_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
+            start += 1;
             continue;
         }
         let Some(discriminator @ (0x16..=0x18)) = bytes.get(marker + 2).copied() else {
+            start += 1;
             continue;
         };
         let target_offset = marker + 3;
-        let Some((CompactIndex::Value(target_index), target_width)) =
-            bytes.get(target_offset..).and_then(compact_index)
-        else {
+        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+            start += 1;
             continue;
         };
-        let mut at = target_offset + target_width;
-        let raw_target_index = bytes[target_offset..at].to_vec();
+        let CompactIndex::Value(target_index) = target_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..3 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
             continue;
-        };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
+        }
         if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
+            start += 1;
             continue;
         }
         let Some(flag @ (0x03 | 0x07)) = bytes.get(at + 2).copied() else {
+            start += 1;
             continue;
         };
         let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            start += 1;
             continue;
         };
-        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
+        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
+            start += 1;
+            continue;
+        };
+        if bytes.get(at + 4..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreLinkedIndexRow {
             offset: start,
             first_index: (first_index, first_offset),
-            raw_first_index,
+            raw_first_index: raw_compact_token(bytes, first_token),
             discriminator,
             target_index: (target_index, target_offset),
-            raw_target_index,
-            indices,
-            raw_indices,
+            raw_target_index: raw_compact_token(bytes, target_token),
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
             flag,
             mode,
         });
+        start = end;
     }
     rows
 }
@@ -618,57 +754,74 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
     const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+    let mut start = 0;
+    while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            start += 1;
             continue;
         }
         let target_offset = start + PREFIX.len();
-        let Some((CompactIndex::Value(target_index), target_width)) =
-            bytes.get(target_offset..).and_then(compact_index)
-        else {
+        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+            start += 1;
             continue;
         };
-        let mut at = target_offset + target_width;
-        let raw_target_index = bytes[target_offset..at].to_vec();
+        let CompactIndex::Value(target_index) = target_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..3 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
             continue;
-        };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
+        }
         if bytes.get(at..at + 3) != Some(&[0x00, 0x47, 0x03]) {
+            start += 1;
             continue;
         }
         let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            start += 1;
             continue;
         };
-        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
+        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
+            start += 1;
+            continue;
+        };
+        if bytes.get(at + 4..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreTargetIndexRow {
             offset: start,
             target_index: (target_index, target_offset),
-            raw_target_index,
-            indices,
-            raw_indices,
+            raw_target_index: raw_compact_token(bytes, target_token),
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
             mode,
         });
+        start = end;
     }
     rows
 }
@@ -678,33 +831,54 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
     const SLOT_COUNT: usize = 16;
     const TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
     let mut lanes = Vec::new();
-    for start in 0..bytes.len() {
+    let mut start = 0;
+    while start < bytes.len() {
         if bytes[start] != 0x11 {
+            start += 1;
             continue;
         }
         let mut at = start + 1;
-        let mut slots = Vec::with_capacity(SLOT_COUNT);
-        let mut raw_slots = Vec::with_capacity(SLOT_COUNT);
-        for _ in 0..SLOT_COUNT {
-            let Some((value, width)) = bytes.get(at..).and_then(compact_index) else {
+        let mut tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; SLOT_COUNT];
+        let mut complete = true;
+        for token in &mut tokens {
+            let Some(slot_token) = compact_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            slots.push((
-                match value {
-                    CompactIndex::Null => None,
-                    CompactIndex::Value(value) => Some(value),
-                },
-                at,
-            ));
-            raw_slots.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += slot_token.width;
+            *token = slot_token;
         }
-        if slots.len() == SLOT_COUNT && bytes.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR) {
+        let Some(end) = at.checked_add(TERMINATOR.len()) else {
+            start += 1;
+            continue;
+        };
+        if complete && bytes.get(at..end) == Some(&TERMINATOR) {
             lanes.push(OffsetStoreAbrReferenceLane {
                 offset: start,
-                slots,
-                raw_slots,
+                slots: tokens
+                    .map(|token| {
+                        (
+                            match token.value {
+                                CompactIndex::Null => None,
+                                CompactIndex::Value(value) => Some(value),
+                            },
+                            token.offset,
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+                raw_slots: tokens
+                    .map(|token| raw_compact_token(bytes, token))
+                    .into_iter()
+                    .collect(),
             });
+            start = end;
+        } else {
+            start += 1;
         }
     }
     lanes
@@ -717,44 +891,63 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
 /// null indices reject the candidate atomically.
 pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedIndexLane> {
     let mut lanes = Vec::new();
-    for start in 0..bytes.len().saturating_sub(4) {
+    let mut start = 0;
+    while start + 4 <= bytes.len() {
         if bytes[start] != 0x01 {
+            start += 1;
             continue;
         }
         let declared_count = bytes[start + 1];
         if declared_count < 3 {
+            start += 1;
             continue;
         }
-        let mut at = start + 2;
-        let Some((CompactIndex::Value(anchor), width)) = compact_index(&bytes[at..]) else {
+        let Some(anchor_token) = compact_value_token(bytes, start + 2) else {
+            start += 1;
             continue;
         };
-        let anchor_offset = at;
-        let raw_anchor = bytes[at..at + width].to_vec();
-        at += width;
-        let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
-        let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
+        let mut at = anchor_token.offset + anchor_token.width;
         let mut complete = true;
         for _ in 0..usize::from(declared_count) - 2 {
-            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
-            else {
+            let Some(member_token) = compact_value_token(bytes, at) else {
                 complete = false;
                 break;
             };
-            members.push((value, at));
-            raw_members.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += member_token.width;
         }
-        if complete && bytes.get(at..at + 2) == Some(&[0x01, 0x11]) {
+        let Some(end) = at.checked_add(2) else {
+            start += 1;
+            continue;
+        };
+        if complete && bytes.get(at..end) == Some(&[0x01, 0x11]) {
+            let CompactIndex::Value(anchor) = anchor_token.value else {
+                unreachable!("compact value token is non-null")
+            };
+            let mut member_at = anchor_token.offset + anchor_token.width;
+            let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
+            let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
+            for _ in 0..usize::from(declared_count) - 2 {
+                let member_token = compact_value_token(bytes, member_at)
+                    .expect("validated counted lane member remains readable");
+                let CompactIndex::Value(value) = member_token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                members.push((value, member_token.offset));
+                raw_members.push(raw_compact_token(bytes, member_token));
+                member_at += member_token.width;
+            }
             lanes.push(OffsetStoreCountedIndexLane {
                 offset: start,
                 declared_count,
                 anchor,
-                raw_anchor,
-                anchor_offset,
+                raw_anchor: raw_compact_token(bytes, anchor_token),
+                anchor_offset: anchor_token.offset,
                 members,
                 raw_members,
             });
+            start = end;
+        } else {
+            start += 1;
         }
     }
     lanes
