@@ -187,6 +187,35 @@ pub(super) fn push_brep_transfer_note(
     } else {
         component_gate
     };
+    let vertex_evidence = format!(
+        "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
+         unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
+         {} carrier-bearing vertices, {} pair-intersection candidate(s), {} triple-intersection \
+         candidate(s), {} validated carrier candidate(s), {} carrier vertices with no candidate, \
+         {} ambiguous carrier vertices, {} pcurve endpoint evidence ({} complete), {} pcurve \
+         constraint(s), {} analytic domain(s), {} NURBS endpoint constraint(s), {} directed \
+         endpoint conflict(s), {} solved.",
+        diagnostics.boundary_curve_count,
+        diagnostics.boundary_curve_missing_incidence_count,
+        diagnostics.boundary_curve_unsolved_vertex_count,
+        diagnostics.vertex_solve.topological_vertices,
+        diagnostics.vertex_solve.carrier_points,
+        diagnostics.vertex_solve.carrier_incident_vertices,
+        diagnostics.vertex_solve.carrier_pair_candidates,
+        diagnostics.vertex_solve.carrier_triple_candidates,
+        diagnostics.vertex_solve.carrier_valid_candidates,
+        diagnostics.vertex_solve.carrier_zero_candidate_vertices,
+        diagnostics
+            .vertex_solve
+            .carrier_ambiguous_candidate_vertices,
+        diagnostics.vertex_solve.pcurve_endpoint_evidence,
+        diagnostics.vertex_solve.complete_pcurve_endpoint_evidence,
+        diagnostics.vertex_solve.pcurve_constraints,
+        diagnostics.vertex_solve.analytic_domain_vertices,
+        diagnostics.vertex_solve.nurbs_endpoint_constraints,
+        diagnostics.vertex_solve.directed_endpoint_conflicts,
+        diagnostics.vertex_solve.solved_vertices,
+    );
 
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
         "General model B-rep transfer remains incomplete. Native face components transfer \
@@ -204,7 +233,7 @@ pub(super) fn push_brep_transfer_note(
          ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). \
          Face admission considered {} candidate(s): {} passed, {} emitted, and {} were rejected. \
          First-failure rejection counts are: {rejection_details}. Component admission gate: \
-         {component_gate}. {geometry_section_count} PSB geometry section(s) were preserved \
+         {component_gate}. {vertex_evidence} {geometry_section_count} PSB geometry section(s) were preserved \
          verbatim as unknown records.",
         diagnostics.candidate_face_count,
         diagnostics.admitted_face_count,

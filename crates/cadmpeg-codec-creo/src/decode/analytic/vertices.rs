@@ -19,8 +19,10 @@ use super::equations::{
     common_plane_conic_parameters, cross, dot, plane_intersection_line, CarrierEquation,
     PlaneConicEquation, PlaneEquation,
 };
-use super::pcurves::{directed_pcurve_points, pcurve_edge_endpoints, solve_pcurve_vertex_domains};
-use super::planes::solve_carriers;
+use super::pcurves::{
+    directed_pcurve_points, pcurve_edge_endpoint_evidence, solve_pcurve_vertex_domains,
+};
+use super::planes::solve_carriers_with_diagnostics;
 
 const EPS_AGREE: f64 = 1e-9;
 const EPS_NEAR_ZERO: f64 = 1e-12;
@@ -337,29 +339,83 @@ pub fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3
         })
 }
 
-pub fn solved_topological_vertices(
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct TopologicalVertexSolveDiagnostics {
+    pub topological_vertices: usize,
+    pub carrier_incident_vertices: usize,
+    pub carrier_pair_candidates: usize,
+    pub carrier_triple_candidates: usize,
+    pub carrier_valid_candidates: usize,
+    pub carrier_zero_candidate_vertices: usize,
+    pub carrier_ambiguous_candidate_vertices: usize,
+    pub carrier_points: usize,
+    pub pcurve_endpoint_evidence: usize,
+    pub complete_pcurve_endpoint_evidence: usize,
+    pub pcurve_constraints: usize,
+    pub directed_endpoint_assignments: usize,
+    pub directed_endpoint_conflicts: usize,
+    pub nurbs_endpoint_constraints: usize,
+    pub analytic_domain_vertices: usize,
+    pub solved_vertices: usize,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct SolvedTopologicalVertices {
+    pub points: BTreeMap<u32, [f64; 3]>,
+    pub diagnostics: TopologicalVertexSolveDiagnostics,
+}
+
+pub fn solve_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> BTreeMap<u32, [f64; 3]> {
+) -> SolvedTopologicalVertices {
+    let mut diagnostics = TopologicalVertexSolveDiagnostics {
+        topological_vertices: scan.topology.vertices.len(),
+        ..TopologicalVertexSolveDiagnostics::default()
+    };
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
-    let carrier_points = scan
-        .topology
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let incident_carriers = vertex_faces
-                .get(&vertex.id)?
-                .iter()
-                .filter_map(|face_id| carriers.get(face_id))
-                .copied()
-                .collect::<Vec<_>>();
-            solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
-        })
+    let mut carrier_points = BTreeMap::new();
+    for vertex in &scan.topology.vertices {
+        let Some(face_ids) = vertex_faces.get(&vertex.id) else {
+            continue;
+        };
+        let incident_carriers = face_ids
+            .iter()
+            .filter_map(|face_id| carriers.get(face_id))
+            .copied()
+            .collect::<Vec<_>>();
+        if incident_carriers.is_empty() {
+            continue;
+        }
+        diagnostics.carrier_incident_vertices += 1;
+        let (point, carrier_diagnostics) = solve_carriers_with_diagnostics(&incident_carriers);
+        diagnostics.carrier_pair_candidates += carrier_diagnostics.pair_intersections;
+        diagnostics.carrier_triple_candidates += carrier_diagnostics.triple_intersections;
+        diagnostics.carrier_valid_candidates += carrier_diagnostics.valid_candidates;
+        match carrier_diagnostics.unique_solutions {
+            0 => diagnostics.carrier_zero_candidate_vertices += 1,
+            1 => {
+                if let Some(point) = point {
+                    carrier_points.insert(vertex.id, point);
+                }
+            }
+            _ => diagnostics.carrier_ambiguous_candidate_vertices += 1,
+        }
+    }
+    diagnostics.carrier_points = carrier_points.len();
+    let endpoint_evidence = pcurve_edge_endpoint_evidence(scan, ir);
+    diagnostics.pcurve_endpoint_evidence = endpoint_evidence.len();
+    diagnostics.complete_pcurve_endpoint_evidence = endpoint_evidence
+        .values()
+        .filter(|evidence| evidence.complete)
+        .count();
+    let edge_endpoints = endpoint_evidence
+        .into_iter()
+        .map(|(curve_id, evidence)| (curve_id, evidence.points))
         .collect::<BTreeMap<_, _>>();
-    let edge_endpoints = pcurve_edge_endpoints(scan, ir);
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
@@ -374,9 +430,11 @@ pub fn solved_topological_vertices(
         let Some(vertices) = edge_vertices.get(&row.id).copied() else {
             continue;
         };
+        diagnostics.pcurve_constraints += 1;
         constraints.push((vertices, points));
         if let Some(ordered) = directed_pcurve_points(row.directions, points) {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
+                diagnostics.directed_endpoint_assignments += 1;
                 match fixed_points.entry(vertex) {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         entry.insert(Some(point));
@@ -386,6 +444,7 @@ pub fn solved_topological_vertices(
                             .get()
                             .is_none_or(|known| !model_points_agree(known, point))
                         {
+                            diagnostics.directed_endpoint_conflicts += 1;
                             entry.insert(None);
                         }
                     }
@@ -407,6 +466,7 @@ pub fn solved_topological_vertices(
         let Some(points) = nonperiodic_nurbs_endpoint_points(&geometry.geometry) else {
             continue;
         };
+        diagnostics.nurbs_endpoint_constraints += 1;
         constraints.push((vertices, points));
     }
     // Non-periodic NURBS boundary rows contribute their intrinsic endpoint
@@ -448,12 +508,27 @@ pub fn solved_topological_vertices(
             (!candidates.is_empty()).then_some((*vertex, candidates))
         })
         .collect::<BTreeMap<_, _>>();
-    solve_pcurve_vertex_domains(
+    diagnostics.analytic_domain_vertices = analytic_domains.len();
+    let points = solve_pcurve_vertex_domains(
         &constraints,
         &fixed_points,
         &analytic_domains,
         &incident_curves,
-    )
+    );
+    diagnostics.solved_vertices = points.len();
+    SolvedTopologicalVertices {
+        points,
+        diagnostics,
+    }
+}
+
+pub fn solved_topological_vertices(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    carriers: &BTreeMap<u32, CarrierEquation>,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+) -> BTreeMap<u32, [f64; 3]> {
+    solve_topological_vertices(scan, ir, carriers, nurbs_endpoint_witnesses).points
 }
 
 #[cfg(test)]

@@ -54,19 +54,22 @@ pub(super) use pcurves::{
     transfer_analytic_pcurve_carriers, unique_oriented_native_pcurve, NativePcurveCandidates,
     PcurveEndpointEvidence, PcurveVertexConstraint,
 };
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(super) use planes::solve_carriers;
 #[allow(unused_imports)]
 pub(super) use planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
     analytic_curve_plane, canonical_plane, envelope_reconciled_plane_candidate,
     frame_bound_outline_plane_candidate, held_coordinate_plane, is_axis_aligned,
     placed_plane_surfaces, placed_planes, plane_candidates, point_on_carrier,
-    reconciled_model_plane, solve_carriers, tangent_plane_sphere_point, tangent_sphere_point,
-    topology_bound_line_plane, topology_bound_plane, valid_positive_nurbs_curve, BoundaryLine,
-    PlaneCandidate, PlaneChart,
+    reconciled_model_plane, solve_carriers_with_diagnostics, tangent_plane_sphere_point,
+    tangent_sphere_point, topology_bound_line_plane, topology_bound_plane,
+    valid_positive_nurbs_curve, BoundaryLine, CarrierSolveDiagnostics, PlaneCandidate, PlaneChart,
 };
 #[allow(unused_imports)]
 pub(super) use vertices::{
     conic_conic_intersections, incident_analytic_vertex_domain, line_conic_intersections,
     line_line_intersection, model_points_agree, restrict_planar_conic_to_chart,
-    solved_topological_vertices,
+    solve_topological_vertices, solved_topological_vertices, TopologicalVertexSolveDiagnostics,
 };

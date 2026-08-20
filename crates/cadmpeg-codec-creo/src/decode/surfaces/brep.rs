@@ -26,9 +26,9 @@ use super::super::analytic::{
     nonperiodic_conic_edge_parameter_range, ordered_face_loops, ordered_parameter_face_loops,
     orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
     pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
-    ruled_generator_line_pcurve, solved_topological_vertices,
-    surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve, CarrierEquation,
-    NativePcurveCandidates,
+    ruled_generator_line_pcurve, solve_topological_vertices, surface_of_revolution_parallel_pcurve,
+    unique_oriented_native_pcurve, CarrierEquation, NativePcurveCandidates,
+    TopologicalVertexSolveDiagnostics,
 };
 use super::super::native::annotate;
 use super::super::sweep::line_pcurve;
@@ -109,6 +109,10 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) candidate_face_count: usize,
     pub(in super::super) admitted_face_count: usize,
     pub(in super::super) emitted_face_count: usize,
+    pub(in super::super) boundary_curve_count: usize,
+    pub(in super::super) boundary_curve_missing_incidence_count: usize,
+    pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
+    pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
     pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
     pub(in super::super) body_count_mismatch: bool,
     pub(in super::super) legacy_body_ownership_ambiguous: bool,
@@ -136,6 +140,82 @@ impl BrepTransferDiagnostics {
         coverage.insert(
             "brep_emitted_face_count".to_string(),
             self.emitted_face_count,
+        );
+        coverage.insert(
+            "brep_boundary_curve_count".to_string(),
+            self.boundary_curve_count,
+        );
+        coverage.insert(
+            "brep_boundary_curve_missing_incidence_count".to_string(),
+            self.boundary_curve_missing_incidence_count,
+        );
+        coverage.insert(
+            "brep_boundary_curve_unsolved_vertex_count".to_string(),
+            self.boundary_curve_unsolved_vertex_count,
+        );
+        coverage.insert(
+            "brep_vertex_topological_count".to_string(),
+            self.vertex_solve.topological_vertices,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_incident_count".to_string(),
+            self.vertex_solve.carrier_incident_vertices,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_pair_intersection_candidate_count".to_string(),
+            self.vertex_solve.carrier_pair_candidates,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_triple_intersection_candidate_count".to_string(),
+            self.vertex_solve.carrier_triple_candidates,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_valid_intersection_candidate_count".to_string(),
+            self.vertex_solve.carrier_valid_candidates,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_zero_candidate_count".to_string(),
+            self.vertex_solve.carrier_zero_candidate_vertices,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_ambiguous_candidate_count".to_string(),
+            self.vertex_solve.carrier_ambiguous_candidate_vertices,
+        );
+        coverage.insert(
+            "brep_vertex_carrier_point_count".to_string(),
+            self.vertex_solve.carrier_points,
+        );
+        coverage.insert(
+            "brep_vertex_pcurve_endpoint_evidence_count".to_string(),
+            self.vertex_solve.pcurve_endpoint_evidence,
+        );
+        coverage.insert(
+            "brep_vertex_complete_pcurve_endpoint_evidence_count".to_string(),
+            self.vertex_solve.complete_pcurve_endpoint_evidence,
+        );
+        coverage.insert(
+            "brep_vertex_pcurve_constraint_count".to_string(),
+            self.vertex_solve.pcurve_constraints,
+        );
+        coverage.insert(
+            "brep_vertex_directed_endpoint_assignment_count".to_string(),
+            self.vertex_solve.directed_endpoint_assignments,
+        );
+        coverage.insert(
+            "brep_vertex_directed_endpoint_conflict_count".to_string(),
+            self.vertex_solve.directed_endpoint_conflicts,
+        );
+        coverage.insert(
+            "brep_vertex_nurbs_endpoint_constraint_count".to_string(),
+            self.vertex_solve.nurbs_endpoint_constraints,
+        );
+        coverage.insert(
+            "brep_vertex_analytic_domain_count".to_string(),
+            self.vertex_solve.analytic_domain_vertices,
+        );
+        coverage.insert(
+            "brep_vertex_solved_count".to_string(),
+            self.vertex_solve.solved_vertices,
         );
         coverage.insert(
             "brep_rejected_face_count".to_string(),
@@ -602,8 +682,9 @@ pub(in super::super) fn transfer_native_brep(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertices =
-        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+    let solved_vertex_result =
+        solve_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+    let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .curves
@@ -708,8 +789,29 @@ pub(in super::super) fn transfer_native_brep(
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir);
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
+        vertex_solve: solved_vertex_result.diagnostics,
         ..BrepTransferDiagnostics::default()
     };
+    let boundary_curve_ids = loops_by_face
+        .values()
+        .flatten()
+        .flat_map(|lp| lp.half_edges.iter().map(|half_edge| half_edge.curve_id))
+        .collect::<BTreeSet<_>>();
+    diagnostics.boundary_curve_count = boundary_curve_ids.len();
+    diagnostics.boundary_curve_missing_incidence_count = boundary_curve_ids
+        .iter()
+        .filter(|curve_id| !native_edge_vertices.contains_key(curve_id))
+        .count();
+    diagnostics.boundary_curve_unsolved_vertex_count = boundary_curve_ids
+        .iter()
+        .filter(|curve_id| {
+            native_edge_vertices.get(curve_id).is_some_and(|vertices| {
+                vertices
+                    .iter()
+                    .any(|vertex| !solved_vertices.contains_key(vertex))
+            })
+        })
+        .count();
     let mut eligible_faces = BTreeMap::new();
     for face_id in candidate_face_ids {
         if !face_orientations.contains_key(&face_id) {
@@ -763,7 +865,7 @@ pub(in super::super) fn transfer_native_brep(
                         face_id,
                         &surface.geometry,
                         &incidence,
-                        &solved_vertices,
+                        solved_vertices,
                         &native_pcurves,
                         &typed_nonlinear_curve_ids,
                     )
@@ -777,7 +879,7 @@ pub(in super::super) fn transfer_native_brep(
             loops.clone(),
             planes.get(&face_id).copied(),
             &incidence,
-            &solved_vertices,
+            solved_vertices,
         )
         .or_else(|| {
             let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
@@ -792,7 +894,7 @@ pub(in super::super) fn transfer_native_brep(
                 face_id,
                 &surface.geometry,
                 &incidence,
-                &solved_vertices,
+                solved_vertices,
                 &native_pcurves,
                 NativeCurveEvidence {
                     typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
@@ -884,7 +986,7 @@ pub(in super::super) fn transfer_native_brep(
         admitted_components.len(),
     );
     let solved_point_count = solved_vertices.len();
-    for (vertex_id, position) in &solved_vertices {
+    for (vertex_id, position) in solved_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
         if ir.model.points.iter().any(|item| item.id == point_id) {
             continue;

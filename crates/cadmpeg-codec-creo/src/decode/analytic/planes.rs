@@ -118,10 +118,22 @@ pub fn tangent_plane_sphere_point(
     }))
 }
 
-pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CarrierSolveDiagnostics {
+    pub pair_intersections: usize,
+    pub triple_intersections: usize,
+    pub valid_candidates: usize,
+    pub unique_solutions: usize,
+}
+
+pub fn solve_carriers_with_diagnostics(
+    carriers: &[CarrierEquation],
+) -> (Option<[f64; 3]>, CarrierSolveDiagnostics) {
     let mut candidates = Vec::new();
+    let mut diagnostics = CarrierSolveDiagnostics::default();
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
+            let candidate_start = candidates.len();
             match (carriers[first], carriers[second]) {
                 (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
                 | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
@@ -136,11 +148,13 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 }
                 _ => {}
             }
+            diagnostics.pair_intersections += candidates.len() - candidate_start;
         }
     }
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
             for third in second + 1..carriers.len() {
+                let candidate_start = candidates.len();
                 let triple = [carriers[first], carriers[second], carriers[third]];
                 let mut planes = Vec::new();
                 let mut cylinders = Vec::new();
@@ -256,6 +270,7 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         ));
                     }
                 }
+                diagnostics.triple_intersections += candidates.len() - candidate_start;
             }
         }
     }
@@ -264,6 +279,7 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
             .iter()
             .all(|carrier| point_on_carrier(*point, *carrier))
     });
+    diagnostics.valid_candidates = candidates.len();
     let mut unique = Vec::<[f64; 3]>::new();
     for candidate in candidates {
         if !unique.iter().any(|known| {
@@ -275,10 +291,17 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
             unique.push(candidate);
         }
     }
-    let [point] = unique.as_slice() else {
-        return None;
+    diagnostics.unique_solutions = unique.len();
+    let point = match unique.as_slice() {
+        [point] => Some(*point),
+        _ => None,
     };
-    Some(*point)
+    (point, diagnostics)
+}
+
+#[cfg(test)]
+pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+    solve_carriers_with_diagnostics(carriers).0
 }
 
 pub fn is_axis_aligned(vector: [f64; 3]) -> bool {
