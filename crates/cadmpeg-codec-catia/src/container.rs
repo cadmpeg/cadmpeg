@@ -1226,9 +1226,10 @@ fn unique_largest_descriptor<'a>(
 /// sufficient to distinguish them because FBB-only widths one and three reuse
 /// the standard delimiter. Zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
-/// census. A coherent E5 walk owns its bounded stream before the weaker
-/// container and marker fallbacks are considered. Anything that matches no
-/// invariant is [`Variant::Unknown`].
+/// census. A coherent E5 walk owns its bounded stream when no admitted nested
+/// FBB spine is present. A nested FBB spine owns route selection when both
+/// representations are present. Anything that matches no invariant is
+/// [`Variant::Unknown`].
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
@@ -1236,10 +1237,14 @@ fn identify_variant(
     census: &Census,
     coherent_e5: bool,
 ) -> Variant {
-    if coherent_e5 {
-        return Variant::E5Stream;
-    }
     match (inner, brep) {
+        // A nested FBB spine is an independently admitted body. It takes
+        // precedence over an unrelated E5 stream in the same container.
+        (Some(_), Some(brep)) if census.fbb_runs > 0 => {
+            identify_fbb_variant(main_data_stream.unwrap_or(brep), census)
+        }
+        // E5 is the geometry route when no nested FBB body is present.
+        _ if coherent_e5 => Variant::E5Stream,
         // No nested container at all.
         (None, _) => {
             if census.a9_records > 0 {
@@ -1250,13 +1255,7 @@ fn identify_variant(
         }
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
-        (Some(_), Some(brep)) => {
-            if census.fbb_runs > 0 {
-                identify_fbb_variant(main_data_stream.unwrap_or(brep), census)
-            } else {
-                Variant::FloatPackedInnerNoFbb
-            }
-        }
+        (Some(_), Some(_)) => Variant::FloatPackedInnerNoFbb,
     }
 }
 

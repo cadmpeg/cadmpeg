@@ -65,19 +65,17 @@ fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
 }
 
 #[test]
-fn coherent_e5_stream_overrides_nested_fbb_markers() {
-    let inner = InnerDir {
-        inner: 0,
-        descriptors: Vec::new(),
-    };
-    let census = Census {
-        fbb_runs: 2,
-        edge_delimiters: 1,
-        ..Census::default()
-    };
+fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
+    let scan = scan_bytes(standard_catpart());
     assert_eq!(
-        identify_variant(Some(&inner), Some(&[]), None, &census, true),
-        Variant::E5Stream
+        identify_variant(
+            scan.inner.as_ref(),
+            scan.brep.as_deref(),
+            scan.main_data_stream.as_deref(),
+            &scan.census,
+            true,
+        ),
+        Variant::StandardNested
     );
 }
 
@@ -139,6 +137,25 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
     );
     assert_eq!(
         identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        Variant::FbbOnly
+    );
+}
+
+#[test]
+fn nested_fbb_only_spine_precedes_a_coherent_e5_stream() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let brep = fbb_only_tables_with_shared_delimiter();
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 2,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, true),
         Variant::FbbOnly
     );
 }
