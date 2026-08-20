@@ -231,33 +231,50 @@ pub struct B2Long61 {
     pub scalar: f64,
 }
 
-/// Fixed-shape class-`0x5f` link record.
+/// Target encoding of a structurally complete class-`0x5f` node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2Link5f {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Width-coded persistent target between `0x82` and the `03 05` tail.
-    pub target: u32,
+pub enum B2FaceNode5fTargetEncoding {
+    /// Width-coded compact target.
+    Compact,
+    /// Strong persistent target encoded as `0x0a <u16le>`.
+    TaggedU16Strong,
 }
 
-/// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
-/// allocation-successor identity.
+/// Structurally complete class-`0x5f` node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2FaceNode5f {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Complete framed-record byte length.
+    pub byte_len: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Target encoding selected after the `0x82` lead.
+    pub target_encoding: B2FaceNode5fTargetEncoding,
+    /// Persistent target between the `0x82` lead and the terminal pair.
+    pub target: u32,
+    /// Two terminal bytes that exhaust the complete payload.
+    pub terminal: [u8; 2],
+}
+
+/// Derived adjacent class-`0x5f` node and class-`0x62` packet relation.
+///
+/// This relation retains source adjacency and the successor identity. It does
+/// not assign a higher-level object or allocation role to either record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2LinkedOwner {
-    /// Fixed link immediately preceding the owner packet.
-    pub link: B2Link5f,
+pub struct B2AdjacentFaceOwner {
+    /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
+    pub face_node: B2FaceNode5f,
     /// Nine-reference owner packet.
     pub owner: B2OwnerPacket,
 }
 
-/// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
-/// the owner's allocation-successor identity.
+/// Derived adjacent class-`0x5f` node and count-framed class-`0x62` packet
+/// relation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2LinkedCountedOwner {
-    /// Fixed link immediately preceding the owner packet.
-    pub link: B2Link5f,
+pub struct B2AdjacentFaceCountedOwner {
+    /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
+    pub face_node: B2FaceNode5f,
     /// Count-framed owner packet.
     pub owner: B2CountedOwner,
 }
@@ -779,18 +796,18 @@ pub(crate) fn b2_long_61_from_records(
         .collect()
 }
 
-/// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
+/// Decode structurally complete class-`0x5f` nodes.
 #[must_use]
 #[cfg(test)]
-pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
+pub fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
     let records = consolidated_records(data);
-    b2_links_5f_from_records(data, &records)
+    b2_face_nodes_5f_from_records(data, &records)
 }
 
-pub(crate) fn b2_links_5f_from_records(
+pub(crate) fn b2_face_nodes_5f_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Link5f> {
+) -> Vec<B2FaceNode5f> {
     b_family_frames_from_records(records, 0x5f)
         .into_iter()
         .filter_map(|frame| {
@@ -798,33 +815,46 @@ pub(crate) fn b2_links_5f_from_records(
                 return None;
             }
             let mut at = frame.payload + 1;
-            let target = compact_int(data, &mut at)?;
-            (at + 2 == frame.end && data.get(at..frame.end) == Some(&[0x03, 0x05])).then_some(
-                B2Link5f {
-                    pos: frame.pos,
-                    header_token: frame.header_token,
-                    target,
-                },
-            )
+            let (target_encoding, target) = if data.get(at) == Some(&0x0a) {
+                (
+                    B2FaceNode5fTargetEncoding::TaggedU16Strong,
+                    persistent_ref(data, &mut at)?,
+                )
+            } else {
+                (
+                    B2FaceNode5fTargetEncoding::Compact,
+                    compact_int(data, &mut at)?,
+                )
+            };
+            let terminal = <[u8; 2]>::try_from(data.get(at..frame.end)?).ok()?;
+            Some(B2FaceNode5f {
+                pos: frame.pos,
+                byte_len: frame.end.checked_sub(frame.pos)?,
+                header_token: frame.header_token,
+                target_encoding,
+                target,
+                terminal,
+            })
         })
         .collect()
 }
 
-/// Bind immediately adjacent `5f,62` records when the owner's ninth identity
-/// is the checked successor of the link target.
+/// Bind immediately adjacent `5f,62` records when the packet's ninth identity
+/// is the checked successor of the node target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
+pub fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
-    b2_linked_owners_from_records(data, &records)
+    b2_adjacent_face_owners_from_records(data, &records)
 }
 
-pub(crate) fn b2_linked_owners_from_records(
+pub(crate) fn b2_adjacent_face_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2LinkedOwner> {
-    let links = b2_links_5f_from_records(data, records)
+) -> Vec<B2AdjacentFaceOwner> {
+    let nodes = b2_face_nodes_5f_from_records(data, records)
         .into_iter()
+        .filter(|value| value.terminal == [0x03, 0x05])
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let owners = b2_owner_packets_from_records(data, records)
@@ -837,31 +867,34 @@ pub(crate) fn b2_linked_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let link = links.get(&link_record.range.start)?;
+            let face_node = nodes.get(&link_record.range.start)?;
             let owner = owners.get(&owner_record.range.start)?;
-            (link.target.checked_add(1) == Some(owner.references[8])).then(|| B2LinkedOwner {
-                link: *link,
-                owner: owner.clone(),
+            (face_node.target.checked_add(1) == Some(owner.references[8])).then(|| {
+                B2AdjacentFaceOwner {
+                    face_node: *face_node,
+                    owner: owner.clone(),
+                }
             })
         })
         .collect()
 }
 
-/// Bind immediately adjacent `5f,62` records when the count-framed owner's
-/// final identity is the checked successor of the link target.
+/// Bind immediately adjacent `5f,62` records when the count-framed packet's
+/// final identity is the checked successor of the node target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
+pub fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
-    b2_linked_counted_owners_from_records(data, &records)
+    b2_adjacent_face_counted_owners_from_records(data, &records)
 }
 
-pub(crate) fn b2_linked_counted_owners_from_records(
+pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2LinkedCountedOwner> {
-    let links = b2_links_5f_from_records(data, records)
+) -> Vec<B2AdjacentFaceCountedOwner> {
+    let nodes = b2_face_nodes_5f_from_records(data, records)
         .into_iter()
+        .filter(|value| value.terminal == [0x03, 0x05])
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let owners = b2_counted_owners_from_records(data, records)
@@ -874,11 +907,11 @@ pub(crate) fn b2_linked_counted_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let link = links.get(&link_record.range.start)?;
+            let face_node = nodes.get(&link_record.range.start)?;
             let owner = owners.get(&owner_record.range.start)?;
-            (link.target.checked_add(1) == owner.references.last().copied()).then(|| {
-                B2LinkedCountedOwner {
-                    link: *link,
+            (face_node.target.checked_add(1) == owner.references.last().copied()).then(|| {
+                B2AdjacentFaceCountedOwner {
+                    face_node: *face_node,
                     owner: owner.clone(),
                 }
             })

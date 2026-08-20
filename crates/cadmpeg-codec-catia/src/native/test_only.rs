@@ -2030,9 +2030,9 @@ fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, packet) in packets.iter().enumerate() {
-        let valid_link = packet.allocation_link.is_none_or(|link| {
-            link.byte_offset.checked_add(link.byte_len) == Some(packet.byte_offset)
-                && link.target.checked_add(1) == packet.payload.final_reference()
+        let valid_face_node = packet.face_node.is_none_or(|face_node| {
+            face_node.byte_offset.checked_add(face_node.byte_len) == Some(packet.byte_offset)
+                && face_node.target.checked_add(1) == packet.payload.final_reference()
         });
         let valid_payload = match &packet.payload {
             CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
@@ -2053,7 +2053,7 @@ fn validate_consolidated_owner_packets(
         };
         if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
             || !valid_payload
-            || !valid_link
+            || !valid_face_node
             || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

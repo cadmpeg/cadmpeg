@@ -438,9 +438,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-25. Class-`0x5f` owner role
 
-**Question.** What higher-level object does each allocation-linked `b2`, `b3`, or `b4 03 5f` to `0x62` owner represent?
+**Question.** What higher-level object does each derived `b2`, `b3`, or `b4 03 5f` to `0x62` packet relation represent?
 
-**Known.** The allocation link and owner packet are defined independently.
+**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. Other terminal pairs remain unassigned. The relation does not assign a higher-level object or allocation role.
 
 **Need.** We must know the object role to assign the owner to a feature or face.
 

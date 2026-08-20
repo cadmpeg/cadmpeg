@@ -202,18 +202,34 @@ pub enum CatiaOwnerReferenceEncoding {
     WidthCodedStrong,
 }
 
-/// Allocation link immediately preceding a consolidated owner packet.
+/// Target encoding of a consolidated class-`0x5f` face node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaOwnerAllocationLink {
-    /// Link-record byte offset.
+#[serde(rename_all = "snake_case")]
+pub enum CatiaFaceNodeTargetEncoding {
+    /// Width-coded compact target.
+    Compact,
+    /// Strong persistent target encoded as `0x0a <u16le>`.
+    TaggedU16Strong,
+}
+
+/// Derived class-`0x5f` face-node relation immediately preceding a
+/// consolidated class-`0x62` packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaFaceNodeRelation {
+    /// Face-node record byte offset.
     pub byte_offset: u64,
-    /// Complete framed-record byte length.
+    /// Complete face-node to packet span.
     pub byte_len: u64,
     /// Width-coded header token.
     pub header_token: u32,
-    /// Allocation identity whose successor is the owner's final reference.
+    /// Target encoding selected after the `0x82` lead.
+    pub target_encoding: CatiaFaceNodeTargetEncoding,
+    /// Class-`0x5f` target whose checked successor reaches the packet.
     pub target: u32,
+    /// Two terminal bytes of the face-node payload.
+    pub terminal: [u8; 2],
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
@@ -267,9 +283,10 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub header_token: u32,
     /// Count-specific reference lane and tail.
     pub payload: CatiaOwnerPacketPayload,
-    /// Structurally adjacent allocation link, when present.
+    /// Structurally adjacent class-`0x5f` face node, when the narrow relation
+    /// predicate succeeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_link: Option<CatiaOwnerAllocationLink>,
+    pub face_node: Option<CatiaFaceNodeRelation>,
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
@@ -6401,15 +6418,18 @@ fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedOwnerPacket> {
-    let links = crate::families::b2::records::b2_linked_owners_from_records(bytes, records)
-        .into_iter()
-        .map(|linked| (linked.owner.pos, linked.link))
-        .chain(
-            crate::families::b2::records::b2_linked_counted_owners_from_records(bytes, records)
+    let face_nodes =
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
+            .into_iter()
+            .map(|linked| (linked.owner.pos, linked.face_node))
+            .chain(
+                crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+                    bytes, records,
+                )
                 .into_iter()
-                .map(|linked| (linked.owner.pos, linked.link)),
-        )
-        .collect::<HashMap<_, _>>();
+                .map(|linked| (linked.owner.pos, linked.face_node)),
+            )
+            .collect::<HashMap<_, _>>();
     let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records);
     let fixed_positions = fixed
         .iter()
@@ -6465,11 +6485,20 @@ fn consolidated_owner_packets(
                 byte_offset: pos as u64,
                 header_token,
                 payload,
-                allocation_link: links.get(&pos).map(|link| CatiaOwnerAllocationLink {
-                    byte_offset: link.pos as u64,
-                    byte_len: (pos - link.pos) as u64,
-                    header_token: link.header_token,
-                    target: link.target,
+                face_node: face_nodes.get(&pos).map(|face_node| CatiaFaceNodeRelation {
+                    byte_offset: face_node.pos as u64,
+                    byte_len: (pos - face_node.pos) as u64,
+                    header_token: face_node.header_token,
+                    target_encoding: match face_node.target_encoding {
+                        crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                            CatiaFaceNodeTargetEncoding::Compact
+                        }
+                        crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                            CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                        }
+                    },
+                    target: face_node.target,
+                    terminal: face_node.terminal,
                 }),
             },
         )

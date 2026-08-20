@@ -278,7 +278,7 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
 }
 
 #[test]
-fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
+fn b2_face_node_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
     let mut bytes = Vec::new();
     for payload in [
         &[0x82, 0x04, 0x5d, 0x03, 0x05][..],
@@ -289,49 +289,86 @@ fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
         bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
         bytes.extend_from_slice(payload);
     }
-    let links = crate::families::b2::records::b2_links_5f(&bytes);
-    assert_eq!(links.len(), 4);
-    assert!(links.iter().all(|link| link.header_token == 5));
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 4);
+    assert!(nodes.iter().all(|node| node.header_token == 5));
     assert_eq!(
-        links.iter().map(|link| link.target).collect::<Vec<_>>(),
+        nodes.iter().map(|node| node.target).collect::<Vec<_>>(),
         [0x5d, 0x025d, 0x0001_025d, 0x0101_025d]
     );
 
     let malformed = [
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
     ];
-    assert!(crate::families::b2::records::b2_links_5f(&malformed).is_empty());
+    assert!(crate::families::b2::records::b2_face_nodes_5f(&malformed).is_empty());
 }
 
 #[test]
-fn b2_linked_owner_requires_adjacency_and_successor_identity() {
-    let pairs = crate::families::b2::records::b2_linked_owners(&b2_linked_owner_stream());
+fn b2_face_node_5f_parser_retains_strong_targets_and_terminal_pairs() {
+    use crate::families::b2::records::B2FaceNode5fTargetEncoding;
+
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x34, 0x12, 0x03, 0x05,
+    ];
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x78, 0x56, 0x0f, 0x05,
+    ]);
+
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].target, 0x1234);
+    assert_eq!(
+        nodes[0].target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+    assert_eq!(nodes[0].terminal, [0x03, 0x05]);
+    assert_eq!(nodes[1].target, 0x5678);
+    assert_eq!(nodes[1].terminal, [0x0f, 0x05]);
+
+    let mut owner_stream = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0xeb, 0x03, 0x03, 0x05,
+    ];
+    owner_stream.extend_from_slice(&b2_owner_packet_stream());
+    let related = crate::families::b2::records::b2_adjacent_face_owners(&owner_stream);
+    assert_eq!(related.len(), 1);
+    assert_eq!(
+        related[0].face_node.target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+}
+
+#[test]
+fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
+    let pairs =
+        crate::families::b2::records::b2_adjacent_face_owners(&b2_adjacent_face_owner_stream());
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].link.target, 1003);
+    assert_eq!(pairs[0].face_node.target, 1003);
     assert_eq!(pairs[0].owner.references[8], 1004);
 
-    let mut separated = b2_link_5f_stream();
+    let mut separated = b2_face_node_5f_stream();
     separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
     separated.extend_from_slice(&b2_owner_packet_stream());
-    assert!(crate::families::b2::records::b2_linked_owners(&separated).is_empty());
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&separated).is_empty());
 }
 
 #[test]
-fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
-    let bytes = b2_linked_counted_owner_stream();
+fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
     let owners = crate::families::b2::records::b2_counted_owners(&bytes);
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
     assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
 
-    let linked = crate::families::b2::records::b2_linked_counted_owners(&bytes);
-    assert_eq!(linked.len(), 1);
-    assert_eq!(linked[0].link.target, 916);
-    assert_eq!(linked[0].owner.references.last(), Some(&917));
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 916);
+    assert_eq!(related[0].owner.references.last(), Some(&917));
 
     let mut wrong_successor = bytes;
     wrong_successor[35] = 0x99;
-    assert!(crate::families::b2::records::b2_linked_counted_owners(&wrong_successor).is_empty());
+    assert!(
+        crate::families::b2::records::b2_adjacent_face_counted_owners(&wrong_successor).is_empty()
+    );
 }
 
 #[test]
@@ -743,32 +780,34 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
     );
 
-    let bytes = b2_link_5f_stream();
+    let bytes = b2_face_node_5f_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     compare(
-        "class 5f links",
-        crate::families::b2::records::b2_links_5f(&bytes)
+        "class 5f face nodes",
+        crate::families::b2::records::b2_face_nodes_5f(&bytes)
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_links_5f_from_records(&bytes, &records)
+        crate::families::b2::records::b2_face_nodes_5f_from_records(&bytes, &records)
             .into_iter()
             .map(|record| record.pos)
             .collect(),
     );
 
-    let bytes = b2_linked_owner_stream();
+    let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::b2::records::b2_linked_owners_from_records(&bytes, &records),
-        crate::families::b2::records::b2_linked_owners(&bytes)
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(&bytes, &records),
+        crate::families::b2::records::b2_adjacent_face_owners(&bytes)
     );
 
-    let bytes = b2_linked_counted_owner_stream();
+    let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::b2::records::b2_linked_counted_owners_from_records(&bytes, &records),
-        crate::families::b2::records::b2_linked_counted_owners(&bytes)
+        crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+            &bytes, &records
+        ),
+        crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes)
     );
 
     let bytes = b2_parameter_point_stream();

@@ -744,8 +744,8 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 }
 
 #[test]
-fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
-    let native = crate::native::CatiaNative::decode(&b2_linked_owner_stream());
+fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
+    let native = crate::native::CatiaNative::decode(&b2_adjacent_face_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
@@ -762,10 +762,15 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
     assert_eq!(numeric_tail.lower, [-0.0, 4.5]);
     assert_eq!(numeric_tail.upper, [12.25, 7.0]);
     assert_eq!(numeric_tail.bounds, [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]);
-    let link = packet.allocation_link.expect("allocation-successor link");
-    assert_eq!(link.byte_len, 11);
-    assert_eq!(link.target, 1003);
-    assert_eq!(link.target + 1, references[8]);
+    let face_node = packet.face_node.expect("face-node relation");
+    assert_eq!(face_node.byte_len, 11);
+    assert_eq!(
+        face_node.target_encoding,
+        crate::native::CatiaFaceNodeTargetEncoding::Compact
+    );
+    assert_eq!(face_node.target, 1003);
+    assert_eq!(face_node.terminal, [0x03, 0x05]);
+    assert_eq!(face_node.target + 1, references[8]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -778,9 +783,9 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
 
     let mut invalid = native;
     invalid.consolidated_owner_packets[0]
-        .allocation_link
+        .face_node
         .as_mut()
-        .expect("allocation-successor link")
+        .expect("face-node relation")
         .target -= 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
@@ -790,8 +795,8 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
 }
 
 #[test]
-fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
-    let native = crate::native::CatiaNative::decode(&b2_linked_counted_owner_stream());
+fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
+    let native = crate::native::CatiaNative::decode(&b2_adjacent_face_counted_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
@@ -801,10 +806,10 @@ fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
     };
     assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
     assert_eq!(tail, &[0x83, 0x41, 0x92, 0x00, 0x01]);
-    let link = packet.allocation_link.expect("allocation-successor link");
-    assert_eq!(link.target, 916);
+    let face_node = packet.face_node.expect("face-node relation");
+    assert_eq!(face_node.target, 916);
     assert_eq!(
-        link.target + 1,
+        face_node.target + 1,
         *references.last().expect("final owner reference")
     );
 
