@@ -15,6 +15,27 @@ fn main() {
     {
         println!("cargo:rerun-if-changed={head_path}");
     }
+    if let Some(reference) = std::process::Command::new("git")
+        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|text| text.trim().to_owned())
+        .filter(|reference| !reference.is_empty())
+    {
+        if let Some(reference_path) = std::process::Command::new("git")
+            .args(["rev-parse", "--git-path", &reference])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|text| text.trim().to_owned())
+            .filter(|path| !path.is_empty())
+        {
+            println!("cargo:rerun-if-changed={reference_path}");
+        }
+    }
     let hash = std::process::Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
         .output()
