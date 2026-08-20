@@ -541,6 +541,17 @@ owner relation.
 
 **Need.** We must know the slot roles to decode the delete construction independently of its primary-body target.
 
+**Conflict.** Each slot carries only a nullable canonical object index. Unique
+offset-store resolution identifies a block, but the slot has no discriminator,
+schema tag, or independent relation that assigns an object family or semantic
+role. Slot order and five-block concatenation preserve construction order only;
+the separate primary-body field does not label any of these slots.
+
+**Note.** The five slots and any complete logical payload remain native
+records. A slot-specific neutral projection requires one independent relation
+for its object family, role, and payload schema; the body-deletion projection
+does not supply that relation.
+
 ### OM-12. Inactive-arrangement body state
 
 **Question.** Which bodies belong to each inactive arrangement, and what per-body state does that arrangement select?
