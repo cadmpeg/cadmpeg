@@ -1207,16 +1207,16 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         center: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 12.0,
+        radius: f64::EPSILON,
     };
 
     assert_eq!(
         super::sphere_body_projection(&ir, &[]),
-        Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
     );
     assert_eq!(
         super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
-        Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
     );
 
     let mut second_body = ir.model.bodies[0].clone();

@@ -5342,7 +5342,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         return None;
     };
     ((*radius).is_finite()
-        && *radius > ir.tolerances.linear
+        && *radius > 0.0
         && [center.x, center.y, center.z]
             .into_iter()
             .all(f64::is_finite))
