@@ -13,6 +13,7 @@ use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
+const EPS_TANGENT_NORM: f64 = 1.0e-9;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
@@ -760,10 +761,18 @@ pub fn chart_source_records(
     point_layout: ChartPointLayout,
 ) -> Vec<ChartSourceRecord> {
     let mut out = Vec::new();
-    for tag in find_tags(stream, [0, 40]) {
-        if let Some((record, _)) = chart_source_record_at(stream, tag, point_layout) {
-            out.push(record);
+    let mut tag = 0usize;
+    while tag.saturating_add(2) <= stream.len() {
+        if stream.get(tag..tag + 2) == Some(&[0, 40]) {
+            if let Some((record, end)) = chart_source_record_at(stream, tag, point_layout) {
+                out.push(record);
+                // A complete chart owns its counted point lane. Do not rescan
+                // bytes inside that lane as nested chart candidates.
+                tag = end;
+                continue;
+            }
         }
+        tag += 1;
     }
     out
 }
@@ -864,10 +873,20 @@ fn chart_points(
     let end = block.checked_add(count.checked_mul(point_width)?)?;
     stream.get(block..end)?;
     if point_layout == ChartPointLayout::Xyz3 {
+        let mut previous = None;
+        let mut has_difference = false;
+        for index in 0..count {
+            let point = point_m(stream, block + index * 24)?;
+            if previous.is_some_and(|previous| previous != point) {
+                has_difference = true;
+            }
+            previous = Some(point);
+        }
+        has_difference.then_some(())?;
         let points = (0..count)
             .map(|index| point_m(stream, block + index * 24))
             .collect::<Option<Vec<_>>>()?;
-        return (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(ChartPoints {
+        return Some(ChartPoints {
             points,
             native_parameters: None,
             ext_support_uv: [None, None],
@@ -875,53 +894,56 @@ fn chart_points(
         });
     }
 
-    let ext = (0..count)
-        .map(|index| {
-            let at = block + index * 88;
-            let point = point_m(stream, at)?;
-            let mut mid = View::over_retained(stream).child(at + 24, at + 88)?;
-            let (u0, u1, v0, v1) = (mid.f64_be()?, mid.f64_be()?, mid.f64_be()?, mid.f64_be()?);
-            let tangent = [mid.f64_be()?, mid.f64_be()?, mid.f64_be()?];
-            let parameter = mid.f64_be()?;
-            let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
-            let parameter_lanes = [[u0, v0], [u1, v1]];
-            ((norm - 1.0).abs() < 1.0e-9 && parameter.is_finite()).then_some((
-                point,
-                parameter,
-                parameter_lanes,
-            ))
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(entries) = ext {
-        let mut points = Vec::with_capacity(entries.len());
-        let mut native_parameters = Vec::with_capacity(entries.len());
-        let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
-        for (point, parameter, lanes) in entries {
-            points.push(point);
-            native_parameters.push(parameter);
-            for lane in 0..2 {
-                if lanes[lane]
-                    .iter()
-                    .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
-                {
-                    if let Some(values) = &mut ext_support_uv[lane] {
-                        values.push(lanes[lane]);
-                    }
-                } else {
-                    ext_support_uv[lane] = None;
+    let mut previous_parameter = None;
+    for index in 0..count {
+        let (_, parameter, _) = chart_ext_point_at(stream, block + index * 88)?;
+        if previous_parameter.is_some_and(|previous| parameter <= previous) {
+            return None;
+        }
+        previous_parameter = Some(parameter);
+    }
+
+    let mut points = Vec::with_capacity(count);
+    let mut native_parameters = Vec::with_capacity(count);
+    let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
+    for index in 0..count {
+        let (point, parameter, lanes) = chart_ext_point_at(stream, block + index * 88)?;
+        points.push(point);
+        native_parameters.push(parameter);
+        for lane in 0..2 {
+            if lanes[lane]
+                .iter()
+                .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
+            {
+                if let Some(values) = &mut ext_support_uv[lane] {
+                    values.push(lanes[lane]);
                 }
+            } else {
+                ext_support_uv[lane] = None;
             }
         }
-        if native_parameters.windows(2).all(|pair| pair[0] < pair[1]) {
-            return Some(ChartPoints {
-                points,
-                native_parameters: Some(native_parameters),
-                ext_support_uv,
-                end,
-            });
-        }
     }
-    None
+    Some(ChartPoints {
+        points,
+        native_parameters: Some(native_parameters),
+        ext_support_uv,
+        end,
+    })
+}
+
+fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {
+    let point = point_m(stream, at)?;
+    let mut mid = View::over_retained(stream).child(at.checked_add(24)?, at.checked_add(88)?)?;
+    let (u0, u1, v0, v1) = (mid.f64_be()?, mid.f64_be()?, mid.f64_be()?, mid.f64_be()?);
+    let tangent = [mid.f64_be()?, mid.f64_be()?, mid.f64_be()?];
+    let parameter = mid.f64_be()?;
+    let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let parameter_lanes = [[u0, v0], [u1, v1]];
+    ((norm - 1.0).abs() < EPS_TANGENT_NORM && parameter.is_finite()).then_some((
+        point,
+        parameter,
+        parameter_lanes,
+    ))
 }
 
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
@@ -1010,19 +1032,36 @@ fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
 pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
-    for tag in find_tags(stream, [0, 204]) {
-        if let Some((record, _)) = support_uv_record_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, record.xmt, record);
+    let mut tag = 0usize;
+    while tag.saturating_add(2) <= stream.len() {
+        if stream.get(tag..tag + 2) == Some(&[0, 204]) {
+            if let Some((record, end)) = support_uv_record_at(stream, tag) {
+                insert_unique(&mut out, &mut duplicates, record.xmt, record);
+                // A complete counted UV lane owns its scalar payload. Do not
+                // rescan payload bytes as nested support arrays.
+                tag = end;
+                continue;
+            }
         }
+        tag += 1;
     }
-    for label in find_iter(stream, b"values") {
+    let mut label_start = 0;
+    while label_start < stream.len() {
+        let Some(relative) = find_iter(&stream[label_start..], b"values").next() else {
+            break;
+        };
+        let label = label_start + relative;
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
-            if let Some((record, _)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos) {
+            if let Some((record, end)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos)
+            {
                 insert_unique(&mut out, &mut duplicates, record.xmt, record);
+                label_start = end;
+                continue;
             }
         }
+        label_start = label + 1;
     }
     out.into_values().collect()
 }
@@ -1099,8 +1138,11 @@ fn uv_at(
     ))
 }
 
-fn find_tags(stream: &[u8], tag: [u8; 2]) -> Vec<usize> {
-    find_iter(stream, &tag).collect()
+fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
+    stream
+        .windows(tag.len())
+        .enumerate()
+        .filter_map(move |(offset, window)| (window == tag).then_some(offset))
 }
 
 fn point_m(stream: &[u8], at: usize) -> Option<Point3> {

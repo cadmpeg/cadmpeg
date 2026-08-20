@@ -400,6 +400,64 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
 }
 
 #[test]
+fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
+    let mut nested = record(40, 108);
+    nested[2..6].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut nested, 6, 20);
+    put_f64(&mut nested, 8, 0.0);
+    put_f64(&mut nested, 16, 1.0);
+    nested[24..28].copy_from_slice(&2u32.to_be_bytes());
+    put_f64(&mut nested, 28, 0.000_01);
+    put_f64(&mut nested, 36, 0.001);
+    put_f64(&mut nested, 44, -31_415_800_000_000.0);
+    put_f64(&mut nested, 52, -31_415_800_000_000.0);
+    put_vec3(&mut nested, 60, [0.0, 0.0, 0.0]);
+    put_vec3(&mut nested, 84, [0.01, 0.0, 0.0]);
+
+    let count = 5;
+    let mut outer = record(40, 60 + count * 24);
+    outer[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    put_ref(&mut outer, 6, 21);
+    put_f64(&mut outer, 8, 0.0);
+    put_f64(&mut outer, 16, 1.0);
+    outer[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    put_f64(&mut outer, 28, 0.000_01);
+    put_f64(&mut outer, 36, 0.001);
+    put_f64(&mut outer, 44, -31_415_800_000_000.0);
+    put_f64(&mut outer, 52, -31_415_800_000_000.0);
+    outer[60..60 + nested.len()].copy_from_slice(&nested);
+
+    let records = crate::intersection::chart_source_records(
+        &outer,
+        crate::intersection::ChartPointLayout::Xyz3,
+    );
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 21);
+    assert_eq!(records[0].points.len(), count);
+}
+
+#[test]
+fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
+    let mut nested = record(204, 25);
+    nested[2..6].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut nested, 6, 24);
+    nested[8] = 2;
+    put_f64(&mut nested, 9, 0.0);
+    put_f64(&mut nested, 17, 0.0);
+
+    let mut outer = record(204, 41);
+    outer[2..6].copy_from_slice(&4u32.to_be_bytes());
+    put_ref(&mut outer, 6, 23);
+    outer[8] = 2;
+    outer[9..9 + nested.len()].copy_from_slice(&nested);
+
+    let records = crate::intersection::support_uv_records(&outer);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 23);
+    assert_eq!(records[0].values.len(), 4);
+}
+
+#[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
     let ir = cadmpeg_ir::examples::unit_cube();
     let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
