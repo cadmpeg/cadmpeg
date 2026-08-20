@@ -2985,6 +2985,7 @@ pub fn decode_body_recipe_operands(
     for stream_recipes in body_recipes_by_stream.values_mut() {
         stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
     }
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3001,6 +3002,9 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         for (ordinal, record_index) in group.members.iter().copied().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
@@ -3008,8 +3012,8 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe(
-                bytes,
+            let Some(recipe) = unique_body_recipe_with_index(
+                records,
                 header,
                 body_recipes_by_stream
                     .get(stream)
@@ -3018,7 +3022,7 @@ pub fn decode_body_recipe_operands(
                 continue;
             };
             if let Some(mut operand) =
-                parse_body_recipe_operand(bytes, group, ordinal, header, recipe)
+                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
             {
                 operand.id =
                     ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
@@ -3037,6 +3041,9 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let combine_record_indexes = scope.combine_operation.as_ref().map(|operation| {
             std::iter::once(operation.target.record_index)
                 .chain(operation.tools.iter().map(|tool| tool.record_index))
@@ -3066,8 +3073,8 @@ pub fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
                 continue;
             };
-            let Some(recipe) = unique_body_recipe(
-                bytes,
+            let Some(recipe) = unique_body_recipe_with_index(
+                records,
                 header,
                 body_recipes_by_stream
                     .get(stream)
@@ -3078,9 +3085,14 @@ pub fn decode_body_recipe_operands(
             let owner = DesignBodyRecipeOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             };
-            if let Some(mut operand) =
-                parse_body_recipe_operand_frame(bytes, scope.record_index, owner, header, recipe)
-            {
+            if let Some(mut operand) = parse_body_recipe_operand_frame_with_index(
+                bytes,
+                records,
+                scope.record_index,
+                owner,
+                header,
+                recipe,
+            ) {
                 operand.id =
                     ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
                 out.push(operand);
@@ -3099,18 +3111,24 @@ pub fn decode_body_recipe_operands(
 /// Select the sole body recipe in the structural interval after the `N+3`
 /// header and before the enclosing `N+4` header. The bounded Design stream,
 /// rather than an arbitrary byte distance, limits the interval.
+#[cfg(test)]
 fn unique_body_recipe<'a>(
     bytes: &[u8],
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
+    let records = IndexedRecordOffsets::build(bytes);
+    unique_body_recipe_with_index(&records, header, recipes)
+}
+
+fn unique_body_recipe_with_index<'a>(
+    records: &IndexedRecordOffsets,
+    header: &DesignRecordHeader,
+    recipes: &'a [&'a ConstructionRecipe],
+) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
-    let next_at = next_indexed_record_offset_with_index(
-        bytes,
-        prologue_end,
-        header.record_index.checked_add(4)?,
-    )?;
+    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
+    let next_at = records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)?;
     let lower = u64::try_from(prologue_end).ok()?;
     let upper = u64::try_from(next_at).ok()?;
     let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
@@ -3127,7 +3145,17 @@ fn unique_body_recipe<'a>(
 ///
 /// The prologue depends only on the operand header, so a caller weighing many
 /// candidate recipes against one header resolves it once.
+#[cfg(test)]
 fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
+    let records = IndexedRecordOffsets::build(bytes);
+    body_recipe_prologue_end_with_index(&records, start, record_index)
+}
+
+fn body_recipe_prologue_end_with_index(
+    records: &IndexedRecordOffsets,
+    start: usize,
+    record_index: u32,
+) -> Option<usize> {
     let mut search = start.checked_add(11)?;
     for expected in [
         record_index,
@@ -3135,10 +3163,7 @@ fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Op
         record_index.checked_add(2)?,
         record_index.checked_add(3)?,
     ] {
-        let at = next_indexed_record_offset(bytes, search)?;
-        if indexed_record_index(bytes, at)? != expected {
-            return None;
-        }
+        let at = records.first_at_or_after(search, expected)?;
         search = at.checked_add(11)?;
     }
     Some(search)
@@ -3147,8 +3172,19 @@ fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Op
 /// Offset of the record carrying `record_index + 4` that closes a body-recipe
 /// operand whose recipe sits at `recipe_at`. The recipe must follow the
 /// prologue that ends at `prologue_end`.
+#[cfg(test)]
 fn body_recipe_operand_end(
     bytes: &[u8],
+    prologue_end: usize,
+    record_index: u32,
+    recipe_at: usize,
+) -> Option<usize> {
+    let records = IndexedRecordOffsets::build(bytes);
+    body_recipe_operand_end_with_index(&records, prologue_end, record_index, recipe_at)
+}
+
+fn body_recipe_operand_end_with_index(
+    records: &IndexedRecordOffsets,
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
@@ -3156,9 +3192,10 @@ fn body_recipe_operand_end(
     if recipe_at < prologue_end {
         return None;
     }
-    next_indexed_record_offset_with_index(bytes, recipe_at, record_index.checked_add(4)?)
+    records.first_at_or_after(recipe_at, record_index.checked_add(4)?)
 }
 
+#[cfg(test)]
 pub(crate) fn parse_body_recipe_operand(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
@@ -3166,8 +3203,28 @@ pub(crate) fn parse_body_recipe_operand(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
-    parse_body_recipe_operand_frame(
+    let records = IndexedRecordOffsets::build(bytes);
+    parse_body_recipe_operand_with_index(
         bytes,
+        &records,
+        group,
+        group_member_ordinal,
+        header,
+        recipe,
+    )
+}
+
+fn parse_body_recipe_operand_with_index(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipe: &ConstructionRecipe,
+) -> Option<DesignBodyRecipeOperand> {
+    parse_body_recipe_operand_frame_with_index(
+        bytes,
+        records,
         group.scope_record_index,
         DesignBodyRecipeOperandOwner::Group {
             group_record_index: group.record_index,
@@ -3178,8 +3235,9 @@ pub(crate) fn parse_body_recipe_operand(
     )
 }
 
-fn parse_body_recipe_operand_frame(
+fn parse_body_recipe_operand_frame_with_index(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope_record_index: u32,
     owner: DesignBodyRecipeOperandOwner,
     header: &DesignRecordHeader,
@@ -3187,8 +3245,9 @@ fn parse_body_recipe_operand_frame(
 ) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end(bytes, start, header.record_index)?;
-    let next_at = body_recipe_operand_end(bytes, prologue_end, header.record_index, recipe_at)?;
+    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
+    let next_at =
+        body_recipe_operand_end_with_index(records, prologue_end, header.record_index, recipe_at)?;
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
     // The legacy Combine form permits an empty persistent-reference table;
     // its marker then starts at the ordinary post-count cursor. The history
