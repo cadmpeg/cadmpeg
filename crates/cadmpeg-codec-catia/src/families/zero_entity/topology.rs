@@ -127,8 +127,27 @@ fn endpoint_pair_candidates_inner(
         );
     }
 
-    let mut visited = vec![false; occurrences.len()];
     let mut candidates = Vec::new();
+    // Face components can contain several distinct edges with the same
+    // endpoint locus. A reciprocal singleton radial match is still a
+    // complete geometric relation and must not be merged with its siblings.
+    for (index, neighbors) in radial_matches.iter().enumerate() {
+        let [neighbor] = neighbors.as_slice() else {
+            continue;
+        };
+        if index >= *neighbor || radial_matches[*neighbor].as_slice() != [index] {
+            continue;
+        }
+        let [first, second] = [occurrences[index], occurrences[*neighbor]];
+        candidates.push(ZeroEntityEndpointPairCandidate {
+            face_record_ordinals: [first.face_record_ordinal, second.face_record_ordinal],
+            support_record_ordinals: [first.support_record_ordinal, second.support_record_ordinal],
+            model_endpoints: first.model_endpoints,
+            model_midpoint: first.model_midpoint,
+        });
+    }
+
+    let mut visited = vec![false; occurrences.len()];
     for start in 0..occurrences.len() {
         if visited[start] {
             continue;
@@ -153,6 +172,9 @@ fn endpoint_pair_candidates_inner(
         }
         for mut pair in by_face_component.into_values() {
             if pair.len() != 2 || !endpoint_matches[pair[0]].contains(&pair[1]) {
+                continue;
+            }
+            if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
             pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
