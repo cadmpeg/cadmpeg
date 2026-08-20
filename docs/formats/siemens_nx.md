@@ -1598,6 +1598,10 @@ links the common frame ending at that suffix. Absence of that link does not
 invalidate the terminal suffix because an outer terminal suffix may follow a
 nested common frame.
 
+The Parasolid `UGS/ObjectState` attribute is not a common-frame state field. Its
+code-3 character value and any topology owner follow section 9.4; the class
+name alone does not assign operation suppression.
+
 An object-ID-bounded record in a section declaring `UGS::EXP_expression` declares a parameter name as `04, declared_len:u8, name[declared_len-2], 00`. `name` is `p`, one or more decimal digits, and an optional underscore-prefixed qualifier composed of ASCII letters, digits, and underscores. A declaration record contains exactly one such name frame. The parameter index is the decimal integer after `p`. The record may contain one additional frame with the same framing whose text is a context-free constant numeric expression; this is the declaration-local literal. Multiple numeric-expression frames make the declaration literal ambiguous without invalidating the parameter declaration. An exact unique name match binds the declaration to the value record carrying `(Number [mm|degrees]) name: expression; `.
 
 An offset-only OM data block references a persistent OM object as `04 00, object_index, 02 0b`, using the same object-index form as feature operation headers. Complete fields retain their decoded object ID, exact serialized token, and block byte order. An object ID resolves to a target record or parameter declaration only when exactly one record with that ID occurs in the same directory entry.
@@ -1954,6 +1958,13 @@ topology ownership. A topology-owned matched instance additionally retains its
 topology ownership relation. A missing, overflowing, or multiply declared
 definition XMT leaves the class unresolved. Definition declaration order,
 type-79 identifier identity, and type-81 field values do not participate in class selection.
+
+A type-80 attribute definition named `UGS/ObjectState` has one declared code-3
+character field. Its assigned value is an ordinary type-84 string. When its
+type-81 instance has a topology attribute-list identity, the owner is the exact
+topology relation above; the class name does not assign an operation owner or a
+suppression value. This Parasolid attribute class is distinct from the OM
+registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState`.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte

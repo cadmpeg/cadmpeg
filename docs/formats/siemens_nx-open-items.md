@@ -407,13 +407,13 @@ until one unique endpoint-role relation is serialized.
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved. `siemens_nx.md` §7.1 assigns the common-frame state bytes to legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states.
+**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved. `siemens_nx.md` §7.1 assigns the common-frame state bytes to legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
-**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. The `ObjectStateCollection` and `ObjectState` declarations identify object-model classes, but do not by themselves identify an operation owner, a state value, or a value domain.
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. The OM declarations do not provide a relation from an operation feature identity to an active state object. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
 
-**Note.** A suppression assignment requires one unique relation from an operation feature identity to a serialized state value, with the value domain decoded. A common-frame, toggle entry, or object-state declaration without all three joins does not assign `suppressed`; operations outside a proven active closure remain unresolved.
+**Note.** A suppression assignment requires a unique relation from an operation feature identity to a serialized state object and a second relation from that object to a typed state value. A common-frame field, toggle entry, OM declaration, or Parasolid topology attribute without both joins does not assign `suppressed`; operations outside a proven active closure remain unresolved.
 
 ### OM-11. `DELETE` nullable-reference roles
 
