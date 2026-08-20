@@ -876,16 +876,6 @@ unresolved.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:1306-1340` requires every participating FACE node ID and every EDGE or VERTEX identity referenced by a retained FIN to resolve before applying the subset relation. The subset rule, active-set authority, and union/stale behavior remain unresolved; a membership match is not promoted beyond that admission boundary.
 
-### OM-35. Tagged-reference admission in a bounded record
-
-**Question.** Which field separates a tagged-reference stream from per-class field data inside one bounded OM record?
-
-**Known.** `siemens_nx.md` §7.1 "**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cr" defines the persistent-handle and tagged-reference token forms and states that they occur as pairs inside one externally bounded record. It defines an unconditional retention rule for offset-store control blocks only. It states no admission rule for an OM entity record.
-
-**Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
-
-**Note.** `crates/cadmpeg-codec-nx/src/om.rs:5379-5402` admits a tagged `28` token only when it immediately follows a persistent `e0` token. That adjacency rule is still a parser heuristic; the closure removed the prior density threshold but did not establish that an intervening field is impossible or that every adjacent pair is a reference. Synthetic paired-token tests are not independent serialized evidence. The item is reopened.
-
 ### OM-36. Named payload interval terminator
 
 **Question.** What ends a named payload interval in an offset store?
