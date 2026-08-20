@@ -876,16 +876,6 @@ unresolved.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:1306-1340` requires every participating FACE node ID and every EDGE or VERTEX identity referenced by a retained FIN to resolve before applying the subset relation. The subset rule, active-set authority, and union/stale behavior remain unresolved; a membership match is not promoted beyond that admission boundary.
 
-### OM-36. Named payload interval terminator
-
-**Question.** What ends a named payload interval in an offset store?
-
-**Known.** `siemens_nx.md` §7.1 "A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point" defines the interval as ending exclusively at the next complete name field or at the reconstructed payload boundary, and rejects the typed point when an additional scalar occurs. `siemens_nx.md` §7.1 "A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00`" defines the name field. Block boundaries do not delimit values or named-record boundaries.
-
-**Need.** We must know the terminator to apply the scalar-cardinality rule. The decoder adds one data block at a time and stops at the first accumulated span that holds exactly two scalars, so it never observes a third scalar in a later block. An interval that the format rejects then transfers as a typed point carrying the first two of its values.
-
-**Note.** `crates/cadmpeg-codec-nx/src/om.rs:836-873` adds the current scalar-count and next-name checks, but the closure relied on synthetic named blocks and does not establish that the next name field is the serialized interval terminator in all offset-store records. The point interpretation remains a promoted framing rule, so this item is reopened.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
