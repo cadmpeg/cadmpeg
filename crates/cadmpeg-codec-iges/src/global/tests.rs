@@ -64,11 +64,31 @@ fn valid_global_fields() -> Vec<String> {
     .collect()
 }
 
-fn parse_global_fields(fields: &[String]) -> Result<crate::global::Global, CodecError> {
+type ParsedGlobal = (
+    crate::global::ResolvedGlobal,
+    Vec<cadmpeg_ir::report::LossNote>,
+);
+
+fn parse_global_fields(fields: &[String]) -> Result<ParsedGlobal, CodecError> {
     let mut global = fields.join(",");
     global.push(';');
     let bytes = fixed_ascii_with_global(global.as_bytes());
     crate::global::parse(&crate::card::scan(&bytes)?)
+}
+
+fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
+    parse_global_fields(fields).unwrap()
+}
+
+fn code_count(losses: &[cadmpeg_ir::report::LossNote], code: IgesLossCode) -> usize {
+    losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .count()
+}
+
+fn report_code_count(report: &cadmpeg_ir::report::DecodeReport, code: IgesLossCode) -> usize {
+    code_count(&report.losses, code)
 }
 
 fn point_file_with_version_flag(flag: &str) -> Vec<u8> {
@@ -81,11 +101,44 @@ fn point_file_with_version_flag(flag: &str) -> Vec<u8> {
 }
 
 fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
-        .count()
+    report_code_count(report, IgesLossCode::SourceDialectUnverified)
+}
+
+fn point_file_with_field(index: usize, value: &str) -> Vec<u8> {
+    let mut fields = valid_global_fields();
+    fields[index] = value.to_owned();
+    let mut global = fields.join(",");
+    global.push(';');
+    point_file_with_global(global.as_bytes())
+}
+
+fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
+    let mut fields = valid_global_fields();
+    fields[0] = format!("1H{parameter}");
+    fields[1] = format!("1H{record}");
+    let global = format!("{}{record}", fields.join(&parameter.to_string()));
+    let mut bytes = fixed_ascii_with_global(global.as_bytes());
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["116", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["116", "0", "0", "1", "0", "", "", "POINT", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(
+        format!("116{parameter}1.0{parameter}2.0{parameter}3.0{record}").as_bytes(),
+        1,
+        1,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
 }
 
 fn strict_options(container_only: bool) -> DecodeOptions {
@@ -142,12 +195,14 @@ fn global_defaults_apply_only_to_omitted_fields() {
         b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,,,2HIN,1,1.0,15H20260714.000000,0,1,1Ha,1Ho,,0,0H,0H;";
     let bytes = fixed_ascii_with_global(global);
     let scan = crate::card::scan(&bytes).unwrap();
-    let parsed = crate::global::parse(&scan).unwrap();
+    let (parsed, losses) = crate::global::parse(&scan).unwrap();
+    let context = parsed.length_context().unwrap();
 
-    assert_eq!(parsed.model_scale(), 1.0);
-    assert_eq!(parsed.units_flag(), 1);
+    assert_eq!(context.length_factor_mm(), 25.4);
+    assert_eq!(parsed.units_flag(), Some(1));
     assert_eq!(parsed.declared_version_flag(), 3);
-    assert_eq!(parsed.minimum_resolution_mm(), 0.0);
+    assert_eq!(context.minimum_resolution_mm(), 0.0);
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
@@ -156,7 +211,7 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
         b"1H,,1H;,7Hproduct,8Hpart.igs,",
         b"7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
-    let parsed = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+    let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("product"));
     assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
@@ -168,7 +223,7 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
         b"1H,,1H;,3Hab ",
         b",8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
-    let parsed = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+    let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
 }
@@ -180,19 +235,41 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
         fields[index].clear();
     }
 
-    let parsed = parse_global_fields(&fields).unwrap();
-    assert_eq!(parsed.model_scale(), 1.0);
-    assert_eq!(parsed.units_flag(), 1);
+    let (parsed, losses) = resolve_global_fields(&fields);
+    let context = parsed.length_context().unwrap();
+    assert_eq!(context.length_factor_mm(), 25.4);
+    assert_eq!(parsed.units_flag(), Some(1));
     assert_eq!(parsed.declared_version_flag(), 3);
-    assert!((parsed.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
-    assert_eq!(parsed.maximum_coordinate_mm(), 0.0);
+    assert!((context.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
+    assert_eq!(parsed.maximum_coordinate_mm(), Some(0.0));
+    assert!(losses.is_empty(), "{losses:#?}");
 
-    for index in [3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18] {
+    for (index, expected) in [
+        (3, None),
+        (4, None),
+        (5, None),
+        (6, None),
+        (7, None),
+        (8, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
+        (9, None),
+        (10, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
+        (16, Some(IgesLossCode::LineWeightScaleUnavailable)),
+        (17, None),
+        (18, None),
+    ] {
         let mut fields = valid_global_fields();
         fields[index].clear();
+        let (parsed, losses) = resolve_global_fields(&fields);
+        match expected {
+            Some(code) => {
+                assert_eq!(losses.len(), 1, "field {}: {losses:#?}", index + 1);
+                assert_eq!(code_count(&losses, code), 1, "field {}", index + 1);
+            }
+            None => assert!(losses.is_empty(), "field {}: {losses:#?}", index + 1),
+        }
         assert!(
-            matches!(parse_global_fields(&fields), Err(CodecError::Malformed(_))),
-            "field {} unexpectedly selected a default",
+            parsed.length_context().is_some(),
+            "field {} suppressed the length factor",
             index + 1
         );
     }
@@ -203,54 +280,71 @@ fn omitted_sender_product_is_retained_as_null_for_reader_compatibility() {
     let mut fields = valid_global_fields();
     fields[2].clear();
 
-    let parsed = parse_global_fields(&fields).unwrap();
+    let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(parsed.sender_product(), None);
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
-fn malformed_global_values_do_not_select_defaults() {
-    for (index, value) in [
-        (2, "1"),
-        (3, "1"),
-        (4, "1"),
-        (5, "1"),
-        (6, "1Hx"),
-        (7, "1Hx"),
-        (8, "1Hx"),
-        (9, "1Hx"),
-        (10, "1Hx"),
-        (11, "1"),
-        (12, "1Hx"),
-        (13, "1Hx"),
-        (14, "1"),
-        (15, "1Hx"),
-        (16, "1Hx"),
-        (17, "1"),
-        (18, "1Hx"),
-        (19, "1Hx"),
-        (20, "1"),
-        (21, "1"),
-        (22, "1Hx"),
-        (23, "1Hx"),
-        (24, "1"),
-        (25, "1"),
+fn malformed_global_values_select_the_matrix_disposition_and_loss() {
+    let metadata = IgesLossCode::GlobalMetadataFieldUnusable;
+    let semantic = IgesLossCode::GlobalSemanticContextSubstituted;
+    let length = IgesLossCode::GlobalLengthUnitUnresolved;
+    let presentation = IgesLossCode::LineWeightScaleUnavailable;
+    for (index, value, expected) in [
+        (2, "1", metadata),
+        (3, "1", metadata),
+        (4, "1", metadata),
+        (5, "1", metadata),
+        (6, "1Hx", metadata),
+        (7, "1Hx", metadata),
+        (8, "1Hx", semantic),
+        (9, "1Hx", metadata),
+        (10, "1Hx", semantic),
+        (11, "1", metadata),
+        (12, "1Hx", length),
+        (13, "1Hx", length),
+        (14, "1", metadata),
+        (15, "1Hx", presentation),
+        (16, "1Hx", presentation),
+        (17, "1", metadata),
+        (18, "1Hx", semantic),
+        (19, "1Hx", metadata),
+        (20, "1", metadata),
+        (21, "1", metadata),
+        (23, "1Hx", metadata),
+        (24, "1", metadata),
+        (25, "1", metadata),
     ] {
         let mut fields = valid_global_fields();
         fields[index] = value.to_owned();
-        assert!(
-            matches!(parse_global_fields(&fields), Err(CodecError::Malformed(_))),
-            "field {} unexpectedly selected a default",
+        let (parsed, losses) = resolve_global_fields(&fields);
+        assert_eq!(losses.len(), 1, "field {}: {losses:#?}", index + 1);
+        assert_eq!(code_count(&losses, expected), 1, "field {}", index + 1);
+        assert_eq!(
+            parsed.length_context().is_none(),
+            expected == length,
+            "field {} length suppression",
             index + 1
         );
     }
 
     let mut fields = valid_global_fields();
+    fields[22] = "1Hx".into();
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert!(losses.is_empty(), "{losses:#?}");
+    assert_eq!(parsed.declared_version_flag(), 3);
+    assert!(parsed.unreadable_version_declaration().is_some());
+
+    let mut fields = valid_global_fields();
     fields.push("0H".into());
-    assert!(matches!(
-        parse_global_fields(&fields),
-        Err(CodecError::Malformed(_))
-    ));
+    let (_, losses) = resolve_global_fields(&fields);
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        1
+    );
 }
 
 #[test]
@@ -264,7 +358,7 @@ fn version_flags_clamp_unrecognized_values() {
     ] {
         let mut fields = valid_global_fields();
         fields[22] = value.into();
-        let parsed = parse_global_fields(&fields).unwrap();
+        let (parsed, _) = resolve_global_fields(&fields);
         assert_eq!(parsed.declared_version_flag(), declared);
         assert_eq!(parsed.effective_version_flag(), expected);
     }
@@ -302,10 +396,11 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
-        let parsed = parse_global_fields(&fields).unwrap();
-        let actual = parsed.length_factor_mm();
+        let (parsed, losses) = resolve_global_fields(&fields);
+        let actual = parsed.length_context().unwrap().length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.abs().max(1.0);
         assert!((actual - expected).abs() <= tolerance, "{name}: {actual}");
+        assert!(losses.is_empty(), "{name}: {losses:#?}");
     }
 
     for name in [
@@ -314,15 +409,22 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
-        let parsed = parse_global_fields(&fields).unwrap();
-        assert!(!parsed.has_supported_length_factor(), "{name}");
+        let (parsed, losses) = resolve_global_fields(&fields);
+        assert!(parsed.length_context().is_none(), "{name}");
+        assert_eq!(parsed.units_name().as_deref(), Some(name), "{name}");
+        assert_eq!(
+            code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+            1,
+            "{name}"
+        );
     }
 
     let mut fields = valid_global_fields();
     fields[13] = "2".into();
     fields[14] = "7Hgarbage".into();
-    let parsed = parse_global_fields(&fields).unwrap();
-    assert_eq!(parsed.length_factor_mm(), 1.0);
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert_eq!(parsed.length_context().unwrap().length_factor_mm(), 1.0);
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
@@ -335,41 +437,51 @@ fn global_timestamps_and_scalar_ranges_follow_the_specification() {
     ] {
         let mut fields = valid_global_fields();
         fields[17] = timestamp.into();
-        assert_eq!(parse_global_fields(&fields).is_ok(), valid, "{timestamp}");
+        let (_, losses) = resolve_global_fields(&fields);
+        assert_eq!(
+            code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+            usize::from(!valid),
+            "{timestamp}"
+        );
     }
 
     let mut fields = valid_global_fields();
     fields[24] = "15H20260714.000000".into();
-    assert!(parse_global_fields(&fields).is_ok());
+    let (_, losses) = resolve_global_fields(&fields);
+    assert!(losses.is_empty(), "{losses:#?}");
 
-    for (index, value) in [(15, "0"), (19, "-1"), (23, "8")] {
+    for (index, value, expected) in [
+        (15, "0", IgesLossCode::LineWeightScaleUnavailable),
+        (19, "-1", IgesLossCode::GlobalMetadataFieldUnusable),
+        (23, "8", IgesLossCode::GlobalMetadataFieldUnusable),
+    ] {
         let mut fields = valid_global_fields();
         fields[index] = value.into();
-        assert!(matches!(
-            parse_global_fields(&fields),
-            Err(CodecError::Malformed(_))
-        ));
+        let (_, losses) = resolve_global_fields(&fields);
+        assert_eq!(losses.len(), 1, "field {}: {losses:#?}", index + 1);
+        assert_eq!(code_count(&losses, expected), 1, "field {}", index + 1);
     }
 }
 
 #[test]
 fn malformed_global_integer_does_not_select_its_default() {
     let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2.,2HMM,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;";
-    let error = IgesCodec
-        .inspect(
-            &mut Cursor::new(fixed_ascii_with_global(global)),
-            &cadmpeg_core::decode::InspectOptions::default(),
-        )
-        .unwrap_err();
+    let (parsed, losses) =
+        crate::global::parse(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+            .unwrap();
 
+    assert_eq!(parsed.units_flag(), None);
+    assert!(parsed.length_context().is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
-        error.to_string(),
-        "malformed container: IGES Global: field 14 (units flag) is not an integer"
+        code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+        1
     );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
 }
 
 #[test]
-fn real_significance_fields_are_required_and_positive() {
+fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
     for (global, field) in [
         (
             b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1,1Ha,1Ho,11,0,0H,0H;".as_slice(),
@@ -380,16 +492,27 @@ fn real_significance_fields_are_required_and_positive() {
             11,
         ),
     ] {
-        let error = IgesCodec
-            .inspect(
-                &mut Cursor::new(fixed_ascii_with_global(global)),
-                &cadmpeg_core::decode::InspectOptions::default(),
-            )
-            .unwrap_err();
+        let (parsed, losses) =
+            crate::global::parse(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+                .unwrap();
 
+        let precision = parsed.real_precision();
+        let substituted = if field == 9 {
+            precision.single_significance
+        } else {
+            precision.double_significance
+        };
+        assert_eq!(substituted, 17, "field {field}");
+        assert_eq!(losses.len(), 1, "field {field}: {losses:#?}");
+        assert_eq!(
+            code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+            1,
+            "field {field}"
+        );
         assert!(
-            error.to_string().contains(&format!("field {field}")),
-            "{error}"
+            losses[0].message.contains(&format!("field {field}")),
+            "{}",
+            losses[0].message
         );
     }
 }
@@ -400,45 +523,49 @@ fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = units_name.into();
-        let parsed = parse_global_fields(&fields).unwrap();
+        let (parsed, losses) = resolve_global_fields(&fields);
         assert_eq!(parsed.units_name().as_deref(), Some(&units_name[2..]));
-        assert!(parsed.has_supported_length_factor());
-        let actual = parsed.length_factor_mm();
+        let actual = parsed.length_context().unwrap().length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.max(1.0);
         assert!(
             (actual - expected).abs() <= tolerance,
             "{units_name}: {actual}"
         );
+        assert!(losses.is_empty(), "{units_name}: {losses:#?}");
     }
 
     let mut fields = valid_global_fields();
     fields[13] = "3".into();
     fields[14] = "0H".into();
-    assert!(matches!(
-        parse_global_fields(&fields),
-        Err(CodecError::Malformed(_))
-    ));
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert!(parsed.length_context().is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+        1
+    );
 }
 
 #[test]
-fn minimum_resolution_is_required_and_cannot_be_negative() {
-    for (resolution, expected) in [
-        ("", "field 19 (minimum resolution) has no value"),
-        (
-            "-0.001",
-            "field 19 (minimum resolution) must be finite and nonnegative",
-        ),
-    ] {
+fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
+    for (resolution, expected) in [("", 0_usize), ("-0.001", 1)] {
         let global = format!(
             "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1,1Ha,1Ho,11,0,0H,0H;"
         );
-        let error = IgesCodec
-            .inspect(
-                &mut Cursor::new(fixed_ascii_with_global(global.as_bytes())),
-                &cadmpeg_core::decode::InspectOptions::default(),
-            )
-            .unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
+        let (parsed, losses) = crate::global::parse(
+            &crate::card::scan(&fixed_ascii_with_global(global.as_bytes())).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.length_context().unwrap().minimum_resolution_mm(),
+            0.0
+        );
+        assert_eq!(
+            code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+            expected,
+            "{resolution:?}"
+        );
     }
 }
 
@@ -452,10 +579,42 @@ fn global_hollerith_values_reject_non_printable_ascii() {
             .expect("sender product");
         bytes[product + 5] = byte;
 
-        assert!(matches!(
-            IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-            Err(CodecError::Malformed(_))
-        ));
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(!result
+            .ir()
+            .source
+            .as_ref()
+            .unwrap()
+            .attributes
+            .contains_key("sender_product"));
+        assert_eq!(result.ir().model.points.len(), 1, "{byte:#04x}");
+        assert_eq!(
+            report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+            1,
+            "{byte:#04x}"
+        );
+    }
+}
+
+#[test]
+fn a_forbidden_delimiter_payload_still_refuses_the_file() {
+    for field in [b"1H,".as_slice(), b"1H;".as_slice()] {
+        let mut bytes = point_file();
+        let position = bytes
+            .windows(3)
+            .position(|window| window == field)
+            .expect("delimiter declaration");
+        bytes[position + 2] = 0x01;
+
+        assert!(
+            matches!(
+                IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+                Err(CodecError::Malformed(_))
+            ),
+            "{field:?}"
+        );
     }
 }
 
@@ -573,4 +732,366 @@ fn a_container_only_decode_reports_the_dialect_loss_and_strict_admits_it() {
         .decode(&mut Cursor::new(bytes), &strict_options(true))
         .unwrap();
     assert_eq!(dialect_losses(strict.report()), 1);
+}
+
+#[test]
+fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_loss() {
+    let bytes = point_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,7Hfurlong,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["native_units"],
+        "furlong"
+    );
+    assert!(result.ir().model.points.is_empty());
+    assert!(!result.report().geometry_transferred);
+    assert!(!result
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("native iges namespace")
+        .arenas
+        .is_empty());
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalLengthUnitUnresolved),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code == IgesLossCode::GlobalLengthUnitUnresolved.kind())
+            .unwrap()
+            .severity,
+        cadmpeg_ir::report::Severity::Blocking
+    );
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::GlobalLengthUnitUnresolved.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+
+    let container = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        report_code_count(container.report(), IgesLossCode::GlobalLengthUnitUnresolved),
+        1
+    );
+    assert!(container.ir().model.points.is_empty());
+}
+
+#[test]
+fn a_zero_model_scale_suppresses_geometry_and_charges_one_length_loss() {
+    let bytes = point_file_with_field(12, "0.0");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.points.is_empty());
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalLengthUnitUnresolved),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+
+    let container = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        report_code_count(container.report(), IgesLossCode::GlobalLengthUnitUnresolved),
+        1
+    );
+}
+
+#[test]
+fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
+    let bytes = point_file_with_field(16, "");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
+
+    let strict = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap();
+    assert_eq!(
+        report_code_count(strict.report(), IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
+}
+
+#[test]
+fn a_legacy_version_with_no_maximum_line_width_decodes_and_strict_names_the_dialect() {
+    let mut fields = valid_global_fields();
+    fields[16] = String::new();
+    fields[22] = "6".into();
+    let mut global = fields.join(",");
+    global.push(';');
+    let bytes = point_file_with_global(global.as_bytes());
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 2, "{:#?}", result.report());
+    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::SourceDialectUnverified.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
+    for value in ["-3", "1Hx"] {
+        let bytes = point_file_with_field(8, value);
+
+        let mut fields = valid_global_fields();
+        fields[8] = value.to_owned();
+        let (parsed, _) = resolve_global_fields(&fields);
+        assert_eq!(parsed.real_precision().single_significance, 17, "{value}");
+        assert_eq!(parsed.real_precision().double_significance, 15, "{value}");
+
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.points.len(), 1, "{value}");
+        assert_eq!(
+            report_code_count(
+                result.report(),
+                IgesLossCode::GlobalSemanticContextSubstituted
+            ),
+            1,
+            "{value}: {:#?}",
+            result.report().losses
+        );
+
+        let error = IgesCodec
+            .decode(&mut Cursor::new(bytes), &strict_options(false))
+            .unwrap_err();
+        match error {
+            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+                loss_code,
+                IgesLossCode::GlobalSemanticContextSubstituted
+                    .kind()
+                    .as_str()
+            ),
+            other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_negative_minimum_resolution_decodes_with_the_semantic_context_loss() {
+    let bytes = point_file_with_field(18, "-0.001");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().tolerances.linear, 0.0);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(
+        report_code_count(
+            result.report(),
+            IgesLossCode::GlobalSemanticContextSubstituted
+        ),
+        1
+    );
+}
+
+#[test]
+fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
+    let mut fields = valid_global_fields();
+    fields.push("0H".into());
+    let mut global = fields.join(",");
+    global.push(';');
+    let bytes = point_file_with_global(global.as_bytes());
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalNoncanonicalFraming),
+        1
+    );
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::GlobalNoncanonicalFraming.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
+    let bytes = point_file_with_field(17, "15H20261314.000000");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+        1
+    );
+
+    let strict = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap();
+    assert_eq!(
+        report_code_count(strict.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+        1
+    );
+}
+
+#[test]
+fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss() {
+    let bytes = point_file_with_field(22, "1Hx");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    let source = result.ir().source.as_ref().unwrap();
+    assert_eq!(source.attributes["iges_version"], "2.0");
+    assert_eq!(source.attributes["iges_version_flag"], "3");
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(dialect_losses(result.report()), 1);
+    assert!(result.report().losses[0].message.contains("field 23"));
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::SourceDialectUnverified.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_prohibited_delimiter_declaration_is_honored_and_charges_noncanonical_framing() {
+    for (parameter, record, expected) in [
+        (',', ';', 0_usize),
+        ('+', ';', 1),
+        (',', 'D', 1),
+        ('+', 'D', 2),
+    ] {
+        let bytes = point_file_with_delimiters(parameter, record);
+
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(
+            result.ir().model.points.len(),
+            1,
+            "{parameter}{record}: {:#?}",
+            result.report().losses
+        );
+        let position = &result.ir().model.points[0].position;
+        assert_eq!(
+            (position.x, position.y, position.z),
+            (1.0, 2.0, 3.0),
+            "{parameter}{record}"
+        );
+        assert_eq!(
+            report_code_count(result.report(), IgesLossCode::GlobalNoncanonicalFraming),
+            expected,
+            "{parameter}{record}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn omitted_delimiter_fields_select_the_specification_defaults() {
+    for global in [
+        b",,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
+        b"1H,,,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
+        b",1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
+    ] {
+        let (parsed, losses) =
+            crate::global::parse(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+                .unwrap();
+
+        assert_eq!(parsed.parameter_delimiter, b',');
+        assert_eq!(parsed.record_delimiter, b';');
+        assert_eq!(parsed.sender_product().as_deref(), Some("product"));
+        assert!(losses.is_empty(), "{losses:#?}");
+    }
+}
+
+#[test]
+fn an_absent_version_flag_reports_the_default_dialect() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(point_file_with_field(22, "")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let source = result.ir().source.as_ref().unwrap();
+    assert_eq!(source.attributes["iges_version"], "2.0");
+    assert_eq!(source.attributes["iges_version_flag"], "3");
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(dialect_losses(result.report()), 1);
 }

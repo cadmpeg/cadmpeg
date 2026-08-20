@@ -5,7 +5,7 @@ use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
@@ -248,7 +248,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> BrepProjection {
     let records = parameters

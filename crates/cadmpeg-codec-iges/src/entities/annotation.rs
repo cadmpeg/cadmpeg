@@ -6,7 +6,7 @@ use super::presentation::{
     general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
@@ -665,7 +665,7 @@ pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters

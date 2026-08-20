@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -189,7 +189,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
 ) -> PresentationProjection {
     let records = parameters

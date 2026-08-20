@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
-use crate::global::{Global, RealPrecision};
+use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -1465,7 +1465,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     structure_admitted: Option<&BTreeSet<u32>>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
-    global: &Global,
+    global: &ResolvedGlobal,
     limits: ProductOccurrenceLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NativeStoreResult, CodecError> {
@@ -1775,9 +1775,8 @@ pub(crate) fn store(
             view: entry.view,
             line_weight_number: entry.line_weight,
             line_weight_mm: global
-                .has_supported_length_factor()
-                .then(|| global.line_weight_mm(entry.line_weight))
-                .flatten(),
+                .length_context()
+                .and_then(|context| context.line_weight_mm(entry.line_weight)),
             color_number: entry.color,
             color_definition: resolved_display_definition(
                 references,
@@ -4848,8 +4847,8 @@ pub(crate) fn store(
     let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = global
-        .has_supported_length_factor()
-        .then(|| global.length_factor_mm())
+        .length_context()
+        .map(|context| context.length_factor_mm())
     {
         // Structure admission excludes malformed placement records. Inspect
         // those records here so the existing placement loss remains visible.

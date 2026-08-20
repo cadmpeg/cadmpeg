@@ -73,33 +73,38 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
 }
 
 #[test]
-fn container_decode_retains_unknown_flag_three_name_but_semantic_decode_refuses() {
+fn container_and_semantic_decode_retain_an_unknown_flag_three_name_without_geometry() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,7Hfurlong,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let bytes = point_file_with_global(global);
 
-    let error = IgesCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::NotImplemented(message)
-            if message == "IGES units flag 3 names a unit without a known millimetre factor"
-    ));
-
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["native_units"],
-        "furlong"
-    );
-    assert!(result.ir().model.points.is_empty());
+    for container_only in [false, true] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.clone()),
+                &DecodeOptions {
+                    container_only,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["native_units"],
+            "furlong"
+        );
+        assert!(result.ir().model.points.is_empty());
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == IgesLossCode::GlobalLengthUnitUnresolved.kind())
+                .count(),
+            1,
+            "container_only={container_only}: {:#?}",
+            result.report().losses
+        );
+        assert_eq!(result.report().transfer_ledger.entries.len(), 1);
+    }
 }
 
 #[test]

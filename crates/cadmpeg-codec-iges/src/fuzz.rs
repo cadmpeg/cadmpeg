@@ -31,7 +31,7 @@ pub fn parameters(data: &[u8]) {
     let Ok(scan) = crate::card::scan_with_context(data, None) else {
         return;
     };
-    let Ok(global) = crate::global::parse(&scan) else {
+    let Ok((global, _)) = crate::global::parse(&scan) else {
         return;
     };
     let Ok(directory) = crate::directory::parse(&scan) else {

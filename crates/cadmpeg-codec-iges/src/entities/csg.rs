@@ -5,7 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::ids::CurveId;
@@ -126,7 +126,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Projection {
     let records = parameters

@@ -47,8 +47,9 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert_eq!(global.minimum_resolution_mm(), 0.01);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let context = global.length_context().unwrap();
+    assert_eq!(context.minimum_resolution_mm(), 0.01);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -195,9 +196,9 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert!(global.maximum_coordinate_mm() >= 6.0);
-    assert_ne!(global.maximum_coordinate_mm(), 1000.0);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    assert!(global.maximum_coordinate_mm().unwrap() >= 6.0);
+    assert_ne!(global.maximum_coordinate_mm().unwrap(), 1000.0);
 
     let decoded = IgesCodec
         .decode(
@@ -1495,8 +1496,9 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert_eq!(global.minimum_resolution_mm(), 0.25);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let context = global.length_context().unwrap();
+    assert_eq!(context.minimum_resolution_mm(), 0.25);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())

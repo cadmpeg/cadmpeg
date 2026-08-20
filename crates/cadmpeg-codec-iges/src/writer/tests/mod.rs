@@ -227,7 +227,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     plan.write_to(&mut written)
         .expect("generated IGES bytes are writable");
     let scan = crate::card::scan(&written).expect("generated IGES cards scan");
-    let global = crate::global::parse(&scan).expect("generated Global record parses");
+    let (global, _) = crate::global::parse(&scan).expect("generated Global record parses");
     assert_eq!(
         global.sender_product().as_deref(),
         Some(WRITER_SENDER_PRODUCT)
@@ -236,11 +236,26 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         global.native_file_name().as_deref(),
         Some(WRITER_NATIVE_FILE_NAME)
     );
-    assert_eq!(global.units_flag(), WRITER_UNITS_FLAG);
+    assert_eq!(global.units_flag(), Some(WRITER_UNITS_FLAG));
     assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
     assert_eq!(global.version(), "5.3");
-    assert!((global.minimum_resolution_mm() - 0.01).abs() <= f64::EPSILON * 64.0);
-    assert!((global.maximum_coordinate_mm() - 123.0).abs() <= f64::EPSILON * 64.0);
+    assert!(
+        (global
+            .length_context()
+            .expect("generated Global resolves a millimetre length factor")
+            .minimum_resolution_mm()
+            - 0.01)
+            .abs()
+            <= f64::EPSILON * 64.0
+    );
+    assert!(
+        (global
+            .maximum_coordinate_mm()
+            .expect("generated Global declares a maximum coordinate")
+            - 123.0)
+            .abs()
+            <= f64::EPSILON * 64.0
+    );
 
     let global_text = scan
         .lines
@@ -276,9 +291,15 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         .write_to(&mut written)
         .expect("neutral tolerance floor output is writable");
     let scan = crate::card::scan(&written).expect("neutral tolerance floor output scans");
-    let global = crate::global::parse(&scan).expect("neutral tolerance floor Global parses");
+    let (global, _) = crate::global::parse(&scan).expect("neutral tolerance floor Global parses");
 
-    assert_eq!(global.minimum_resolution_mm(), 2.5);
+    assert_eq!(
+        global
+            .length_context()
+            .expect("generated Global resolves a millimetre length factor")
+            .minimum_resolution_mm(),
+        2.5
+    );
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
 }
 
@@ -304,9 +325,15 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
         .write_to(&mut written)
         .expect("source resolution witness output is writable");
     let scan = crate::card::scan(&written).expect("source resolution output scans");
-    let global = crate::global::parse(&scan).expect("source resolution output Global parses");
+    let (global, _) = crate::global::parse(&scan).expect("source resolution output Global parses");
 
-    assert_eq!(global.minimum_resolution_mm(), 0.01);
+    assert_eq!(
+        global
+            .length_context()
+            .expect("generated Global resolves a millimetre length factor")
+            .minimum_resolution_mm(),
+        0.01
+    );
     assert!(report
         .losses
         .iter()

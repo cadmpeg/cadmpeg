@@ -5,7 +5,7 @@ use super::composite::bounded_nurbs_for_curve_with_tolerance;
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -96,7 +96,7 @@ struct FaceTolerancePolicy {
 }
 
 impl FaceTolerancePolicy {
-    fn from_global(global: &Global, points: impl Iterator<Item = Point3>) -> Self {
+    fn from_global(global: &ProjectedGlobal, points: impl Iterator<Item = Point3>) -> Self {
         let carrier_agreement = global.minimum_resolution_mm();
         let coordinate_quantum = coordinate_quantum(global, points);
         Self {
@@ -105,7 +105,7 @@ impl FaceTolerancePolicy {
     }
 }
 
-fn coordinate_quantum(global: &Global, points: impl Iterator<Item = Point3>) -> f64 {
+fn coordinate_quantum(global: &ProjectedGlobal, points: impl Iterator<Item = Point3>) -> f64 {
     let magnitude = points.fold(0.0_f64, |magnitude, point| {
         magnitude
             .max(point.x.abs())
@@ -713,7 +713,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> TrimmingProjection {
     let records = parameters

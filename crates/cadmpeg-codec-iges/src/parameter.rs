@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{RealPrecision, ResolvedGlobal};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -1741,7 +1741,7 @@ fn tokenize(
 pub(crate) fn assemble_with_context(
     scan: &CardScan,
     directory: &[DirectoryEntry],
-    global: &Global,
+    global: &ResolvedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<ParameterRecord>, CodecError> {
     let lines = scan

@@ -2,74 +2,176 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
+use crate::loss::IgesLossCode;
 use cadmpeg_core::CodecError;
-use std::ops::Range;
+use cadmpeg_ir::report::LossNote;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Value {
     Omitted,
     String(Vec<u8>),
+    ForbiddenString,
     Atom(Vec<u8>),
 }
 
-impl Value {
-    fn string(&self) -> Option<String> {
-        match self {
-            Self::String(bytes) => String::from_utf8(bytes.clone()).ok(),
-            Self::Omitted | Self::Atom(_) => None,
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Defect {
+    Absent,
+    Malformed,
+}
 
-    fn integer(&self) -> Option<i64> {
-        let Self::Atom(bytes) = self else {
-            return None;
-        };
-        std::str::from_utf8(bytes).ok()?.trim().parse::<i64>().ok()
-    }
-
-    fn string_bytes(&self) -> Option<&[u8]> {
+impl Defect {
+    const fn as_str(self) -> &'static str {
         match self {
-            Self::String(bytes) => Some(bytes),
-            Self::Omitted | Self::Atom(_) => None,
-        }
-    }
-
-    fn real(&self) -> Option<f64> {
-        match self {
-            Self::Atom(bytes) => std::str::from_utf8(bytes)
-                .ok()?
-                .trim()
-                .replace(['D', 'd'], "E")
-                .parse::<f64>()
-                .ok(),
-            Self::Omitted | Self::String(_) => None,
+            Self::Absent => "absent",
+            Self::Malformed => "malformed",
         }
     }
 }
 
-/// Parsed Global metadata required by inspection and projection.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Global {
+enum Supplied<T> {
+    Absent,
+    Value(T),
+    Malformed,
+}
+
+/// Global field boundaries recovered from the card stream, with no values resolved.
+#[derive(Debug)]
+pub(crate) struct RawGlobal {
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    values: Vec<Value>,
+}
+
+/// Global field values, fallbacks, and absences after one resolution pass.
+#[derive(Debug)]
+pub(crate) struct ResolvedGlobal {
     pub(crate) parameter_delimiter: u8,
     pub(crate) record_delimiter: u8,
-    values: Vec<Value>,
-    pub(crate) value_spans: Vec<Range<usize>>,
-    pub(crate) record_end: usize,
+    sender_product: Option<String>,
+    native_file_name: Option<String>,
+    units_name: Option<String>,
+    #[cfg(test)]
+    units_flag: Option<i64>,
+    precision: RealPrecision,
+    minimum_resolution: f64,
+    #[cfg(test)]
+    maximum_coordinate: Option<f64>,
+    length_factor_mm: Option<f64>,
+    line_weight_scale: Option<LineWeightScale>,
+    declared_version_flag: i64,
+    unreadable_version_declaration: Option<String>,
 }
 
-#[derive(Clone, Copy)]
+/// Length-valued Global view. It exists only when the millimetre factor resolved.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProjectedGlobal {
+    length_factor_mm: f64,
+    minimum_resolution_mm: f64,
+    precision: RealPrecision,
+    line_weight_scale: Option<LineWeightScale>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LineWeightScale {
+    gradations: i64,
+    maximum_width: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct RealPrecision {
     pub(crate) single_significance: u32,
     pub(crate) double_significance: u32,
 }
 
-const SENDER_PRODUCT_FIELD: usize = 2;
+const FIELD_SENDER_PRODUCT: usize = 2;
+const FIELD_FILE_NAME: usize = 3;
+const FIELD_NATIVE_SYSTEM: usize = 4;
+const FIELD_PREPROCESSOR_VERSION: usize = 5;
+const FIELD_INTEGER_BITS: usize = 6;
+const FIELD_SINGLE_MAGNITUDE: usize = 7;
+const FIELD_SINGLE_SIGNIFICANCE: usize = 8;
+const FIELD_DOUBLE_MAGNITUDE: usize = 9;
+const FIELD_DOUBLE_SIGNIFICANCE: usize = 10;
+const FIELD_RECEIVER_PRODUCT: usize = 11;
+const FIELD_MODEL_SCALE: usize = 12;
+const FIELD_UNITS_FLAG: usize = 13;
+const FIELD_UNITS_NAME: usize = 14;
+const FIELD_LINE_WEIGHT_GRADATIONS: usize = 15;
+const FIELD_MAXIMUM_LINE_WIDTH: usize = 16;
+const FIELD_GENERATION_DATE: usize = 17;
+const FIELD_MINIMUM_RESOLUTION: usize = 18;
+const FIELD_MAXIMUM_COORDINATE: usize = 19;
+const FIELD_AUTHOR: usize = 20;
+const FIELD_ORGANIZATION: usize = 21;
+const FIELD_VERSION_FLAG: usize = 22;
+const FIELD_DRAFTING_STANDARD: usize = 23;
+const FIELD_MODEL_DATE: usize = 24;
+const FIELD_APPLICATION_PROTOCOL: usize = 25;
+const TABLE_1_FIELD_COUNT: usize = 26;
+
+const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
+    "parameter delimiter",
+    "record delimiter",
+    "product identification from sender",
+    "file name",
+    "native system ID",
+    "preprocessor version",
+    "integer representation bits",
+    "single-precision magnitude",
+    "single-precision significance",
+    "double-precision magnitude",
+    "double-precision significance",
+    "product identification for the receiver",
+    "model space scale",
+    "units flag",
+    "units name",
+    "maximum line-weight gradations",
+    "maximum line width",
+    "date and time of exchange file generation",
+    "minimum user-intended resolution",
+    "approximate maximum coordinate",
+    "author name",
+    "author organization",
+    "version flag",
+    "drafting standard flag",
+    "date and time the model was created or modified",
+    "application protocol",
+];
+
+const FALLBACK_SIGNIFICANCE: u32 = 17;
+const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
+
+const METADATA_CONSEQUENCE: &str = "its value was not transferred";
+const SIGNIFICANCE_CONSEQUENCE: &str =
+    "the decoder substituted 17 significant decimal digits from its own specification";
+const RESOLUTION_CONSEQUENCE: &str =
+    "the decoder substituted 0.0 millimetres as the minimum user-intended resolution";
+const LENGTH_CONSEQUENCE: &str =
+    "the decoder resolved no millimetre length factor, suppressed every geometry projection, and retained the native records";
+const LINE_WEIGHT_CONSEQUENCE: &str =
+    "the line-weight scale is unavailable, so no entity carries a display width";
 
 fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, CodecError> {
+fn field_name(index: usize) -> &'static str {
+    FIELD_NAMES.get(index).copied().unwrap_or("extra field")
+}
+
+const fn forbidden_string_byte(byte: u8) -> bool {
+    !byte.is_ascii() || byte.is_ascii_control()
+}
+
+const fn prohibited_delimiter_byte(byte: u8) -> bool {
+    byte.is_ascii_control()
+        || !byte.is_ascii()
+        || byte.is_ascii_digit()
+        || matches!(byte, b' ' | b'+' | b'-' | b'.' | b'D' | b'E' | b'H')
+}
+
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize, bool)>, CodecError> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -90,24 +192,22 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, Cod
     let payload = bytes
         .get(payload_start..payload_end)
         .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
-    if payload
-        .iter()
-        .any(|byte| !byte.is_ascii() || byte.is_ascii_control())
-    {
-        return Err(malformed(
-            "Hollerith string contains a non-ASCII or control character",
-        ));
-    }
-    Ok(Some((payload.to_vec(), payload_end)))
+    let forbidden = payload.iter().copied().any(forbidden_string_byte);
+    Ok(Some((payload.to_vec(), payload_end, forbidden)))
 }
 
 fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
     if bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor, forbidden)) = hollerith(bytes, 0)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
+    if forbidden {
+        return Err(malformed(
+            "parameter delimiter is a non-ASCII or control character",
+        ));
+    }
     if payload.len() != 1 {
         return Err(malformed("parameter delimiter must contain one byte"));
     }
@@ -125,15 +225,19 @@ fn delimited_value(
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
-) -> Result<(Value, Range<usize>, usize, bool), CodecError> {
+) -> Result<(Value, usize, bool), CodecError> {
     if bytes.get(start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, start..start, start + 1, false));
+        return Ok((Value::Omitted, start + 1, false));
     }
     if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, start..start, start + 1, true));
+        return Ok((Value::Omitted, start + 1, true));
     }
-    let (value, end) = if let Some((payload, end)) = hollerith(bytes, start)? {
-        (Value::String(payload), end)
+    let (value, end) = if let Some((payload, end, forbidden)) = hollerith(bytes, start)? {
+        if forbidden {
+            (Value::ForbiddenString, end)
+        } else {
+            (Value::String(payload), end)
+        }
     } else {
         let end = bytes[start..]
             .iter()
@@ -148,12 +252,8 @@ fn delimited_value(
         }
     };
     match bytes.get(end).copied() {
-        Some(separator) if separator == parameter_delimiter => {
-            Ok((value, start..end, end + 1, false))
-        }
-        Some(separator) if record_delimiter == Some(separator) => {
-            Ok((value, start..end, end + 1, true))
-        }
+        Some(separator) if separator == parameter_delimiter => Ok((value, end + 1, false)),
+        Some(separator) if record_delimiter == Some(separator) => Ok((value, end + 1, true)),
         _ => Err(malformed("value is not followed by a delimiter")),
     }
 }
@@ -203,26 +303,24 @@ fn global_bytes(scan: &CardScan<'_>) -> Result<Vec<u8>, CodecError> {
     Ok(bytes)
 }
 
-pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
+fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     let bytes = global_bytes(scan)?;
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
     let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let mut value_spans = Vec::with_capacity(26);
-    value_spans.push(0..cursor.saturating_sub(1));
-    let (record_value, record_span, next, ended) =
-        delimited_value(&bytes, cursor, parameter_delimiter, None)?;
-    if ended {
-        return Err(malformed("record ends before the record delimiter field"));
-    }
+    let (record_value, next, _) = delimited_value(&bytes, cursor, parameter_delimiter, None)?;
     cursor = next;
-    value_spans.push(record_span);
     let record_delimiter = match record_value {
         Value::Omitted => b';',
         Value::String(value) if value.len() == 1 => value[0],
         Value::String(_) | Value::Atom(_) => {
             return Err(malformed("record delimiter must contain one byte"));
+        }
+        Value::ForbiddenString => {
+            return Err(malformed(
+                "record delimiter is a non-ASCII or control character",
+            ));
         }
     };
 
@@ -231,41 +329,24 @@ pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
         Value::String(vec![record_delimiter]),
     ];
     loop {
-        let (value, span, next, ended) =
+        let (value, next, ended) =
             delimited_value(&bytes, cursor, parameter_delimiter, Some(record_delimiter))?;
         values.push(value);
-        value_spans.push(span);
         cursor = next;
         if ended {
             break;
         }
     }
-    let global = Global {
+    Ok(RawGlobal {
         parameter_delimiter,
         record_delimiter,
         values,
-        value_spans,
-        record_end: cursor,
-    };
-    global.validate()?;
-    Ok(global)
+    })
 }
 
-fn version_name(flag: i64) -> Option<&'static str> {
-    match flag {
-        1 => Some("1.0"),
-        2 => Some("ANSI-Y14.26M-1981"),
-        3 => Some("2.0"),
-        4 => Some("3.0"),
-        5 => Some("ASME-ANSI-Y14.26M-1987"),
-        6 => Some("4.0"),
-        7 => Some("ASME-Y14.26M-1989"),
-        8 => Some("5.0"),
-        9 => Some("5.1"),
-        10 => Some("5.2"),
-        11 => Some("5.3"),
-        _ => None,
-    }
+/// Recover the Global field boundaries, then resolve every field once.
+pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    Ok(resolve(parse_raw(scan)?))
 }
 
 fn date_value_is_valid(bytes: &[u8]) -> bool {
@@ -299,322 +380,470 @@ fn date_value_is_valid(bytes: &[u8]) -> bool {
         && number(second_start, second_start + 2).is_some_and(|second| second < 60)
 }
 
-impl Global {
-    fn integer_field(
-        &self,
-        index: usize,
-        name: &str,
-        default: Option<i64>,
-    ) -> Result<i64, CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted => default
-                .ok_or_else(|| malformed(format!("field {} ({name}) has no value", index + 1))),
-            value => value.integer().ok_or_else(|| {
-                malformed(format!("field {} ({name}) is not an integer", index + 1))
-            }),
-        }
+const fn effective_version(declared: i64) -> (i64, &'static str) {
+    match declared {
+        1 => (1, "1.0"),
+        2 => (2, "ANSI-Y14.26M-1981"),
+        4 => (4, "3.0"),
+        5 => (5, "ASME-ANSI-Y14.26M-1987"),
+        6 => (6, "4.0"),
+        7 => (7, "ASME-Y14.26M-1989"),
+        8 => (8, "5.0"),
+        9 => (9, "5.1"),
+        10 => (10, "5.2"),
+        value if value >= 11 => (11, "5.3"),
+        _ => (3, "2.0"),
+    }
+}
+
+fn delegated_unit_factor_mm(name: &str) -> Option<f64> {
+    match name.as_bytes() {
+        b"A" => Some(0.000_000_1),
+        b"in" => Some(25.4),
+        b"ft" => Some(304.8),
+        b"mi" => Some(1_609_344.0),
+        b"mil" => Some(0.0254),
+        b"uin" => Some(0.000_025_4),
+        b"yd" => Some(914.4),
+        b"nmi" => Some(1_852_000.0),
+        b"dam" => Some(10_000.0),
+        b"hm" => Some(100_000.0),
+        b"km" => Some(1_000_000.0),
+        b"Mm" => Some(1_000_000_000.0),
+        b"Gm" => Some(1_000_000_000_000.0),
+        b"Tm" => Some(1_000_000_000_000_000.0),
+        b"Pm" => Some(1_000_000_000_000_000_000.0),
+        b"Em" => Some(1_000_000_000_000_000_000_000.0),
+        b"m" => Some(1_000.0),
+        b"dm" => Some(100.0),
+        b"cm" => Some(10.0),
+        b"mm" => Some(1.0),
+        b"um" => Some(0.001),
+        b"nm" => Some(0.000_001),
+        b"pm" => Some(0.000_000_001),
+        b"fm" => Some(0.000_000_000_001),
+        b"am" => Some(0.000_000_000_000_001),
+        _ => None,
+    }
+}
+
+const fn enumerated_unit_factor_mm(flag: i64) -> Option<f64> {
+    match flag {
+        1 => Some(25.4),
+        2 => Some(1.0),
+        4 => Some(304.8),
+        5 => Some(1_609_344.0),
+        6 => Some(1_000.0),
+        7 => Some(1_000_000.0),
+        8 => Some(0.0254),
+        9 => Some(0.001),
+        10 => Some(10.0),
+        11 => Some(0.000_025_4),
+        _ => None,
+    }
+}
+
+struct Resolution {
+    values: Vec<Value>,
+    losses: Vec<LossNote>,
+}
+
+impl Resolution {
+    fn value(&self, index: usize) -> &Value {
+        self.values.get(index).unwrap_or(&Value::Omitted)
     }
 
-    fn real_field(
-        &self,
-        index: usize,
-        name: &str,
-        default: Option<f64>,
-    ) -> Result<f64, CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted => default
-                .ok_or_else(|| malformed(format!("field {} ({name}) has no value", index + 1))),
-            value => value
-                .real()
-                .ok_or_else(|| malformed(format!("field {} ({name}) is not a real", index + 1))),
-        }
+    fn charge(&mut self, code: IgesLossCode, index: usize, defect: Defect, consequence: &str) {
+        self.losses.push(code.note(format!(
+            "IGES Global field {} ({}) is {}; {consequence}",
+            index + 1,
+            field_name(index),
+            defect.as_str()
+        )));
     }
 
-    fn string_field(
-        &self,
-        index: usize,
-        name: &str,
-        allow_omitted: bool,
-    ) -> Result<(), CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if allow_omitted => Ok(()),
-            Value::Omitted => Err(malformed(format!(
-                "field {} ({name}) has no value",
-                index + 1
-            ))),
-            Value::String(_) => Ok(()),
-            Value::Atom(_) => Err(malformed(format!(
-                "field {} ({name}) is not a string",
-                index + 1
-            ))),
-        }
-    }
-
-    fn date_field(&self, index: usize, name: &str, allow_omitted: bool) -> Result<(), CodecError> {
-        match self.values.get(index).unwrap_or(&Value::Omitted) {
-            Value::Omitted if allow_omitted => Ok(()),
-            Value::Omitted => Err(malformed(format!(
-                "field {} ({name}) has no value",
-                index + 1
-            ))),
-            Value::String(value) if allow_omitted && value.is_empty() => Ok(()),
-            Value::String(value) if date_value_is_valid(value) => Ok(()),
-            Value::String(_) => Err(malformed(format!(
-                "field {} ({name}) is not a valid timestamp",
-                index + 1
-            ))),
-            Value::Atom(_) => Err(malformed(format!(
-                "field {} ({name}) is not a string",
-                index + 1
-            ))),
-        }
-    }
-
-    fn validate(&self) -> Result<(), CodecError> {
-        if self.values.len() > 26 {
-            return Err(malformed("Global record has more than 26 fields"));
-        }
-        for (index, name) in [
-            (2, "product identification"),
-            (3, "file name"),
-            (4, "native system ID"),
-            (5, "preprocessor version"),
-        ] {
-            self.string_field(index, name, index == SENDER_PRODUCT_FIELD)?;
-        }
-        for (index, name) in [
-            (6, "integer representation bits"),
-            (7, "single-precision magnitude"),
-            (8, "single-precision significance"),
-            (9, "double-precision magnitude"),
-            (10, "double-precision significance"),
-        ] {
-            self.integer_field(index, name, None)?;
-        }
-        self.string_field(11, "receiver product identification", true)?;
-        self.string_field(14, "units name", true)?;
-        self.date_field(17, "date and time of exchange file generation", false)?;
-        self.string_field(20, "author name", true)?;
-        self.string_field(21, "author organization", true)?;
-        self.date_field(24, "date and time model was created or modified", true)?;
-        self.string_field(25, "application protocol", true)?;
-
-        for (index, name) in [
-            (8, "single-precision significance"),
-            (10, "double-precision significance"),
-        ] {
-            let significance = self.integer_field(index, name, None)?;
-            if significance <= 0 || u32::try_from(significance).is_err() {
-                return Err(malformed(format!(
-                    "field {} ({name}) must be a positive u32",
-                    index + 1
-                )));
+    fn declaration_text(&self, index: usize) -> String {
+        match self.value(index) {
+            Value::Omitted => String::new(),
+            Value::String(bytes) | Value::Atom(bytes) => {
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+            Value::ForbiddenString => {
+                "a payload carrying a byte IGES 5.3 section 2.2.2.3 forbids".into()
             }
         }
-        let scale = self.real_field(12, "model space scale", Some(1.0))?;
-        if !scale.is_finite() || scale <= 0.0 {
-            return Err(malformed(
-                "field 13 (model space scale) must be finite and positive",
-            ));
+    }
+
+    fn supplied_string(&self, index: usize) -> Supplied<String> {
+        match self.value(index) {
+            Value::Omitted => Supplied::Absent,
+            Value::String(bytes) if bytes.is_empty() => Supplied::Absent,
+            Value::String(bytes) => {
+                String::from_utf8(bytes.clone()).map_or(Supplied::Malformed, Supplied::Value)
+            }
+            Value::ForbiddenString | Value::Atom(_) => Supplied::Malformed,
         }
-        let units = self.integer_field(13, "units flag", Some(1))?;
-        if !(1..=11).contains(&units) {
-            return Err(malformed("field 14 (units flag) must be in 1 through 11"));
+    }
+
+    fn supplied_date(&self, index: usize) -> Supplied<String> {
+        match self.supplied_string(index) {
+            Supplied::Value(text) if date_value_is_valid(text.as_bytes()) => Supplied::Value(text),
+            Supplied::Value(_) => Supplied::Malformed,
+            Supplied::Absent => Supplied::Absent,
+            Supplied::Malformed => Supplied::Malformed,
         }
-        if units == 3
-            && !matches!(
-                self.values.get(14),
-                Some(Value::String(value)) if !value.is_empty()
-            )
+    }
+
+    fn supplied_integer(&self, index: usize) -> Supplied<i64> {
+        match self.value(index) {
+            Value::Omitted => Supplied::Absent,
+            Value::Atom(bytes) => std::str::from_utf8(bytes)
+                .ok()
+                .and_then(|text| text.trim().parse::<i64>().ok())
+                .map_or(Supplied::Malformed, Supplied::Value),
+            Value::String(_) | Value::ForbiddenString => Supplied::Malformed,
+        }
+    }
+
+    fn supplied_real(&self, index: usize) -> Supplied<f64> {
+        match self.value(index) {
+            Value::Omitted => Supplied::Absent,
+            Value::Atom(bytes) => std::str::from_utf8(bytes)
+                .ok()
+                .and_then(|text| text.trim().replace(['D', 'd'], "E").parse::<f64>().ok())
+                .filter(|value| value.is_finite())
+                .map_or(Supplied::Malformed, Supplied::Value),
+            Value::String(_) | Value::ForbiddenString => Supplied::Malformed,
+        }
+    }
+
+    fn metadata_string(&mut self, index: usize) -> Option<String> {
+        match self.supplied_string(index) {
+            Supplied::Absent => None,
+            Supplied::Value(text) => Some(text),
+            Supplied::Malformed => {
+                self.charge(
+                    IgesLossCode::GlobalMetadataFieldUnusable,
+                    index,
+                    Defect::Malformed,
+                    METADATA_CONSEQUENCE,
+                );
+                None
+            }
+        }
+    }
+
+    fn metadata_date(&mut self, index: usize) {
+        if matches!(self.supplied_date(index), Supplied::Malformed) {
+            self.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                index,
+                Defect::Malformed,
+                METADATA_CONSEQUENCE,
+            );
+        }
+    }
+
+    fn metadata_integer(&mut self, index: usize, admits: fn(i64) -> bool) {
+        let admitted = match self.supplied_integer(index) {
+            Supplied::Absent => true,
+            Supplied::Value(value) => admits(value),
+            Supplied::Malformed => false,
+        };
+        if !admitted {
+            self.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                index,
+                Defect::Malformed,
+                METADATA_CONSEQUENCE,
+            );
+        }
+    }
+
+    fn maximum_coordinate(&mut self) -> Option<f64> {
+        match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
+            Supplied::Absent => Some(0.0),
+            Supplied::Value(value) if value >= 0.0 => Some(value),
+            Supplied::Value(_) | Supplied::Malformed => {
+                self.charge(
+                    IgesLossCode::GlobalMetadataFieldUnusable,
+                    FIELD_MAXIMUM_COORDINATE,
+                    Defect::Malformed,
+                    METADATA_CONSEQUENCE,
+                );
+                None
+            }
+        }
+    }
+
+    fn significance(&mut self, index: usize) -> u32 {
+        let defect = match self.supplied_integer(index) {
+            Supplied::Absent => Defect::Absent,
+            Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
+                Some(value) => return value,
+                None => Defect::Malformed,
+            },
+            Supplied::Malformed => Defect::Malformed,
+        };
+        self.charge(
+            IgesLossCode::GlobalSemanticContextSubstituted,
+            index,
+            defect,
+            SIGNIFICANCE_CONSEQUENCE,
+        );
+        FALLBACK_SIGNIFICANCE
+    }
+
+    fn minimum_resolution(&mut self) -> f64 {
+        match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
+            Supplied::Absent => FALLBACK_MINIMUM_RESOLUTION,
+            Supplied::Value(value) if value >= 0.0 => value,
+            Supplied::Value(_) | Supplied::Malformed => {
+                self.charge(
+                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    FIELD_MINIMUM_RESOLUTION,
+                    Defect::Malformed,
+                    RESOLUTION_CONSEQUENCE,
+                );
+                FALLBACK_MINIMUM_RESOLUTION
+            }
+        }
+    }
+
+    fn line_weight_scale(&mut self) -> Option<LineWeightScale> {
+        let (gradations, gradations_defect) =
+            match self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS) {
+                Supplied::Absent => (Some(1), None),
+                Supplied::Value(value) if value > 0 => (Some(value), None),
+                Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+            };
+        let (maximum_width, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
+            Supplied::Absent => (None, Some(Defect::Absent)),
+            Supplied::Value(value) if value > 0.0 => (Some(value), None),
+            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+        };
+        if let Some((index, defect)) = [
+            (FIELD_LINE_WEIGHT_GRADATIONS, gradations_defect),
+            (FIELD_MAXIMUM_LINE_WIDTH, width_defect),
+        ]
+        .into_iter()
+        .find_map(|(index, defect)| defect.map(|defect| (index, defect)))
         {
-            return Err(malformed(
-                "field 15 (units name) is required and nonempty for units flag 3",
-            ));
+            self.charge(
+                IgesLossCode::LineWeightScaleUnavailable,
+                index,
+                defect,
+                LINE_WEIGHT_CONSEQUENCE,
+            );
         }
-        let gradations = self.integer_field(15, "maximum line-weight gradations", Some(1))?;
-        if gradations <= 0 {
-            return Err(malformed(
-                "field 16 (maximum line-weight gradations) must be greater than zero",
-            ));
-        }
-        let maximum_width = self.real_field(16, "maximum line width", None)?;
-        if !maximum_width.is_finite() || maximum_width <= 0.0 {
-            return Err(malformed(
-                "field 17 (maximum line width) must be finite and positive",
-            ));
-        }
-        let resolution = self.real_field(18, "minimum resolution", None)?;
-        if !resolution.is_finite() || resolution < 0.0 {
-            return Err(malformed(
-                "field 19 (minimum resolution) must be finite and nonnegative",
-            ));
-        }
-        let maximum_coordinate = self.real_field(19, "maximum coordinate", Some(0.0))?;
-        if !maximum_coordinate.is_finite() || maximum_coordinate < 0.0 {
-            return Err(malformed(
-                "field 20 (maximum coordinate) must be finite and nonnegative",
-            ));
-        }
-        self.integer_field(22, "version flag", Some(3))?;
-        let drafting_standard = self.integer_field(23, "drafting standard flag", Some(0))?;
-        if !(0..=7).contains(&drafting_standard) {
-            return Err(malformed(
-                "field 24 (drafting standard flag) must be in 0 through 7",
-            ));
-        }
-        Ok(())
+        Some(LineWeightScale {
+            gradations: gradations?,
+            maximum_width: maximum_width?,
+        })
     }
 
-    pub(crate) fn model_scale(&self) -> f64 {
-        self.real_field(12, "model space scale", Some(1.0))
-            .expect("validated Global model space scale")
+    fn length_unit(&mut self) -> (Option<i64>, Option<String>, Option<f64>) {
+        let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
+            Supplied::Absent => (Some(1.0), None),
+            Supplied::Value(value) if value > 0.0 => (Some(value), None),
+            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+        };
+        let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
+            Supplied::Absent => (Some(1), None),
+            Supplied::Value(value) if (1..=11).contains(&value) => (Some(value), None),
+            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+        };
+        let (units_name, unit_mm, name_defect) = if units_flag == Some(3) {
+            match self.supplied_string(FIELD_UNITS_NAME) {
+                Supplied::Absent => (None, None, Some(Defect::Absent)),
+                Supplied::Value(name) => match delegated_unit_factor_mm(&name) {
+                    Some(factor) => (Some(name), Some(factor), None),
+                    None => (Some(name), None, Some(Defect::Malformed)),
+                },
+                Supplied::Malformed => (None, None, Some(Defect::Malformed)),
+            }
+        } else {
+            let name = self.metadata_string(FIELD_UNITS_NAME);
+            (name, units_flag.and_then(enumerated_unit_factor_mm), None)
+        };
+        let length_factor_mm = match (unit_mm, scale) {
+            (Some(unit), Some(scale)) => {
+                Some(unit / scale).filter(|factor| factor.is_finite() && *factor > 0.0)
+            }
+            _ => None,
+        };
+        if length_factor_mm.is_none() {
+            match [
+                (FIELD_MODEL_SCALE, scale_defect),
+                (FIELD_UNITS_FLAG, flag_defect),
+                (FIELD_UNITS_NAME, name_defect),
+            ]
+            .into_iter()
+            .find_map(|(index, defect)| defect.map(|defect| (index, defect)))
+            {
+                Some((index, defect)) => self.charge(
+                    IgesLossCode::GlobalLengthUnitUnresolved,
+                    index,
+                    defect,
+                    LENGTH_CONSEQUENCE,
+                ),
+                None => self
+                    .losses
+                    .push(IgesLossCode::GlobalLengthUnitUnresolved.note(format!(
+                        "IGES Global fields {} ({}) and {} ({}) produce no finite positive millimetre length factor; {LENGTH_CONSEQUENCE}",
+                        FIELD_MODEL_SCALE + 1,
+                        field_name(FIELD_MODEL_SCALE),
+                        FIELD_UNITS_FLAG + 1,
+                        field_name(FIELD_UNITS_FLAG),
+                    ))),
+            }
+        }
+        (units_flag, units_name, length_factor_mm)
+    }
+}
+
+fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+    let RawGlobal {
+        parameter_delimiter,
+        record_delimiter,
+        values,
+    } = raw;
+    let field_count = values.len();
+    let mut resolution = Resolution {
+        values,
+        losses: Vec::new(),
+    };
+
+    for (index, byte) in [(0_usize, parameter_delimiter), (1_usize, record_delimiter)] {
+        if prohibited_delimiter_byte(byte) {
+            resolution
+                .losses
+                .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
+                    "IGES Global field {} ({}) declares the byte {:?} that IGES 5.3 section 2.2.3.1 prohibits; the declaration was honored for every later field",
+                    index + 1,
+                    field_name(index),
+                    char::from(byte),
+                )));
+        }
+    }
+    if field_count > TABLE_1_FIELD_COUNT {
+        resolution
+            .losses
+            .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
+                "IGES Global record has {field_count} fields; IGES 5.3 Table 1 defines {TABLE_1_FIELD_COUNT} and the decoder ignored the rest"
+            )));
     }
 
-    pub(crate) fn units_flag(&self) -> i64 {
-        self.integer_field(13, "units flag", Some(1))
-            .expect("validated Global units flag")
-    }
+    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT);
+    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME);
+    resolution.metadata_string(FIELD_NATIVE_SYSTEM);
+    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION);
+    resolution.metadata_integer(FIELD_INTEGER_BITS, |_| true);
+    resolution.metadata_integer(FIELD_SINGLE_MAGNITUDE, |_| true);
+    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
+    resolution.metadata_integer(FIELD_DOUBLE_MAGNITUDE, |_| true);
+    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE);
+    resolution.metadata_string(FIELD_RECEIVER_PRODUCT);
+    let (units_flag, units_name, length_factor_mm) = resolution.length_unit();
+    #[cfg(not(test))]
+    let _ = units_flag;
+    let line_weight_scale = resolution.line_weight_scale();
+    resolution.metadata_date(FIELD_GENERATION_DATE);
+    let minimum_resolution = resolution.minimum_resolution();
+    #[cfg(test)]
+    let maximum_coordinate = resolution.maximum_coordinate();
+    #[cfg(not(test))]
+    let _ = resolution.maximum_coordinate();
+    resolution.metadata_string(FIELD_AUTHOR);
+    resolution.metadata_string(FIELD_ORGANIZATION);
+    let (declared_version_flag, unreadable_version_declaration) =
+        match resolution.supplied_integer(FIELD_VERSION_FLAG) {
+            Supplied::Absent => (3, None),
+            Supplied::Value(value) => (value, None),
+            Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
+        };
+    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, |value| (0..=7).contains(&value));
+    resolution.metadata_date(FIELD_MODEL_DATE);
+    resolution.metadata_string(FIELD_APPLICATION_PROTOCOL);
 
-    pub(crate) fn single_precision_significance(&self) -> u32 {
-        self.integer_field(8, "single-precision significance", None)
-            .ok()
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value > 0)
-            .expect("validated Global single-precision significance")
-    }
+    let resolved = ResolvedGlobal {
+        parameter_delimiter,
+        record_delimiter,
+        sender_product,
+        native_file_name,
+        units_name,
+        #[cfg(test)]
+        units_flag,
+        precision: RealPrecision {
+            single_significance,
+            double_significance,
+        },
+        minimum_resolution,
+        #[cfg(test)]
+        maximum_coordinate,
+        length_factor_mm,
+        line_weight_scale,
+        declared_version_flag,
+        unreadable_version_declaration,
+    };
+    (resolved, resolution.losses)
+}
 
-    pub(crate) fn double_precision_significance(&self) -> u32 {
-        self.integer_field(10, "double-precision significance", None)
-            .ok()
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value > 0)
-            .expect("validated Global double-precision significance")
+impl ResolvedGlobal {
+    /// The projection view, present only when the millimetre length factor resolved.
+    pub(crate) fn length_context(&self) -> Option<ProjectedGlobal> {
+        let length_factor_mm = self.length_factor_mm?;
+        Some(ProjectedGlobal {
+            length_factor_mm,
+            minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
+            precision: self.precision,
+            line_weight_scale: self.line_weight_scale,
+        })
     }
 
     pub(crate) fn real_precision(&self) -> RealPrecision {
-        RealPrecision {
-            single_significance: self.single_precision_significance(),
-            double_significance: self.double_precision_significance(),
-        }
-    }
-
-    fn delegated_unit_factor_mm(&self) -> Option<f64> {
-        match self.values.get(14).and_then(Value::string_bytes)? {
-            // IEEE 260-1978 unit symbols are case-sensitive. The ASCII
-            // substitutions `um` and `uin` represent the unavailable
-            // micro sign in an IGES ASCII field.
-            b"A" => Some(0.000_000_1),
-            b"in" => Some(25.4),
-            b"ft" => Some(304.8),
-            b"mi" => Some(1_609_344.0),
-            b"mil" => Some(0.0254),
-            b"uin" => Some(0.000_025_4),
-            b"yd" => Some(914.4),
-            b"nmi" => Some(1_852_000.0),
-            b"dam" => Some(10_000.0),
-            b"hm" => Some(100_000.0),
-            b"km" => Some(1_000_000.0),
-            b"Mm" => Some(1_000_000_000.0),
-            b"Gm" => Some(1_000_000_000_000.0),
-            b"Tm" => Some(1_000_000_000_000_000.0),
-            b"Pm" => Some(1_000_000_000_000_000_000.0),
-            b"Em" => Some(1_000_000_000_000_000_000_000.0),
-            b"m" => Some(1_000.0),
-            b"dm" => Some(100.0),
-            b"cm" => Some(10.0),
-            b"mm" => Some(1.0),
-            b"um" => Some(0.001),
-            b"nm" => Some(0.000_001),
-            b"pm" => Some(0.000_000_001),
-            b"fm" => Some(0.000_000_000_001),
-            b"am" => Some(0.000_000_000_000_001),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn has_supported_length_factor(&self) -> bool {
-        self.units_flag() != 3 || self.delegated_unit_factor_mm().is_some()
-    }
-
-    pub(crate) fn length_factor_mm(&self) -> f64 {
-        let unit = match self.units_flag() {
-            1 => 25.4,
-            2 => 1.0,
-            3 => self
-                .delegated_unit_factor_mm()
-                .expect("validated Global named units"),
-            4 => 304.8,
-            5 => 1_609_344.0,
-            6 => 1_000.0,
-            7 => 1_000_000.0,
-            8 => 0.0254,
-            9 => 0.001,
-            10 => 10.0,
-            11 => 0.000_025_4,
-            _ => unreachable!("validated Global units flag"),
-        };
-        unit / self.model_scale()
-    }
-
-    pub(crate) fn minimum_resolution_mm(&self) -> f64 {
-        let resolution = self
-            .real_field(18, "minimum resolution", None)
-            .expect("validated Global minimum resolution");
-        resolution * self.length_factor_mm()
+        self.precision
     }
 
     #[cfg(test)]
-    pub(crate) fn maximum_coordinate_mm(&self) -> f64 {
-        self.real_field(19, "maximum coordinate", Some(0.0))
-            .expect("validated Global maximum coordinate")
-            * self.length_factor_mm()
-    }
-
-    pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
-        let gradations = self
-            .integer_field(15, "maximum line-weight gradations", Some(1))
-            .expect("validated Global line-weight gradations");
-        let maximum = self
-            .real_field(16, "maximum line width", None)
-            .expect("validated Global maximum line width");
-        let factor = self.length_factor_mm();
-        (number > 0
-            && number <= gradations
-            && gradations > 0
-            && maximum.is_finite()
-            && maximum > 0.0)
-            .then_some(number as f64 * maximum * factor / gradations as f64)
+    pub(crate) fn units_flag(&self) -> Option<i64> {
+        self.units_flag
     }
 
     pub(crate) fn sender_product(&self) -> Option<String> {
-        self.values.get(2).and_then(Value::string)
+        self.sender_product.clone()
     }
 
     pub(crate) fn native_file_name(&self) -> Option<String> {
-        self.values.get(3).and_then(Value::string)
+        self.native_file_name.clone()
     }
 
     pub(crate) fn units_name(&self) -> Option<String> {
-        self.values.get(14).and_then(Value::string)
+        self.units_name.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn maximum_coordinate_mm(&self) -> Option<f64> {
+        Some(self.maximum_coordinate? * self.length_factor_mm?)
     }
 
     /// The version flag as declared, with the specification default for an absent field.
     pub(crate) fn declared_version_flag(&self) -> i64 {
-        self.integer_field(22, "version flag", Some(3))
-            .expect("validated Global version flag")
+        self.declared_version_flag
+    }
+
+    /// The declaration text of a field 23 that does not read as an integer.
+    pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
+        self.unreadable_version_declaration.as_deref()
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
     pub(crate) fn effective_version_flag(&self) -> i64 {
-        match self.declared_version_flag() {
-            value if value < 1 => 3,
-            value if value > 11 => 11,
-            value => value,
-        }
+        effective_version(self.declared_version_flag).0
     }
 
     pub(crate) fn version(&self) -> &'static str {
-        version_name(self.effective_version_flag()).expect("validated Global version flag")
+        effective_version(self.declared_version_flag).1
     }
 
     pub(crate) fn summary_notes(&self) -> Vec<String> {
@@ -633,6 +862,31 @@ impl Global {
         }
         notes.push(format!("iges_version={}", self.version()));
         notes
+    }
+}
+
+impl ProjectedGlobal {
+    pub(crate) fn length_factor_mm(&self) -> f64 {
+        self.length_factor_mm
+    }
+
+    pub(crate) fn minimum_resolution_mm(&self) -> f64 {
+        self.minimum_resolution_mm
+    }
+
+    pub(crate) fn real_precision(&self) -> RealPrecision {
+        self.precision
+    }
+
+    pub(crate) fn single_precision_significance(&self) -> u32 {
+        self.precision.single_significance
+    }
+
+    pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
+        let scale = self.line_weight_scale?;
+        (number > 0 && number <= scale.gradations).then_some(
+            number as f64 * scale.maximum_width * self.length_factor_mm / scale.gradations as f64,
+        )
     }
 }
 

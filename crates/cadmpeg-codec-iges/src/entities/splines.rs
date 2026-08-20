@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -228,7 +228,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<SplineProjection, CodecError> {
     let records = parameters

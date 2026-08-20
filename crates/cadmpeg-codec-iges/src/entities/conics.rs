@@ -4,7 +4,7 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
@@ -93,7 +93,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> ConicProjection {
     let records = parameters

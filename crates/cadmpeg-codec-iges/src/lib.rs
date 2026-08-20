@@ -117,7 +117,7 @@ impl CodecBackend for IgesCodec {
             None,
         )?;
         let scan = card::scan_with_context(root.window(), Some(ctx))?;
-        let global = global::parse(&scan)?;
+        let (global, _) = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
         ctx.charge_entities(directory.len() as u64, "iges_inspect_directory_entries")?;
         let parameters = parameter::assemble_with_context(&scan, &directory, &global, Some(ctx))?;

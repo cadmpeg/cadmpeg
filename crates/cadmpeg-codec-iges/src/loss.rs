@@ -51,12 +51,22 @@ pub enum IgesLossCode {
     DisplayDataNotProjected,
     /// A drawing has conflicting valid properties of the same form.
     DrawingPropertyAmbiguous,
+    /// The Global line-weight scale is unavailable, so no entity has a width.
+    LineWeightScaleUnavailable,
     /// A Type 118 developability flag was not transferred to neutral geometry.
     RuledDevelopabilityNotTransferred,
     /// Type 112 or Type 114 header semantics were not transferred to neutral geometry.
     SplineHeaderNotTransferred,
     /// A Type 102 composite has no admitted concatenated carrier.
     CompositeCarrierDegraded,
+    /// A Global metadata field is absent or malformed and was not transferred.
+    GlobalMetadataFieldUnusable,
+    /// A Global comparison context came from this codec's specification.
+    GlobalSemanticContextSubstituted,
+    /// The Global fields 13, 14, and 15 produced no millimetre length factor.
+    GlobalLengthUnitUnresolved,
+    /// The Global record is recoverable but departs from IGES 5.3 Table 1.
+    GlobalNoncanonicalFraming,
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified,
     /// Preserved source image required for a byte-exact write was unavailable.
@@ -85,9 +95,14 @@ impl IgesLossCode {
         Self::ParameterBoundaryAmbiguous,
         Self::DisplayDataNotProjected,
         Self::DrawingPropertyAmbiguous,
+        Self::LineWeightScaleUnavailable,
         Self::RuledDevelopabilityNotTransferred,
         Self::SplineHeaderNotTransferred,
         Self::CompositeCarrierDegraded,
+        Self::GlobalMetadataFieldUnusable,
+        Self::GlobalSemanticContextSubstituted,
+        Self::GlobalLengthUnitUnresolved,
+        Self::GlobalNoncanonicalFraming,
         Self::SourceDialectUnverified,
         Self::PreservedSourceUnavailable,
         Self::ProceduralReduced,
@@ -113,11 +128,16 @@ impl IgesLossCode {
             Self::ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
             Self::DisplayDataNotProjected => "presentation.display-data-not-projected",
             Self::DrawingPropertyAmbiguous => "presentation.drawing-property-ambiguous",
+            Self::LineWeightScaleUnavailable => "presentation.line-weight-scale-unavailable",
             Self::RuledDevelopabilityNotTransferred => {
                 "geometry.ruled-developability-not-transferred"
             }
             Self::SplineHeaderNotTransferred => "geometry.spline-header-not-transferred",
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
+            Self::GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
+            Self::GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
+            Self::GlobalLengthUnitUnresolved => "global.length-unit-unresolved",
+            Self::GlobalNoncanonicalFraming => "global.noncanonical-framing",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
             Self::ProceduralReduced => "geometry.procedural-reduced",
@@ -130,7 +150,9 @@ impl IgesLossCode {
     #[must_use]
     pub const fn severity(self) -> Severity {
         match self {
-            Self::PreservedSourceUnavailable => Severity::Blocking,
+            Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
+                Severity::Blocking
+            }
             Self::ProceduralReduced => Severity::Info,
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
@@ -144,9 +166,13 @@ impl IgesLossCode {
             | Self::ParameterBoundaryAmbiguous
             | Self::DisplayDataNotProjected
             | Self::DrawingPropertyAmbiguous
+            | Self::LineWeightScaleUnavailable
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::CompositeCarrierDegraded
+            | Self::GlobalMetadataFieldUnusable
+            | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
@@ -166,11 +192,19 @@ impl IgesLossCode {
             Self::BoundaryPcurveOutsideSupportDomain => LossTaxonomy::SourceTopologyInvalid,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
-            Self::DisplayDataNotProjected => LossTaxonomy::MaterialNotTransferred,
+            Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
+                LossTaxonomy::MaterialNotTransferred
+            }
             Self::DrawingPropertyAmbiguous
             | Self::RuledDevelopabilityNotTransferred
-            | Self::SplineHeaderNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::CompositeCarrierDegraded => LossTaxonomy::GeometryNotTransferred,
+            | Self::SplineHeaderNotTransferred
+            | Self::GlobalMetadataFieldUnusable => LossTaxonomy::MetadataNotTransferred,
+            Self::CompositeCarrierDegraded | Self::GlobalLengthUnitUnresolved => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::GlobalSemanticContextSubstituted | Self::GlobalNoncanonicalFraming => {
+                LossTaxonomy::NoncanonicalSourceSyntax
+            }
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
@@ -220,9 +254,14 @@ mod tests {
                 "parameter.boundary-ambiguous",
                 "presentation.display-data-not-projected",
                 "presentation.drawing-property-ambiguous",
+                "presentation.line-weight-scale-unavailable",
                 "geometry.ruled-developability-not-transferred",
                 "geometry.spline-header-not-transferred",
                 "curve.composite-carrier-degraded",
+                "global.metadata-field-unusable",
+                "global.semantic-context-substituted",
+                "global.length-unit-unresolved",
+                "global.noncanonical-framing",
                 "source.dialect-unverified",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",

@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -670,7 +670,7 @@ pub(crate) fn project_geometry(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
     let records = parameters

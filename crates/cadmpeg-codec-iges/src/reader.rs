@@ -14,7 +14,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_meta(global: &global::Global) -> SourceMeta {
+fn source_meta(global: &global::ResolvedGlobal) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), "fixed-ascii".into());
     attributes.insert(
@@ -64,14 +64,21 @@ fn occurrence_loss(
 
 const VERIFIED_VERSIONS: [&str; 3] = ["5.1", "5.2", "5.3"];
 
-fn source_dialect_loss(global: &global::Global) -> Option<LossNote> {
+fn source_dialect_loss(global: &global::ResolvedGlobal) -> Option<LossNote> {
     let declared = global.declared_version_flag();
     let effective = global.effective_version_flag();
     let version = global.version();
     let clamped = declared != effective;
-    if !clamped && VERIFIED_VERSIONS.contains(&version) {
+    let unreadable = global.unreadable_version_declaration();
+    if !clamped && unreadable.is_none() && VERIFIED_VERSIONS.contains(&version) {
         return None;
     }
+    let declaration = match unreadable {
+        Some(text) => format!(
+            "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
+        ),
+        None => format!("IGES Global version flag {declared}"),
+    };
     let clamp = if clamped {
         format!(
             " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
@@ -80,7 +87,7 @@ fn source_dialect_loss(global: &global::Global) -> Option<LossNote> {
         String::new()
     };
     Some(IgesLossCode::SourceDialectUnverified.note(format!(
-        "IGES Global version flag {declared} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
+        "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
         VERIFIED_VERSIONS.join(", ")
     )))
 }
@@ -126,12 +133,8 @@ fn decode_with_occurrence_limits(
         .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, "iges_card_storage", None))
         .transpose()?;
     let scan = card::scan_with_context(bytes, ctx)?;
-    let global = global::parse(&scan)?;
-    if !options.container_only && !global.has_supported_length_factor() {
-        return Err(CodecError::NotImplemented(
-            "IGES units flag 3 names a unit without a known millimetre factor".into(),
-        ));
-    }
+    let (global, global_losses) = global::parse(&scan)?;
+    let length_context = global.length_context();
     let directory = directory::parse(&scan)?;
     charge_entities(ctx, directory.len() as u64, "iges_directory_entries")?;
     entities::geometry::enforce_transform_depth(&directory, ctx)?;
@@ -156,20 +159,21 @@ fn decode_with_occurrence_limits(
     });
 
     let mut ir = CadIr::empty(Units::default());
-    if global.has_supported_length_factor() {
-        ir.tolerances.linear = global.minimum_resolution_mm();
+    if let Some(context) = &length_context {
+        ir.tolerances.linear = context.minimum_resolution_mm();
     }
     ir.source = Some(source_meta(&global));
-    let projection = if options.container_only {
-        entities::geometry::Projection {
+    let projection = match length_context.filter(|_| !options.container_only) {
+        Some(context) => {
+            charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
+            entities::geometry::project_geometry(&mut ir, &directory, &parameters, &context, ctx)?
+        }
+        None => entities::geometry::Projection {
             handled: BTreeSet::default(),
             decoded: BTreeSet::default(),
             consumed: BTreeSet::default(),
             losses: Vec::new(),
-        }
-    } else {
-        charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-        entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global, ctx)?
+        },
     };
     let semantic_structure_admitted = (!options.container_only).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
@@ -209,6 +213,7 @@ fn decode_with_occurrence_limits(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = Vec::new();
     losses.extend(source_dialect_loss(&global));
+    losses.extend(global_losses);
     losses.extend(projection.losses);
     losses.extend(graph::losses(&references, &scan, &parameters));
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {

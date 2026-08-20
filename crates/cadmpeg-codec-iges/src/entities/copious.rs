@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -210,7 +210,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<CopiousProjection, CodecError> {
     let records = parameters

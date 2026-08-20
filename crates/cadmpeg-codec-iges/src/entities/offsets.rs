@@ -4,7 +4,7 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{declared_unit_vector, entity_loss, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
@@ -164,7 +164,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
 ) -> OffsetProjection {
     let records = parameters

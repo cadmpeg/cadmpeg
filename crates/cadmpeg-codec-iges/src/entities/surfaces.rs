@@ -3,7 +3,7 @@
 
 use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -213,7 +213,7 @@ fn indicator_orientation(
     record: &ParameterRecord,
     indicator: Vector3,
     normal: Vector3,
-    global: &Global,
+    global: &ProjectedGlobal,
 ) -> Option<f64> {
     let precision = global.real_precision();
     let values = [indicator.x, indicator.y, indicator.z];
@@ -248,7 +248,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<SurfaceProjection, CodecError> {
     let records = parameters

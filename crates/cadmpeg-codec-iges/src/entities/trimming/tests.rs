@@ -214,6 +214,9 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
         ))
         .unwrap(),
     )
+    .unwrap()
+    .0
+    .length_context()
     .unwrap();
     let points = [Point3::new(100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)];
     let policy = FaceTolerancePolicy::from_global(&global, points.into_iter());
