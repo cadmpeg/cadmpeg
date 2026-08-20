@@ -29,12 +29,13 @@ pub use definitions::{
     FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
     FeatureSolverTableHeader, FeatureTrimEntity, FeatureVariableRow, OutlinePhase, TrimEntityKind,
 };
+pub(crate) use definitions::{FeatureEquation, FeatureVariableTable};
 #[cfg(test)]
 pub use definitions::{
     FeatureOrderRow, FeatureParameterFrame, FeatureSavedCircle, FeatureSavedConic,
     FeatureSavedSection, FeatureSectionOrientation, FeatureSectionPoint,
     FeatureSectionReferencePlane, FeatureTrimBucket, FeatureTrimEntityTable, FeatureTrimVertex,
-    FeatureTrimVertexTable, FeatureVariableTable,
+    FeatureTrimVertexTable,
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,

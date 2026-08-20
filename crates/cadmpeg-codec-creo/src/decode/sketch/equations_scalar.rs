@@ -45,6 +45,119 @@ pub(crate) struct SectionEquationCoordinateEquality {
     pub(crate) active: bool,
 }
 
+fn section_equation_function_ten_axis_alignment(
+    definition: &crate::feature::FeatureDefinition,
+    equation: &crate::feature::FeatureEquation,
+    variables: &crate::feature::FeatureVariableTable,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Option<(u32, u32, usize)> {
+    if equation.function_id != 10 || equation.arguments.len() != 7 {
+        return None;
+    }
+    let [Some(first_axis), Some(second_axis), Some(target_axis), Some(first_auxiliary), Some(first_ordinate), Some(second_ordinate), Some(second_auxiliary)] =
+        equation.arguments.as_slice()
+    else {
+        return None;
+    };
+    let row = |ordinal: u32| {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    let (
+        Some(first_axis),
+        Some(second_axis),
+        Some(target_axis),
+        Some(first_auxiliary),
+        Some(first_ordinate),
+        Some(second_ordinate),
+        Some(second_auxiliary),
+    ) = (
+        row(*first_axis),
+        row(*second_axis),
+        row(*target_axis),
+        row(*first_auxiliary),
+        row(*first_ordinate),
+        row(*second_ordinate),
+        row(*second_auxiliary),
+    )
+    else {
+        return None;
+    };
+    if !matches!(first_axis.variable_type, 1 | 2)
+        || first_axis.variable_type != second_axis.variable_type
+        || first_axis.variable_type != target_axis.variable_type
+        || !matches!(first_ordinate.variable_type, 1 | 2)
+        || first_ordinate.variable_type == first_axis.variable_type
+        || first_ordinate.variable_type != second_ordinate.variable_type
+        || first_axis.key != first_ordinate.key
+        || second_axis.key != second_ordinate.key
+        || first_axis.key == second_axis.key
+        || target_axis.key == first_axis.key
+        || target_axis.key == second_axis.key
+        || first_auxiliary.variable_type != 7
+        || second_auxiliary.variable_type != 7
+        || [first_axis.key, second_axis.key, target_axis.key]
+            .into_iter()
+            .any(|point_id| ambiguous_point_ids.contains(&point_id))
+    {
+        return None;
+    }
+
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let auxiliary_is_zero = |row: &crate::feature::FeatureVariableRow| {
+        reconcile_equation_value(
+            row.value,
+            scalar_equality_values
+                .get(&(row.variable_type, row.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()
+                .flatten(),
+        )
+        .ok()
+            == Some(Some(0.0))
+    };
+    if !auxiliary_is_zero(first_auxiliary) || !auxiliary_is_zero(second_auxiliary) {
+        return None;
+    }
+
+    let (points, _) = variables.reconciled_points();
+    let first_point = points.get(&first_axis.key).copied()?;
+    let second_point = points.get(&second_axis.key).copied()?;
+    let target_point = points.get(&target_axis.key).copied()?;
+    let axis = usize::from(first_axis.variable_type == 2);
+    let constant_axis = 1usize.saturating_sub(axis);
+    let first_varying = first_point[axis];
+    let second_varying = second_point[axis];
+    let first_constant = first_point[constant_axis];
+    let second_constant = second_point[constant_axis];
+    let (Some(first_varying), Some(second_varying), Some(first_constant), Some(second_constant)) = (
+        first_varying,
+        second_varying,
+        first_constant,
+        second_constant,
+    ) else {
+        return None;
+    };
+    if ![
+        first_varying,
+        second_varying,
+        first_constant,
+        second_constant,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+        || approximately_equal(first_varying, second_varying)
+        || !approximately_equal(first_constant, second_constant)
+        || target_point[axis].is_none()
+        || target_point[constant_axis].is_some()
+    {
+        return None;
+    }
+    Some((target_axis.key, first_axis.key, constant_axis))
+}
+
 pub(crate) fn section_equation_coordinate_equality_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -72,6 +185,23 @@ pub(crate) fn section_equation_coordinate_equality_rows(
         .rows
         .iter()
         .filter_map(|equation| {
+            if equation.function_id == 10 {
+                let (first, second, axis) = section_equation_function_ten_axis_alignment(
+                    definition,
+                    equation,
+                    variables,
+                    ambiguous_point_ids,
+                )?;
+                return Some(SectionEquationCoordinateEquality {
+                    first,
+                    second,
+                    axis,
+                    function_id: equation.function_id,
+                    equation_id: equation.equation_id,
+                    offset: equation.offset,
+                    active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                });
+            }
             let (first, second, auxiliary) = match equation.function_id {
                 2 if equation.arguments.len() == 2 => {
                     let [Some(first), Some(second)] = equation.arguments.as_slice() else {

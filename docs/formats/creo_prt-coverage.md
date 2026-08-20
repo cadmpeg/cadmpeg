@@ -132,6 +132,12 @@ fixtures, scores above L1 remain blocked.
   rows retain their source activity. Zero-valued auxiliary rows in functions
   thirteen, thirty-three, and thirty-five also reconcile through active scalar
   equality components; conflicting or incomplete rows remain native.
+- Function-ten seven-slot axis-alignment equations transfer as typed
+  same-coordinate constraints when their two reference points have distinct
+  selected ordinates and equal opposite ordinates, their target has the
+  selected ordinate and a missing opposite ordinate, both type-seven
+  auxiliaries resolve to zero, and all point identities and coordinates are
+  complete and unambiguous. Other function-ten forms remain native.
 - Scalar-equality components compare stored `var_arr` values with finite
   dimension, relation, equation, and coordinate-derived candidates without source
   precedence. A non-finite source or any disagreement blocks every resolved

@@ -379,7 +379,13 @@ coordinate difference is non-zero. Function-16 direct rows with two type-4
 angle rows, a type-0 result row, and a zero type-5 selector transfer the
 non-negative first-minus-second angle difference when it is at most π; a
 missing result transfers from the two finite angles. Other function-16 forms
-and other function-43 forms remain native.
+and other function-43 forms remain native. Function-10 seven-slot rows with
+same-type selected coordinates for two distinct points and a target, opposite
+type coordinates for the two reference points, and zero type-7 auxiliaries
+transfer the target's missing opposite ordinate to the shared reference
+ordinate when the selected ordinates differ and all other point identities and
+coordinates are complete and unambiguous. Other function-10 forms remain
+native.
 
 **Need.** We must know each equation to solve the section geometry.
 

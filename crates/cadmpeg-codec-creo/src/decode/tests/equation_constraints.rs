@@ -8,11 +8,12 @@ use crate::decode::sketch_transfer::{
     section_equation_function_thirty_one_point_coordinate_constraints,
     section_equation_native_constraints, section_equation_point_on_line_constraints,
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
-    section_equation_unsigned_distance_constraints,
+    section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
 };
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchDistancePair, SketchEntityId, SketchLocus,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
+    SketchLocus,
 };
 use std::collections::BTreeSet;
 
@@ -117,6 +118,144 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
         panic!("equation fallback must be native");
     };
     assert_eq!(*native_state, Some(0));
+}
+
+#[test]
+fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let point = |external_id, point_id| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Point,
+        directions: [None; 3],
+        point_ids: [point_id, point_id],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: external_id as usize,
+    };
+    let mut definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x0a\xf8\x07\x00\x01\x02\x03\x04\x05\x06\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 7,
+            entity_ref: None,
+            rows: vec![
+                row(1, 1, Some(0.0)),
+                row(1, 2, Some(5.0)),
+                row(1, 3, Some(1.0)),
+                row(7, 0, Some(0.0)),
+                row(2, 1, Some(2.0)),
+                row(2, 2, Some(2.0)),
+                row(7, 1, Some(0.0)),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 3,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![point(10, 1), point(11, 2), point(12, 3)],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].1, 28);
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Entity(SketchEntityId("creo:featdefs:sketch_entity#40:12".into(),)),
+            second: SketchLocus::Entity(
+                SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)
+            ),
+            axis: SketchCoordinateAxis::V,
+        }
+    );
+    assert_eq!(
+        crate::decode::sketch::resolved_section_coordinates(&definition)
+            .get(&3)
+            .copied(),
+        Some([Some(1.0), Some(2.0)])
+    );
+
+    definition.variables.as_mut().expect("variables").rows[3].value = Some(0.25);
+    assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
+    assert_eq!(
+        section_equation_native_constraints(&definition, &sketch, &BTreeSet::new()).len(),
+        1
+    );
+
+    definition.variables.as_mut().expect("variables").rows[3].value = Some(0.0);
+    definition.variables.as_mut().expect("variables").rows[2].value = None;
+    assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
+    definition.variables.as_mut().expect("variables").rows[2].value = Some(1.0);
+    definition.variables.as_mut().expect("variables").rows[1].value = Some(0.0);
+    assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
+
+    let rows = &mut definition.variables.as_mut().expect("variables").rows;
+    rows[0].variable_type = 2;
+    rows[1].variable_type = 2;
+    rows[1].value = Some(5.0);
+    rows[2].variable_type = 2;
+    rows[4].variable_type = 1;
+    rows[5].variable_type = 1;
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Entity(SketchEntityId("creo:featdefs:sketch_entity#40:12".into(),)),
+            second: SketchLocus::Entity(
+                SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)
+            ),
+            axis: SketchCoordinateAxis::U,
+        }
+    );
+    assert_eq!(
+        crate::decode::sketch::resolved_section_coordinates(&definition)
+            .get(&3)
+            .copied(),
+        Some([Some(2.0), Some(1.0)])
+    );
 }
 
 #[test]

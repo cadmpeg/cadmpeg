@@ -1889,6 +1889,17 @@ non-negative first-minus-second angle difference in radians, bounded by π. A
 missing result is derived from the two finite angles; a stored result must be finite,
 non-negative, and equal to that difference. A missing selector, a reversed or
 over-π difference, or a conflicting result leaves the equation native.
+Function `10` has a seven-slot axis-alignment form. Slots 0, 1, and 2 are
+same-type type-1 or type-2 coordinates for distinct first, second, and target
+point keys. Slots 4 and 5 are the opposite-type coordinates for the first and
+second point keys. Slots 3 and 6 are type-7 auxiliaries. The first and second
+selected coordinates must be distinct, their opposite coordinates must agree,
+both auxiliary values must resolve to zero, and the target must have a finite
+selected coordinate with its opposite coordinate missing. With complete,
+finite, unambiguous point rows, the equation asserts that the target's missing
+opposite coordinate equals the shared opposite coordinate of the first and
+second points. Any other function-10 argument shape, auxiliary value, point
+identity, coordinate completeness, or coordinate relationship remains native.
 
 Scalar-equality reconciliation is source-independent. It compares finite stored
 `var_arr` row values with finite candidates from dimensions, relations, equation
