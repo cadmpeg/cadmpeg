@@ -260,9 +260,13 @@ current levels require those matrices and representative fixtures.
   same graph's paired entity and object record, and that source object's
   complete owner chain reaches one transferred Sketch before another
   transferred feature. The source object record is retained as one unresolved
-  native operand. The transfer assigns no neutral sketch entity, locus,
-  parameter, driving state, or dimensional role; exact selector, framing,
-  evaluation, and opcode-offset properties remain available on the constraint.
+  native operand. A paired Range interval with a finite nominal whose bits
+  equal the finite CstAttr_Dimension evaluation supplies one neutral
+  millimetre length parameter on the constraint; the nominal framing, bits,
+  and opcode offset remain parameter properties. The transfer assigns no
+  neutral sketch entity, locus, dimensional subtype, driving state, or
+  operation role; exact selector, framing, evaluation, and opcode-offset
+  properties remain available on the constraint.
   An exact two-selector `Range`/`CstAttr_Dimension` production transfers a
   document PMI dimension when its admitted dimension framing carries a finite
   nominal, the paired constraint evaluation is finite, and the two scalar
