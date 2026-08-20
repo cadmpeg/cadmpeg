@@ -1081,6 +1081,13 @@ following recognized tag.
 
 CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. When deltas history is merged into its paired partition, a later complete CHART_s record replaces an earlier record with the same XMT before intersection validation.
 
+The stream-local intersection-construction identity is the XMT regardless of
+whether the construction uses the type-38 or `intersection_data` form. A
+type-38 construction and an `intersection_data` construction with one XMT do
+not form a complete typed relation: neither construction enters the joined
+construction or chart-carrier lanes, and the collision remains an opaque
+intersection loss.
+
 The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a type-38 or `intersection_data` construction. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 records append status byte `01` to every reference; transfer removes those status bytes before applying the partition-style construction grammar.
 
 A topology-referenced record with a non-null chart reference that does not resolve remains a typed unresolved intersection only when at least one serialized support resolves as a surface and its endpoint relation is independently witnessed by both term-use records or by one unique edge-endpoint pair. The all-null witness form remains a typed construction when a serialized support resolves. A type marker with no resolved support, or with a non-null unresolved chart and no endpoint relation, is not an intersection construction.

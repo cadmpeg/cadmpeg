@@ -222,6 +222,8 @@ pub struct UnchartedIntersection {
 pub struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
     pub missing_support: usize,
+    /// Two construction forms used one stream-local XMT identity.
+    pub duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub missing_chart: usize,
     /// The start term-use reference did not resolve.
@@ -236,6 +238,7 @@ impl RejectionCounts {
     /// Total rejected construction count.
     pub fn total(self) -> usize {
         self.missing_support
+            + self.duplicate_identity
             + self.missing_chart
             + self.missing_start_term
             + self.missing_end_term
@@ -245,6 +248,7 @@ impl RejectionCounts {
     fn add(&mut self, rejection: Rejection) {
         match rejection {
             Rejection::MissingSupport => self.missing_support += 1,
+            Rejection::DuplicateIdentity => self.duplicate_identity += 1,
             Rejection::MissingChart => self.missing_chart += 1,
             Rejection::MissingStartTerm => self.missing_start_term += 1,
             Rejection::MissingEndTerm => self.missing_end_term += 1,
@@ -255,6 +259,7 @@ impl RejectionCounts {
     /// Add another stream's rejection census.
     pub fn extend(&mut self, other: Self) {
         self.missing_support += other.missing_support;
+        self.duplicate_identity += other.duplicate_identity;
         self.missing_chart += other.missing_chart;
         self.missing_start_term += other.missing_start_term;
         self.missing_end_term += other.missing_end_term;
@@ -283,6 +288,7 @@ pub struct CurveScan {
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     MissingSupport,
+    DuplicateIdentity,
     MissingChart,
     MissingStartTerm,
     MissingEndTerm,
@@ -395,6 +401,28 @@ fn scan_with_auxiliaries(
 ) -> CurveScan {
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
+    let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
+    for construction in &constructions {
+        forms_by_xmt
+            .entry(construction.xmt)
+            .or_default()
+            .insert(construction.delta_twin);
+    }
+    let ambiguous_xmts = forms_by_xmt
+        .into_iter()
+        .filter_map(|(xmt, forms)| (forms.len() > 1).then_some(xmt))
+        .collect::<BTreeSet<_>>();
+    let constructions = constructions
+        .into_iter()
+        .filter(|construction| {
+            if ambiguous_xmts.contains(&construction.xmt) {
+                result.rejected.add(Rejection::DuplicateIdentity);
+                false
+            } else {
+                true
+            }
+        })
+        .collect::<Vec<_>>();
     for construction in constructions.iter().copied() {
         match enrich(construction, charts, terms, uv, uv_markers, bridges, graph) {
             Ok(curve) => {

@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use std::io::Cursor;
+use std::{collections::BTreeMap, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
@@ -266,6 +266,33 @@ fn intersection_chart_rejects_unresolved_support_relation() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_support, 1);
     assert_eq!(scan.rejected.total(), 1);
+}
+
+#[test]
+fn intersection_rejects_cross_form_xmt_collision_atomically() {
+    let construction = |delta_twin, pos| crate::topology::CompositeCurve {
+        xmt: 12,
+        header_references: [1; 5],
+        sense: true,
+        references: [6, 7, 20, 21, 22, 23],
+        delta_twin,
+        pos,
+    };
+    let scan = super::scan_with_auxiliaries(
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &crate::topology::Graph::default(),
+        vec![construction(false, 10), construction(true, 20)],
+    );
+
+    assert!(scan.source_constructions.is_empty());
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.duplicate_identity, 2);
+    assert_eq!(scan.rejected.total(), 2);
 }
 
 #[test]
