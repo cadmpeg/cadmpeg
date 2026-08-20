@@ -445,7 +445,17 @@ those roles are serialized, the operation remains
 
 **Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the declaration length, `UGS::` or `m_` name, trailing-code boundary, and following registry suffix.
 
-**Need.** We must know the meaning to validate and transfer declaration metadata.
+**Need.** We must know the code domain and the relation between the trailing
+byte and the declared class or member semantics.
+
+**Conflict.** The declaration grammar identifies the trailing byte as the
+single byte after the printable `UGS::` or `m_` name and before the bounded
+registry suffix. The name and suffix delimit the declaration but do not assign
+a type, ownership, visibility, or field-role meaning to that byte.
+
+**Note.** The trailing byte remains an exact declaration field for classes and
+members. No semantic classification is assigned until its code domain and
+owner relation are serialized.
 
 ### OM-06. OM registry suffix fields
 
