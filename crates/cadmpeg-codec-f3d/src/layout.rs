@@ -1019,7 +1019,7 @@ pub(crate) mod paramesh_collection_owner_backlink_prefix {
 /// Spec §Assembly operands. Record length 26 B.
 ///
 /// ```text
-/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, and 692-byte forms, and offset 358 in the 633- and 732-byte forms.
+/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms, and offset 358 in the 633-, 732-, and 744-byte forms.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
     /// Record length in bytes. Spec §Assembly operands.
