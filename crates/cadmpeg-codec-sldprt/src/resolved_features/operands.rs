@@ -163,9 +163,28 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             return Some(*entity);
         }
     }
+    if kind == FeatureInputOperandKind::Native(0x814c) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.coordinates_m.is_some())
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        return match indexed.as_slice() {
+            [entity] => Some(*entity),
+            _ => None,
+        };
+    }
     if matches!(
         kind,
-        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69)
+        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69,)
     ) {
         let indexed = entities
             .iter()

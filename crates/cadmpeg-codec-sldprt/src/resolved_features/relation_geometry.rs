@@ -1056,9 +1056,10 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
 ///
 /// A native operand tag carries the point identity in the resolved operand
 /// reference. The reference must resolve to a point marker in the unique
-/// `sgEntHandle` lane, and its local identifier must equal the operand address.
-/// No radius-based pair or marker-family fallback is valid for this explicit
-/// identity form.
+/// `sgEntHandle` lane. Native tag `4c 81` uses the marker's feature-local
+/// object index as the identity; other native point identities use the local
+/// identifier. No radius-based pair or marker-family fallback is valid for
+/// this explicit identity form.
 pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
@@ -1072,10 +1073,16 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     else {
         return None;
     };
+    let address = u32::from(operand.entity_index);
     let marker = lane.sketch_entities.iter().find(|marker| {
+        let identity_matches = match operand.kind {
+            FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
+            FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
+            _ => false,
+        };
         marker.id == entity_ref
             && marker.feature_ref.as_deref() == Some(feature)
-            && marker.local_id == Some(u32::from(operand.entity_index))
+            && identity_matches
             && matches!(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint

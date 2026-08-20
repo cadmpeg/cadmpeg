@@ -247,24 +247,26 @@ fn object_indexed_point_operands_precede_local_fallbacks() {
     let local = point("local", 8, 7);
     let markers = [&indexed, &local];
 
-    assert_eq!(
-        resolve_operand_marker(
-            markers.iter().copied(),
-            FeatureInputOperandKind::Native(0x8152),
-            7,
-        )
-        .map(|marker| marker.id.as_str()),
-        Some("indexed")
-    );
+    for kind in [
+        FeatureInputOperandKind::Native(0x814c),
+        FeatureInputOperandKind::Native(0x8152),
+    ] {
+        assert_eq!(
+            resolve_operand_marker(markers.iter().copied(), kind, 7)
+                .map(|marker| marker.id.as_str()),
+            Some("indexed")
+        );
+    }
 
     let duplicate = point("duplicate", 7, 101);
-    assert_eq!(
-        resolve_operand_marker(
-            [&indexed, &duplicate].into_iter(),
-            FeatureInputOperandKind::Native(0x8152),
-            7,
-        ),
-        None
+    for kind in [
+        FeatureInputOperandKind::Native(0x814c),
+        FeatureInputOperandKind::Native(0x8152),
+    ] {
+        assert!(resolve_operand_marker([&indexed, &duplicate], kind, 7).is_none());
+    }
+    assert!(
+        resolve_operand_marker([&local], FeatureInputOperandKind::Native(0x814c), 7,).is_none()
     );
 }
 
