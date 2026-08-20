@@ -5373,12 +5373,24 @@ pub fn feature_sketch_points(
         .iter()
         .filter_map(|record| {
             let name = names.get(record.name_field.as_str())?;
+            if name.operation_label != record.operation_label
+                || name.construction_payload != record.construction_payload
+            {
+                return None;
+            }
             parse_sketch_point_name(&name.value)?;
             let [first_id, second_id] = record.scalar_fields.as_slice() else {
                 return None;
             };
             let first = scalars.get(first_id.as_str())?;
             let second = scalars.get(second_id.as_str())?;
+            if [first, second].into_iter().any(|scalar| {
+                scalar.operation_label != record.operation_label
+                    || scalar.construction_payload != record.construction_payload
+                    || !scalar.value.is_finite()
+            }) {
+                return None;
+            }
             Some(FeatureSketchPoint {
                 id: format!(
                     "nx:feature-history:sketch-point#{}",
@@ -5427,8 +5439,19 @@ pub fn feature_sketch_fixed_points(
                 return None;
             };
             let name = names.get(record.name_field.as_str())?;
+            if name.operation_label != record.operation_label
+                || name.construction_payload != record.construction_payload
+            {
+                return None;
+            }
             parse_sketch_point_name(&name.value)?;
             let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
+            if pair.operation_label != record.operation_label
+                || pair.construction_payload != record.construction_payload
+                || pair.values.iter().any(|value| !value.is_finite())
+            {
+                return None;
+            }
             Some(FeatureSketchFixedPoint {
                 id: record
                     .id
