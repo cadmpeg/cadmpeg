@@ -2819,6 +2819,19 @@ When that global edge is absent, the unique `crv_array` topology row with the
 same identifier selects the feature-local edge in the regenerated result of
 the row's `feat_id` feature.
 The bodies containing those selected edges are the feature's modified outputs.
+In the legacy ASCII feature graph, the unique Sld_Features root owns direct
+first_feat_ptr and next_feat_ptr feature nodes. A feature node has one scalar
+id and one feat_type_ptr child with one scalar type. Type 913 selects a round
+feature. The unique Sld_FullData root owns one complete dim_array. Each direct
+dimension element with type = 8, dim_type = 3, and feat_id equal to the round
+feature id owns one dim_dat_ptr child. Its unique scalar value real is the
+design radius. A constant radius is admitted only when every matching value is
+finite, positive, and bit-identical. A missing dimension row supplies no
+radius witness; a malformed, non-positive, or differing matching set supplies
+an unresolved radius.
+The complete visible crv_array rows whose feat_id equals the round feature id
+are its result-edge identities only when every crv_id is unique. An absent or
+ambiguous row set does not select edges.
 Positional replay geometry and edge arrays use the same agreement rule,
 including empty arrays; an empty and a nonempty state conflict.
 

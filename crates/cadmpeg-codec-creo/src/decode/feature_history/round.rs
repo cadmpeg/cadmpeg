@@ -10,6 +10,7 @@ use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associat
 use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
+use crate::legacy_feature::LegacyRoundRadius;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -362,6 +363,22 @@ pub(in super::super) fn round_constant_radius(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<f64> {
+    match scan
+        .features
+        .legacy_rounds
+        .iter()
+        .find(|round| round.feature_id == feature_id)
+        .map(|round| round.radius)
+    {
+        Some(LegacyRoundRadius::Constant(radius)) => {
+            if !legacy_round_radius_agrees(scan, ir, feature_id, radius) {
+                return None;
+            }
+            return Some(radius);
+        }
+        Some(LegacyRoundRadius::Ambiguous) => return None,
+        Some(LegacyRoundRadius::NotPresent) | None => {}
+    }
     if let Some(radius) = round_direct_radii(scan, feature_id)
         .as_deref()
         .and_then(unique_positive_length)
@@ -436,6 +453,34 @@ pub(in super::super) fn round_constant_radius(
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
+}
+
+fn legacy_round_radius_agrees(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    radius: f64,
+) -> bool {
+    if !radius.is_finite() || radius <= 0.0 {
+        return false;
+    }
+    let mut samples = round_observed_radii(scan, feature_id);
+    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
+    if samples
+        .iter()
+        .any(|sample| !sample.is_finite() || *sample <= 0.0)
+    {
+        return false;
+    }
+    let scale = samples
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .chain(std::iter::once(radius.abs()))
+        .fold(1.0, f64::max);
+    samples
+        .iter()
+        .all(|sample| (sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale)
 }
 
 fn complete_direct_placed_cylinder_radius_agreement(

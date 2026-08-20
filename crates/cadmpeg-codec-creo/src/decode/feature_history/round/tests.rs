@@ -688,3 +688,33 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
 
     assert_eq!(super::prototype_round_radius(&scan, &rows), None);
 }
+
+#[test]
+fn legacy_round_dimension_supplies_constant_radius() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .legacy_rounds
+        .push(crate::legacy_feature::LegacyRoundFeature {
+            feature_id: 913,
+            radius: crate::legacy_feature::LegacyRoundRadius::Constant(2.0),
+            edge_ids: None,
+            offset: 0,
+        });
+    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(2.0));
+}
+
+#[test]
+fn legacy_variable_round_dimension_withholds_radius() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .legacy_rounds
+        .push(crate::legacy_feature::LegacyRoundFeature {
+            feature_id: 913,
+            radius: crate::legacy_feature::LegacyRoundRadius::Ambiguous,
+            edge_ids: None,
+            offset: 0,
+        });
+    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
+}

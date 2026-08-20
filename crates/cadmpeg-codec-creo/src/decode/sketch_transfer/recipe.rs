@@ -141,6 +141,13 @@ pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u
         feature_row_schema_classes(scan, feature_id),
         feature_id,
     )
+    .or_else(|| {
+        scan.features
+            .legacy_rounds
+            .iter()
+            .any(|round| round.feature_id == feature_id)
+            .then_some(913)
+    })
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(

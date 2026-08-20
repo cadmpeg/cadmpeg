@@ -304,7 +304,7 @@ length unit.
 
 **Question.** Which fields define the varying radius of a non-prismatic round?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the recognized edge-treatment schemas, positional replay, and resolved constant-radius forms.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the recognized edge-treatment schemas, positional replay, resolved constant-radius forms, and the legacy Sld_Features/Sld_FullData constant-radius join. That join does not define a varying-radius blend.
 
 **Need.** We must know the fields to construct the varying-radius blend.
 

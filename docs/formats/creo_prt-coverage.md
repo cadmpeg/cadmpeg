@@ -259,6 +259,11 @@ fixtures, scores above L1 remain blocked.
 - A round whose generated type-26 rows all replay the same uniquely associated
   prototype minor radius transfers that exact value as its constant radius;
   patch placement is independent of the radius proof.
+- A legacy ASCII type-913 feature joins its feature-owned type-8,
+  dim_type-3 dimension rows to one constant positive radius when all matching
+  dim_dat_ptr values are finite and bit-identical. Its unique feature-owned
+  curve rows select result edges. Missing or ambiguous joins retain the
+  unresolved radius or edge selection.
 - Curve-equation assignments retain source order and dependency identity;
   closed numeric and string operator and deterministic function values transfer,
   including exact and regular-expression whole-string matching.

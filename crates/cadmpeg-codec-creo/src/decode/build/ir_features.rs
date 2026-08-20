@@ -140,7 +140,16 @@ pub(super) fn emit_model_features(
             source_text: None,
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, ir, feature_id),
-            definition: IrFeatureDefinition::StoredGeometry,
+            definition: if scan
+                .features
+                .legacy_rounds
+                .iter()
+                .any(|round| round.feature_id == feature_id)
+            {
+                schema_feature_definition(scan, ir, feature_id, 913, "Fillet")
+            } else {
+                IrFeatureDefinition::StoredGeometry
+            },
             native_ref: None,
         });
         refresh_feature_outputs(scan, ir);
@@ -247,6 +256,16 @@ pub(super) fn emit_model_features(
             .iter_mut()
             .find(|feature| feature.id == id)
         {
+            let upgrade_legacy_round = scan
+                .features
+                .legacy_rounds
+                .iter()
+                .any(|round| round.feature_id == operation.feature_id)
+                && matches!(&definition, IrFeatureDefinition::Fillet { .. })
+                && matches!(existing.definition, IrFeatureDefinition::StoredGeometry);
+            if upgrade_legacy_round {
+                existing.definition = definition;
+            }
             if name.is_some() {
                 existing.name = name;
             }

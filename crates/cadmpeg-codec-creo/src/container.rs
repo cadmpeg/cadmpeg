@@ -460,6 +460,8 @@ pub struct FeatureScan {
     /// Mixed generated-entity tables from `AllFeatur`, with owner bindings
     /// retained only where their containing feature row is byte-bounded.
     pub entity_tables: Vec<FeatureEntityTable>,
+    /// Legacy ASCII round features joined to their dimensions and result edges.
+    pub legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
@@ -2232,6 +2234,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .as_ref()
         .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
         .unwrap_or_default();
+    let legacy_rounds = legacy_ascii
+        .as_ref()
+        .map(|framing| {
+            crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
+        })
+        .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = binary_principal_unit(&data)
@@ -2553,6 +2561,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             entities: feature_entities,
             entity_references: feature_entity_references,
             entity_tables: feature_entity_tables,
+            legacy_rounds: legacy_rounds.rounds,
         },
     }
 }
