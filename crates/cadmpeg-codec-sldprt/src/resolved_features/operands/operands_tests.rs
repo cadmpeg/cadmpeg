@@ -228,6 +228,55 @@ fn object_indexed_bc_operands_precede_local_and_ordinal_fallbacks() {
 }
 
 #[test]
+fn roster_point_operand_uses_coordinate_point_order() {
+    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: offset,
+        offset: u64::from(offset),
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let markers = [
+        marker("first", 20, SketchInputKind::Point, Some([0.0, 0.0])),
+        marker(
+            "second",
+            30,
+            SketchInputKind::ConstrainedPoint,
+            Some([1.0, 0.0]),
+        ),
+        marker("unaddressable", 40, SketchInputKind::LineOrCircle, None),
+    ];
+
+    assert_eq!(
+        resolve_operand_marker(markers.iter(), FeatureInputOperandKind::Native(0x81dd), 1,)
+            .map(|entity| entity.id.as_str()),
+        Some("second")
+    );
+    assert!(resolve_operand_marker_excluding(
+        markers.iter(),
+        FeatureInputOperandKind::Native(0x81dd),
+        0,
+        &HashSet::from([String::from("first")]),
+    )
+    .is_none());
+    assert!(
+        resolve_operand_marker(markers.iter(), FeatureInputOperandKind::Native(0x81e7), 0,)
+            .is_none()
+    );
+    assert!(operand_accepts_marker(
+        FeatureInputOperandKind::Native(0x81e7),
+        SketchInputKind::LineOrCircle,
+    ));
+}
+
+#[test]
 fn object_indexed_point_operands_precede_local_fallbacks() {
     let point = |id: &str, object_index, local_id| SketchInputEntity {
         id: id.into(),

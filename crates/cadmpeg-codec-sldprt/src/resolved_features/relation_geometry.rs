@@ -9,8 +9,8 @@ use super::operands::{
 };
 use super::relation_loci::{
     line_line_distance, marker_point_locus, marker_transform_candidates_by_feature,
-    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
-    same_dimension_length, typed_relation_definition,
+    point_line_distance_value, profile_loci_by_marker, profile_locus_point,
+    relation_constraint_is_inactive, same_dimension_length, typed_relation_definition,
 };
 use super::relation_records::circle_dimension_handle_driver;
 use super::transforms::{
@@ -402,6 +402,13 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
     format!("{feature}:solver-line:{index}")
 }
 
+pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
+    matches!(
+        kind,
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x81e7)
+    )
+}
+
 pub(crate) fn project_relation_solved_line_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -438,15 +445,24 @@ pub(crate) fn project_relation_solved_line_geometry(
             let [first_operand, second_operand] = relation.operands.as_slice() else {
                 continue;
             };
-            if relation.family != FeatureInputRelationFamily::LineLineDistance
-                || first_operand.kind != FeatureInputOperandKind::E1
-                || second_operand.kind != FeatureInputOperandKind::E1
-                || first_operand.entity_ref.is_some()
-                || second_operand.entity_ref.is_some()
-                || first_operand.entity_index == second_operand.entity_index
-            {
-                continue;
-            }
+            let line_operands = match relation.family {
+                FeatureInputRelationFamily::LineLineDistance
+                    if is_solver_line_operand(first_operand.kind)
+                        && is_solver_line_operand(second_operand.kind)
+                        && first_operand.entity_ref.is_none()
+                        && second_operand.entity_ref.is_none()
+                        && first_operand.entity_index != second_operand.entity_index =>
+                {
+                    vec![first_operand, second_operand]
+                }
+                FeatureInputRelationFamily::PointLineDistance
+                    if is_solver_line_operand(second_operand.kind)
+                        && second_operand.entity_ref.is_none() =>
+                {
+                    vec![second_operand]
+                }
+                _ => continue,
+            };
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
@@ -478,12 +494,6 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let pair = usize::from(index).checked_mul(2)?;
                 Some([*points.get(pair)?, *points.get(pair + 1)?])
             };
-            let (Some(first_markers), Some(second_markers)) = (
-                line_markers(first_operand.entity_index),
-                line_markers(second_operand.entity_index),
-            ) else {
-                continue;
-            };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
                     let [u, v] = marker
@@ -509,12 +519,6 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
                 ))
             };
-            let (Some((first_start, first_end)), Some((second_start, second_end))) = (
-                transformed_line(first_markers),
-                transformed_line(second_markers),
-            ) else {
-                continue;
-            };
             let candidate = |id: &str, start, end| SketchEntity {
                 id: SketchEntityId(id.into()),
                 sketch: sketch.clone(),
@@ -524,17 +528,76 @@ pub(crate) fn project_relation_solved_line_geometry(
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Line { start, end },
             };
-            let first = candidate("solver-line:first", first_start, first_end);
-            let second = candidate("solver-line:second", second_start, second_end);
-            if !line_line_distance(&first, &second)
-                .is_some_and(|measured| same_dimension_length(measured, expected.0))
-            {
+            let mut lines = Vec::with_capacity(line_operands.len());
+            for operand in line_operands {
+                let Some(markers) = line_markers(operand.entity_index) else {
+                    lines.clear();
+                    break;
+                };
+                let Some((start, end)) = transformed_line(markers) else {
+                    lines.clear();
+                    break;
+                };
+                lines.push((operand, markers, candidate("solver-line", start, end)));
+            }
+            if lines.is_empty() {
                 continue;
             }
-            for (operand, markers, line) in [
-                (first_operand, first_markers, first),
-                (second_operand, second_markers, second),
-            ] {
+            let point_position = if relation.family == FeatureInputRelationFamily::PointLineDistance
+            {
+                let point_marker = first_operand
+                    .entity_ref
+                    .as_deref()
+                    .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id == id))
+                    .or_else(|| {
+                        (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
+                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
+                            .flatten()
+                    });
+                point_marker.and_then(|marker| {
+                    let [u, v] = marker.coordinates_m?;
+                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let candidates = transforms
+                        .get(relation.feature_ref.as_str())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|transform| transform.apply(native))
+                        .collect::<HashSet<_>>();
+                    let candidates = candidates.into_iter().collect::<Vec<_>>();
+                    let [position] = candidates.as_slice() else {
+                        return None;
+                    };
+                    Some(Point2::new(
+                        position.0 as f64 * QUANTUM,
+                        position.1 as f64 * QUANTUM,
+                    ))
+                })
+            } else {
+                None
+            };
+            let valid = match relation.family {
+                FeatureInputRelationFamily::LineLineDistance => match lines.as_slice() {
+                    [(_, _, first), (_, _, second)] => line_line_distance(first, second)
+                        .is_some_and(|measured| same_dimension_length(measured, expected.0)),
+                    _ => false,
+                },
+                FeatureInputRelationFamily::PointLineDistance => match lines.as_slice() {
+                    [(_, _, line)] => point_position.is_some_and(|point| {
+                        point_line_distance_value(point, line)
+                            .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                    }),
+                    _ => false,
+                },
+                _ => false,
+            };
+            if !valid {
+                continue;
+            }
+            let feature_key = relation
+                .feature_ref
+                .rsplit_once('#')
+                .map_or(relation.feature_ref.as_str(), |(_, key)| key);
+            for (operand, markers, line) in lines {
                 let geometry_ref =
                     solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
                 if entities
@@ -543,10 +606,6 @@ pub(crate) fn project_relation_solved_line_geometry(
                 {
                     continue;
                 }
-                let feature_key = relation
-                    .feature_ref
-                    .rsplit_once('#')
-                    .map_or(relation.feature_ref.as_str(), |(_, key)| key);
                 entities.push(SketchEntity {
                     id: SketchEntityId(format!(
                         "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",

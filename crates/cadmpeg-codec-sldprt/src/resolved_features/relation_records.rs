@@ -426,6 +426,8 @@ mod relation_records_tests {
         };
         let point_tagged = operand_pair(FeatureInputOperandKind::Native(0x80d5));
         let line_tagged = operand_pair(FeatureInputOperandKind::Native(0x810f));
+        let roster_point_tagged = operand_pair(FeatureInputOperandKind::Native(0x81dd));
+        let roster_line_tagged = operand_pair(FeatureInputOperandKind::Native(0x81e7));
 
         assert!(relation_signature(
             FeatureInputRelationFamily::PointPointDistance,
@@ -446,6 +448,27 @@ mod relation_records_tests {
         assert!(relation_signature(
             FeatureInputRelationFamily::LineLineDistance,
             &line_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::PointPointDistance,
+            &roster_point_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::LineLineDistance,
+            &roster_line_tagged
+        ));
+        assert!(relation_signature(
+            FeatureInputRelationFamily::PointLineDistance,
+            &[
+                FeatureInputOperand {
+                    kind: FeatureInputOperandKind::Native(0x81dd),
+                    ..roster_point_tagged[0].clone()
+                },
+                FeatureInputOperand {
+                    kind: FeatureInputOperandKind::Native(0x81e7),
+                    ..roster_line_tagged[1].clone()
+                },
+            ]
         ));
 
         for tag in [0x8138, 0x80ac] {
@@ -1010,17 +1033,20 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x80ac) && second.kind == Native(0x80ac))
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
+                || (first.kind == Native(0x81dd) && second.kind == Native(0x81dd))
         }
         LineLineDistance => {
             (first.kind == E1 && second.kind == E1)
                 || (first.kind == Native(0x8386) && second.kind == Native(0x8386))
                 || (first.kind == Native(0x810f) && second.kind == Native(0x810f))
                 || (first.kind == Native(0xbc87) && second.kind == Native(0xbc87))
+                || (first.kind == Native(0x81e7) && second.kind == Native(0x81e7))
         }
         PointLineDistance => {
             (first.kind == D6 && second.kind == E1)
                 || (first.kind == Native(0x837b) && second.kind == Native(0x8386))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc87))
+                || (first.kind == Native(0x81dd) && second.kind == Native(0x81e7))
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
             (first.kind == Native(0x8152) && second.kind == Native(0x8152))

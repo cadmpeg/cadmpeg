@@ -2863,7 +2863,7 @@ pub(super) fn operand_accepts_marker(
     match kind {
         FeatureInputOperandKind::D6
         | FeatureInputOperandKind::Native(
-            0x80cc | 0x8152 | 0x81b2 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+            0x80cc | 0x8152 | 0x81b2 | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69 | 0x81dd,
         ) => {
             matches!(
                 marker,
@@ -2884,7 +2884,9 @@ pub(super) fn operand_accepts_marker(
                 | SketchInputKind::Relation(_)
         ),
         FeatureInputOperandKind::E1
-        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
+        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87 | 0x81e7) => {
+            // 81e7 also selects curve markers in coordinate-marker link cells;
+            // scalar relation operands use the solver-line path separately.
             matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)
         }
         FeatureInputOperandKind::Native(_) => true,
@@ -2896,7 +2898,9 @@ pub(super) fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> 
         kind,
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(0x80cc | 0x81b2 | 0x83fe | 0x8ab6 | 0x929d | 0xbd69)
+            | FeatureInputOperandKind::Native(
+                0x80cc | 0x81b2 | 0x81dd | 0x83fe | 0x8ab6 | 0x929d | 0xbd69,
+            )
     )
 }
 

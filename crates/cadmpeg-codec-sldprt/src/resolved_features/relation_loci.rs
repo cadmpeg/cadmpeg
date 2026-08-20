@@ -1,7 +1,9 @@
 //! Relation definition and profile locus resolution.
 
 use super::markers::marker_is_geometry_locus;
-use super::relation_geometry::{relation_operand_geometry_ref, solver_line_geometry_ref};
+use super::relation_geometry::{
+    is_solver_line_operand, relation_operand_geometry_ref, solver_line_geometry_ref,
+};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
     marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
@@ -522,8 +524,15 @@ pub(super) fn typed_relation_definition(
         PointLineDistance => {
             let point = marker(0)
                 .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
-            let line = marker(1).and_then(|marker| {
-                single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+            let line = solver_line_entity(relation, 1, sketch, sketch_entities).or_else(|| {
+                marker(1).and_then(|marker| {
+                    single_marker_line_entity(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
+                })
             });
             let authoritative = point.is_some() && line.is_some();
             let (mut point, mut line) = match (point, line) {
@@ -571,29 +580,16 @@ pub(super) fn typed_relation_definition(
                 })
             };
             let curve = |index: usize| {
-                let operand = relation.operands.get(index)?;
-                (operand.kind == FeatureInputOperandKind::E1 && operand.entity_ref.is_none())
-                    .then(|| solver_line_geometry_ref(&relation.feature_ref, operand.entity_index))
-                    .and_then(|geometry_ref| {
-                        sketch_entities
-                            .iter()
-                            .find(|entity| {
-                                entity.sketch == *sketch
-                                    && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
-                                    && matches!(entity.geometry, SketchGeometry::Line { .. })
-                            })
-                            .map(|entity| entity.id.clone())
+                solver_line_entity(relation, index, sketch, sketch_entities).or_else(|| {
+                    operand_marker(index).and_then(|marker| {
+                        single_marker_line_entity(
+                            marker,
+                            markers_by_id,
+                            loci_by_marker,
+                            sketch_entities,
+                        )
                     })
-                    .or_else(|| {
-                        operand_marker(index).and_then(|marker| {
-                            single_marker_line_entity(
-                                marker,
-                                markers_by_id,
-                                loci_by_marker,
-                                sketch_entities,
-                            )
-                        })
-                    })
+                })
             };
             let first = curve(0);
             let second = curve(1);
@@ -831,6 +827,27 @@ pub(super) fn typed_relation_definition(
             }
         }
     }
+}
+
+fn solver_line_entity(
+    relation: &FeatureInputRelationInstance,
+    index: usize,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let operand = relation.operands.get(index)?;
+    if operand.entity_ref.is_some() || !is_solver_line_operand(operand.kind) {
+        return None;
+    }
+    let geometry_ref = solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
+    sketch_entities
+        .iter()
+        .find(|entity| {
+            entity.sketch == *sketch
+                && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+                && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .map(|entity| entity.id.clone())
 }
 
 fn repeated_dimensioned_circular_entities(

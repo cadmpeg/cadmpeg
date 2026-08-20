@@ -82,6 +82,30 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
+    if kind == FeatureInputOperandKind::Native(0x81dd) {
+        let mut points = entities
+            .iter()
+            .copied()
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) && entity
+                    .coordinates_m
+                    .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+            })
+            .collect::<Vec<_>>();
+        points.sort_unstable_by_key(|entity| entity.offset);
+        return points
+            .get(usize::from(address))
+            .copied()
+            .filter(|entity| !excluded.contains(&entity.id));
+    }
+    if kind == FeatureInputOperandKind::Native(0x81e7) {
+        // In scalar relations, 81e7 addresses the solver-line roster formed
+        // from coordinate points; it does not directly resolve a line marker.
+        return None;
+    }
     if kind == FeatureInputOperandKind::Native(0x810f) {
         // An 810f cell belongs to the declared line-distance family. Its
         // address is an object index when that index is present, or a local
