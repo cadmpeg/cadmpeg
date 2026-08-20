@@ -501,3 +501,89 @@ literal and name the evidence for the departure.
 the codec discards. When that stored value is 1 or 2 and the topology does not
 close, the neutral `BodyKind` becomes a sheet where the source is solid. The
 codec also has no diagnostic for the discarded cache.
+
+### QA-10. Marked CADIR decisions have no decision records
+
+**Question.** Where does each marked CADIR decision record its Question,
+Silence, Rule, Ground, Cost, and Reopens fields?
+
+**Known.** `rhino_3dm.md` marks CADIR decisions at sections 7.2.4, 7.2.5,
+7.2.6, 7.2.18, 8.3, 13.2, 13.3, 13.4, 15.4, 18.2, 20.1, 20.6, and other
+typed-transfer clauses. The working tree contains no Rhino decision-record
+document and no record with the required Question, Silence, Rule, Ground,
+Cost, and Reopens fields. For example, section 7.2.4 "CADIR decision: neutral
+tessellation carries" assigns legacy mesh n-gon grouping to a loss, while
+section 20.6 "CADIR decision: a major version" and the following marked
+paragraphs define later-major, later-minor, and archive-version admission.
+Those clauses state rules and some costs, but do not record the format silence,
+grounds, or reopening conditions that make them auditable as project-owned
+decisions.
+
+**Need.** A decision record for each distinct marked rule, or a cited format
+rule that removes the project-owned decision, with Question, Silence, Rule,
+Ground, Cost, and Reopens present in the current tree. Grouped records must
+identify every specification clause they own and every named loss or refusal
+that charges their cost.
+
+**Note.** A future audit cannot falsify a silence claim or distinguish a
+deliberate transfer boundary from an unsupported promoted rule when the
+silence, ground, and reopening condition exist only implicitly in prose and
+code.
+
+### QA-11. Gradient userdata duplicate arbitration
+
+**Question.** Does the first serialized matching gradient userdata item own
+the hatch gradient when that item is malformed, or may a later duplicate
+supply the typed value?
+
+**Known.** Section 7.2 "An object accepts one userdata item" states that
+attachment rejects a duplicate item UUID, the first serialized item owns
+object state, and attached built-in extension readers use the first serialized
+matching item. The gradient rule in section 18.2 "If a registered gradient
+userdata item" states that a malformed registered gradient omits the typed
+parameter and retains the object record. `hatch.rs:289-300` instead parses
+every matching class UUID and stores the first gradient that parses. The
+integration tests cover one valid item and one malformed item separately; they
+do not cover a malformed first item followed by a valid duplicate.
+
+**Need.** An OpenNURBS attachment or read witness containing duplicate
+`ON_GradientColorData` item UUIDs, including the result when the first payload
+is malformed. The owner, specification, and a duplicate-order test must then
+state the same arbitration and diagnostic rule.
+
+**Conflict.** If a file contains a malformed matching gradient followed by a
+valid duplicate, the specification withholds the gradient because the first
+item owns the state, while the codec admits the later duplicate as typed
+native data. Reversing the two records admits the same valid gradient, so the
+current gate does not enforce serialized ownership.
+
+**Note.** The obsolete V5 hatch extension is not a counterexample. It is
+consumed after reading and section 18.2 "The obsolete hatch extension is
+consumed after reading" explicitly gives that class a last-valid-record
+side-effect rule.
+
+### QA-12. Shipped-guess paths lack discriminating witnesses
+
+**Question.** Which tests fail when the shipped selection and version-gate
+rules named by QA-04 through QA-09 and QA-11 choose the wrong branch?
+
+**Known.** The current tests exercise archive-2 framing, current instance
+definitions, individual valid and malformed gradient carriers, current earth
+anchors, and current material forms. No test contains an archive-2 through
+archive-4 packed instance definition, an archive-60 dimension style below the
+arrow-block writer threshold, a zero-valued old-writer earth anchor, an
+archive-60-or-later old-writer packed material, a trimless legacy major-2 Brep
+edge, a Brep solid cache on either side of the disputed threshold, or a
+malformed-first duplicate gradient sequence. The source tree contains no test
+literal for thresholds `2348833437`, `2348834428`, `2348833910`, or
+`200210020`. Writer round-trip tests accept the writer-version value emitted by
+the same implementation and therefore do not independently establish QA-07.
+
+**Need.** One independent or source-derived witness per branch boundary named
+above, plus a test that asserts the specification-owned result. The writer
+version needs a value obtained independently of the codec constant. Each test
+must fail under the current disputed rule before that rule is changed.
+
+**Note.** The existing tests establish local framing and ordinary transfers;
+they do not close the selection questions because none supplies the competing
+candidate or boundary value that makes the arbitration observable.
