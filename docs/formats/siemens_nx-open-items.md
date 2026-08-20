@@ -615,6 +615,16 @@ field-role relation and a decoded value domain for that operation family.
 
 **Need.** We must know the roles to construct a neutral projected curve.
 
+**Conflict.** The three references use one canonical encoding and resolve only
+to offset-store blocks. The fixed middle and suffix markers delimit the field,
+but do not identify a source curve, target surface, direction, or combination
+control. Reconstructed strings remain payload-owned and have no independent
+role relation.
+
+**Note.** Preserve the ordered references, logical payload, and strings as
+native projected-curve data. A neutral source or target requires a unique
+object-family and field-role relation.
+
 ### OM-16. `CPROJ_CMB` construction-reference roles
 
 **Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
@@ -622,6 +632,15 @@ field-role relation and a decoded value domain for that operation family.
 **Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines the ordered eight-reference graph, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct the combined projected curves.
+
+**Conflict.** The branch lanes prove repeated-anchor equality and preserve
+branch order, while the tail preserves two additional references. All eight
+non-repeated references still resolve only to offset-store blocks; no field
+marker assigns curve, surface, direction, or combination semantics.
+
+**Note.** Preserve the complete graph, branch-anchor relations, logical
+payload, and strings as native data. Combined neutral projection requires an
+independent relation for every source and control role.
 
 ### OM-17. `FSET` selection roles
 
