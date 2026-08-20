@@ -7590,35 +7590,49 @@ fn offset_store_trim_body_feature_definition(
     let [(object_index, data_block)] = offset_store_bodies else {
         return None;
     };
-    let tools = if operands.is_empty()
-        || operands.iter().any(|operand| {
-            operand.body_object_index != *object_index
-                || operand.operand_object_index == *object_index
-                || operand.operand_data_block.is_none()
-        }) {
-        BodySelection::Unresolved
-    } else {
-        let mut operand_indices = BTreeSet::new();
-        if operands
-            .iter()
-            .any(|operand| !operand_indices.insert(operand.operand_object_index))
-        {
-            BodySelection::Unresolved
-        } else {
-            let tool_data_blocks = operands
+    let primary_store = data_block.rsplit_once(":block#").map(|(store, _)| store);
+    let tool_data_blocks = operands
+        .iter()
+        .map(|operand| operand.operand_data_block.clone())
+        .collect::<Option<Vec<_>>>();
+    let tools = match (operands.is_empty(), primary_store, tool_data_blocks) {
+        (true, _, _) | (_, None, _) | (_, _, None) => BodySelection::Unresolved,
+        (false, Some(primary_store), Some(tool_data_blocks)) => {
+            let mut operand_indices = BTreeSet::new();
+            let distinct_operand_indices = operands
                 .iter()
-                .map(|operand| operand.operand_data_block.clone())
-                .collect::<Option<Vec<_>>>()?;
-            BodySelection::Local {
-                bodies: tool_data_blocks,
-                native: format!(
-                    "nx:om-object-indices#{}",
-                    operands
-                        .iter()
-                        .map(|operand| operand.operand_object_index.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
+                .all(|operand| operand_indices.insert(operand.operand_object_index));
+            let same_store = tool_data_blocks.iter().all(|tool_data_block| {
+                tool_data_block
+                    .rsplit_once(":block#")
+                    .is_some_and(|(store, _)| store == primary_store)
+            });
+            let distinct_tool_blocks =
+                tool_data_blocks.iter().collect::<BTreeSet<_>>().len() == tool_data_blocks.len();
+            let no_target_alias = tool_data_blocks
+                .iter()
+                .all(|tool_data_block| tool_data_block != data_block);
+            if operands.iter().all(|operand| {
+                operand.body_object_index == *object_index
+                    && operand.operand_object_index != *object_index
+            }) && distinct_operand_indices
+                && same_store
+                && distinct_tool_blocks
+                && no_target_alias
+            {
+                BodySelection::Local {
+                    bodies: tool_data_blocks,
+                    native: format!(
+                        "nx:om-object-indices#{}",
+                        operands
+                            .iter()
+                            .map(|operand| operand.operand_object_index.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
+                }
+            } else {
+                BodySelection::Unresolved
             }
         }
     };
