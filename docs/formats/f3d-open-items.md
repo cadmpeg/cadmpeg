@@ -202,14 +202,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 **Need.** A parallel-line or concentric-circle dimension whose solved separation agrees with its parameter inside the document linear tolerance, but not inside the fixed bound, does not match. The dimension keeps its native retention and the neutral model gets no constraint. The two rules must be one rule, and the specification must state which one.
 
-### DR-66. Multi-edge `EdgeFlange` width-owner semantics
-
-**Question.** Do the four width owners in the 669-byte class-`325`/`258` and class-`334`/`257` multi-edge `EdgeFlange` forms encode one operation-wide two-sided width law, or independent widths for the selected edges?
-
-**Known.** `f3d.md` §3.1 defines the 669-byte form's sixteen ordered references, two selected-edge groups, and four width owners. The owner source kinds are `EdgeWidth_1` and `EdgeWidth_2` for each selected edge. The fixed operation shares one height, angle, settings, and aggregate construction across both edges. Each class-`312` wrapper points to one role-`0x08` group and its recipe operand; the paired wrapper record adds no independent orientation field. Each recipe operand retains all four historical candidate edges, so neither group has a unique selected-edge slot. The decoder admits the fixed grammar, retains the operation and owners in source order, and does not project this form to a neutral width.
-
-**Need.** A neutral projection requires a proven mapping from each owner pair to the selected-edge orientation, or a neutral representation that carries independent per-edge width laws. Until that mapping is established, the form remains native.
-
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

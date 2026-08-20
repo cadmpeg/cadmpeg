@@ -2921,8 +2921,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
                         vec![*first, *second]
                     }
+                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => widths
+                        .iter()
+                        .flat_map(|width| [width.first, width.second])
+                        .collect(),
                 };
-                if !widths.iter().copied().all(positive_feature_length) {
+                let per_edge_widths_are_nonempty = !matches!(
+                    width,
+                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
+                        if widths.is_empty()
+                );
+                if !per_edge_widths_are_nonempty
+                    || !widths.iter().copied().all(positive_feature_length)
+                {
                     feature_geometry_error(
                         findings,
                         feature,

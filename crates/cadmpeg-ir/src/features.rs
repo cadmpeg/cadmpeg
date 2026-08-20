@@ -2535,6 +2535,25 @@ pub enum SheetMetalFlangeWidth {
         /// Distance measured from the edge's second end.
         second: Length,
     },
+    /// Independent two-sided extents for each selected edge.
+    ///
+    /// The entries are in the same order as the operation's selected-edge
+    /// groups. Each pair is local to its edge and is not an operation-wide
+    /// pair shared by all edges.
+    TwoSidesPerEdge {
+        /// One first-end/second-end pair for each selected edge.
+        widths: Vec<SheetMetalFlangeTwoSidedWidth>,
+    },
+}
+
+/// Two-sided extent assigned to one selected sheet-metal flange edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SheetMetalFlangeTwoSidedWidth {
+    /// Distance measured from the edge's first end.
+    pub first: Length,
+    /// Distance measured from the edge's second end.
+    pub second: Length,
 }
 
 /// Distribution of sheet thickness relative to its construction plane.

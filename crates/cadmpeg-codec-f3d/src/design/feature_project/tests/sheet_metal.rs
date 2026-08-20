@@ -16,7 +16,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         DesignSheetMetalHeightDatum,
     };
     use cadmpeg_ir::features::{
-        FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeWidth, SheetMetalHeightDatum,
+        FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
+        SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
@@ -287,11 +288,53 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .expect("per-edge width operation fixture");
     two_sided_per_edge_operation.width_mode =
         Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
+    two_sided_per_edge_operation.width_distance_owner_record_indices = vec![393, 396, 414, 417];
+    two_sided_per_edge_operation.width_distance_owner_record_indices_by_edge =
+        vec![[393, 396], [414, 417]];
     multi_scope.edge_flange_operation = Some(two_sided_per_edge_operation);
-    assert!(
-        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs)
-            .is_none(),
-        "edge-local two-sided widths remain native until orientation is represented"
+    let mut two_sided_owners = owners.to_vec();
+    two_sided_owners.push(owner(414, 413));
+    two_sided_owners.push(owner(417, 416));
+    let mut two_sided_parameters = parameters.to_vec();
+    two_sided_parameters.push(parameter(413, "EdgeWidth_1", "mm", 2.0));
+    two_sided_parameters.push(parameter(416, "EdgeWidth_2", "mm", 4.0));
+    let two_sided_inputs = crate::design::feature_project::ProjectInputs {
+        native: &two_sided_parameters,
+        owners: &two_sided_owners,
+        scopes: &[],
+        timelines: &[],
+        construction_groups: &multi_groups,
+        fillet_radius_groups: &[],
+        edge_operands: &[],
+        edge_identity_operands: &[],
+        entity_selection_operands: &[],
+        curve_identities: &[],
+        face_operands: &[],
+        body_recipe_operands: &[],
+        placements: &[],
+        body_bindings: &[],
+        histories: &[],
+    };
+    let two_sided_definition =
+        crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs)
+            .expect("independent two-sided per-edge widths project to a typed neutral law");
+    let FeatureDefinition::SheetMetalEdgeFlange { width, .. } = two_sided_definition else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    assert_eq!(
+        width,
+        SheetMetalFlangeWidth::TwoSidesPerEdge {
+            widths: vec![
+                SheetMetalFlangeTwoSidedWidth {
+                    first: cadmpeg_ir::features::Length(30.0),
+                    second: cadmpeg_ir::features::Length(15.0),
+                },
+                SheetMetalFlangeTwoSidedWidth {
+                    first: cadmpeg_ir::features::Length(20.0),
+                    second: cadmpeg_ir::features::Length(40.0),
+                },
+            ],
+        }
     );
 }
 

@@ -3315,7 +3315,8 @@ pub(crate) fn project_edge_flange(
     };
     use cadmpeg_ir::features::{
         FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeHeight,
-        SheetMetalFlangeHeightTarget, SheetMetalFlangeWidth, SheetMetalHeightDatum,
+        SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
     };
 
     let ProjectInputs {
@@ -3412,18 +3413,25 @@ pub(crate) fn project_edge_flange(
 
     // The width owners are ordered, and their parameter kinds name the mode
     // independently of the owner count, so both must agree.
-    let width = match (
-        operation.edge_width_mode(),
-        operation.width_distance_owner_record_indices.as_slice(),
-    ) {
-        (DesignEdgeWidthMode::FullEdge, []) => SheetMetalFlangeWidth::FullEdge,
-        (DesignEdgeWidthMode::Symmetric, [owner]) => SheetMetalFlangeWidth::Symmetric {
-            width: design_length(parameter(*owner, "EdgeWidth")?)?,
-        },
-        (DesignEdgeWidthMode::SymmetricPerEdge, owners)
-            if owners.len() == operation.edge_group_record_indices.len() =>
+    let width = match operation.edge_width_mode() {
+        DesignEdgeWidthMode::FullEdge
+            if operation.width_distance_owner_record_indices.is_empty() =>
         {
-            let widths = owners
+            SheetMetalFlangeWidth::FullEdge
+        }
+        DesignEdgeWidthMode::Symmetric
+            if let [owner] = operation.width_distance_owner_record_indices.as_slice() =>
+        {
+            SheetMetalFlangeWidth::Symmetric {
+                width: design_length(parameter(*owner, "EdgeWidth")?)?,
+            }
+        }
+        DesignEdgeWidthMode::SymmetricPerEdge
+            if operation.width_distance_owner_record_indices.len()
+                == operation.edge_group_record_indices.len() =>
+        {
+            let widths = operation
+                .width_distance_owner_record_indices
                 .iter()
                 .map(|owner| design_length(parameter(*owner, "EdgeWidth")?))
                 .collect::<Option<Vec<_>>>()?;
@@ -3435,13 +3443,39 @@ pub(crate) fn project_edge_flange(
             }
             SheetMetalFlangeWidth::Symmetric { width: *first }
         }
-        // The source carries one two-sided pair per selected edge, while the
-        // neutral law has no edge-local orientation field to normalize those pairs.
-        (DesignEdgeWidthMode::TwoSidesPerEdge, _) => return None,
-        (DesignEdgeWidthMode::TwoSides, [first, second]) => SheetMetalFlangeWidth::TwoSides {
-            first: design_length(parameter(*first, "EdgeWidth_1")?)?,
-            second: design_length(parameter(*second, "EdgeWidth_2")?)?,
-        },
+        DesignEdgeWidthMode::TwoSidesPerEdge
+            if operation.width_distance_owner_record_indices_by_edge.len()
+                == operation.edge_group_record_indices.len() =>
+        {
+            let flattened_owner_indices = operation
+                .width_distance_owner_record_indices_by_edge
+                .iter()
+                .flat_map(|[first, second]| [*first, *second])
+                .collect::<Vec<_>>();
+            if flattened_owner_indices != operation.width_distance_owner_record_indices {
+                return None;
+            }
+            let widths = operation
+                .width_distance_owner_record_indices_by_edge
+                .iter()
+                .map(|[first_owner, second_owner]| {
+                    Some(SheetMetalFlangeTwoSidedWidth {
+                        first: design_length(parameter(*first_owner, "EdgeWidth_1")?)?,
+                        second: design_length(parameter(*second_owner, "EdgeWidth_2")?)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
+        }
+        DesignEdgeWidthMode::TwoSides => {
+            let [first, second] = operation.width_distance_owner_record_indices.as_slice() else {
+                return None;
+            };
+            SheetMetalFlangeWidth::TwoSides {
+                first: design_length(parameter(*first, "EdgeWidth_1")?)?,
+                second: design_length(parameter(*second, "EdgeWidth_2")?)?,
+            }
+        }
         _ => return None,
     };
 
