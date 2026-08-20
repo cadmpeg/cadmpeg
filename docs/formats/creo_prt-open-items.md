@@ -753,7 +753,7 @@ outer or inner loop.
 
 **Question.** Which byte-backed relation assigns a shell to a body when face-adjacency components and body-count fields disagree?
 
-**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership.
+**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership. Legacy ASCII admission can identify eligible visible faces and retain a single admitted component; multiple admitted components still lack a shell-to-body join.
 
 **Need.** We must know the relation to construct the correct body membership.
 

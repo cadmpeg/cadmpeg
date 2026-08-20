@@ -10,9 +10,67 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
-    component_is_closed, native_parameter_loop_polygon, ordered_native_parameter_face_loops,
+    admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
+    native_parameter_loop_polygon, ordered_native_parameter_face_loops,
     split_neutral_component_shells, transfer_native_brep, NeutralShellSpec,
 };
+
+#[test]
+fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 0,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    });
+    scan.topology.face_components = vec![
+        crate::topology::FaceComponent {
+            face_ids: vec![1],
+            curve_ids: vec![10],
+        },
+        crate::topology::FaceComponent {
+            face_ids: vec![5],
+            curve_ids: vec![11],
+        },
+        crate::topology::FaceComponent {
+            face_ids: vec![1, 5],
+            curve_ids: vec![12],
+        },
+    ];
+
+    assert_eq!(
+        admitted_face_components(&scan, &BTreeSet::from([5])),
+        vec![
+            crate::topology::FaceComponent {
+                face_ids: vec![5],
+                curve_ids: vec![11],
+            },
+            crate::topology::FaceComponent {
+                face_ids: vec![1, 5],
+                curve_ids: vec![12],
+            },
+        ]
+    );
+
+    let all_components = scan.topology.face_components.clone();
+    scan.framing.layout = crate::container::Layout::Nd;
+    assert_eq!(
+        admitted_face_components(&scan, &BTreeSet::new()),
+        all_components
+    );
+
+    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    assert!(!legacy_body_ownership_is_unambiguous(&scan, 2));
+    assert!(legacy_body_ownership_is_unambiguous(&scan, 1));
+    scan.framing.declared_body_count = Some(2);
+    assert!(legacy_body_ownership_is_unambiguous(&scan, 2));
+}
 
 #[test]
 fn partitions_face_shells_and_retains_unattached_wire_curves() {

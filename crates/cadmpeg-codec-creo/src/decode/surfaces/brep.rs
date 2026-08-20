@@ -43,6 +43,33 @@ struct NeutralShellSpec {
     wire_curves: BTreeSet<u32>,
 }
 
+fn admitted_face_components(
+    scan: &ContainerScan,
+    eligible_face_ids: &BTreeSet<u32>,
+) -> Vec<crate::topology::FaceComponent> {
+    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+        return scan.topology.face_components.clone();
+    }
+    scan.topology
+        .face_components
+        .iter()
+        .filter(|component| {
+            component
+                .face_ids
+                .iter()
+                .any(|face_id| eligible_face_ids.contains(face_id))
+        })
+        .cloned()
+        .collect()
+}
+
+fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
+    scan.framing.layout != crate::container::Layout::LegacyAscii
+        || scan.framing.declared_body_count.is_some()
+        || scan.framing.first_quilt_ptr == Some(0)
+        || component_count <= 1
+}
+
 /// Partition one native component into valid neutral shells.
 ///
 /// Face shells follow admitted face connectivity through edges or vertices.
@@ -401,16 +428,20 @@ pub(in super::super) fn transfer_native_brep(
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
 
-    let neutral_edge_curves = scan
-        .topology
-        .face_components
+    let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();
+    let admitted_components = admitted_face_components(scan, &eligible_face_ids);
+    let neutral_edge_curves = admitted_components
         .iter()
         .flat_map(|component| component.curve_ids.iter().copied())
         .filter(|curve_id| admitted_edge_curves.contains(curve_id))
+        .filter(|curve_id| {
+            scan.framing.layout != crate::container::Layout::LegacyAscii
+                || curve_faces
+                    .get(curve_id)
+                    .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
+        })
         .collect::<BTreeSet<_>>();
-    let body_components = scan
-        .topology
-        .face_components
+    let body_components = admitted_components
         .iter()
         .map(|component| {
             let faces = component
@@ -431,7 +462,7 @@ pub(in super::super) fn transfer_native_brep(
     let selected_body_count = crate::topology::selected_body_count(
         scan.framing.declared_body_count,
         scan.framing.first_quilt_ptr,
-        scan.topology.face_components.len(),
+        admitted_components.len(),
     );
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in &solved_vertices {
@@ -462,6 +493,7 @@ pub(in super::super) fn transfer_native_brep(
         });
     }
     if selected_body_count != Some(body_components.len())
+        || !legacy_body_ownership_is_unambiguous(scan, admitted_components.len())
         || body_components
             .iter()
             .any(|(faces, curves)| faces.is_empty() && curves.is_empty())

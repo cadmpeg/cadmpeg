@@ -46,6 +46,14 @@ fixtures, scores above L1 remain blocked.
   directions, and bounded `crv_pnt_arr` endpoint witnesses. These rows use the
   common guarded half-edge, vertex, and face-loop transfer path; incomplete or
   ambiguous curve objects remain native.
+- Legacy ASCII topology admission filters persistence components by admitted
+  visible faces. A component with at least one face that passes the visible
+  carrier, boundary, edge, and vertex gates receives only those eligible faces
+  and their incident edges; non-visible-only components and unresolved face
+  references remain native.
+- Legacy ASCII neutral body transfer requires one admitted component when body
+  metadata does not resolve multi-quilt ownership. Ambiguous multi-component
+  sets remain native until their body assignment is decoded.
 - When a legacy ASCII part has no unique `principal_sys_units` scalar, its
   unique complete `unit_arr` length record supplies the stored-to-millimeter
   scale from `25.4 * factor`. Missing or ambiguous unit records do not select
