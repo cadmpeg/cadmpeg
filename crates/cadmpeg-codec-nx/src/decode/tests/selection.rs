@@ -723,6 +723,19 @@ fn decode_retains_every_rmfastload_active_body() {
 }
 
 #[test]
+fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 16, 99);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(super::topology_body_node_ids(0, &graph).is_empty());
+}
+
+#[test]
 fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
     let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
