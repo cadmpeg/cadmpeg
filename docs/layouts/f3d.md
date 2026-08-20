@@ -276,6 +276,29 @@ Unstated regions:
 
 - `4..31` (27 B): The class-413 tail reserves the span before the preceding-history state.
 
+## `design_mirror_scope_class440_tail`
+
+Spec §3.1 · layout: byte offsets · size: 77 B
+
+Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-440 reference-table prefix precedes this fixed tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | offset 0 stores the feature ordinal |
+| 31 | 4 | `previous_history_state` | `u32` | little | spec | offset 31 stores the preceding-history state |
+| 35 | 4 | `scalar_marker` | `u32` | little | spec | both scalar markers are u32 `100` · value `100` |
+| 39 | 8 | `stitch_tolerance` | `f64` | little | spec | The f64 at tail offset 39 is the positive stitch tolerance in source centimetres |
+| 47 | 4 | `repeated_scalar_marker` | `u32` | little | spec | both scalar markers are u32 `100` · value `100` |
+| 51 | 13 | `first_reference` | `bytes[13]` | little | spec | the references at offsets 51 and 64 name scope index plus two and plus one |
+| 64 | 13 | `second_reference` | `bytes[13]` | little | spec | the references at offsets 51 and 64 name scope index plus two and plus one |
+
+Unstated regions:
+
+- `4..31` (27 B): The class-440 tail reserves the span before the preceding-history state.
+
 ## `design_draft_scope_class318_compact`
 
 Spec §3.1 · layout: byte offsets · size: 336 B

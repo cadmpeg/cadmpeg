@@ -91,3 +91,29 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
+
+#[test]
+fn class_440_mirror_scope_decodes_inline_tolerance() {
+    let mut bytes = vec![0; 89];
+    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    scope.class_tag = "440".into();
+    scope.paired_class_tag = "258".into();
+    scope.kind_offset = 0;
+    scope.previous_history_state_id_offset = 43;
+    scope.frame_length = 89;
+    scope.paired_byte_offset = 89;
+    bytes[47..51].copy_from_slice(&100_u32.to_le_bytes());
+    bytes[51..59].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[59..63].copy_from_slice(&100_u32.to_le_bytes());
+    bytes[63] = 1;
+    bytes[64..68].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[76] = 1;
+    bytes[77..81].copy_from_slice(&11_u32.to_le_bytes());
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-440 tolerance");
+    assert_eq!(value, 0.25);
+    assert_eq!(offset, 51);
+    assert_eq!(carrier.marker, 100);
+    assert_eq!(carrier.first_reference, 12);
+    assert_eq!(carrier.second_reference, 11);
+}

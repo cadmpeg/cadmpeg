@@ -380,6 +380,36 @@ pub(crate) mod design_mirror_scope_class413_tail {
     pub(crate) const SECOND_REFERENCE: usize = 64;
 }
 
+/// Byte offsets for the `design_mirror_scope_class440_tail` record.
+///
+/// Spec §3.1. Record length 77 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-440 reference-table prefix precedes this fixed tail.
+/// ```
+pub(crate) mod design_mirror_scope_class440_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 77;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 0;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 31;
+    /// Offset of `scalar_marker` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 35;
+    /// Stated value of `scalar_marker` (`u32`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u32 = 0x0000_0064;
+    /// Offset of `stitch_tolerance` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const STITCH_TOLERANCE: usize = 39;
+    /// Offset of `repeated_scalar_marker` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_SCALAR_MARKER: usize = 47;
+    /// Stated value of `repeated_scalar_marker` (`u32`). Spec §3.1.
+    pub(crate) const REPEATED_SCALAR_MARKER_VALUE: u32 = 0x0000_0064;
+    /// Offset of `first_reference` (`bytes[13]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 51;
+    /// Offset of `second_reference` (`bytes[13]`). Spec §3.1.
+    pub(crate) const SECOND_REFERENCE: usize = 64;
+}
+
 /// Byte offsets for the `design_draft_scope_class318_compact` record.
 ///
 /// Spec §3.1. Record length 336 B.

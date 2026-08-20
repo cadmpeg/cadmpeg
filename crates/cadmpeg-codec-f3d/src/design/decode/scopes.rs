@@ -60,6 +60,7 @@ use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair
 use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::design_mirror_scope_class413_tail as mirror_413;
+use crate::layout::design_mirror_scope_class440_tail as mirror_440;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as edge_flange_325_per_edge;
@@ -3072,18 +3073,21 @@ fn exact_pattern_identity_wrapper(
     ))
 }
 
-/// Parse the class-413 Mirror scalar lane.
+/// Parse the legacy Mirror scalar lane.
 ///
-/// This form has no ordinal-one parameter owner. Its positive stitch
+/// These forms have no ordinal-one parameter owner. Their positive stitch
 /// tolerance is carried after the preceding-history field, with two marked
-/// references naming the adjacent legacy records.
+/// references naming the adjacent legacy records. The class pair selects the
+/// generation-specific scalar marker; the remaining tail offsets are shared.
 pub(super) fn exact_legacy_mirror_scope_tolerance(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<(f64, u64, DesignMirrorScopeTolerance)> {
-    if scope.class_tag != "413" || scope.paired_class_tag != "262" {
-        return None;
-    }
+    let marker_value = match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
+        ("413", "262") => mirror_413::SCALAR_MARKER_VALUE,
+        ("440", "258") => mirror_440::SCALAR_MARKER_VALUE,
+        _ => return None,
+    };
     let kind_code_units = scope.kind.encode_utf16().count();
     let kind_end = usize::try_from(scope.kind_offset)
         .ok()?
@@ -3103,10 +3107,7 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
     let value_offset = kind_end.checked_add(mirror_413::STITCH_TOLERANCE)?;
     let repeated_marker_offset = kind_end.checked_add(mirror_413::REPEATED_SCALAR_MARKER)?;
     let marker = View::u32_le_at(bytes, marker_offset)?;
-    if marker != mirror_413::SCALAR_MARKER_VALUE
-        || View::u32_le_at(bytes, repeated_marker_offset)?
-            != mirror_413::REPEATED_SCALAR_MARKER_VALUE
-    {
+    if marker != marker_value || View::u32_le_at(bytes, repeated_marker_offset)? != marker_value {
         return None;
     }
     let value = View::f64_le_at(bytes, value_offset)?;

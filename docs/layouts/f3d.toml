@@ -889,6 +889,72 @@ anchor = "offset 64 stores a marked reference to scope index plus one followed b
 
 
 [[record]]
+name = "design_mirror_scope_class440_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A class-440 Mirror scope has primary class `440` and paired class `258`"
+size = 77
+note = "Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-440 reference-table prefix precedes this fixed tail."
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0 stores the feature ordinal"
+
+[[record.gap]]
+offset = 4
+size = 27
+note = "The class-440 tail reserves the span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "offset 31 stores the preceding-history state"
+
+[[record.field]]
+name = "scalar_marker"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "both scalar markers are u32 `100`"
+value = 100
+
+[[record.field]]
+name = "stitch_tolerance"
+offset = 39
+type = "f64"
+source = "spec"
+anchor = "The f64 at tail offset 39 is the positive stitch tolerance in source centimetres"
+
+[[record.field]]
+name = "repeated_scalar_marker"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "both scalar markers are u32 `100`"
+value = 100
+
+[[record.field]]
+name = "first_reference"
+offset = 51
+type = "bytes[13]"
+source = "spec"
+anchor = "the references at offsets 51 and 64 name scope index plus two and plus one"
+
+[[record.field]]
+name = "second_reference"
+offset = 64
+type = "bytes[13]"
+source = "spec"
+anchor = "the references at offsets 51 and 64 name scope index plus two and plus one"
+
+
+[[record]]
 name = "design_draft_scope_class318_compact"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
