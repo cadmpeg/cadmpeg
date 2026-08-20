@@ -1617,6 +1617,20 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
+        let Some(count) =
+            View::u32_le_at(bytes, offset).and_then(|count| usize::try_from(count).ok())
+        else {
+            offset += 1;
+            continue;
+        };
+        let Some(payload_at) = offset.checked_add(4) else {
+            offset += 1;
+            continue;
+        };
+        if !(2..=256).contains(&count) || !utf16_string_prefix_is_text(bytes, payload_at, count) {
+            offset += 1;
+            continue;
+        }
         if let Some((value, record_len)) = lp_utf16_string_at(bytes, offset) {
             out.push((offset, value));
             offset += record_len;
@@ -1625,6 +1639,43 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
         }
     }
     out
+}
+
+/// Reject an unframed string candidate before decoding its full declared run.
+///
+/// Appearance streams contain several unrelated binary records, so scanning
+/// every byte can encounter a plausible length word whose payload is not text.
+/// Checking only the first four code units keeps the heuristic bounded while
+/// accepting supplementary-plane characters whose surrogate pair spans the
+/// prefix boundary. The full strict decode remains authoritative.
+fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) -> bool {
+    let prefix_count = count.min(4);
+    let mut high_surrogate = false;
+    for ordinal in 0..prefix_count {
+        let Some(unit_offset) = ordinal
+            .checked_mul(2)
+            .and_then(|delta| payload_at.checked_add(delta))
+        else {
+            return false;
+        };
+        let Some(unit) = View::u16_le_at(bytes, unit_offset) else {
+            return false;
+        };
+        if high_surrogate && !(0xdc00..=0xdfff).contains(&unit) {
+            return false;
+        }
+        match unit {
+            0 => return false,
+            0xd800..=0xdbff => high_surrogate = true,
+            0xdc00..=0xdfff if !high_surrogate => return false,
+            0xdc00..=0xdfff => high_surrogate = false,
+            value if char::from_u32(u32::from(value)).is_some_and(|value| !value.is_control()) => {
+                high_surrogate = false;
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,

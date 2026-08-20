@@ -1444,6 +1444,17 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
 }
 
 #[test]
+fn browser_body_appearance_scan_rejects_binary_utf16_length_candidates() {
+    let mut bytes = vec![0u8; 8];
+    for _ in 0..32 {
+        bytes.extend_from_slice(&256u32.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(0, 256 * 2));
+    }
+
+    assert!(super::lp_utf16_strings(&bytes).is_empty());
+}
+
+#[test]
 fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
     let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
     let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
