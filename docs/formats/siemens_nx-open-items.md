@@ -284,30 +284,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The closure changes the specification to say that `V`, `I`, and `U` are status values and that neither field affects parameter direction. The tests only mutate synthetic bytes and assert that the decoder leaves senses unset. No serialized comparison establishes either field's meaning or rules out an orientation role.
 
-### PS-32. Procedural-intersection support ordering
-
-**Question.** Which reference of a type-38 construction is the primary support?
-
-**Known.** `siemens_nx.md` §6.3 "For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for t" gives the rule: the `0x5a` twin has a fixed layout, and a type-38 construction takes its primary reference from the `0x00cc` marker, where marker 2 selects reference 0 and marker 3 selects reference 1.
-
-**Need.** We must decide the primary-support rule so that a type-38 construction with two surface references does not attach its support lane to the wrong surface. The serialized-lane path does not apply the chart-tolerance test, so nothing later rejects the wrong attachment.
-
-**Conflict.** The decoder does not apply this rule. `construction_supports` in `crates/cadmpeg-codec-nx/src/intersection.rs` tests reference 0 and then reference 1 for surface identity and takes the first that is a surface. The marker is decoded and retained, but it selects only the tuple width. The two rules agree when one reference is a type-59 bridge, and they disagree when both references resolve to surface records and the marker is 3. The support lane then attaches to the wrong surface. `siemens_nx.md` §6.3 also requires every evaluable lane point to reproduce its chart point inside the chart tolerance; the serialized-lane path does not apply that test, so nothing later rejects the wrong attachment.
-
-**Note.** The closure validates support-UV lanes against the selected surface but does not independently establish that marker 3 reverses support order. The marker test and fixture were authored together with the rule. If the marker selects another values-array mode, both surface identity and pcurve attachment are wrong.
-
-### PS-33. Chart point layout selection
-
-**Question.** Which field selects the `Hvec` layout of a `CHART_s` point array?
-
-**Known.** `siemens_nx.md` §6.3 "Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); delt" gives the rule: the stream kind selects the layout. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
-
-**Need.** We must decide the layout selector so that a wide record is not read as narrow triples that cross field boundaries, and so that a charted intersection of a larger model is not dropped by the magnitude test.
-
-**Conflict.** The decoder does not apply the stream rule. `chart_points` in `crates/cadmpeg-codec-nx/src/intersection.rs` tries the wide layout first, accepts it when every tangent is near unit norm and the native parameters ascend, and otherwise reads the same bytes with the narrow stride. The caller separates partition bytes from replacement-stream bytes already, so the stream kind is available and unused. A wide record that fails the norm test is then read as narrow triples that cross field boundaries, and the resulting point sequence is transferred as curve geometry. The same function rejects any coordinate at or above one hundred meters, which contradicts §6 and drops every charted intersection of a larger model.
-
-**Note.** The closure passes a `StreamKind` into the parser, but the ext11 branch still admits points through tangent and parameter plausibility checks. The stream-kind mapping and the synthetic fixtures were introduced together; a serialized chart from corpus records has not yet verified that outer stream kind is the layout discriminator.
-
 ### PS-34. B-spline form-code semantics
 
 **Question.** What does each B-spline form code mean?
