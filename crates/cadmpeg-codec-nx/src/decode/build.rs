@@ -13,18 +13,20 @@ use super::geometry_work::{
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
 use super::pcurves::{
-    completion_transfer_budget_limit, transfer_budget_exhausted, IntersectionEntityStarts,
-    IntersectionIncidenceIndex, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+    completion_transfer_budget_limit, transfer_budget_exhausted, EndpointWitnesses,
+    IntersectionEntityStarts, IntersectionIncidenceIndex, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
 };
 use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
     assign_ext11_support_uv_with_index,
+    attach_completed_intersection_pcurves_for_model_with_budget,
     attach_completed_intersection_pcurves_for_stream_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
     complete_support_uv_with_budget_and_endpoint_witnesses,
     invalidate_inconsistent_support_uv_with_validated_lanes, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
+    IntersectionCompletionSource,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
@@ -231,6 +233,8 @@ pub(crate) fn try_decode_geometry(
     );
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
+    let mut model_endpoint_witnesses = EndpointWitnesses::new();
+    let mut completion_streams = Vec::new();
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -265,6 +269,7 @@ pub(crate) fn try_decode_geometry(
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
+        completion_streams.push((si, source_stream));
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
@@ -972,6 +977,12 @@ pub(crate) fn try_decode_geometry(
                 .or_default()
                 .extend(witnesses);
         }
+        for (key, witnesses) in &validated_endpoint_witnesses {
+            model_endpoint_witnesses
+                .entry(key.clone())
+                .or_default()
+                .extend(witnesses.iter().cloned());
+        }
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
@@ -1006,6 +1017,23 @@ pub(crate) fn try_decode_geometry(
     }
 
     intersection_index.complete_from_model(&mut ir);
+    let completion_sources = completion_streams
+        .iter()
+        .map(|(si, source_stream)| IntersectionCompletionSource {
+            prefix: format!("nx:s{si}"),
+            graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
+            source_stream: *source_stream,
+            coedge_start: 0,
+            procedural_start: 0,
+        })
+        .collect::<Vec<_>>();
+    attach_completed_intersection_pcurves_for_model_with_budget(
+        &mut ir,
+        &completion_sources,
+        &mut annotations,
+        &model_endpoint_witnesses,
+        &completion_geometry_budget,
+    );
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);

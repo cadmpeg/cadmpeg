@@ -1032,6 +1032,12 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
+    let target_index = ir
+        .model
+        .coedges
+        .iter()
+        .position(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
+        .expect("bottom coedge index");
     let target = ir
         .model
         .coedges
@@ -1101,13 +1107,38 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         });
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
+    let graph = crate::topology::Graph::parse(&[]);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
 
-    crate::decode::attach_completed_intersection_pcurves(
+    crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
         &mut ir,
-        &crate::topology::Graph::parse(&[]),
+        &graph,
         "nx:s0",
+        target_index + 1,
+        0,
         source_stream,
         &mut annotations,
+        &std::collections::BTreeMap::new(),
+        &geometry_budget,
+    );
+    assert!(!ir
+        .model
+        .pcurves
+        .iter()
+        .any(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed")));
+    let source = crate::decode::support_uv::IntersectionCompletionSource {
+        prefix: "nx:s0".into(),
+        graph: &graph,
+        source_stream,
+        coedge_start: 0,
+        procedural_start: 0,
+    };
+    crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
+        &mut ir,
+        std::slice::from_ref(&source),
+        &mut annotations,
+        &std::collections::BTreeMap::new(),
+        &geometry_budget,
     );
 
     let completed = ir

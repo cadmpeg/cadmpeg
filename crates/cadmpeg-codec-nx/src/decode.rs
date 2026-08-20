@@ -126,10 +126,7 @@ pub(crate) use build::{
 mod support_uv;
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use support_uv::{
-    attach_completed_intersection_pcurves, complete_ext11_support_uv,
-    invalidate_inconsistent_support_uv,
-};
+pub(crate) use support_uv::{complete_ext11_support_uv, invalidate_inconsistent_support_uv};
 #[allow(unused_imports)]
 pub(crate) use support_uv::{
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,

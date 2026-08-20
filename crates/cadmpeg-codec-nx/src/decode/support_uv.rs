@@ -29,6 +29,7 @@ use super::pcurves::{
 use super::MISSING_TOLERANCE;
 use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
@@ -1605,48 +1606,23 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
     equivalent(index, first, second, &mut BTreeSet::new())
 }
 
-#[cfg(test)]
-pub(crate) fn attach_completed_intersection_pcurves(
-    ir: &mut CadIr,
-    graph: &Graph,
-    prefix: &str,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
-    annotations: &mut AnnotationBuilder,
-) {
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    attach_completed_intersection_pcurves_with_budget(
-        ir,
-        graph,
-        prefix,
-        source_stream,
-        annotations,
-        &geometry_budget,
-    );
+/// One stream's ownership and provenance context for deferred intersection-chart
+/// attachment.
+pub(crate) struct IntersectionCompletionSource<'a> {
+    pub(crate) prefix: String,
+    pub(crate) graph: &'a Graph,
+    pub(crate) source_stream: StreamHandle,
+    pub(crate) coedge_start: usize,
+    pub(crate) procedural_start: usize,
 }
 
-#[cfg(test)]
-pub(crate) fn attach_completed_intersection_pcurves_with_budget(
-    ir: &mut CadIr,
-    graph: &Graph,
-    prefix: &str,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
-    annotations: &mut AnnotationBuilder,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) {
-    attach_completed_intersection_pcurves_for_stream_with_budget(
-        ir,
-        graph,
-        prefix,
-        0,
-        0,
-        source_stream,
-        annotations,
-        &BTreeMap::new(),
-        geometry_budget,
-    );
+fn stream_owns_id(id: &str, prefix: &str) -> bool {
+    id.strip_prefix(prefix)
+        .is_some_and(|suffix| suffix.starts_with(':'))
 }
 
-// Keep stream ownership bounds explicit so this phase does not rescan prior coedges.
+/// Attach charts for one stream without rescanning coedges emitted by an earlier
+/// phase.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     ir: &mut CadIr,
@@ -1655,6 +1631,47 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     coedge_start: usize,
     procedural_start: usize,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+    validated_endpoint_witnesses: &EndpointWitnesses,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) {
+    let source = IntersectionCompletionSource {
+        prefix: prefix.to_owned(),
+        graph,
+        source_stream,
+        coedge_start,
+        procedural_start,
+    };
+    attach_completed_intersection_pcurves_for_sources_with_budget(
+        ir,
+        std::slice::from_ref(&source),
+        annotations,
+        validated_endpoint_witnesses,
+        geometry_budget,
+    );
+}
+
+/// Re-run chart attachment over the complete model after all stream-owned
+/// topology and intersection contexts exist.
+pub(crate) fn attach_completed_intersection_pcurves_for_model_with_budget(
+    ir: &mut CadIr,
+    sources: &[IntersectionCompletionSource<'_>],
+    annotations: &mut AnnotationBuilder,
+    validated_endpoint_witnesses: &EndpointWitnesses,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) {
+    attach_completed_intersection_pcurves_for_sources_with_budget(
+        ir,
+        sources,
+        annotations,
+        validated_endpoint_witnesses,
+        geometry_budget,
+    );
+}
+
+fn attach_completed_intersection_pcurves_for_sources_with_budget(
+    ir: &mut CadIr,
+    sources: &[IntersectionCompletionSource<'_>],
     annotations: &mut AnnotationBuilder,
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -1687,9 +1704,14 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
         .model
         .coedges
         .iter()
-        .skip(coedge_start)
-        .filter(|coedge| coedge.pcurves.is_empty() && coedge.id.0.starts_with(prefix))
-        .filter_map(|coedge| {
+        .enumerate()
+        .filter_map(|(index, coedge)| {
+            if !coedge.pcurves.is_empty() {
+                return None;
+            }
+            let source_index = sources.iter().position(|source| {
+                index >= source.coedge_start && stream_owns_id(&coedge.id.0, &source.prefix)
+            })?;
             let surface = loop_faces
                 .get(&coedge.owner_loop)
                 .and_then(|face| face_surfaces.get(*face))?;
@@ -1700,6 +1722,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
                 (*curve).clone(),
                 (*surface).clone(),
                 edge_tolerances.get(&coedge.edge).copied(),
+                source_index,
             ))
         })
         .collect::<Vec<_>>();
@@ -1708,11 +1731,30 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     }
     let required_keys = coedge_candidates
         .iter()
-        .map(|(_, _, curve, surface, _)| (curve.clone(), surface.clone()))
+        .map(|(_, _, curve, surface, _, _)| (curve.clone(), surface.clone()))
         .collect::<BTreeSet<_>>();
     let mut candidates =
         BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
-    for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
+    let procedural_start = sources
+        .iter()
+        .map(|source| source.procedural_start)
+        .min()
+        .unwrap_or(0);
+    let multiple_sources = sources.len() > 1;
+    for (index, procedural) in ir
+        .model
+        .procedural_curves
+        .iter()
+        .enumerate()
+        .skip(procedural_start)
+    {
+        if multiple_sources
+            && !sources.iter().any(|source| {
+                index >= source.procedural_start && stream_owns_id(&procedural.id.0, &source.prefix)
+            })
+        {
+            continue;
+        }
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
             continue;
         };
@@ -1753,7 +1795,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
         // the face surface only for keys without that proof.
         let endpoint_admissible_keys = coedge_candidates
             .iter()
-            .filter_map(|(_, edge_id, curve, surface, edge_tolerance)| {
+            .filter_map(|(_, edge_id, curve, surface, edge_tolerance, _)| {
                 let key = (curve.clone(), surface.clone());
                 let [candidate] = candidates.get(&key)?.as_slice() else {
                     return None;
@@ -1806,55 +1848,62 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
             .collect::<BTreeMap<_, _>>();
         let replacements = coedge_candidates
             .into_iter()
-            .filter_map(|(coedge_id, edge_id, curve, surface, edge_tolerance)| {
-                let key = (curve.clone(), surface.clone());
-                let [candidate] = candidates.get(&key)?.as_slice() else {
-                    return None;
-                };
-                let (edge_endpoints, edge_allowance) =
-                    edge_endpoint_contracts.get(&edge_id).copied()?;
-                let fit_tolerance = candidate.2.or(edge_tolerance);
-                let matches = {
-                    let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
-                    pcurve_matches_edge_endpoint_contract(
-                        *coincident_surface,
-                        edge_endpoints,
-                        edge_allowance,
-                        fit_tolerance,
-                    )
-                };
-                if !matches {
-                    if !witnessed_keys.remove(&key) {
+            .filter_map(
+                |(coedge_id, edge_id, curve, surface, edge_tolerance, source_index)| {
+                    let key = (curve.clone(), surface.clone());
+                    let [candidate] = candidates.get(&key)?.as_slice() else {
                         return None;
+                    };
+                    let (edge_endpoints, edge_allowance) =
+                        edge_endpoint_contracts.get(&edge_id).copied()?;
+                    let fit_tolerance = candidate.2.or(edge_tolerance);
+                    let matches = {
+                        let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                        pcurve_matches_edge_endpoint_contract(
+                            *coincident_surface,
+                            edge_endpoints,
+                            edge_allowance,
+                            fit_tolerance,
+                        )
+                    };
+                    if !matches {
+                        if !witnessed_keys.remove(&key) {
+                            return None;
+                        }
+                        // A witness from another geometry phase is a shortcut,
+                        // not a new admission rule. Preserve the established
+                        // endpoint evaluator whenever the downstream contract
+                        // disagrees with the cached proof.
+                        let fallback = pcurve_surface_endpoints_with_index_and_budget(
+                            &model_index,
+                            &key.1,
+                            &candidate.0,
+                            None,
+                            geometry_budget,
+                        );
+                        candidate_endpoints.insert(key.clone(), fallback);
+                        let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                        if !pcurve_matches_edge_endpoint_contract(
+                            *coincident_surface,
+                            edge_endpoints,
+                            edge_allowance,
+                            fit_tolerance,
+                        ) {
+                            return None;
+                        }
                     }
-                    // A witness from another geometry phase is a shortcut,
-                    // not a new admission rule. Preserve the established
-                    // endpoint evaluator whenever the downstream contract
-                    // disagrees with the cached proof.
-                    let fallback = pcurve_surface_endpoints_with_index_and_budget(
-                        &model_index,
-                        &key.1,
-                        &candidate.0,
-                        None,
-                        geometry_budget,
-                    );
-                    candidate_endpoints.insert(key.clone(), fallback);
-                    let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
-                    if !pcurve_matches_edge_endpoint_contract(
-                        *coincident_surface,
-                        edge_endpoints,
-                        edge_allowance,
-                        fit_tolerance,
-                    ) {
-                        return None;
-                    }
-                }
-                Some((coedge_id, (candidate.0.clone(), candidate.1, fit_tolerance)))
-            })
+                    Some((
+                        coedge_id,
+                        source_index,
+                        (candidate.0.clone(), candidate.1, fit_tolerance),
+                    ))
+                },
+            )
             .collect::<Vec<_>>();
         replacements
     };
-    for (coedge_id, (geometry, parameter_range, fit_tolerance)) in replacements {
+    for (coedge_id, source_index, (geometry, parameter_range, fit_tolerance)) in replacements {
+        let source = &sources[source_index];
         let Some(fin_xmt) = coedge_id
             .0
             .rsplit_once('#')
@@ -1862,13 +1911,19 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
         else {
             continue;
         };
-        let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve-completed#{fin_xmt}"));
+        let pcurve_id = PcurveId(format!(
+            "{}:intersection-pcurve-completed#{fin_xmt}",
+            source.prefix
+        ));
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
-        let source_offset = graph.get(17, fin_xmt).map_or(0, |node| node.pos as u64);
+        let source_offset = source
+            .graph
+            .get(17, fin_xmt)
+            .map_or(0, |node| node.pos as u64);
         annotations
-            .note(&pcurve_id, source_stream, source_offset)
+            .note(&pcurve_id, source.source_stream, source_offset)
             .tag("INTERSECTION_PCURVE");
         annotations.derived(&pcurve_id, "geometry");
         annotations.derived(&pcurve_id, "parameter_range");
