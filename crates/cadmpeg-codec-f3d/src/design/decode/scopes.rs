@@ -4,7 +4,8 @@
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::assembly::{
-    exact_legacy_as_built_421_alignment, exact_legacy_as_built_421_solved_frame,
+    exact_legacy_as_built_421_alignment, exact_legacy_as_built_421_operands,
+    exact_legacy_as_built_421_solved_frame,
 };
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
@@ -251,6 +252,27 @@ pub fn decode_parameter_scopes(
                 exact_rectangular_pattern_construction(bytes, &records, &scope, parameter_owners);
             scope.assembly_alignment =
                 exact_assembly_alignment(bytes, &records, &scope, parameter_owners);
+            let solved_frame = scope
+                .assembly_alignment
+                .as_ref()
+                .and_then(|alignment| alignment.solved_frame.as_ref());
+            let legacy_operand_carriers = solved_frame.and_then(|solved_frame| {
+                exact_legacy_as_built_421_operands(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    recipes,
+                    solved_frame,
+                )
+            });
+            if let (Some(alignment), Some(carriers)) =
+                (scope.assembly_alignment.as_mut(), legacy_operand_carriers)
+            {
+                alignment.operand_frames =
+                    Some([carriers[0].frame.clone(), carriers[1].frame.clone()]);
+                alignment.legacy_operand_carriers = Some(carriers);
+            }
             scope.component_insert_construction =
                 exact_component_insert_construction(bytes, &records, &scope);
             scope.copy_paste_component_operation = exact_copy_paste_component_operation(
@@ -1439,6 +1461,7 @@ pub(crate) fn exact_assembly_alignment(
         owner_record_indices,
         value_offsets,
         operand_frames: None,
+        legacy_operand_carriers: None,
         solved_frame: as_built_421
             .then(|| exact_legacy_as_built_421_solved_frame(bytes, records, scope))
             .flatten(),
@@ -6115,7 +6138,7 @@ pub(crate) fn exact_work_point_construction(
     exact_point_data_construction(bytes, records, &scope.reference_members, stream_types)
 }
 
-fn exact_point_data_construction(
+pub(crate) fn exact_point_data_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     point_record_indices: &[u32],

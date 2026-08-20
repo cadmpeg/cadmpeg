@@ -11,8 +11,8 @@ use cadmpeg_ir::products::{
 
 use crate::ids::native_stream;
 use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandPath,
-    DesignComponentOccurrence, DesignParameterScope,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLegacyOperand, DesignAssemblyLimitKind,
+    DesignAssemblyOperandPath, DesignComponentOccurrence, DesignParameterScope,
 };
 
 /// One exact generation of the legacy 421-byte `As-built` alignment grammar.
@@ -175,13 +175,17 @@ pub(crate) fn project_assembly_joints(
         let Some(frames) = &alignment.operand_frames else {
             continue;
         };
-        let operands = match (
-            alignment.operand_paths.as_ref(),
-            alignment.axial_operand_targets.as_ref(),
-        ) {
-            (Some(paths), None) => project_path_operands(paths, stream, &occurrences),
-            (None, Some(targets)) => project_axial_operands(targets, stream, scopes, features),
-            _ => None,
+        let operands = if let Some(carriers) = alignment.legacy_operand_carriers.as_ref() {
+            project_legacy_operands(carriers)
+        } else {
+            match (
+                alignment.operand_paths.as_ref(),
+                alignment.axial_operand_targets.as_ref(),
+            ) {
+                (Some(paths), None) => project_path_operands(paths, stream, &occurrences),
+                (None, Some(targets)) => project_axial_operands(targets, stream, scopes, features),
+                _ => None,
+            }
         };
         let Some(operands) = operands else {
             continue;
@@ -222,6 +226,24 @@ pub(crate) fn project_assembly_joints(
         });
     }
     joints.into_values().collect()
+}
+
+fn project_legacy_operands(
+    carriers: &[DesignAssemblyLegacyOperand; 2],
+) -> Option<Vec<JointOperand>> {
+    carriers
+        .iter()
+        .map(|carrier| {
+            Some(JointOperand {
+                occurrence: None,
+                external_document: None,
+                object: Some(crate::ids::neutral_assembly_legacy_object_id(
+                    &carrier.selection,
+                )),
+                subelements: Vec::new(),
+            })
+        })
+        .collect()
 }
 
 fn project_path_operands(

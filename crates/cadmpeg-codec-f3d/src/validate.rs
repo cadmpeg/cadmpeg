@@ -2536,6 +2536,35 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                 );
                 let as_built_421 = as_built_421_generation.is_some();
+                let legacy_operand_frames_link = alignment
+                    .legacy_operand_carriers
+                    .as_ref()
+                    .is_none_or(|carriers| {
+                        alignment.operand_frames.as_ref().is_some_and(|frames| {
+                            frames.iter().zip(carriers).enumerate().all(
+                                |(ordinal, (frame, carrier))| {
+                                    let reference_ordinal = ordinal.saturating_mul(2);
+                                    frame == &carrier.frame
+                                        && frame.reference_record_index
+                                            == carrier.construction_record_index
+                                        && scope.reference_members.get(reference_ordinal).copied()
+                                            == Some(frame.reference_record_index)
+                                        && scope
+                                            .reference_member_offsets
+                                            .get(reference_ordinal)
+                                            .copied()
+                                            == Some(frame.reference_offset)
+                                        && alignment.solved_frame.as_ref().is_some_and(|solved| {
+                                            frame.transform_offset == solved.transform_offset
+                                        })
+                                        && records_by_index.contains_key(&(
+                                            native_stream,
+                                            carrier.construction_record_index,
+                                        ))
+                                },
+                            )
+                        })
+                    });
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
@@ -2562,33 +2591,42 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     scope.frame_length,
                     assembly_owner_count,
                 );
-                let operand_frames_link = alignment.operand_frames.as_ref().is_none_or(|frames| {
-                    frames[0].reference_record_index != frames[1].reference_record_index
-                        && frames.iter().enumerate().all(|(ordinal, frame)| {
-                            let offsets_match = if as_built_frames {
-                                alignment.operand_paths.as_ref().is_some_and(|paths| {
-                                    paths[ordinal].link.locator_byte_offset.checked_add(22)
-                                        == Some(frame.reference_offset)
-                                        && paths[ordinal].link.locator_byte_offset.checked_add(33)
-                                            == Some(frame.transform_offset)
-                                })
-                            } else {
-                                frame.reference_offset
-                                    == scope.byte_offset + frame_reference_offsets[ordinal]
-                                    && frame.transform_offset
-                                        == scope.byte_offset + frame_transform_offsets[ordinal]
-                            };
-                            let reference_exists = if as_built_frames {
-                                frame.reference_record_index != 0
-                            } else {
-                                records_by_index
-                                    .contains_key(&(native_stream, frame.reference_record_index))
-                            };
-                            design::decode::sketch::valid_sketch_transform(&frame.transform)
-                                && offsets_match
-                                && reference_exists
-                        })
-                });
+                let operand_frames_link = if alignment.legacy_operand_carriers.is_some() {
+                    legacy_operand_frames_link
+                } else {
+                    alignment.operand_frames.as_ref().is_none_or(|frames| {
+                        frames[0].reference_record_index != frames[1].reference_record_index
+                            && frames.iter().enumerate().all(|(ordinal, frame)| {
+                                let offsets_match = if as_built_frames {
+                                    alignment.operand_paths.as_ref().is_some_and(|paths| {
+                                        paths[ordinal].link.locator_byte_offset.checked_add(22)
+                                            == Some(frame.reference_offset)
+                                            && paths[ordinal]
+                                                .link
+                                                .locator_byte_offset
+                                                .checked_add(33)
+                                                == Some(frame.transform_offset)
+                                    })
+                                } else {
+                                    frame.reference_offset
+                                        == scope.byte_offset + frame_reference_offsets[ordinal]
+                                        && frame.transform_offset
+                                            == scope.byte_offset + frame_transform_offsets[ordinal]
+                                };
+                                let reference_exists = if as_built_frames {
+                                    frame.reference_record_index != 0
+                                } else {
+                                    records_by_index.contains_key(&(
+                                        native_stream,
+                                        frame.reference_record_index,
+                                    ))
+                                };
+                                design::decode::sketch::valid_sketch_transform(&frame.transform)
+                                    && offsets_match
+                                    && reference_exists
+                            })
+                    })
+                };
                 let solved_frame_link = alignment.solved_frame.as_ref().is_none_or(|frame| {
                     let Some(generation) = as_built_421_generation else {
                         return false;
@@ -2619,6 +2657,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     (None, None, None) => true,
                     // An axial form can retain its frames before both exact
                     // pathless target joins resolve.
+                    (Some(_), None, None) if as_built_421 => {
+                        alignment.legacy_operand_carriers.is_some()
+                    }
                     (Some(_), None, None) => axial_frames,
                     (Some(_), Some(paths), None) => {
                         let locator_offsets =
@@ -7186,6 +7227,21 @@ fn validate_face_operands<'a>(
                                 Some(design::DesignFeatureFamily::Hole) => {
                                     operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
+                                }
+                                Some(design::DesignFeatureFamily::Assemble)
+                                    if scope.kind == "As-built"
+                                        && design::assembly::legacy_as_built_421_generation(
+                                            scope.frame_length,
+                                            &scope.class_tag,
+                                            &scope.paired_class_tag,
+                                        )
+                                        .is_some() =>
+                                {
+                                    matches!(
+                                        (operand.scope_reference_ordinal, operand.recipe_kind),
+                                        (1, records::ConstructionRecipeKind::BoundedFace)
+                                            | (3, records::ConstructionRecipeKind::Face)
+                                    )
                                 }
                                 _ => false,
                             }

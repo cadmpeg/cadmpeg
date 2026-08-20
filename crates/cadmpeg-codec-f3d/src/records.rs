@@ -1417,6 +1417,69 @@ pub struct DesignAssemblySolvedFrame {
     pub transform_offset: u64,
 }
 
+/// Exact construction and face-selection pair carried by a legacy 421-byte
+/// `As-built` operand.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblyLegacyOperand {
+    /// Primary construction record named by the scope reference table.
+    pub construction_record_index: u32,
+    /// Byte offset of the primary construction record header.
+    pub construction_byte_offset: u64,
+    /// Dynamic class of the primary construction record.
+    pub construction_class_tag: String,
+    /// Exact point or point-and-direction construction.
+    pub construction: DesignAssemblyLegacyConstruction,
+    /// Face-selection record paired with the construction record.
+    pub selection: DesignAssemblyLegacySelection,
+    /// Connector-local frame derived from the stored solved-frame orientation
+    /// and this operand's construction position.
+    pub frame: DesignAssemblyOperandFrame,
+}
+
+/// Construction carrier family used by a legacy 421-byte `As-built` operand.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DesignAssemblyLegacyConstruction {
+    /// Point-only connector construction.
+    Point(Box<DesignWorkPointConstruction>),
+    /// Point-and-direction connector construction.
+    Hole(Box<DesignHoleConstruction>),
+}
+
+/// Exact face-recipe selection paired with a legacy 421-byte construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblyLegacySelection {
+    /// Indexed selection record.
+    pub record_index: u32,
+    /// Byte offset of the selection record header.
+    pub byte_offset: u64,
+    /// Dynamic class of the selection record.
+    pub class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE payload.
+    pub asset_id_offset: u64,
+    /// Context UUID qualifying the selection.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE payload.
+    pub context_id_offset: u64,
+    /// Indexed record containing the face recipe.
+    pub recipe_record_index: u32,
+    /// Byte offset of the recipe record's indexed header.
+    pub recipe_record_byte_offset: u64,
+    /// Construction-recipe arena id.
+    pub recipe_id: String,
+    /// Exact face-recipe family.
+    pub recipe_kind: ConstructionRecipeKind,
+    /// Persistent selector/reference tails carried by the recipe prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
+    /// Byte offset of the indexed record immediately after the recipe.
+    pub next_byte_offset: u64,
+}
+
 /// Alignment scalars carried by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1432,6 +1495,9 @@ pub struct DesignAssemblyAlignment {
     /// Exact operand frames embedded by the assembly scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
+    /// Ordered point/face and hole/face carriers of a legacy 421-byte form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_operand_carriers: Option<[DesignAssemblyLegacyOperand; 2]>,
     /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solved_frame: Option<DesignAssemblySolvedFrame>,

@@ -1599,6 +1599,7 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 transform_offset: 4,
             },
         ]),
+        legacy_operand_carriers: None,
         solved_frame: None,
         operand_paths: None,
         axial_operand_targets: None,
