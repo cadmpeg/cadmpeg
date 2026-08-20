@@ -404,6 +404,12 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
 // vector allocation and alignment. Mutually exclusive entity families make
 // this an upper bound, not an average observed size.
 const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
+/// Conservative work charge for decoding one record in one historical state.
+/// A state snapshot traverses the record table repeatedly to build topology,
+/// incidence, and carrier projections; this keeps the admission estimate
+/// proportional to the state-by-record cross product instead of only the
+/// final cache size.
+const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
 
 fn complete_table_binding_budget_exceeded(
     table_lengths: impl IntoIterator<Item = usize>,
@@ -416,6 +422,19 @@ fn complete_table_binding_budget_exceeded(
         })
         .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
         .is_none_or(|bytes| bytes > limits.max_materialized_bytes)
+}
+
+fn history_topology_work_budget_exceeded(
+    table_lengths: impl IntoIterator<Item = usize>,
+    limits: &cadmpeg_core::decode::ResourceLimits,
+) -> bool {
+    table_lengths
+        .into_iter()
+        .try_fold(0_u64, |total, length| {
+            total.checked_add(u64::try_from(length).ok()?)
+        })
+        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
+        .is_none_or(|work| work > limits.max_work_units)
 }
 
 fn bind_complete_record_tables(
@@ -432,6 +451,9 @@ fn bind_complete_record_tables(
         return false;
     };
     if complete_table_binding_budget_exceeded(
+        states.iter().map(|state| state.entity_versions.len()),
+        limits,
+    ) || history_topology_work_budget_exceeded(
         states.iter().map(|state| state.entity_versions.len()),
         limits,
     ) {
@@ -6121,6 +6143,15 @@ impl HistoricalIdentityIndex {
         let mut identities = HashMap::<i64, HistoricalIdentityMembership>::new();
         let mut revisions = HashMap::<i64, HistoricalRevisionMembership>::new();
         if record_refs.is_empty() {
+            return Self {
+                identities,
+                revisions,
+            };
+        }
+        if histories
+            .iter()
+            .any(|history| history.record_table_binding_budget_exceeded)
+        {
             return Self {
                 identities,
                 revisions,
