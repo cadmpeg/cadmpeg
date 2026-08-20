@@ -140,7 +140,8 @@
                 "section_ordinal": 0,
                 "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 122
+                "source_offset": 122,
+                "stable_identity": "nx:om:data-block:aa657b5931c90e8b73ce68c25639e2bfae5e69456958954cb824640c07070979"
               },
               {
                 "block_ordinal": 1,
@@ -151,7 +152,8 @@
                 "section_ordinal": 0,
                 "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 132
+                "source_offset": 132,
+                "stable_identity": "nx:om:data-block:9464897cedc24ff34620b1a83066aa2001f2442fcbd8f2967bd60920a9eabdc6"
               },
               {
                 "block_ordinal": 2,
@@ -162,7 +164,8 @@
                 "section_ordinal": 0,
                 "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 167
+                "source_offset": 167,
+                "stable_identity": "nx:om:data-block:b7743888bdf6016d4c56711690a0228e557bed833528bbf63ee2675ca6bcda21"
               }
             ],
             "expressions": [

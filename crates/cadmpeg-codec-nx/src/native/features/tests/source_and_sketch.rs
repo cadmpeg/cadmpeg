@@ -1182,6 +1182,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         section_offset: 0,
         byte_len: 1,
         sha256: "hash".to_string(),
+        stable_identity: None,
         source_entry: "entry".to_string(),
         source_offset: 0,
     };

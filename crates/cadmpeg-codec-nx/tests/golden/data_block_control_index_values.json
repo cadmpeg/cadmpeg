@@ -93,7 +93,8 @@
                 "section_ordinal": 0,
                 "sha256": "9deff6ee053c80ef007f707b0a70933b0e02a393d183c5cf423f0ba5e639241c",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 122
+                "source_offset": 122,
+                "stable_identity": "nx:om:data-block:a608844673a4f1771ad8c20a2c90e63a0abcccc3e8bb3d1bf87489bec6470a7c"
               },
               {
                 "block_ordinal": 1,
@@ -104,7 +105,8 @@
                 "section_ordinal": 0,
                 "sha256": "1949d333fcbc7702d72357de7f56ba6a5e963abf8734651417c6954b88b671d6",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 148
+                "source_offset": 148,
+                "stable_identity": "nx:om:data-block:dc54b729344bf4d01614895389806b47f93aea80d8356851b3c22c396131f31c"
               },
               {
                 "block_ordinal": 2,
@@ -115,7 +117,8 @@
                 "section_ordinal": 0,
                 "sha256": "a0d08a155aa4e9aadd5da959565de99acc8dc9dbda96ec3852dde76c97330902",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 160
+                "source_offset": 160,
+                "stable_identity": "nx:om:data-block:0ec74898e6f741a4b5b54b2e9a57bc9bbf59517bf4a895654f70d173d5e139a5"
               }
             ],
             "store_headers": [

@@ -210,6 +210,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
             section_offset: 0,
             byte_len: 1,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -221,6 +222,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
             section_offset: 0,
             byte_len: 1,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -271,6 +273,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         section_offset: 0,
         byte_len: 1,
         sha256: String::new(),
+        stable_identity: None,
         source_entry: String::new(),
         source_offset: 0,
     };
@@ -372,6 +375,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
         section_offset: 10,
         byte_len: 19,
         sha256: "00".into(),
+        stable_identity: None,
         source_entry: "part".into(),
         source_offset: 20,
     };
@@ -421,6 +425,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         section_offset: 10,
         byte_len: 19,
         sha256: "00".into(),
+        stable_identity: None,
         source_entry: "part".into(),
         source_offset: 20,
     };
@@ -474,6 +479,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         section_offset: 10,
         byte_len: 19,
         sha256: "00".into(),
+        stable_identity: None,
         source_entry: "part".into(),
         source_offset: 20,
     };

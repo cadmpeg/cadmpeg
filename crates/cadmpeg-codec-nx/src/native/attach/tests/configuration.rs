@@ -1564,7 +1564,6 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         &BTreeMap::new(),
         "nx:om-object-index#94".to_string(),
     );
-
     assert_eq!(
         selection.selection,
         BodySelection::Local {
@@ -1573,7 +1572,6 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         }
     );
 }
-
 #[test]
 fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::features::{
@@ -1614,6 +1612,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1625,6 +1624,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1636,6 +1636,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1647,6 +1648,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1959,6 +1961,7 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         section_offset: 0,
         byte_len: 0,
         sha256: String::new(),
+        stable_identity: None,
         source_entry: String::new(),
         source_offset: 0,
     };

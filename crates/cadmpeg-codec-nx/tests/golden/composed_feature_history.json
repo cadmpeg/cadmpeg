@@ -815,7 +815,8 @@
                 "section_ordinal": 0,
                 "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1497
+                "source_offset": 1497,
+                "stable_identity": "nx:om:data-block:8f024974f7e887f3370a38dc1670ed125fdd3824d049658078a3665d50d030b4"
               },
               {
                 "block_ordinal": 1,
@@ -826,7 +827,8 @@
                 "section_ordinal": 0,
                 "sha256": "dbd24a2d721f65758cd0b37be8bb0d0d445b06c4db4a6c895a1842c9f3e97d2e",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1513
+                "source_offset": 1513,
+                "stable_identity": "nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7"
               },
               {
                 "block_ordinal": 2,
@@ -837,7 +839,8 @@
                 "section_ordinal": 0,
                 "sha256": "bf22e43e9f5e0e7d93118e7b53769608c9926f1732f95dc9ba84fb3891384c31",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1535
+                "source_offset": 1535,
+                "stable_identity": "nx:om:data-block:ed6c1fd13474c96f407f4a17c6892628c6897dad4e115d7d1e09b2aa77a0ad7f"
               },
               {
                 "block_ordinal": 3,
@@ -848,7 +851,8 @@
                 "section_ordinal": 0,
                 "sha256": "3fbe6c8853b80010fb9f2b3489d8a6f5b84934b56198b2bde78829f651cdd685",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1548
+                "source_offset": 1548,
+                "stable_identity": "nx:om:data-block:87215951f44fbc6ebba36e4b8c6642c05d09da28d4930c0fd67f07c9754d5661"
               },
               {
                 "block_ordinal": 4,
@@ -859,7 +863,8 @@
                 "section_ordinal": 0,
                 "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1762
+                "source_offset": 1762,
+                "stable_identity": "nx:om:data-block:b15379e11cf36ff829a7df0c58d556a7f17d86db9462cffb9776aef17eb659ca"
               },
               {
                 "block_ordinal": 5,
@@ -870,7 +875,8 @@
                 "section_ordinal": 0,
                 "sha256": "80c6d8c05cdd42ad4f3225cde96b66cd03204912c3ee90563e181ce41d4c1204",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1763
+                "source_offset": 1763,
+                "stable_identity": "nx:om:data-block:3344d1027de001f949996c331182016faa2ed03b9ff3be343e6954a7da9c4f24"
               }
             ],
             "feature_block_construction_references": [

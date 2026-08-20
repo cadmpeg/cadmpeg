@@ -357,6 +357,9 @@ pub struct DataBlock {
     pub byte_len: u64,
     /// SHA-256 of the exact serialized block bytes.
     pub sha256: String,
+    /// Content-backed identity when the scoped exact bytes are unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the block start.
@@ -881,6 +884,28 @@ pub enum DataBlockRole {
     Control,
     /// One offset-bounded column-storage block.
     Column,
+}
+
+/// Return a content-backed identity for one offset-store block.
+///
+/// The source entry and block role scope the exact bytes. Callers must only
+/// admit the value when this key is unique in that scope; equal bytes at two
+/// positions are not distinguishable without an additional serialized owner.
+pub(crate) fn stable_data_block_identity(
+    source_entry: &str,
+    role: DataBlockRole,
+    bytes: &[u8],
+) -> String {
+    let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 18);
+    seed.extend_from_slice(b"nx:om:data-block\0");
+    seed.extend_from_slice(source_entry.as_bytes());
+    seed.push(0);
+    seed.push(match role {
+        DataBlockRole::Control => 0,
+        DataBlockRole::Column => 1,
+    });
+    seed.extend_from_slice(bytes);
+    format!("nx:om:data-block:{}", cadmpeg_ir::hash::sha256_hex(&seed))
 }
 
 /// Self-framed printable string carried by one NX OM record.
@@ -2069,47 +2094,80 @@ pub fn rmfastload_object_id_table(
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
 pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
-    container
-        .indexed_om_sections()
+    let mut candidates = Vec::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        if section
+            .records
+            .first()
+            .is_none_or(|record| record.object_id.is_some())
+        {
+            continue;
+        }
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let section_offset = entry_offset + section.base_offset() as u64;
+        if let Some(control) = section.control {
+            candidates.push((
+                section_ordinal,
+                0usize,
+                DataBlockRole::Control,
+                entry.name.clone(),
+                section_offset,
+                entry_offset,
+                control,
+            ));
+        }
+        candidates.extend(section.records.iter().cloned().enumerate().map(
+            |(record_ordinal, block)| {
+                (
+                    section_ordinal,
+                    record_ordinal + 1,
+                    DataBlockRole::Column,
+                    entry.name.clone(),
+                    section_offset,
+                    entry_offset,
+                    block,
+                )
+            },
+        ));
+    }
+
+    let mut identity_counts = BTreeMap::<String, usize>::new();
+    for (_, _, role, source_entry, _, _, block) in &candidates {
+        let identity = stable_data_block_identity(source_entry, *role, block.bytes);
+        *identity_counts.entry(identity).or_default() += 1;
+    }
+
+    candidates
         .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            if section
-                .records
-                .first()
-                .is_none_or(|record| record.object_id.is_some())
-            {
-                return Vec::new();
-            }
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            let section_offset = entry_offset + section.base_offset() as u64;
-            let mut source_blocks = Vec::with_capacity(section.records.len() + 1);
-            if let Some(control) = section.control {
-                source_blocks.push((DataBlockRole::Control, control));
-            }
-            source_blocks.extend(
-                section
-                    .records
-                    .iter()
-                    .cloned()
-                    .map(|block| (DataBlockRole::Column, block)),
-            );
-            source_blocks
-                .into_iter()
-                .enumerate()
-                .map(move |(block_ordinal, (role, block))| DataBlock {
+        .map(
+            |(
+                section_ordinal,
+                block_ordinal,
+                role,
+                source_entry,
+                section_offset,
+                entry_offset,
+                block,
+            )| {
+                let sha256 = cadmpeg_ir::hash::sha256_hex(block.bytes);
+                let stable_identity = stable_data_block_identity(&source_entry, role, block.bytes);
+                DataBlock {
                     id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     block_ordinal: block_ordinal as u32,
                     role,
                     section_offset,
                     byte_len: block.bytes.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),
-                    source_entry: entry.name.clone(),
+                    sha256,
+                    stable_identity: (identity_counts.get(&stable_identity) == Some(&1))
+                        .then_some(stable_identity),
+                    source_entry,
                     source_offset: entry_offset + block.offset as u64,
-                })
-                .collect()
-        })
+                }
+            },
+        )
         .collect()
 }
 
@@ -4685,6 +4743,7 @@ mod tests {
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
         assert_eq!(blocks[1].role, super::DataBlockRole::Column);
         assert!(blocks[0].byte_len > 0);
+        assert!(blocks[0].stable_identity.is_some());
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
@@ -4715,6 +4774,36 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].object_id, None);
         assert_eq!(expressions[0].record, None);
+    }
+
+    #[test]
+    fn stable_data_block_identity_excludes_position_and_scopes_role() {
+        let bytes = [0x01, 0x02, 0x03];
+        let identity = super::stable_data_block_identity(
+            "/Root/UG_PART/UG_PART",
+            super::DataBlockRole::Column,
+            &bytes,
+        );
+        assert_eq!(
+            identity,
+            super::stable_data_block_identity(
+                "/Root/UG_PART/UG_PART",
+                super::DataBlockRole::Column,
+                &bytes,
+            )
+        );
+        assert_ne!(
+            identity,
+            super::stable_data_block_identity(
+                "/Root/UG_PART/UG_PART",
+                super::DataBlockRole::Control,
+                &bytes,
+            )
+        );
+        assert_ne!(
+            identity,
+            super::stable_data_block_identity("/Root/other", super::DataBlockRole::Column, &bytes)
+        );
     }
 
     #[test]

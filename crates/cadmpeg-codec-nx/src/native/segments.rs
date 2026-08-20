@@ -1381,6 +1381,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         }];
@@ -1448,6 +1449,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         };
@@ -1517,6 +1519,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         }];
