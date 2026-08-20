@@ -560,6 +560,16 @@ does not supply that relation.
 
 **Need.** We must know the relation to construct inactive configuration body sets.
 
+**Conflict.** The arrangement XML contains only configuration name, default
+flag, and order. The current B-rep body census has no arrangement key, and the
+active attribute join identifies only the selected configuration. Feature
+closure also describes the current body set, not an alternate arrangement's
+membership or per-body state.
+
+**Note.** Inactive configurations retain their identities and unresolved body
+sets. The active body set must not be copied to an inactive configuration
+without a body-membership and state relation owned by that configuration.
+
 ### OM-13. Inactive-arrangement parameter state
 
 **Question.** Which parameter values does each inactive arrangement select?
@@ -567,6 +577,16 @@ does not supply that relation.
 **Known.** `siemens_nx.md` §2 "When exactly one active configuration has complete body membership, the same" and `siemens_nx.md` §2 "The same active configuration retains the complete current parameter state when" define complete parameter state only for a uniquely resolved active configuration.
 
 **Need.** We must know the relation to construct inactive configuration parameter maps.
+
+**Conflict.** Neutral parameter identities, evaluated values, ownership scopes,
+and dependencies contain no arrangement identity or per-arrangement override
+selector. The complete parameter map is derived only for the unique active
+configuration after the global parameter graph passes its ownership and order
+checks.
+
+**Note.** Inactive configurations retain empty unresolved parameter maps. The
+active map must not be copied to another configuration without a
+configuration-owned value or override relation.
 
 ### OM-14. Operation terminal discriminators
 
