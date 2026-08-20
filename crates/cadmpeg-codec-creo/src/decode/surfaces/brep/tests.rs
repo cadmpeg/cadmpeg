@@ -13,7 +13,7 @@ use super::{
     admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
     native_parameter_loop_polygon, ordered_native_parameter_face_loops,
     split_neutral_component_shells, transfer_native_brep, BrepTransferDiagnostics,
-    FaceAdmissionRejection, NativeCurveEvidence, NeutralShellSpec,
+    FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence, NeutralShellSpec,
 };
 
 #[test]
@@ -38,6 +38,58 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(coverage["brep_emitted_face_count"], 1);
     assert_eq!(coverage["brep_rejected_face_count"], 6);
     assert_eq!(coverage["brep_rejected_face_missing_loops_count"], 6);
+}
+
+#[test]
+fn face_admission_diagnostics_record_unresolved_boundary_operands() {
+    let resolved = crate::topology::HalfEdgeId {
+        curve_id: 10,
+        side: 0,
+    };
+    let unresolved = crate::topology::HalfEdgeId {
+        curve_id: 11,
+        side: 1,
+    };
+    let loop_record = crate::topology::Loop {
+        face_id: 5,
+        half_edges: vec![resolved, unresolved],
+    };
+    let resolved_binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge: resolved,
+        start_vertex_id: 1,
+        end_vertex_id: Some(2),
+    };
+    let unresolved_binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge: unresolved,
+        start_vertex_id: 3,
+        end_vertex_id: Some(4),
+    };
+    let incidence = BTreeMap::from([
+        (resolved, &resolved_binding),
+        (unresolved, &unresolved_binding),
+    ]);
+    let detail = FaceAdmissionDetail::unresolved_boundary(
+        5,
+        &[&loop_record],
+        &BTreeMap::from([(10, [1, 2])]),
+        &incidence,
+    );
+
+    assert_eq!(detail.face_id, 5);
+    assert_eq!(detail.boundary_half_edges, vec![unresolved]);
+    assert_eq!(detail.vertex_ids, vec![3, 4]);
+
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    diagnostics.reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail);
+    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::UnresolvedBoundaryVertices];
+    assert_eq!(evidence.count, 1);
+    assert_eq!(evidence.sample_ids, vec![5]);
+    assert_eq!(evidence.sample_details.len(), 1);
+    assert_eq!(
+        evidence.sample_details[0].boundary_half_edges,
+        vec![unresolved]
+    );
+    assert_eq!(evidence.sample_details[0].vertex_ids, vec![3, 4]);
 }
 
 #[test]
