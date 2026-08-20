@@ -773,6 +773,8 @@ pub struct ConstructionPayloadScalarField {
     pub raw_value: [u8; 8],
 }
 
+const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
+
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
 pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
@@ -784,7 +786,7 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
             continue;
         }
         let Some(raw_value) = bytes
-            .get(start + 5..start + 13)
+            .get(start + 5..start + SHIFTED_BINARY64_SCALAR_FRAME_LEN)
             .and_then(|value| <[u8; 8]>::try_from(value).ok())
         else {
             continue;
@@ -855,10 +857,20 @@ pub(crate) fn offset_store_named_point<'a>(
         if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
             return None;
         }
-        if names.len() > 1 {
-            return None;
-        }
-        let scalars = construction_payload_scalar_fields(&bytes);
+        let next_name = names
+            .iter()
+            .find(|next| !next.payload_leading && next.offset > name.offset);
+        let interval_end = next_name.map_or(bytes.len(), |next| next.offset);
+        let scalars = construction_payload_scalar_fields(&bytes)
+            .into_iter()
+            .filter(|scalar| {
+                scalar.offset > name.offset
+                    && scalar
+                        .offset
+                        .checked_add(SHIFTED_BINARY64_SCALAR_FRAME_LEN)
+                        .is_some_and(|end| end <= interval_end)
+            })
+            .collect::<Vec<_>>();
         match scalars.as_slice() {
             [] | [_] => {}
             [first_scalar, second_scalar] => {
@@ -871,6 +883,9 @@ pub(crate) fn offset_store_named_point<'a>(
                 });
             }
             _ => return None,
+        }
+        if next_name.is_some() {
+            return candidate;
         }
     }
     candidate

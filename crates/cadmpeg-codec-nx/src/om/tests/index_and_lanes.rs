@@ -265,7 +265,7 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
     ];
     let next_name_blocks = [&first[..], &second[..], &next_name[..]];
-    assert!(super::offset_store_named_point(next_name_blocks).is_none());
+    assert!(super::offset_store_named_point(next_name_blocks).is_some());
     let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
     assert_eq!(
         super::offset_store_named_point([&first[..], &second[..], &next_point[..]])

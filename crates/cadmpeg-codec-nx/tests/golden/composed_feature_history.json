@@ -87,7 +87,9 @@
               "sketch_fixed_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
               "sketch_fixed_pair.1": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001",
               "sketch_fixed_point.0": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
+              "sketch_named_point_block_use.0": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-3-0",
               "sketch_point_group.0": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+              "sketch_point_use.0": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-3-0",
               "sketch_preceding_named_point_use.0": "nx:feature-history:sketch-preceding-named-point-use#0000000000-0000000001-0-1",
               "sketch_record.0": "nx:feature-history:sketch-record#0000000000-0000000001",
               "sketch_reference.0": "nx:om-data-blocks-0:block#3",
@@ -711,8 +713,8 @@
                 "v": 3745382.3999999794
               }
             },
-            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000",
-            "native_ref": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-3-0",
+            "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-3-0",
             "sketch": "nx:feature-history:sketch#0000000000-0000000001"
           }
         ],
@@ -5081,6 +5083,16 @@
                 "reference_ordinal": 1,
                 "sketch_reference": "nx:feature-history:sketch-reference#0000000000-0000000000-0000000001",
                 "source_offset": 325
+              },
+              {
+                "data_block": "nx:om-data-blocks-0:block#3",
+                "id": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-3-0",
+                "named_point": "nx:offset-store:named-point#0-3",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
+                "point_block_ordinal": 0,
+                "reference_ordinal": 0,
+                "sketch_reference": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000",
+                "source_offset": 363
               }
             ],
             "feature_sketch_payload_coordinate_pairs": [
@@ -5544,6 +5556,21 @@
                   321,
                   325
                 ]
+              },
+              {
+                "block_uses": [
+                  "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-3-0"
+                ],
+                "id": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-3-0",
+                "named_point": "nx:offset-store:named-point#0-3",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
+                "sketch_point_group": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+                "sketch_references": [
+                  "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000"
+                ],
+                "source_offsets": [
+                  363
+                ]
               }
             ],
             "feature_sketch_points": [
@@ -5911,6 +5938,44 @@
                   57.149999999999686,
                   3745382.3999999794
                 ]
+              },
+              {
+                "data_blocks": [
+                  "nx:om-data-blocks-0:block#3"
+                ],
+                "id": "nx:offset-store:named-point#0-3",
+                "name": "Point1",
+                "raw_values": [
+                  [
+                    48,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ],
+                  [
+                    49,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ]
+                ],
+                "source_offset": 1548,
+                "value_source_offsets": [
+                  1557,
+                  1570
+                ],
+                "values": [
+                  57.149999999999686,
+                  3745382.3999999794
+                ]
               }
             ],
             "om_record_areas": [
@@ -6112,13 +6177,16 @@
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "entity": "derived"
           },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-3-0": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
+            "entity": "derived"
+          },
+          "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-3-0": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-record#0000000000-0000000000": {
@@ -6484,8 +6552,8 @@
             "stream": 0,
             "tag": "SKETCH_POINT"
           },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
-            "offset": 1557,
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-3-0": {
+            "offset": 363,
             "stream": 0,
             "tag": "SKETCH_POINT"
           },
@@ -6504,8 +6572,18 @@
             "stream": 0,
             "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
           },
+          "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-3-0": {
+            "offset": 363,
+            "stream": 0,
+            "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
+          },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
             "offset": 321,
+            "stream": 0,
+            "tag": "SKETCH_POINT_USE"
+          },
+          "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-3-0": {
+            "offset": 363,
             "stream": 0,
             "tag": "SKETCH_POINT_USE"
           },
@@ -6526,6 +6604,11 @@
           },
           "nx:offset-store:named-point#0-1": {
             "offset": 1513,
+            "stream": 0,
+            "tag": "OFFSET_STORE_NAMED_POINT"
+          },
+          "nx:offset-store:named-point#0-3": {
+            "offset": 1548,
             "stream": 0,
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
