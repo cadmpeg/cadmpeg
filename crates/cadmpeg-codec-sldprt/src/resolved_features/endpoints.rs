@@ -4523,7 +4523,40 @@ pub(super) fn legacy_undetailed_profile_line(payload: &[u8], offset: usize) -> b
         && (compact_indexed_curve_endpoint_indices(payload, offset).is_some()
             || legacy_state_five_curve_endpoint_indices(payload, offset).is_some()
             || legacy_terminal_profile_endpoint_offset(payload, offset).is_some());
-    (packed || standard) && compact_bounded_curve_tangent(payload, offset).is_none()
+    let geometry_locus_84 = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+        == Some(LEGACY_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && marker_native_code(payload, offset) == Some(2)
+        && payload.get(offset + 21..offset + 23) == Some(&[0; 2])
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&2u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && compact_indexed_curve_endpoint_indices(payload, offset)
+            .is_some_and(|endpoints| endpoints[0] != endpoints[1])
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 76) == Some(&[0; 4])
+        && matches!(
+            (
+                View::u32_le_at(payload, offset + 76),
+                View::u32_le_at(payload, offset + 80),
+            ),
+            (Some(first), Some(second))
+                if first != 0
+                    && first != u32::MAX
+                    && second != 0
+                    && second != u32::MAX
+                    && first != second
+        )
+        && compact_indexed_curve_record_end(payload, offset)
+            == Some(CompactIndexedCurveRecordEnd::Marker84);
+    (packed || standard || geometry_locus_84)
+        && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
 pub(super) fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) -> bool {

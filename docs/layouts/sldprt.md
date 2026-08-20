@@ -986,6 +986,93 @@ The record emits a point. Its terminal identity and next-marker boundary are fou
 | 100 | 40 | `trailer_prefix` | `bytes[40]` | little | spec | zero bytes from marker +100 through +139 |
 | 140 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +140 |
 
+## `legacy_geometry_locus_alternate_134_point`
+
+Spec §2 · layout: byte offsets · size: 134 B
+
+The two fixed tails select an alternate-tag coordinate point; the next sketch marker begins at +134.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 10 | `tail_selector` | `bytes[10]` | little | spec | The 134-byte forms store either a nonzero, non-null u16 count at marker +74 |
+| 84 | 4 | `tail_sentinel` | `i32` | little | spec | Both forms store i32 `-2` at marker +84 · value `-2` |
+| 88 | 42 | `zero_trailer` | `bytes[42]` | little | spec | zero bytes from marker +88 through +129 |
+| 130 | 4 | `identity` | `u32` | little | spec | a u32 value other than `ffff` at marker +130 |
+
+## `legacy_geometry_locus_alternate_138_point`
+
+Spec §2 · layout: byte offsets · size: 138 B
+
+The repeated identity at +134 is the following marker's object identifier.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 10 | `zero_and_state` | `bytes[10]` | little | spec | The 138-byte form stores zero at marker +74 |
+| 84 | 4 | `tail_sentinel` | `i32` | little | spec | i32 `-2` at marker +84 · value `-2` |
+| 88 | 36 | `zero_identity_prefix` | `bytes[36]` | little | spec | zero bytes from marker +88 through +123 |
+| 124 | 4 | `identity_first` | `u32` | little | spec | nonzero non-null u32 identities at marker +124 and +130 |
+| 128 | 2 | `zero_before_identity_second` | `bytes[2]` | little | spec | zero bytes at marker +128 and +129 |
+| 130 | 4 | `identity_second` | `u32` | little | spec | nonzero non-null u32 identities at marker +124 and +130 |
+| 134 | 4 | `following_identity` | `u32` | little | spec | the marker +130 identity again at marker +134 |
+
+## `legacy_geometry_locus_alternate_154_point`
+
+Spec §2 · layout: byte offsets · size: 154 B
+
+The two mixed-selector incidence cells identify the point record; they do not define curve endpoints.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `bytes[2]` | little | spec | The 154-byte form stores zero at marker +74 |
+| 76 | 2 | `link_count` | `u16` | little | spec | link count u16 `2` at marker +76 · value `2` |
+| 78 | 12 | `incidence_first` | `bytes[12]` | little | spec | two typed 12-byte incidence cells at marker +78 and +90 |
+| 90 | 12 | `incidence_second` | `bytes[12]` | little | spec | two typed 12-byte incidence cells at marker +78 and +90 |
+| 102 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `00 00 fe ff ff ff` begins at marker +102 |
+| 108 | 42 | `zero_trailer` | `bytes[42]` | little | spec | marker +108 through +149 are zero |
+| 150 | 4 | `record_identity` | `u32` | little | spec | marker +150 stores a u32 value other than `ffff` |
+
 ## `extended_scaled_146_profile_point`
 
 Spec §2 · layout: byte offsets · size: 146 B
@@ -1222,6 +1309,39 @@ Unstated regions:
 - `29..31` (2 B): The selector begins at +31; bytes +29 through +30 are zero.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_84_geometry_indexed_curve`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 84-byte geometry-locus indexed curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `2` at marker +17 · value `2` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1`, state u16 `2` at marker +29 · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `2` at marker +29 · value `2` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct endpoint u16 values at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct endpoint u16 values at marker +56 and +58 |
+| 60 | 4 | `record_state` | `u32` | little | spec | Marker +60 stores u32 `1` · value `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` · value `-1.0` |
+| 72 | 4 | `trailer_state` | `u32` | little | spec | marker +72 stores zero u32 · value `0` |
+| 76 | 4 | `identity_first` | `u32` | little | spec | distinct nonzero, non-null u32 identities occupy marker +76 and +80 |
+| 80 | 4 | `identity_second` | `u32` | little | spec | distinct nonzero, non-null u32 identities occupy marker +76 and +80 |
+
+Unstated regions:
+
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are zero.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are zero.
+
 ## `compact_legacy_68_profile_variant_curve`
 
 Spec §2 · layout: byte offsets · size: 68 B
@@ -1402,6 +1522,76 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 104 | 4 | `class_marker` | `bytes[4]` | little | spec | the terminal class declaration is `ff ff 01 00` |
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
+
+## `legacy_geometry_locus_alternate_170_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 170 B
+
+The line-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +170.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag line-handle point is a 170-byte record |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | The alternate coordinate tags are valid in these handle records |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_handle_prefix` | `bytes[2]` | little | spec | handle state u16 `2` or `3` at marker +76 |
+| 76 | 2 | `handle_state` | `u16` | little | spec | handle state u16 `2` or `3` at marker +76 |
+| 78 | 6 | `class_marker_and_length` | `bytes[6]` | little | spec | `ff ff 01 00 0c 00` and `sgLineHandle` at marker +78 and +84 |
+| 84 | 12 | `class_name` | `bytes[12]` | little | spec | `ff ff 01 00 0c 00` and `sgLineHandle` at marker +78 and +84 |
+| 96 | 2 | `handle_identifier` | `u16` | little | spec | a non-`ffff` u16 handle identifier at marker +96 |
+| 98 | 8 | `reference_tail` | `bytes[8]` | little | spec | The reference and terminator fields are `ff ff ff ff 00 00 00 00` at marker +98 |
+| 106 | 4 | `zero_before_sentinel` | `bytes[4]` | little | spec | The reference and terminator fields are `ff ff ff ff 00 00 00 00` at marker +98 |
+| 110 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at marker +110 |
+| 114 | 4 | `reference_zero_tail` | `bytes[4]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +98 |
+| 118 | 6 | `terminator` | `bytes[6]` | little | spec | `00 00 fe ff ff ff` at marker +118 |
+| 124 | 38 | `zero_trailer_prefix` | `bytes[38]` | little | spec | Zero bytes from marker +124 through +165 |
+| 162 | 4 | `identity` | `u32` | little | spec | a complete identity trailer |
+| 166 | 4 | `following_object_index` | `u32` | little | spec | the next sketch marker begins at marker +170 |
+
+## `legacy_geometry_locus_alternate_169_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 169 B
+
+The arc-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +169.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The corresponding 169-byte arc-handle point has native value `1` or `2` |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `1` or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state_before_handle` | `bytes[2]` | little | spec | handle state u16 `2` at marker +76 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | The alternate coordinate tags are valid in these handle records |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_handle_prefix` | `bytes[2]` | little | spec | handle state u16 `2` at marker +76 |
+| 76 | 2 | `handle_state` | `u16` | little | spec | handle state u16 `2` at marker +76 · value `2` |
+| 78 | 4 | `reference_cell` | `bytes[4]` | little | spec | a selector and u16 identifier at marker +78 |
+| 82 | 8 | `reference_tail` | `bytes[8]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +82 |
+| 90 | 6 | `class_marker_and_length` | `bytes[6]` | little | spec | `ff ff 01 00 0b 00` and `sgArcHandle` at marker +90 and +96 |
+| 96 | 11 | `class_name` | `bytes[11]` | little | spec | `ff ff 01 00 0b 00` and `sgArcHandle` at marker +90 and +96 |
+| 107 | 2 | `handle_identifier` | `u16` | little | spec | zero u16 at marker +107 · value `0` |
+| 109 | 8 | `reference_sentinel_and_zero_tail` | `bytes[8]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +109 |
+| 117 | 6 | `terminator` | `bytes[6]` | little | spec | `00 00 fe ff ff ff` at marker +117 |
+| 123 | 42 | `zero_trailer` | `bytes[42]` | little | spec | 42 zero bytes at marker +123 |
+| 165 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +165 |
 
 ## `current_geometry_locus_arc_handle_point`
 

@@ -519,6 +519,40 @@ fn compact_legacy_state_five_line_indexes_the_coordinate_roster() {
 }
 
 #[test]
+fn legacy_geometry_locus_84_bounded_arc_without_detail_is_line() {
+    let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[21..23].fill(0);
+    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[39..48].fill(0);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&0u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&6u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].fill(0);
+    payload[76..80].copy_from_slice(&4u32.to_le_bytes());
+    payload[80..84].copy_from_slice(&3u32.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        compact_indexed_curve_endpoint_indices(&payload, 0),
+        Some([1, 7])
+    );
+    assert!(legacy_undetailed_profile_line(&payload, 0));
+
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    assert!(!legacy_undetailed_profile_line(&payload, 0));
+    payload[29..31].copy_from_slice(&2u16.to_le_bytes());
+    payload[80..84].copy_from_slice(&4u32.to_le_bytes());
+    assert!(!legacy_undetailed_profile_line(&payload, 0));
+}
+
+#[test]
 fn terminal_compact_indexed_curve_owns_its_endpoint_trailer() {
     let mut payload = vec![0; 102];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
