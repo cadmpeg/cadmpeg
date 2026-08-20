@@ -5937,6 +5937,7 @@ impl SketchPointRecordForm {
                     Self::Version10 | Self::Version10InlineTyped { .. },
                     Some((0, 0 | 1))
                 )
+                | (Self::Version10InlineTyped { .. }, Some((2, 1)))
                 | (Self::Version11 { .. }, Some((0 | 1 | 4, 0) | (0 | 2, 1)))
         )
     }
