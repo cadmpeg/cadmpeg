@@ -596,6 +596,17 @@ configuration-owned value or override relation.
 
 **Need.** We must know the field roles to construct termination, direction, draft, and other operation controls.
 
+**Conflict.** The terminal lane supplies two compact indices, four flag bytes,
+and an ordered trailing-index lane. No serialized type definition, operation
+control declaration, or unique relation assigns those fields to a termination,
+direction, draft, or other semantic control. A link to an immediately
+preceding common frame establishes byte ownership only; it does not assign
+field roles.
+
+**Note.** The complete terminal discriminator remains native data with its
+exact indices, flags, order, and offsets. A neutral control requires a unique
+field-role relation and a decoded value domain for that operation family.
+
 ### OM-15. `CPROJ` construction-reference roles
 
 **Question.** Which `CPROJ` construction references select the source curve, target surface, direction, and combination controls?
