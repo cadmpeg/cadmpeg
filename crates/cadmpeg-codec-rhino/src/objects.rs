@@ -25,6 +25,16 @@ const CLASS_UUID: u32 = 0x0002_fffb;
 const CLASS_DATA: u32 = 0x0002_fffc;
 const CLASS_END: u32 = 0x8002_7fff;
 const ANONYMOUS: u32 = 0x4000_8000;
+const LEGACY_OBJECT_ATTRIBUTES_CUTOFF: i64 = 200_712_190;
+pub(crate) const USER_STRING_LIST: Uuid = Uuid::from_canonical([
+    0xce, 0x28, 0xde, 0x29, 0xf4, 0xc5, 0x4f, 0xaa, 0xa5, 0x0a, 0xc3, 0xa6, 0x84, 0x9b, 0x63, 0x29,
+]);
+pub(crate) const OBSOLETE_CUSTOM_MESH_USERDATA: Uuid = Uuid::from_canonical([
+    0x69, 0xf2, 0x76, 0x95, 0x30, 0x11, 0x4f, 0xba, 0x82, 0xc1, 0xe5, 0x29, 0xf2, 0x5b, 0x5f, 0xd9,
+]);
+pub(crate) const PER_OBJECT_MESH_PARAMETERS_USERDATA: Uuid = Uuid::from_canonical([
+    0xb5, 0x62, 0x8c, 0xa9, 0x82, 0xc4, 0x4c, 0xae, 0x98, 0x83, 0x48, 0x7b, 0x3e, 0x4a, 0xb2, 0x8b,
+]);
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -70,6 +80,10 @@ pub(crate) struct AttributeUserdataDescriptor {
     pub(crate) class_uuid: Option<Uuid>,
     /// Userdata item UUID when the framing supplied one.
     pub(crate) item_uuid: Option<Uuid>,
+    /// Userdata application UUID from a major-2 minor-1 header.
+    pub(crate) application_uuid: Option<Uuid>,
+    /// Userdata writer version from a major-2 header.
+    pub(crate) writer_version: Option<i64>,
     /// Bounded anonymous payload range.
     pub(crate) payload_range: Option<Range<usize>>,
 }
@@ -158,6 +172,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) hatch_background: [u8; 4],
     /// Whether hatch boundaries are visible.
     pub(crate) hatch_boundary_visible: bool,
+    /// Whether a detail requests its display-mode background.
+    pub(crate) detail_background_visible: bool,
     /// Object frame transform.
     pub(crate) object_frame: Option<Xform>,
     /// Section-fill rule.
@@ -178,6 +194,10 @@ pub(crate) struct ObjectAttributes {
     pub(crate) embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
     pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
+    /// Per-object custom render-mesh settings.
+    pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
+    /// Per-object mesh modifier userdata.
+    pub(crate) mesh_modifiers: Option<crate::mesh_modifiers::MeshModifiers>,
 }
 
 /// Resolved source identity and display state for one object.
@@ -387,6 +407,21 @@ pub(crate) fn parse_class_wrapper_with_userdata(
             .try_into()
             .expect("UUID length checked"),
     );
+    if class_uuid == Uuid::nil() {
+        if uuid_chunk.next_offset != wrapper.body.end {
+            return Err(FramingError::structural(
+                uuid_chunk.next_offset,
+                "null class wrapper has trailing bytes",
+            ));
+        }
+        return Ok((
+            ClassDescriptor {
+                class_uuid,
+                class_data_range: uuid_chunk.next_offset..uuid_chunk.next_offset,
+            },
+            Vec::new(),
+        ));
+    }
     let data_chunk = child(
         bytes,
         uuid_chunk.next_offset,
@@ -429,7 +464,8 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     ))
 }
 
-fn parse_userdata(
+/// Parses one class-userdata chunk shared by object and render-settings wrappers.
+pub(crate) fn parse_userdata(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -447,12 +483,6 @@ fn parse_userdata(
         let transform_range = transform_start..reader.position();
         let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
-        if payload.next_offset != wrapper.body.end {
-            return Err(FramingError::structural(
-                wrapper.body.end,
-                "userdata wrapper has trailing bytes",
-            ));
-        }
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
         }
@@ -516,20 +546,11 @@ fn parse_userdata(
     };
     let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
-    if header_reader.position() != header.body.end {
-        return Err(FramingError::structural(
-            header_reader.position(),
-            "userdata header has trailing bytes",
-        ));
-    }
+    header_reader.skip_remaining()?;
     let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
     require_long(&payload, ANONYMOUS)?;
-    if payload.next_offset != wrapper.body.end {
-        return Err(FramingError::structural(
-            payload.next_offset,
-            "userdata wrapper has trailing bytes",
-        ));
-    }
+    reader.skip(payload.next_offset - reader.position())?;
+    reader.skip_remaining()?;
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
     {
@@ -549,6 +570,54 @@ fn parse_userdata(
         payload_range: payload.body,
         unknown_version: false,
     })
+}
+
+/// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
+pub(crate) fn parse_user_string_list(
+    bytes: &[u8],
+    payload_range: Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<Vec<(String, String)>, FramingError> {
+    let list = child(
+        bytes,
+        payload_range.start,
+        payload_range.end,
+        archive,
+        false,
+    )?;
+    require_long(&list, ANONYMOUS)?;
+    let mut reader = BoundedReader::new(bytes, list.body.start, list.body.end)?;
+    let major = reader.i32()?;
+    let minor = reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(FramingError::structural(
+            list.body.start,
+            "user-string list version is unsupported",
+        ));
+    }
+    let count = reader.i32()?;
+    let count_bytes = bounded_count(&reader, count, 1)?;
+    let mut values = Vec::with_capacity(count_bytes);
+    for _ in 0..count_bytes {
+        let entry = child(bytes, reader.position(), list.body.end, archive, false)?;
+        require_long(&entry, ANONYMOUS)?;
+        let mut entry_reader = BoundedReader::new(bytes, entry.body.start, entry.body.end)?;
+        let entry_major = entry_reader.i32()?;
+        let entry_minor = entry_reader.i32()?;
+        if entry_major != 1 || entry_minor < 0 {
+            return Err(FramingError::structural(
+                entry.body.start,
+                "user-string entry version is unsupported",
+            ));
+        }
+        let key = settings::utf16(&mut entry_reader)?;
+        let value = settings::utf16(&mut entry_reader)?;
+        entry_reader.skip_remaining()?;
+        values.push((key, value));
+        reader.skip(entry.next_offset - reader.position())?;
+    }
+    reader.skip_remaining()?;
+    Ok(values)
 }
 
 fn parse_history(
@@ -614,6 +683,7 @@ pub(crate) fn parse_attributes(
     body_range: Range<usize>,
     source_range: Range<usize>,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
     warnings: &mut Vec<String>,
 ) -> Result<ObjectAttributes, FramingError> {
     let mut reader = crate::chunks::BoundedReader::new(bytes, body_range.start, body_range.end)?;
@@ -622,7 +692,10 @@ pub(crate) fn parse_attributes(
         (value >> 4, value & 0x0f)
     };
     if version.0 == 1 {
-        if archive.value() >= 50 || version.1 > 8 {
+        if (archive.value() >= 5
+            && writer_version.is_some_and(|version| version >= LEGACY_OBJECT_ATTRIBUTES_CUTOFF))
+            || version.1 > 8
+        {
             return Err(FramingError::structural(
                 body_range.start,
                 "unsupported fixed object-attributes version",
@@ -655,7 +728,7 @@ pub(crate) fn parse_attributes(
             Vec::new()
         };
         let visible = if version.1 >= 2 {
-            reader.bool()?
+            reader.bool_with_writer_version(writer_version)?
         } else {
             object_mode & 0x0f != HIDDEN_OBJECT_MODE
         };
@@ -700,6 +773,7 @@ pub(crate) fn parse_attributes(
                 bytes,
                 &mut reader,
                 archive,
+                settings::RenderingAttributesKind::Object,
                 warnings,
             )?)
         } else {
@@ -708,7 +782,7 @@ pub(crate) fn parse_attributes(
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
-        finish_attributes(&reader, "fixed object attributes")?;
+        finish_attributes(&mut reader, "fixed object attributes")?;
         return Ok(ObjectAttributes {
             source: SourceRange {
                 range: source_range.clone(),
@@ -756,6 +830,7 @@ pub(crate) fn parse_attributes(
             linetype_pattern_scale: 1.0,
             hatch_background: [0; 4],
             hatch_boundary_visible: false,
+            detail_background_visible: false,
             object_frame: None,
             section_fill_rule: 0,
             line_cap_source: 0,
@@ -766,9 +841,11 @@ pub(crate) fn parse_attributes(
             selective_clipping_list: false,
             embedded_linetype: None,
             embedded_section_style: None,
+            custom_render_mesh: None,
+            mesh_modifiers: None,
         });
     }
-    if version.0 != 2 || archive.value() < 50 || version.1 > 13 {
+    if version.0 != 2 || archive.value() < 50 {
         return Err(FramingError::structural(
             body_range.start,
             "unsupported tagged object-attributes version",
@@ -819,6 +896,7 @@ pub(crate) fn parse_attributes(
         linetype_pattern_scale: 1.0,
         hatch_background: [0; 4],
         hatch_boundary_visible: false,
+        detail_background_visible: false,
         object_frame: None,
         section_fill_rule: 0,
         line_cap_source: 0,
@@ -829,11 +907,14 @@ pub(crate) fn parse_attributes(
         selective_clipping_list: false,
         embedded_linetype: None,
         embedded_section_style: None,
+        custom_render_mesh: None,
+        mesh_modifiers: None,
     };
+    let mut last_item = 0_u8;
     while reader.remaining() > 0 {
         let item = reader.u8()?;
         if item == 0 {
-            finish_attributes(&reader, "tagged object attributes")?;
+            finish_attributes(&mut reader, "tagged object attributes")?;
             return Ok(attributes);
         }
         let gate = match item {
@@ -849,20 +930,23 @@ pub(crate) fn parse_attributes(
             38 => 10,
             39 => 11,
             40 => 12,
-            41 => 13,
+            41 | 42 => 13,
             _ => {
-                return Err(FramingError::structural(
-                    reader.position() - 1,
-                    format!("unknown future object-attributes item {item}"),
-                ))
+                // Item values have no length prefix. The source reader consumes
+                // only an unknown ID and lets the enclosing chunk boundary
+                // discard the value bytes it cannot type.
+                finish_attributes(&mut reader, "future tagged object attributes")?;
+                return Ok(attributes);
             }
         };
-        if version.1 < gate {
-            return Err(FramingError::structural(
-                reader.position() - 1,
-                format!("attribute item {item} precedes its version gate"),
-            ));
+        if item <= last_item || version.1 < gate {
+            // This is the source reader's ordered cascade. The ID has been
+            // consumed, but its value has no generic width, so the rest stays
+            // at the containing attributes boundary.
+            finish_attributes(&mut reader, "bounded tagged object attributes")?;
+            return Ok(attributes);
         }
+        last_item = item;
         match item {
             1 => attributes.name = settings::utf16(&mut reader)?,
             2 => attributes.url = settings::utf16(&mut reader)?,
@@ -873,6 +957,7 @@ pub(crate) fn parse_attributes(
                     bytes,
                     &mut reader,
                     archive,
+                    settings::RenderingAttributesKind::Object,
                     warnings,
                 )?);
             }
@@ -884,7 +969,7 @@ pub(crate) fn parse_attributes(
             }
             9 => attributes.decoration = i32::from(reader.u8()?),
             10 => attributes.wire_density = reader.i32()?,
-            11 => attributes.visible = reader.bool()?,
+            11 => attributes.visible = reader.bool_with_writer_version(writer_version)?,
             12 => attributes.object_mode = reader.u8()?,
             13 => attributes.color_source = reader.u8()?,
             14 => attributes.plot_color_source = reader.u8()?,
@@ -918,7 +1003,7 @@ pub(crate) fn parse_attributes(
             26 => attributes.line_join_style = reader.u8()?,
             27 => attributes.clip_participation_source = reader.u8()?,
             28 => {
-                attributes.clipping_proof = reader.bool()?;
+                attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
             29 => attributes.section_attributes_source = reader.u8()?,
@@ -939,7 +1024,14 @@ pub(crate) fn parse_attributes(
                 attributes.hatch_background =
                     reader.take(4)?.try_into().expect("color width checked");
             }
-            35 => attributes.hatch_boundary_visible = reader.bool()?,
+            35 => {
+                attributes.hatch_boundary_visible =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
+            42 => {
+                attributes.detail_background_visible =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
             36 => attributes.object_frame = Some(settings::xform(&mut reader)?),
             37 => attributes.section_fill_rule = reader.u8()?,
             38 => {
@@ -959,7 +1051,10 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             40 => attributes.clipping_plane_label_style = reader.u8()?,
-            41 => attributes.selective_clipping_list = reader.bool()?,
+            41 => {
+                attributes.selective_clipping_list =
+                    reader.bool_with_writer_version(writer_version)?;
+            }
             _ => unreachable!(),
         }
     }
@@ -987,7 +1082,8 @@ pub(crate) fn read_uuid_list(
         ));
     }
     let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "UUID list version is unsupported",
@@ -999,12 +1095,7 @@ pub(crate) fn read_uuid_list(
     for _ in 0..bytes / 16 {
         values.push(uuid_reader(&mut payload)?);
     }
-    if payload.remaining() != 0 {
-        return Err(FramingError::structural(
-            payload.position(),
-            "UUID list has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(values)
 }
@@ -1016,15 +1107,10 @@ fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, Fr
 }
 
 fn finish_attributes(
-    reader: &crate::chunks::BoundedReader<'_>,
-    label: &str,
+    reader: &mut crate::chunks::BoundedReader<'_>,
+    _label: &str,
 ) -> Result<(), FramingError> {
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(())
 }
 
@@ -1044,6 +1130,12 @@ pub(crate) fn parse_attribute_userdata(
                 break;
             }
         };
+        if item.typecode == CLASS_END {
+            if let Err(error) = require_short_zero(&item, CLASS_END) {
+                warnings.push(format!("attribute userdata end degraded: {error}"));
+            }
+            break;
+        }
         if item.typecode != CLASS_USERDATA || item.short {
             warnings.push(format!(
                 "unknown attribute userdata chunk {:#x} at {}",
@@ -1054,6 +1146,8 @@ pub(crate) fn parse_attribute_userdata(
                 known: false,
                 class_uuid: None,
                 item_uuid: None,
+                application_uuid: None,
+                writer_version: None,
                 payload_range: None,
             });
         } else {
@@ -1063,6 +1157,16 @@ pub(crate) fn parse_attribute_userdata(
                     known: !value.unknown_version,
                     class_uuid: (!value.unknown_version).then_some(value.class_uuid),
                     item_uuid: (!value.unknown_version).then_some(value.item_uuid),
+                    application_uuid: (!value.unknown_version)
+                        .then_some(value.application_uuid)
+                        .flatten(),
+                    writer_version: (!value.unknown_version)
+                        .then_some(
+                            value
+                                .writer_version
+                                .map(|version| i64::from(version as u32)),
+                        )
+                        .flatten(),
                     payload_range: (!value.unknown_version).then_some(value.payload_range),
                 }),
                 Err(error) => warnings.push(format!(
@@ -1074,6 +1178,137 @@ pub(crate) fn parse_attribute_userdata(
         offset = item.next_offset;
     }
     result
+}
+
+/// Applies the recognized carriers owned by one object-attributes stream.
+pub(crate) fn apply_attribute_userdata(
+    bytes: &[u8],
+    attributes: &mut ObjectAttributes,
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) {
+    let modern_custom_mesh = parse_per_object_mesh_userdata(bytes, descriptors, archive, warnings);
+    let obsolete_custom_mesh =
+        parse_obsolete_custom_mesh_userdata(bytes, descriptors, archive, warnings);
+    attributes.custom_render_mesh = obsolete_custom_mesh.or(modern_custom_mesh);
+    attributes.mesh_modifiers =
+        crate::mesh_modifiers::parse_attribute_userdata(bytes, descriptors, archive, warnings);
+}
+
+fn parse_obsolete_custom_mesh_userdata(
+    bytes: &[u8],
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Option<settings::MeshParameters> {
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor.class_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+            && descriptor.item_uuid == Some(OBSOLETE_CUSTOM_MESH_USERDATA)
+    })?;
+    let Some(payload_range) = descriptor.payload_range.clone() else {
+        warnings.push(format!(
+            "obsolete custom mesh userdata at {} has no bounded payload",
+            descriptor.range.start
+        ));
+        return None;
+    };
+    let parsed = (|| {
+        let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
+        let _legacy_value = reader.i32()?;
+        let in_use = reader.bool_with_writer_version(descriptor.writer_version)?;
+        let mut mesh = settings::parse_mesh_parameters(bytes, &mut reader, archive, true)?;
+        reader.skip_remaining()?;
+
+        // Read3dmObject converts this carrier into the modern per-object
+        // userdata, whose setter forces these two logical fields.
+        mesh.custom_settings_enabled = Some(in_use);
+        mesh.custom_settings = Some(true);
+        mesh.compute_curvature = false;
+        Ok::<_, FramingError>(mesh)
+    })();
+    match parsed {
+        Ok(mesh) => Some(mesh),
+        Err(error) => {
+            warnings.push(format!(
+                "obsolete custom mesh userdata at {} dropped: {error}",
+                descriptor.range.start
+            ));
+            None
+        }
+    }
+}
+
+fn parse_per_object_mesh_userdata(
+    bytes: &[u8],
+    descriptors: &[AttributeUserdataDescriptor],
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Option<settings::MeshParameters> {
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor.class_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+            && descriptor.item_uuid == Some(PER_OBJECT_MESH_PARAMETERS_USERDATA)
+    })?;
+    let Some(payload_range) = descriptor.payload_range.clone() else {
+        warnings.push(format!(
+            "per-object mesh userdata at {} has no bounded payload",
+            descriptor.range.start
+        ));
+        return None;
+    };
+    let parsed = (|| {
+        let outer = child(
+            bytes,
+            payload_range.start,
+            payload_range.end,
+            archive,
+            false,
+        )?;
+        require_long(&outer, ANONYMOUS)?;
+        let mut outer_reader = BoundedReader::new(bytes, outer.body.start, outer.body.end)?;
+        let major = outer_reader.i32()?;
+        let _minor = outer_reader.i32()?;
+        if major != 1 {
+            return Err(FramingError::structural(
+                outer.body.start,
+                "per-object mesh userdata version is unsupported",
+            ));
+        }
+        let inner = child(
+            bytes,
+            outer_reader.position(),
+            outer.body.end,
+            archive,
+            false,
+        )?;
+        require_long(&inner, ANONYMOUS)?;
+        if inner.value <= 0 || inner.body.is_empty() {
+            return Err(FramingError::structural(
+                inner.header_start,
+                "per-object mesh userdata mesh child is empty",
+            ));
+        }
+        let mut mesh_reader = BoundedReader::new(bytes, inner.body.start, inner.body.end)?;
+        let mut mesh = settings::parse_mesh_parameters(bytes, &mut mesh_reader, archive, true)?;
+        mesh_reader.skip_remaining()?;
+        outer_reader.skip_remaining()?;
+
+        // ON_PerObjectMeshParameters::Read applies these class invariants after
+        // reading the nested mesh body.
+        mesh.custom_settings = Some(true);
+        mesh.compute_curvature = false;
+        Ok::<_, FramingError>(mesh)
+    })();
+    match parsed {
+        Ok(mesh) => Some(mesh),
+        Err(error) => {
+            warnings.push(format!(
+                "per-object mesh userdata at {} dropped: {error}",
+                descriptor.range.start
+            ));
+            None
+        }
+    }
 }
 
 fn resolve_identity(
@@ -1159,6 +1394,7 @@ pub(crate) fn parse_object_record(
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
+    writer_version: Option<i64>,
     global_warnings: &mut Vec<String>,
 ) -> Result<ObjectDescriptor, FramingError> {
     let mut warnings = Vec::new();
@@ -1228,6 +1464,7 @@ pub(crate) fn parse_object_record(
     }
     let mut attributes_range = None;
     let mut attributes_body_range = None;
+    let mut attributes_chunk = None;
     let mut attributes_userdata_range = None;
     let mut attributes_userdata_body_range = None;
     let mut history = None;
@@ -1251,9 +1488,7 @@ pub(crate) fn parse_object_record(
         match item.typecode {
             OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
-                if let Some(note) = checksum_warning(bytes, &item)? {
-                    warnings.push(note);
-                }
+                attributes_chunk = Some(item.clone());
                 attributes_range = Some(item.range());
                 attributes_body_range = Some(item.body.clone());
                 phase = 1;
@@ -1299,31 +1534,52 @@ pub(crate) fn parse_object_record(
         ));
     }
     let mut attributes_degraded = false;
-    let attributes = attributes_body_range.as_ref().and_then(|body_range| {
-        match parse_attributes(
-            bytes,
-            body_range.clone(),
-            attributes_range
-                .clone()
-                .unwrap_or_else(|| body_range.clone()),
-            archive,
-            &mut warnings,
-        ) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                attributes_degraded = true;
-                warnings.push(format!(
-                    "object attributes at {} degraded: {error}",
-                    body_range.start
-                ));
-                None
+    let mut attributes =
+        attributes_body_range.as_ref().and_then(|body_range| {
+            match parse_attributes(
+                bytes,
+                body_range.clone(),
+                attributes_range
+                    .clone()
+                    .unwrap_or_else(|| body_range.clone()),
+                archive,
+                writer_version,
+                &mut warnings,
+            ) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    attributes_degraded = true;
+                    warnings.push(format!(
+                        "object attributes at {} degraded: {error}",
+                        body_range.start
+                    ));
+                    None
+                }
             }
+        });
+    if let Some(item) = attributes_chunk.as_ref() {
+        let children = attributes
+            .as_ref()
+            .and_then(|value| value.rendering_range.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(note) = checksum_warning_excluding(bytes, item, &children)? {
+            warnings.push(note);
         }
-    });
+    }
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
+    if let Some(attributes) = attributes.as_mut() {
+        apply_attribute_userdata(
+            bytes,
+            attributes,
+            &attributes_userdata,
+            archive,
+            &mut warnings,
+        );
+    }
     Ok(ObjectDescriptor {
         range: record.range.clone(),
         object_type,

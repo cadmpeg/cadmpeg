@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use serde::Serialize;
 
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
-use crate::container::{Record, Table};
-use crate::objects::{parse_class_wrapper, read_uuid_list};
+use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::container::{OpaqueRecord, Record, Table};
+use crate::objects::{parse_class_wrapper_with_userdata, read_uuid_list, UserdataDescriptor};
 use crate::wire::Uuid;
 
 const MAX_STRING_BYTES: usize = 1 << 20;
@@ -25,6 +26,9 @@ const APPLICATION: u32 = 0x2000_8024;
 const WRITER_VERSION: u32 = 0xa000_0026;
 const AS_FILE_NAME: u32 = 0x2000_8027;
 const UNITS: u32 = 0x2000_8031;
+const PLUGIN_LIST: u32 = 0x2000_8135;
+const RENDER_MESH: u32 = 0x2000_8032;
+const ANALYSIS_MESH: u32 = 0x2000_8033;
 const CURRENT_LAYER: u32 = 0xa000_0038;
 const CURRENT_MATERIAL: u32 = 0x2000_8039;
 const CURRENT_COLOR: u32 = 0x2000_803a;
@@ -32,11 +36,21 @@ const CURRENT_WIRE_DENSITY: u32 = 0xa000_003c;
 const MODEL_URL: u32 = 0x2000_8131;
 const CURRENT_FONT: u32 = 0xa000_0132;
 const CURRENT_DIMSTYLE: u32 = 0xa000_0133;
+const ATTRIBUTES: u32 = 0x2000_8134;
 const ON_LAYER_UUID: Uuid = Uuid::from_canonical([
     0x95, 0x80, 0x98, 0x13, 0xe9, 0x85, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
+pub(crate) const LAYER_EXTENSIONS: Uuid = Uuid::from_canonical([
+    0x3e, 0x49, 0x04, 0xe6, 0xe9, 0x30, 0x4f, 0xbc, 0xaa, 0x42, 0xeb, 0xd4, 0x07, 0xae, 0xfe, 0x3b,
+]);
+const LAYER_PER_VIEWPORT_ID: u32 = 1;
+const LAYER_PER_VIEWPORT_COLOR: u32 = 2;
+const LAYER_PER_VIEWPORT_PLOT_COLOR: u32 = 4;
+const LAYER_PER_VIEWPORT_PLOT_WEIGHT: u32 = 8;
+const LAYER_PER_VIEWPORT_VISIBLE: u32 = 16;
+const LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY: u32 = 32;
 
 /// A source range in the original archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +237,217 @@ pub(crate) struct UnitsAndTolerances {
     pub(crate) source: SourceRange,
 }
 
+/// One plugin reference stored in the settings plugin list.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PluginReference {
+    /// Complete anonymous-chunk source range.
+    pub(crate) source: SourceRange,
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Plugin identity.
+    pub(crate) plugin_id: Uuid,
+    /// Rhino plugin-type enum ordinal.
+    pub(crate) plugin_type: i32,
+    /// Plugin display name.
+    pub(crate) name: String,
+    /// Plugin version string.
+    pub(crate) version_string: String,
+    /// Plugin executable filename.
+    pub(crate) filename: String,
+    /// Developer organization.
+    pub(crate) developer_organization: Option<String>,
+    /// Developer address.
+    pub(crate) developer_address: Option<String>,
+    /// Developer country.
+    pub(crate) developer_country: Option<String>,
+    /// Developer phone.
+    pub(crate) developer_phone: Option<String>,
+    /// Developer email.
+    pub(crate) developer_email: Option<String>,
+    /// Developer website.
+    pub(crate) developer_website: Option<String>,
+    /// Developer update URL.
+    pub(crate) developer_update_url: Option<String>,
+    /// Developer fax.
+    pub(crate) developer_fax: Option<String>,
+    /// Plugin platform: 0 unknown, 1 C++, 2 .NET.
+    pub(crate) platform: Option<i32>,
+    /// Plugin SDK version component.
+    pub(crate) sdk_version: Option<i32>,
+    /// Plugin SDK service-release component.
+    pub(crate) sdk_service_release: Option<i32>,
+}
+
+/// The settings plugin list and its bounded entries.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct PluginList {
+    /// Complete source range.
+    pub(crate) source: SourceRange,
+    /// Packed list version.
+    pub(crate) version: (u8, u8),
+    /// Plugin references.
+    pub(crate) plugins: Vec<PluginReference>,
+}
+
+/// Earth-location anchor nested in the settings-attributes record.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EarthAnchorPoint {
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Earth latitude in degrees.
+    pub(crate) earth_latitude: f64,
+    /// Earth longitude in degrees.
+    pub(crate) earth_longitude: f64,
+    /// Earth elevation in meters.
+    pub(crate) earth_elevation_meters: f64,
+    /// Model point corresponding to the earth location.
+    pub(crate) model_point: Point3,
+    /// Model north vector.
+    pub(crate) model_north: Vector3,
+    /// Model east vector.
+    pub(crate) model_east: Vector3,
+    /// Legacy elevation-reference enum stored by versions 1.1 and later.
+    pub(crate) legacy_coordinate_system: Option<i32>,
+    /// Earth-anchor UUID.
+    pub(crate) id: Option<Uuid>,
+    /// Earth-anchor name.
+    pub(crate) name: Option<String>,
+    /// Earth-anchor description.
+    pub(crate) description: Option<String>,
+    /// Earth-anchor URL.
+    pub(crate) url: Option<String>,
+    /// Earth-anchor URL tag.
+    pub(crate) url_tag: Option<String>,
+    /// Current earth-coordinate-system enum stored by version 1.2 and later.
+    pub(crate) coordinate_system: Option<u32>,
+}
+
+/// The nested settings record controlling linked definitions and textures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IoSettings {
+    /// Anonymous chunk version.
+    pub(crate) version: (i32, i32),
+    /// Whether texture bitmaps are saved in the file.
+    pub(crate) save_texture_bitmaps_in_file: bool,
+    /// Linked-instance-definition update policy.
+    pub(crate) idef_link_update: i32,
+}
+
+/// `SubD` display fields nested in mesh parameters version 1.5.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct SubDDisplayParameters {
+    /// Anonymous chunk minor version.
+    pub(crate) version: i32,
+    /// Adaptive display density.
+    pub(crate) display_density: u32,
+    /// Component location enum.
+    pub(crate) mesh_location: u32,
+    /// Whether the display density is absolute, introduced at version 2.
+    pub(crate) display_density_is_absolute: Option<bool>,
+    /// Whether curvature is computed, introduced at version 3.
+    pub(crate) compute_curvature: Option<bool>,
+}
+
+/// Serialized mesh parameters used by settings records.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+// These independent flags are separate fields in the source wire grammar.
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct MeshParameters {
+    /// Packed version.
+    pub(crate) version: (u8, u8),
+    /// Legacy boolean fields, decoded from nonzero integers.
+    pub(crate) compute_curvature: bool,
+    /// Whether simple planes are used.
+    pub(crate) simple_planes: bool,
+    /// Whether refinement is enabled.
+    pub(crate) refine: bool,
+    /// Whether jagged seams are allowed.
+    pub(crate) jagged_seams: bool,
+    /// Obsolete weld field retained in the wire layout.
+    pub(crate) obsolete_weld: i32,
+    /// Meshing tolerance.
+    pub(crate) tolerance: f64,
+    /// Minimum edge length.
+    pub(crate) min_edge_length: f64,
+    /// Maximum edge length.
+    pub(crate) max_edge_length: f64,
+    /// Grid aspect ratio.
+    pub(crate) grid_aspect_ratio: f64,
+    /// Minimum grid count.
+    pub(crate) grid_min_count: i32,
+    /// Maximum grid count.
+    pub(crate) grid_max_count: i32,
+    /// Grid angle in radians.
+    pub(crate) grid_angle_radians: f64,
+    /// Grid amplification factor.
+    pub(crate) grid_amplification: f64,
+    /// Refinement angle in radians.
+    pub(crate) refine_angle_radians: f64,
+    /// Obsolete combine angle retained in the wire layout.
+    pub(crate) obsolete_combine_angle: f64,
+    /// Face-type enum: 0 mixed, 1 triangles, 2 quads.
+    pub(crate) face_type: i32,
+    /// Texture-range mode, introduced at minor 1.
+    pub(crate) texture_range: Option<u32>,
+    /// Custom-settings flag, introduced at minor 2.
+    pub(crate) custom_settings: Option<bool>,
+    /// Relative tolerance, introduced at minor 2.
+    pub(crate) relative_tolerance: Option<f64>,
+    /// Mesher selector, introduced at minor 3.
+    pub(crate) mesher: Option<u8>,
+    /// Custom-settings-enabled flag, introduced at minor 4.
+    pub(crate) custom_settings_enabled: Option<bool>,
+    /// `SubD` display parameters, introduced at minor 5.
+    pub(crate) subd: Option<SubDDisplayParameters>,
+}
+
+/// Typed settings-attributes record.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SettingsAttributes {
+    /// Complete source range.
+    pub(crate) source: SourceRange,
+    /// Packed record version.
+    pub(crate) version: (u8, u8),
+    /// World scale applied to non-solid linetypes for model display.
+    pub(crate) linetype_display_scale: f64,
+    /// Current plot color bytes.
+    pub(crate) current_plot_color: [u8; 4],
+    /// Current plot-color source enum.
+    pub(crate) current_plot_color_source: i32,
+    /// V5 current line-pattern index, or -1 when unset.
+    pub(crate) current_line_pattern_index: i32,
+    /// Current linetype source enum.
+    pub(crate) current_linetype_source: i32,
+    /// Page-space units and tolerances, introduced at minor 1.
+    pub(crate) page_units: Option<UnitsAndTolerances>,
+    /// Active view UUID, introduced at minor 2.
+    pub(crate) active_view_id: Option<Uuid>,
+    /// Model basepoint, introduced at minor 3.
+    pub(crate) model_basepoint: Option<Point3>,
+    /// Earth anchor, introduced at minor 3.
+    pub(crate) earth_anchor: Option<EarthAnchorPoint>,
+    /// Texture-save flag, introduced at minor 4.
+    pub(crate) save_texture_bitmaps_in_file: Option<bool>,
+    /// IO settings, introduced at minor 5.
+    pub(crate) io_settings: Option<IoSettings>,
+    /// Custom render mesh settings, introduced at minor 6.
+    pub(crate) custom_render_mesh: Option<MeshParameters>,
+    /// Current layer UUID, introduced at minor 7.
+    pub(crate) current_layer_id: Option<Uuid>,
+    /// Current render-material UUID, introduced at minor 7.
+    pub(crate) current_render_material_id: Option<Uuid>,
+    /// Current line-pattern UUID, introduced at minor 7.
+    pub(crate) current_line_pattern_id: Option<Uuid>,
+    /// Current text-style UUID, introduced at minor 7.
+    pub(crate) current_text_style_id: Option<Uuid>,
+    /// Current dimension-style UUID, introduced at minor 7.
+    pub(crate) current_dimension_style_id: Option<Uuid>,
+    /// Current hatch-pattern UUID, introduced at minor 7.
+    pub(crate) current_hatch_pattern_id: Option<Uuid>,
+}
+
 /// A bounded unsupported setting payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -235,7 +460,7 @@ pub(crate) struct SettingDescriptor {
     pub(crate) payload_bytes: usize,
 }
 
-/// Current document selectors and bounded unsupported settings.
+/// Current document selectors, typed settings, and bounded unsupported settings.
 #[derive(Debug, Clone, Default)]
 #[allow(dead_code)]
 pub(crate) struct DocumentSettings {
@@ -259,6 +484,14 @@ pub(crate) struct DocumentSettings {
     pub(crate) model_url: Option<String>,
     /// Units and tolerances.
     pub(crate) units: Option<UnitsAndTolerances>,
+    /// Plugins that may have saved userdata in the file.
+    pub(crate) plugin_list: Option<PluginList>,
+    /// Settings attributes.
+    pub(crate) attributes: Option<SettingsAttributes>,
+    /// Render-mesh settings.
+    pub(crate) render_mesh_settings: Option<MeshParameters>,
+    /// Analysis-mesh settings.
+    pub(crate) analysis_mesh_settings: Option<MeshParameters>,
     /// Unsupported known settings.
     pub(crate) unsupported: Vec<SettingDescriptor>,
 }
@@ -283,6 +516,8 @@ pub(crate) struct LayerRecord {
     pub(crate) color: [u8; 4],
     /// Layer name.
     pub(crate) name: String,
+    /// Source-normalized layer description, when item 37 is nonempty.
+    pub(crate) description: Option<String>,
     /// Visibility.
     pub(crate) visible: bool,
     /// Lock state.
@@ -303,6 +538,8 @@ pub(crate) struct LayerRecord {
     pub(crate) display_material_id: Option<Uuid>,
     /// Whether clipping planes are disabled.
     pub(crate) no_clipping_planes: Option<bool>,
+    /// Whether per-viewport visibility starts enabled in new detail views.
+    pub(crate) visible_in_new_details: Option<bool>,
     /// Bounded rendering payload range.
     pub(crate) rendering_range: Option<Range<usize>>,
     /// Raw extension item IDs successfully consumed.
@@ -311,6 +548,27 @@ pub(crate) struct LayerRecord {
     pub(crate) embedded_linetype: Option<EmbeddedDescriptor>,
     /// Direct embedded section-style descriptor.
     pub(crate) embedded_section_style: Option<EmbeddedDescriptor>,
+    /// Per-viewport layer overrides from class-owned userdata.
+    pub(crate) per_viewport_settings: Vec<LayerPerViewportSettings>,
+}
+
+/// A source-normalized per-viewport layer override.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LayerPerViewportSettings {
+    /// Viewport identity selected by the source entry.
+    pub(crate) viewport_id: Uuid,
+    /// Effective source settings mask after source defaults and validation.
+    pub(crate) settings_mask: u32,
+    /// Per-viewport layer color, if effective.
+    pub(crate) color: Option<[u8; 4]>,
+    /// Per-viewport plot color, if effective.
+    pub(crate) plot_color: Option<[u8; 4]>,
+    /// Per-viewport plot weight in millimeters, if effective.
+    pub(crate) plot_weight_mm: Option<f64>,
+    /// Raw source visibility value, 1 for visible and 2 for off.
+    pub(crate) visible: Option<u8>,
+    /// Raw source persistent-visibility value, 1 or 2, for child layers.
+    pub(crate) persistent_visibility: Option<u8>,
 }
 
 /// A bounded direct object payload embedded in a layer extension.
@@ -332,12 +590,19 @@ pub(crate) struct DocumentMetadata {
     pub(crate) settings: DocumentSettings,
     /// Layer records.
     pub(crate) layers: Vec<LayerRecord>,
+    /// Complete metadata records whose tagged payload could not be decoded.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
 fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
     value.is_finite().then_some(value).ok_or_else(|| {
         FramingError::structural(reader.position(), format!("{label} is not finite"))
     })
+}
+
+fn finite_f64(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, FramingError> {
+    let value = reader.f64()?;
+    finite(reader, value, label)
 }
 
 fn finite_array<const N: usize>(
@@ -478,6 +743,188 @@ fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
     Ok(reader.take(4)?.try_into().expect("length checked"))
 }
 
+fn parse_layer_extensions(
+    data: &[u8],
+    descriptor: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    parent_id: Option<Uuid>,
+) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
+    let outer = chunk_at(
+        data,
+        descriptor.payload_range.start,
+        descriptor.payload_range.end,
+        archive,
+        false,
+    )?;
+    if outer.short || outer.typecode != ANONYMOUS {
+        return Err(FramingError::structural(
+            outer.header_start,
+            "layer extensions payload is not a long anonymous chunk",
+        ));
+    }
+    let mut outer_reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let major = outer_reader.i32()?;
+    let minor = outer_reader.i32()?;
+    if major != 1 || minor < 0 {
+        return Err(FramingError::structural(
+            outer.body.start,
+            "layer extensions version is unsupported",
+        ));
+    }
+    let count = outer_reader.i32()?;
+    let count = checked_count_bytes(
+        count,
+        1,
+        outer_reader.remaining(),
+        MAX_ARRAY_ITEMS,
+        outer_reader.position(),
+    )?;
+    let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let entry = chunk_at(
+            data,
+            outer_reader.position(),
+            outer.body.end,
+            archive,
+            false,
+        )?;
+        if entry.short || entry.typecode != ANONYMOUS {
+            return Err(FramingError::structural(
+                entry.header_start,
+                "layer extensions entry is not a long anonymous chunk",
+            ));
+        }
+        let mut entry_reader = BoundedReader::new(data, entry.body.start, entry.body.end)?;
+        let entry_major = entry_reader.i32()?;
+        let entry_minor = entry_reader.i32()?;
+        if entry_major != 1 || entry_minor < 0 {
+            return Err(FramingError::structural(
+                entry.body.start,
+                "layer extensions entry version is unsupported",
+            ));
+        }
+        let bits = entry_reader.u32()?;
+        let viewport_id = if bits & LAYER_PER_VIEWPORT_ID != 0 {
+            uuid(&mut entry_reader)?
+        } else {
+            Uuid::nil()
+        };
+        let color_value = if bits & LAYER_PER_VIEWPORT_COLOR != 0 {
+            Some(color(&mut entry_reader)?)
+        } else {
+            None
+        };
+        let plot_color_value = if bits & LAYER_PER_VIEWPORT_PLOT_COLOR != 0 {
+            Some(color(&mut entry_reader)?)
+        } else {
+            None
+        };
+        let plot_weight_value = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
+            Some(entry_reader.f64()?)
+        } else {
+            None
+        };
+        let (visible_value, compatibility_visible) = if bits & LAYER_PER_VIEWPORT_VISIBLE != 0 {
+            let value = entry_reader.u8()?;
+            let compatibility_value = (entry_minor >= 1).then(|| entry_reader.u8()).transpose()?;
+            (Some(value), compatibility_value)
+        } else {
+            (None, None)
+        };
+        let persistent_value =
+            if entry_minor >= 2 && bits & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0 {
+                Some(entry_reader.u8()?)
+            } else {
+                compatibility_visible
+            };
+        entry_reader.skip_remaining()?;
+
+        let color = color_value.filter(|value| *value != [u8::MAX; 4]);
+        let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
+        let plot_weight_mm = plot_weight_value
+            .filter(|value| value.is_finite() && (*value >= 0.0 || *value == -1.0));
+        let visible = visible_value.filter(|value| matches!(value, 1 | 2));
+        let persistent_visibility = if parent_is_nil {
+            None
+        } else {
+            persistent_value.filter(|value| matches!(value, 1 | 2))
+        };
+        let mut settings_mask = 0;
+        if !viewport_id.is_nil() {
+            if color.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_COLOR;
+            }
+            if plot_color.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PLOT_COLOR;
+            }
+            if plot_weight_mm.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PLOT_WEIGHT;
+            }
+            if visible.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_VISIBLE;
+            }
+            if persistent_visibility.is_some() {
+                settings_mask |= LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY;
+            }
+        }
+        if settings_mask != 0 {
+            values.push(LayerPerViewportSettings {
+                viewport_id,
+                settings_mask: settings_mask | LAYER_PER_VIEWPORT_ID,
+                color,
+                plot_color,
+                plot_weight_mm,
+                visible,
+                persistent_visibility,
+            });
+        }
+        outer_reader.skip(entry.next_offset - outer_reader.position())?;
+    }
+    outer_reader.skip_remaining()?;
+    values.sort_by(|a, b| {
+        let mut ordering = a.viewport_id.cmp(&b.viewport_id);
+        if ordering == std::cmp::Ordering::Equal {
+            ordering = a.settings_mask.cmp(&b.settings_mask);
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_VISIBLE != 0
+        {
+            ordering = a.visible.cmp(&b.visible);
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0
+        {
+            ordering = a.persistent_visibility.cmp(&b.persistent_visibility);
+        }
+        if ordering == std::cmp::Ordering::Equal && a.settings_mask & LAYER_PER_VIEWPORT_COLOR != 0
+        {
+            ordering = a
+                .color
+                .map(u32::from_le_bytes)
+                .cmp(&b.color.map(u32::from_le_bytes));
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_COLOR != 0
+        {
+            ordering = a
+                .plot_color
+                .map(u32::from_le_bytes)
+                .cmp(&b.plot_color.map(u32::from_le_bytes));
+        }
+        if ordering == std::cmp::Ordering::Equal
+            && a.settings_mask & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0
+        {
+            ordering = a
+                .plot_weight_mm
+                .expect("plot weight mask has a value")
+                .total_cmp(&b.plot_weight_mm.expect("plot weight mask has a value"));
+        }
+        ordering
+    });
+    Ok(values)
+}
+
 fn packed(reader: &mut BoundedReader<'_>) -> Result<(u8, u8), FramingError> {
     let value = reader.u8()?;
     Ok((value >> 4, value & 0x0f))
@@ -491,13 +938,8 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
     Ok(UtcTime { fields })
 }
 
-fn finish(reader: &BoundedReader<'_>, label: &str) -> Result<(), FramingError> {
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ));
-    }
+fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
+    reader.skip_remaining()?;
     Ok(())
 }
 
@@ -514,7 +956,7 @@ fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
 fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
-    if version != (1, 0) {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported revision-history version",
@@ -530,14 +972,14 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
         last_edited: times(&mut reader)?,
         revision_count: reader.i32()?,
     };
-    finish(&reader, "revision-history")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let version = packed(&mut reader)?;
-    if version.0 != 1 || version.1 > 1 {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported notes version",
@@ -558,19 +1000,13 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
         rectangle,
         locked,
     };
-    finish(&reader, "notes")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
-    let version = packed(&mut reader)?;
-    if version != (1, 0) {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported application version",
-        ));
-    }
+    packed(&mut reader)?;
     let value = Application {
         source: SourceRange {
             range: record.range.clone(),
@@ -579,7 +1015,7 @@ fn parse_application(data: &[u8], record: &Record) -> Result<Application, Framin
         url: utf16(&mut reader)?,
         details: utf16(&mut reader)?,
     };
-    finish(&reader, "application")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -618,9 +1054,21 @@ pub(crate) fn parse_units(
     record: &Record,
 ) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    parse_units_reader(
+        &mut reader,
+        SourceRange {
+            range: record.range.clone(),
+        },
+    )
+}
+
+fn parse_units_reader(
+    reader: &mut BoundedReader<'_>,
+    source: SourceRange,
+) -> Result<UnitsAndTolerances, FramingError> {
     let version = reader.i32()?;
     let legacy = version == 1;
-    if !legacy && !(100..=102).contains(&version) {
+    if !legacy && !(100..200).contains(&version) {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported units structure version",
@@ -628,7 +1076,7 @@ pub(crate) fn parse_units(
     }
     let unit_value = reader.i32()?;
     let absolute_raw = reader.f64()?;
-    let absolute = finite(&reader, absolute_raw, "absolute tolerance")?;
+    let absolute = finite(reader, absolute_raw, "absolute tolerance")?;
     let (relative, angular) = if legacy {
         let relative = reader.f64()?;
         let angular = reader.f64()?;
@@ -638,8 +1086,8 @@ pub(crate) fn parse_units(
         let relative = reader.f64()?;
         (relative, angular)
     };
-    let angular = finite(&reader, angular, "angular tolerance")?;
-    let relative = finite(&reader, relative, "relative tolerance")?;
+    let angular = finite(reader, angular, "angular tolerance")?;
+    let relative = finite(reader, relative, "relative tolerance")?;
     if absolute <= 0.0 {
         return Err(FramingError::structural(
             reader.position(),
@@ -668,7 +1116,7 @@ pub(crate) fn parse_units(
         .then(|| reader.f64())
         .transpose()?;
     let custom_name = if !legacy && version >= 102 {
-        Some(utf16(&mut reader)?)
+        Some(utf16(reader)?)
     } else {
         None
     };
@@ -726,7 +1174,7 @@ pub(crate) fn parse_units(
             "scaled absolute tolerance is invalid",
         ));
     }
-    finish(&reader, "units")?;
+    finish(reader, "units")?;
     Ok(UnitsAndTolerances {
         version,
         unit_value,
@@ -738,10 +1186,467 @@ pub(crate) fn parse_units(
         relative_tolerance: relative,
         distance_display_mode: mode,
         distance_display_precision: precision,
+        source,
+    })
+}
+
+fn anonymous_payload<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    label: &str,
+) -> Result<(BoundedReader<'a>, Range<usize>), FramingError> {
+    let start = reader.position();
+    let chunk = chunk_at(data, start, reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(FramingError::structural(
+            start,
+            format!("{label} must be a long anonymous chunk"),
+        ));
+    }
+    let payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    reader.skip(chunk.next_offset - start)?;
+    Ok((payload, chunk.range()))
+}
+
+fn anonymous_version(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<(i32, i32), FramingError> {
+    let version = (reader.i32()?, reader.i32()?);
+    if version.0 != 1 || version.1 < 0 {
+        return Err(FramingError::structural(
+            reader.position(),
+            format!("{label} version is unsupported"),
+        ));
+    }
+    Ok(version)
+}
+
+fn parse_plugin_reference<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<PluginReference, FramingError> {
+    let (mut payload, range) = anonymous_payload(data, reader, archive, "plugin reference")?;
+    let version = anonymous_version(&mut payload, "plugin reference")?;
+    let plugin_id = uuid(&mut payload)?;
+    let plugin_type = payload.i32()?;
+    let name = utf16(&mut payload)?;
+    let version_string = utf16(&mut payload)?;
+    let filename = utf16(&mut payload)?;
+    let (
+        developer_organization,
+        developer_address,
+        developer_country,
+        developer_phone,
+        developer_email,
+        developer_website,
+        developer_update_url,
+        developer_fax,
+        platform,
+        sdk_version,
+        sdk_service_release,
+    ) = if version.1 >= 1 {
+        let developer_organization = utf16(&mut payload)?;
+        let developer_address = utf16(&mut payload)?;
+        let developer_country = utf16(&mut payload)?;
+        let developer_phone = utf16(&mut payload)?;
+        let developer_email = utf16(&mut payload)?;
+        let developer_website = utf16(&mut payload)?;
+        let developer_update_url = utf16(&mut payload)?;
+        let developer_fax = utf16(&mut payload)?;
+        let (platform, sdk_version, sdk_service_release) = if version.1 >= 2 {
+            (
+                Some(payload.i32()?),
+                Some(payload.i32()?),
+                Some(payload.i32()?),
+            )
+        } else {
+            (None, None, None)
+        };
+        (
+            Some(developer_organization),
+            Some(developer_address),
+            Some(developer_country),
+            Some(developer_phone),
+            Some(developer_email),
+            Some(developer_website),
+            Some(developer_update_url),
+            Some(developer_fax),
+            platform,
+            sdk_version,
+            sdk_service_release,
+        )
+    } else {
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
+    };
+    finish(&mut payload, "plugin reference")?;
+    Ok(PluginReference {
+        source: SourceRange { range },
+        version,
+        plugin_id,
+        plugin_type,
+        name,
+        version_string,
+        filename,
+        developer_organization,
+        developer_address,
+        developer_country,
+        developer_phone,
+        developer_email,
+        developer_website,
+        developer_update_url,
+        developer_fax,
+        platform,
+        sdk_version,
+        sdk_service_release,
+    })
+}
+
+pub(crate) fn parse_plugin_list(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<PluginList, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let version = packed(&mut reader)?;
+    if version.0 != 1 {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported plugin-list version",
+        ));
+    }
+    let count_offset = reader.position();
+    let count = reader.i32()?;
+    let count = crate::chunks::checked_count_bytes(
+        count,
+        1,
+        reader.remaining(),
+        MAX_ARRAY_ITEMS,
+        count_offset,
+    )?;
+    let mut plugins = Vec::with_capacity(count);
+    for _ in 0..count {
+        plugins.push(parse_plugin_reference(data, &mut reader, archive)?);
+    }
+    finish(&mut reader, "plugin list")?;
+    Ok(PluginList {
         source: SourceRange {
             range: record.range.clone(),
         },
+        version,
+        plugins,
     })
+}
+
+fn parse_earth_anchor<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<EarthAnchorPoint, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "earth anchor")?;
+    let version = anonymous_version(&mut payload, "earth anchor")?;
+    let earth_latitude = payload.f64()?;
+    let earth_longitude = payload.f64()?;
+    let earth_elevation_meters = payload.f64()?;
+    let model_point = point(&mut payload)?;
+    let model_north = vector(&mut payload)?;
+    let model_east = vector(&mut payload)?;
+    let (legacy_coordinate_system, id, name, description, url, url_tag, coordinate_system) =
+        if version.1 >= 1 {
+            let legacy = payload.i32()?;
+            let id = uuid(&mut payload)?;
+            let name = utf16(&mut payload)?;
+            let description = utf16(&mut payload)?;
+            let url = utf16(&mut payload)?;
+            let url_tag = utf16(&mut payload)?;
+            let coordinate_system = if version.1 >= 2 {
+                Some(payload.i32()? as u32)
+            } else {
+                None
+            };
+            (
+                Some(legacy),
+                Some(id),
+                Some(name),
+                Some(description),
+                Some(url),
+                Some(url_tag),
+                coordinate_system,
+            )
+        } else {
+            (None, None, None, None, None, None, None)
+        };
+    finish(&mut payload, "earth anchor")?;
+    Ok(EarthAnchorPoint {
+        version,
+        earth_latitude,
+        earth_longitude,
+        earth_elevation_meters,
+        model_point,
+        model_north,
+        model_east,
+        legacy_coordinate_system,
+        id,
+        name,
+        description,
+        url,
+        url_tag,
+        coordinate_system,
+    })
+}
+
+fn parse_io_settings<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<IoSettings, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "IO settings")?;
+    let version = anonymous_version(&mut payload, "IO settings")?;
+    let save_texture_bitmaps_in_file = payload.bool()?;
+    let mut idef_link_update = payload.i32()?;
+    if idef_link_update == 0 && archive.value() >= 5 {
+        idef_link_update = 1;
+    }
+    finish(&mut payload, "IO settings")?;
+    Ok(IoSettings {
+        version,
+        save_texture_bitmaps_in_file,
+        idef_link_update,
+    })
+}
+
+fn parse_subd_display_parameters<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<SubDDisplayParameters, FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "SubD display parameters")?;
+    let version = anonymous_version(&mut payload, "SubD display parameters")?.1;
+    let display_density = payload.i32()? as u32;
+    let mesh_location = payload.i32()? as u32;
+    let display_density_is_absolute = if version >= 2 {
+        Some(payload.bool()?)
+    } else {
+        None
+    };
+    let compute_curvature = if version >= 3 {
+        Some(payload.bool()?)
+    } else {
+        None
+    };
+    finish(&mut payload, "SubD display parameters")?;
+    Ok(SubDDisplayParameters {
+        version,
+        display_density,
+        mesh_location,
+        display_density_is_absolute,
+        compute_curvature,
+    })
+}
+
+pub(crate) fn parse_mesh_parameters<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+    allow_future_minor: bool,
+) -> Result<MeshParameters, FramingError> {
+    let version = packed(reader)?;
+    if version.0 != 1 || (!allow_future_minor && version.1 > 5) {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported mesh-parameters version",
+        ));
+    }
+    let compute_curvature = reader.i32()? != 0;
+    let simple_planes = reader.i32()? != 0;
+    let refine = reader.i32()? != 0;
+    let jagged_seams = reader.i32()? != 0;
+    let obsolete_weld = reader.i32()?;
+    let tolerance = finite_f64(reader, "mesh tolerance")?;
+    let min_edge_length = finite_f64(reader, "minimum mesh edge length")?;
+    let max_edge_length = finite_f64(reader, "maximum mesh edge length")?;
+    let grid_aspect_ratio = finite_f64(reader, "mesh grid aspect ratio")?;
+    let grid_min_count = reader.i32()?;
+    let grid_max_count = reader.i32()?;
+    let grid_angle_radians = finite_f64(reader, "mesh grid angle")?;
+    let grid_amplification = finite_f64(reader, "mesh grid amplification")?;
+    let refine_angle_radians = finite_f64(reader, "mesh refine angle")?;
+    let obsolete_combine_angle = finite_f64(reader, "mesh combine angle")?;
+    let face_type = reader.i32()?;
+    let texture_range = if version.1 >= 1 {
+        Some(reader.i32()? as u32)
+    } else {
+        None
+    };
+    let (custom_settings, relative_tolerance) = if version.1 >= 2 {
+        (
+            Some(reader.bool()?),
+            Some(finite_f64(reader, "mesh relative tolerance")?),
+        )
+    } else {
+        (None, None)
+    };
+    let mesher = if version.1 >= 3 {
+        Some(reader.u8()?)
+    } else {
+        None
+    };
+    let custom_settings_enabled = if version.1 >= 4 {
+        Some(reader.bool()?)
+    } else {
+        None
+    };
+    let subd = if version.1 >= 5 {
+        Some(parse_subd_display_parameters(data, reader, archive)?)
+    } else {
+        None
+    };
+    Ok(MeshParameters {
+        version,
+        compute_curvature,
+        simple_planes,
+        refine,
+        jagged_seams,
+        obsolete_weld,
+        tolerance,
+        min_edge_length,
+        max_edge_length,
+        grid_aspect_ratio,
+        grid_min_count,
+        grid_max_count,
+        grid_angle_radians,
+        grid_amplification,
+        refine_angle_radians,
+        obsolete_combine_angle,
+        face_type,
+        texture_range,
+        custom_settings,
+        relative_tolerance,
+        mesher,
+        custom_settings_enabled,
+        subd,
+    })
+}
+
+pub(crate) fn parse_settings_attributes(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<SettingsAttributes, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let version = packed(&mut reader)?;
+    if version.0 != 1 {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unsupported settings-attributes version",
+        ));
+    }
+    let linetype_display_scale = finite_f64(&mut reader, "linetype display scale")?;
+    let current_plot_color = color(&mut reader)?;
+    let current_plot_color_source = reader.i32()?;
+    let current_line_pattern_index = reader.i32()?;
+    let current_linetype_source = reader.i32()?;
+    let page_units = if version.1 >= 1 {
+        let (mut payload, page_range) =
+            anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
+        anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
+        let value = parse_units_reader(&mut payload, SourceRange { range: page_range })?;
+        Some(value)
+    } else {
+        None
+    };
+    let active_view_id = if version.1 >= 2 {
+        Some(uuid(&mut reader)?)
+    } else {
+        None
+    };
+    let (model_basepoint, earth_anchor) = if version.1 >= 3 {
+        let model_basepoint = point(&mut reader)?;
+        let earth_anchor = parse_earth_anchor(data, &mut reader, archive)?;
+        (Some(model_basepoint), Some(earth_anchor))
+    } else {
+        (None, None)
+    };
+    let save_texture_bitmaps_in_file = if version.1 >= 4 {
+        Some(reader.bool()?)
+    } else {
+        None
+    };
+    let io_settings = if version.1 >= 5 {
+        Some(parse_io_settings(data, &mut reader, archive)?)
+    } else {
+        None
+    };
+    let custom_render_mesh = if version.1 >= 6 {
+        Some(parse_mesh_parameters(data, &mut reader, archive, false)?)
+    } else {
+        None
+    };
+    let (
+        current_layer_id,
+        current_render_material_id,
+        current_line_pattern_id,
+        current_text_style_id,
+        current_dimension_style_id,
+        current_hatch_pattern_id,
+    ) = if version.1 >= 7 {
+        (
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+            Some(uuid(&mut reader)?),
+        )
+    } else {
+        (None, None, None, None, None, None)
+    };
+    finish(&mut reader, "settings attributes")?;
+    Ok(SettingsAttributes {
+        source: SourceRange {
+            range: record.range.clone(),
+        },
+        version,
+        linetype_display_scale,
+        current_plot_color,
+        current_plot_color_source,
+        current_line_pattern_index,
+        current_linetype_source,
+        page_units,
+        active_view_id,
+        model_basepoint,
+        earth_anchor,
+        save_texture_bitmaps_in_file,
+        io_settings,
+        custom_render_mesh,
+        current_layer_id,
+        current_render_material_id,
+        current_line_pattern_id,
+        current_text_style_id,
+        current_dimension_style_id,
+        current_hatch_pattern_id,
+    })
+}
+
+fn parse_mesh_record(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<MeshParameters, FramingError> {
+    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let value = parse_mesh_parameters(data, &mut reader, archive, true)?;
+    finish(&mut reader, "mesh settings")?;
+    Ok(value)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RenderingAttributesKind {
+    Layer,
+    Object,
 }
 
 /// Parses and consumes one bounded rendering-attributes payload.
@@ -749,6 +1654,7 @@ pub(crate) fn parse_rendering_attributes(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    kind: RenderingAttributesKind,
     warnings: &mut Vec<String>,
 ) -> Result<Range<usize>, FramingError> {
     let start = reader.position();
@@ -761,8 +1667,8 @@ pub(crate) fn parse_rendering_attributes(
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = payload.i32()?;
-    let _minor = payload.i32()?;
-    if major != 1 {
+    let minor = payload.i32()?;
+    if major != 1 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported rendering-attributes version",
@@ -811,11 +1717,93 @@ pub(crate) fn parse_rendering_attributes(
         if material_minor >= 1 {
             material_payload.skip(16 + 4)?;
         }
-        finish(&material_payload, "rendering material reference")?;
+        material_payload.skip_remaining()?;
         children.push(material.range());
         payload.skip(material.next_offset - payload.position())?;
     }
-    finish(&payload, "rendering attributes")?;
+    if matches!(kind, RenderingAttributesKind::Object) {
+        let mapping_count = crate::chunks::checked_count_bytes(
+            payload.i32()?,
+            1,
+            payload.remaining(),
+            MAX_ARRAY_ITEMS,
+            payload.position(),
+        )?;
+        for _ in 0..mapping_count {
+            let mapping =
+                crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
+            if mapping.typecode != ANONYMOUS || mapping.short {
+                return Err(FramingError::structural(
+                    payload.position(),
+                    "rendering mapping reference must be anonymous",
+                ));
+            }
+            let mut mapping_payload =
+                BoundedReader::new(data, mapping.body.start, mapping.body.end)?;
+            let mapping_major = mapping_payload.i32()?;
+            let _mapping_minor = mapping_payload.i32()?;
+            if mapping_major != 1 {
+                return Err(FramingError::structural(
+                    mapping_payload.position() - 4,
+                    "unsupported rendering mapping reference version",
+                ));
+            }
+            mapping_payload.skip(16)?;
+            let channel_count = crate::chunks::checked_count_bytes(
+                mapping_payload.i32()?,
+                1,
+                mapping_payload.remaining(),
+                MAX_ARRAY_ITEMS,
+                mapping_payload.position(),
+            )?;
+            let mut channels = Vec::with_capacity(channel_count);
+            for _ in 0..channel_count {
+                let channel = crate::chunks::chunk_at(
+                    data,
+                    mapping_payload.position(),
+                    mapping_payload.end(),
+                    archive,
+                    false,
+                )?;
+                if channel.typecode != ANONYMOUS || channel.short {
+                    return Err(FramingError::structural(
+                        mapping_payload.position(),
+                        "rendering mapping channel must be anonymous",
+                    ));
+                }
+                let mut channel_payload =
+                    BoundedReader::new(data, channel.body.start, channel.body.end)?;
+                if channel_payload.i32()? != 1 {
+                    return Err(FramingError::structural(
+                        channel_payload.position() - 4,
+                        "unsupported rendering mapping channel version",
+                    ));
+                }
+                let channel_minor = channel_payload.i32()?;
+                channel_payload.skip(4 + 16)?;
+                if channel_minor >= 1 {
+                    channel_payload.skip(16 * 8)?;
+                }
+                channel_payload.skip_remaining()?;
+                mapping_payload.skip(channel.next_offset - mapping_payload.position())?;
+                channels.push(channel.range());
+            }
+            mapping_payload.skip_remaining()?;
+            if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
+                warnings.push(warning);
+            }
+            children.push(mapping.range());
+            payload.skip(mapping.next_offset - payload.position())?;
+        }
+        if minor >= 2 {
+            payload.bool()?;
+            payload.bool()?;
+        }
+        if minor >= 3 {
+            payload.bool()?;
+        }
+    }
+    payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -901,7 +1889,7 @@ pub(crate) fn parse_direct_linetype<'a>(
         begin_direct_object(data, reader, archive, "embedded linetype")?;
     let mut children = Vec::new();
     if (archive.value() < 60 && version != (1, 1))
-        || (archive.value() >= 60 && (version.0 != 2 || !(1..=3).contains(&version.1)))
+        || (archive.value() >= 60 && (version.0 != 2 || version.1 < 1))
     {
         return Err(FramingError::structural(
             payload.position(),
@@ -923,16 +1911,21 @@ pub(crate) fn parse_direct_linetype<'a>(
             warnings,
         )?);
         read_segments(&mut payload)?;
-        let mut terminated = false;
-        while payload.remaining() > 0 {
-            let item = payload.u8()?;
-            if item == 0 {
-                terminated = true;
-                break;
+        if version.1 >= 1 {
+            // ON_Linetype::Read() consumes extension IDs through an ordered
+            // cascade. A duplicate, out-of-order, or future ID ends the
+            // typed scan; its value has no generic width.
+            let mut item = payload.u8()?;
+            if item == 1 {
+                payload.skip(1)?;
+                item = payload.u8()?;
             }
-            match item {
-                1 | 2 | 4 => payload.skip(1)?,
-                3 => {
+            if item == 2 {
+                payload.skip(1)?;
+                item = payload.u8()?;
+            }
+            if version.1 >= 2 {
+                if item == 3 {
                     let value = payload.f64()?;
                     if !value.is_finite() {
                         return Err(FramingError::structural(
@@ -940,8 +1933,13 @@ pub(crate) fn parse_direct_linetype<'a>(
                             "linetype width is not finite",
                         ));
                     }
+                    item = payload.u8()?;
                 }
-                5 => {
+                if item == 4 {
+                    payload.skip(1)?;
+                    item = payload.u8()?;
+                }
+                if item == 5 {
                     let count = payload.i32()?;
                     let bytes = crate::chunks::checked_count_bytes(
                         count,
@@ -951,26 +1949,16 @@ pub(crate) fn parse_direct_linetype<'a>(
                         payload.position(),
                     )?;
                     payload.skip(bytes)?;
-                }
-                6 => {
-                    let _ = payload.bool()?;
-                }
-                _ => {
-                    return Err(FramingError::structural(
-                        payload.position(),
-                        format!("unknown embedded linetype item {item}"),
-                    ))
+                    item = payload.u8()?;
                 }
             }
-        }
-        if !terminated {
-            return Err(FramingError::structural(
-                payload.position(),
-                "embedded linetype is missing terminator",
-            ));
+            if version.1 >= 3 && item == 6 {
+                let _ = payload.bool()?;
+                let _next_item = payload.u8()?;
+            }
         }
     }
-    finish(&payload, "embedded linetype")?;
+    finish(&mut payload, "embedded linetype")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -992,7 +1980,7 @@ pub(crate) fn parse_direct_section_style<'a>(
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
         begin_direct_object(data, reader, archive, "embedded section style")?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported embedded section-style version",
@@ -1004,53 +1992,85 @@ pub(crate) fn parse_direct_section_style<'a>(
         archive,
         warnings,
     )?];
-    let mut terminated = false;
-    while payload.remaining() > 0 {
-        let item = payload.u8()?;
-        if item == 0 {
-            terminated = true;
-            break;
-        }
-        match item {
-            1 | 6 => payload.skip(1)?,
-            2 | 4 | 10 => payload.skip(8)?,
-            3 => {
-                let _ = payload.bool()?;
-            }
-            5 | 8 | 9 => {
-                let value = payload.f64()?;
-                if !value.is_finite() {
-                    return Err(FramingError::structural(
-                        payload.position(),
-                        "section-style value is not finite",
-                    ));
-                }
-            }
-            7 => {
-                let _ = payload.i32()?;
-            }
-            11 => {
-                children.push(
-                    parse_direct_linetype(data, &mut payload, archive, warnings)?
-                        .source
-                        .range,
-                );
-            }
-            _ => {
-                return Err(FramingError::structural(
-                    payload.position(),
-                    format!("unknown embedded section-style item {item}"),
-                ))
-            }
-        }
+    // ON_SectionStyle::Read() is an ordered cascade, not a general item
+    // loop. Each recognized item reads the next item ID and only the later
+    // IDs in the cascade can consume it. A duplicate or out-of-order ID has
+    // no source-defined value width and remains bounded suffix data.
+    let mut item = payload.u8()?;
+    if item == 1 {
+        payload.skip(1)?;
+        item = payload.u8()?;
     }
-    if !terminated {
-        return Err(FramingError::structural(
-            payload.position(),
-            "embedded section style is missing terminator",
-        ));
+    if item == 2 {
+        payload.skip(8)?;
+        item = payload.u8()?;
     }
-    finish(&payload, "embedded section style")?;
+    if item == 3 {
+        let _ = payload.bool()?;
+        item = payload.u8()?;
+    }
+    if item == 4 {
+        payload.skip(8)?;
+        item = payload.u8()?;
+    }
+    if item == 5 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 6 {
+        payload.skip(1)?;
+        item = payload.u8()?;
+    }
+    if item == 7 {
+        let _ = payload.i32()?;
+        item = payload.u8()?;
+    }
+    if item == 8 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 9 {
+        let value = payload.f64()?;
+        if !value.is_finite() {
+            return Err(FramingError::structural(
+                payload.position(),
+                "section-style value is not finite",
+            ));
+        }
+        item = payload.u8()?;
+    }
+    if item == 10 {
+        payload.skip(8)?;
+        item = payload.u8()?;
+    }
+    if item == 11 {
+        children.push(
+            parse_direct_linetype(data, &mut payload, archive, warnings)?
+                .source
+                .range,
+        );
+        // The source reader consumes the following ID to decide whether the
+        // cascade can continue, but does not need to interpret it: no later
+        // section-style item follows code 11.
+        let _next_item = payload.u8()?;
+    }
+    // Extension items have no length prefix. The source reader consumes only
+    // the ID and lets the anonymous-chunk boundary discard the value bytes it
+    // cannot type. A lower or duplicate known ID has the same bounded-suffix
+    // result because the cascade has passed it.
+    finish(&mut payload, "embedded section style")?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push(warning);
     }
@@ -1097,8 +2117,9 @@ fn parse_layer(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Vec<String>,
-) -> Result<LayerRecord, FramingError> {
-    let class = parse_class_wrapper(data, record.body.clone(), archive, warnings)?;
+) -> Result<(LayerRecord, bool), FramingError> {
+    let (class, userdata) =
+        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
@@ -1131,7 +2152,7 @@ fn parse_layer(
     let _obsolete_scale = finite(&reader, scale_raw, "layer scale")?;
     let name = utf16(&mut reader)?;
     let visible = if version.1 >= 1 {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         obsolete_mode != 1
     };
@@ -1148,7 +2169,7 @@ fn parse_layer(
         None
     };
     let locked = if version.1 >= 4 {
-        reader.bool()?
+        reader.bool_with_writer_version(writer_version)?
     } else {
         obsolete_mode == 2
     };
@@ -1160,13 +2181,20 @@ fn parse_layer(
         None
     };
     let expanded = if version.1 >= 6 && parent_compatible {
-        Some(reader.bool()?)
+        Some(reader.bool_with_writer_version(writer_version)?)
     } else {
         None
     };
     let rendering_range = if version.1 >= 7 {
         Some(
-            parse_rendering_attributes(data, &mut reader, archive, warnings).map_err(|error| {
+            parse_rendering_attributes(
+                data,
+                &mut reader,
+                archive,
+                RenderingAttributesKind::Layer,
+                warnings,
+            )
+            .map_err(|error| {
                 FramingError::structural(reader.position(), format!("rendering: {error}"))
             })?,
         )
@@ -1193,6 +2221,7 @@ fn parse_layer(
         render_material_index,
         color: layer_color,
         name,
+        description: None,
         visible,
         locked,
         id,
@@ -1203,84 +2232,115 @@ fn parse_layer(
         plot_weight,
         display_material_id,
         no_clipping_planes: None,
+        visible_in_new_details: None,
         rendering_range,
         extension_items: Vec::new(),
         embedded_linetype: None,
         embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
     };
-    if version.1 >= 10 {
-        let mut terminated = false;
-        while reader.remaining() > 0 {
-            let item = reader.u8()?;
-            if item == 0 {
-                terminated = true;
-                break;
-            }
-            let minimum_minor = match item {
-                28 => 10,
-                29..=31 => 11,
-                32 => 12,
-                33 => 13,
-                34 => 14,
-                35..=36 => 15,
-                _ => {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        format!("unknown future layer extension item {item}"),
-                    ))
-                }
-            };
-            if version.1 < minimum_minor {
-                return Err(FramingError::structural(
-                    reader.position(),
-                    format!("layer extension item {item} precedes its version gate"),
+    let mut userdata_degraded = false;
+    if let Some(descriptor) = userdata.iter().find(|descriptor| {
+        descriptor.class_uuid == LAYER_EXTENSIONS && descriptor.item_uuid == LAYER_EXTENSIONS
+    }) {
+        match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
+            Ok(settings) => layer.per_viewport_settings = settings,
+            Err(error) => {
+                userdata_degraded = true;
+                warnings.push(format!(
+                    "layer per-viewport userdata at offset {} could not be transferred: {error}",
+                    descriptor.range.start
                 ));
             }
-            layer.extension_items.push(item);
-            match item {
-                28 => {
-                    layer.no_clipping_planes = Some(reader.bool()?);
-                    read_uuid_list(&mut reader, archive)?;
-                }
-                29 => {
-                    reader.skip(4)?;
-                }
-                30 | 31 => {
-                    let value = reader.f64()?;
-                    finite(&reader, value, "layer extension value")?;
-                }
-                32 | 34 | 36 => {
-                    reader.skip(1)?;
-                }
-                33 => {
-                    layer.embedded_linetype =
-                        Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
-                }
-                35 => {
-                    layer.embedded_section_style = Some(parse_direct_section_style(
-                        data,
-                        &mut reader,
-                        archive,
-                        warnings,
-                    )?);
-                }
-                _ => {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        format!("unsupported layer extension item {item}"),
-                    ))
-                }
-            }
-        }
-        if !terminated {
-            return Err(FramingError::structural(
-                reader.position(),
-                "layer extension stream is missing terminator",
-            ));
         }
     }
-    finish(&reader, "layer payload")?;
-    Ok(layer)
+    if version.1 >= 10 {
+        // ON_Layer::Read() consumes extension IDs through an ascending,
+        // version-gated cascade. A duplicate, out-of-order, or future ID is
+        // consumed only as an ID; its value has no generic width.
+        let mut item = reader.u8()?;
+        if item == 28 {
+            layer.extension_items.push(item);
+            layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
+            read_uuid_list(&mut reader, archive)?;
+            item = reader.u8()?;
+        }
+        if version.1 > 10 {
+            if item == 29 {
+                layer.extension_items.push(item);
+                reader.skip(4)?;
+                item = reader.u8()?;
+            }
+            if item == 30 {
+                layer.extension_items.push(item);
+                let value = reader.f64()?;
+                finite(&reader, value, "layer extension value")?;
+                item = reader.u8()?;
+            }
+            if item == 31 {
+                layer.extension_items.push(item);
+                let value = reader.f64()?;
+                finite(&reader, value, "layer extension value")?;
+                item = reader.u8()?;
+            }
+        }
+        if version.1 > 11 && item == 32 {
+            layer.extension_items.push(item);
+            reader.skip(1)?;
+            item = reader.u8()?;
+        }
+        if version.1 > 12 && item == 33 {
+            layer.extension_items.push(item);
+            layer.embedded_linetype =
+                Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
+            item = reader.u8()?;
+        }
+        if version.1 > 13 && item == 34 {
+            layer.extension_items.push(item);
+            layer.visible_in_new_details = Some(reader.bool_with_writer_version(writer_version)?);
+            item = reader.u8()?;
+        }
+        if version.1 > 14 {
+            if item == 35 {
+                layer.extension_items.push(item);
+                layer.embedded_section_style = Some(parse_direct_section_style(
+                    data,
+                    &mut reader,
+                    archive,
+                    warnings,
+                )?);
+                item = reader.u8()?;
+            }
+            if item == 36 {
+                layer.extension_items.push(item);
+                reader.skip(1)?;
+                item = reader.u8()?;
+            }
+            if item == 37 {
+                layer.extension_items.push(item);
+                let description = utf16(&mut reader)?;
+                let description = description
+                    .trim_matches(|character: char| {
+                        matches!(
+                            character as u32,
+                            0x0001..=0x0020
+                                | 0x007f
+                                | 0x0080..=0x009f
+                                | 0x00a0
+                                | 0x2000..=0x200b
+                                | 0x200e..=0x200f
+                                | 0x2028..=0x202f
+                                | 0x2066..=0x2069
+                        )
+                    })
+                    .to_owned();
+                layer.description = (!description.is_empty()).then_some(description);
+                let _next_item = reader.u8()?;
+            }
+        }
+    }
+    finish(&mut reader, "layer payload")?;
+    Ok((layer, userdata_degraded))
 }
 
 /// Decodes all metadata records while preserving scan framing.
@@ -1291,11 +2351,41 @@ pub(crate) fn parse_metadata(
     warnings: &mut Vec<String>,
 ) -> DocumentMetadata {
     let mut metadata = DocumentMetadata::default();
-    let mut indexes = BTreeSet::new();
     let mut ids = BTreeSet::new();
+    let mut property_singletons = BTreeSet::new();
+    let mut setting_singletons = BTreeSet::new();
+    let mut opaque_records = Vec::new();
     for table in tables {
         let table_type = table.typecode & !0x0000_8000;
         for record in &table.records {
+            let singleton = match table_type {
+                PROPERTIES => matches!(
+                    record.typecode,
+                    WRITER_VERSION | REVISION_HISTORY | NOTES | APPLICATION | AS_FILE_NAME
+                ),
+                SETTINGS => matches!(
+                    record.typecode,
+                    PLUGIN_LIST
+                        | UNITS
+                        | RENDER_MESH
+                        | ANALYSIS_MESH
+                        | ATTRIBUTES
+                        | CURRENT_LAYER
+                        | CURRENT_MATERIAL
+                        | CURRENT_COLOR
+                        | CURRENT_WIRE_DENSITY
+                        | CURRENT_FONT
+                        | CURRENT_DIMSTYLE
+                        | MODEL_URL
+                ),
+                _ => false,
+            };
+            let duplicate_singleton = singleton
+                && match table_type {
+                    PROPERTIES => property_singletons.contains(&record.typecode),
+                    SETTINGS => setting_singletons.contains(&record.typecode),
+                    _ => false,
+                };
             let result = if table_type == PROPERTIES {
                 match record.typecode {
                     WRITER_VERSION if record.short => {
@@ -1323,20 +2413,25 @@ pub(crate) fn parse_metadata(
                     _ => Ok(()),
                 }
             } else if table_type == SETTINGS {
-                parse_setting(data, record, &mut metadata.settings)
+                parse_setting(data, record, &mut metadata.settings, archive)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(data, record, archive, writer_version, warnings) {
-                    Ok(layer) => {
-                        if !indexes.insert(layer.index) {
-                            warnings.push(format!("duplicate layer index {}", layer.index));
-                        }
+                    Ok((layer, userdata_degraded)) => {
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
-                                warnings.push(format!("duplicate layer UUID {id}"));
+                                warnings.push(format!(
+                                    "duplicate layer UUID {id}; first record owns archive identity"
+                                ));
                             }
                         }
                         metadata.layers.push(layer);
+                        if userdata_degraded {
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                        }
                         Ok(())
                     }
                     Err(error) => Err(error),
@@ -1344,7 +2439,32 @@ pub(crate) fn parse_metadata(
             } else {
                 Ok(())
             };
+            if result.is_ok() && singleton {
+                match table_type {
+                    PROPERTIES => {
+                        property_singletons.insert(record.typecode);
+                    }
+                    SETTINGS => {
+                        setting_singletons.insert(record.typecode);
+                    }
+                    _ => {}
+                }
+                if duplicate_singleton {
+                    warnings.push(format!(
+                        "duplicate singleton metadata record {:#x}; later record wins",
+                        record.typecode
+                    ));
+                }
+            }
             if let Err(error) = result {
+                if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
+                    && (table_type != LAYER || record.typecode == LAYER_RECORD)
+                {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                }
                 warnings.push(format!(
                     "metadata record {:#x} at {} degraded: {}",
                     record.typecode, record.range.start, error
@@ -1352,6 +2472,8 @@ pub(crate) fn parse_metadata(
             }
         }
     }
+    reassign_duplicate_layer_indices(&mut metadata.layers, warnings);
+    metadata.opaque_records = opaque_records;
     let known_ids: BTreeSet<Uuid> = metadata
         .layers
         .iter()
@@ -1370,10 +2492,52 @@ pub(crate) fn parse_metadata(
     metadata
 }
 
+fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut Vec<String>) {
+    let mut used = layers
+        .iter()
+        .map(|layer| layer.index)
+        .collect::<BTreeSet<_>>();
+    let mut owners = BTreeSet::new();
+    for layer in layers {
+        let original_index = layer.index;
+        if owners.insert(original_index) {
+            continue;
+        }
+        let new_index = next_layer_index(&used);
+        layer.index = new_index;
+        used.insert(new_index);
+        warnings.push(format!(
+            "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
+        ));
+    }
+}
+
+fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
+    let mut candidate = used
+        .iter()
+        .copied()
+        .filter(|index| *index >= 0)
+        .max()
+        .unwrap_or(-1);
+    while let Some(next) = candidate.checked_add(1) {
+        if !used.contains(&next) {
+            return next;
+        }
+        candidate = next;
+    }
+    let mut candidate = -2;
+    while used.contains(&candidate) {
+        candidate = candidate
+            .checked_sub(1)
+            .expect("finite layer index set leaves an available index");
+    }
+    candidate
+}
+
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
     let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
     let value = utf16(&mut reader)?;
-    finish(&reader, "UTF-16 property")?;
+    finish(&mut reader, "UTF-16 property")?;
     Ok(value)
 }
 
@@ -1381,15 +2545,25 @@ pub(crate) fn parse_setting(
     data: &[u8],
     record: &Record,
     settings: &mut DocumentSettings,
+    archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     match record.typecode {
+        PLUGIN_LIST => {
+            parse_plugin_list(data, record, archive).map(|value| settings.plugin_list = Some(value))
+        }
         UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
+        RENDER_MESH => parse_mesh_record(data, record, archive)
+            .map(|value| settings.render_mesh_settings = Some(value)),
+        ANALYSIS_MESH => parse_mesh_record(data, record, archive)
+            .map(|value| settings.analysis_mesh_settings = Some(value)),
+        ATTRIBUTES => parse_settings_attributes(data, record, archive)
+            .map(|value| settings.attributes = Some(value)),
         CURRENT_LAYER => {
             settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
         }
         CURRENT_MATERIAL => {
-            if record.short || record.body.len() != 8 {
+            if record.short || record.body.len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current material must be a long eight-byte index/source pair"
@@ -1397,19 +2571,13 @@ pub(crate) fn parse_setting(
                 });
             }
             let material_index = View::i32_le_at(data, record.body.start).expect("length checked");
-            if material_index < -1 {
-                return Err(FramingError::Structural {
-                    offset: record.range.start,
-                    message: "current material index is invalid".to_string(),
-                });
-            }
             settings.current_material = Some(material_index);
             settings.current_material_source =
                 Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_COLOR => {
-            if record.short || record.body.len() != 8 {
+            if record.short || record.body.len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current color must be a long color/source pair".to_string(),

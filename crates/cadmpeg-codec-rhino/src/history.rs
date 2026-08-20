@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::Record;
+use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
 use crate::wire::Uuid;
@@ -122,6 +122,15 @@ pub(crate) struct HistoryRecord {
     pub(crate) copy_on_replace: bool,
 }
 
+/// Result of scanning the history-record table.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct HistoryScan {
+    /// Valid history records in source order.
+    pub(crate) records: Vec<HistoryRecord>,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
+}
+
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
@@ -142,7 +151,7 @@ fn anonymous(
     let mut reader = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
-    if major != 1 {
+    if major != 1 || minor < 0 {
         return Err(FramingError::structural(
             chunk.body.start,
             "unsupported anonymous major version",
@@ -170,12 +179,7 @@ fn uuid_list(
     for _ in 0..count {
         values.push(uuid(&mut reader)?);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "UUID list has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((values, next))
 }
 
@@ -226,7 +230,7 @@ fn instance_reference(
     archive: ArchiveVersion,
 ) -> Result<(InstanceReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=1).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance-reference path version",
@@ -240,30 +244,20 @@ fn instance_reference(
         let component = component(&mut reader)?;
         let (mut nested, nested_next, nested_minor) =
             anonymous(bytes, reader.position(), reader.end(), archive)?;
-        if nested_minor != 0 {
+        if nested_minor < 0 {
             return Err(FramingError::structural(
                 nested.position(),
                 "unsupported object-evaluation version",
             ));
         }
         let evaluation = evaluation(&mut nested, 3)?;
-        if nested.remaining() != 0 {
-            return Err(FramingError::structural(
-                nested.position(),
-                "object evaluation has trailing bytes",
-            ));
-        }
+        nested.skip_remaining()?;
         reader.skip(nested_next - reader.position())?;
         (Some(component), Some(evaluation))
     } else {
         (None, None)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "instance-reference path has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         InstanceReference {
             reference_id,
@@ -284,7 +278,7 @@ fn object_reference(
     archive: ArchiveVersion,
 ) -> Result<(ObjectReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=3).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported object-reference version",
@@ -311,12 +305,7 @@ fn object_reference(
         evaluation.intervals[2] = Some(interval(&mut reader)?);
     }
     let osnap_mode = if minor >= 3 { reader.i32()? } else { 0 };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "object reference has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         ObjectReference {
             object_id,
@@ -360,7 +349,7 @@ fn geometries(
         reader.end(),
         archive,
     )?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             nested.position(),
             "unsupported geometry-value version",
@@ -385,12 +374,7 @@ fn geometries(
             userdata,
         });
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "geometry value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -402,7 +386,7 @@ fn curve_proxy(
     archive: ArchiveVersion,
 ) -> Result<(CurveProxy, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if !(0..=1).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported curve-proxy version",
@@ -419,12 +403,7 @@ fn curve_proxy(
     } else {
         (None, None)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "curve proxy has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         CurveProxy {
             curve,
@@ -446,7 +425,7 @@ fn poly_edge(
     archive: ArchiveVersion,
 ) -> Result<(PolyEdge, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported polyedge version",
@@ -461,12 +440,7 @@ fn poly_edge(
     }
     let parameters = array(&mut reader, 8, read_f64)?;
     let evaluation_mode = reader.i32()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "polyedge has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         PolyEdge {
             segments,
@@ -487,7 +461,7 @@ fn poly_edges(
         reader.end(),
         archive,
     )?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             nested.position(),
             "unsupported polyedge-value version",
@@ -505,12 +479,7 @@ fn poly_edges(
         nested.skip(value_next - nested.position())?;
         values.push(value);
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "polyedge value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
@@ -520,6 +489,7 @@ fn subd_edge_chain(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
@@ -533,18 +503,16 @@ fn subd_edge_chain(
     let mut edge_ids = array(&mut reader, 4, read_u32)?;
     let mut orientations = array(&mut reader, 1, read_u8)?;
     if edge_ids.len() != count || orientations.len() != count {
+        warnings.push(
+            "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
+        );
         edge_ids.clear();
         orientations.clear();
     }
     for orientation in &mut orientations {
         *orientation = u8::from(*orientation == 1);
     }
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "SubD edge chain has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((
         SubdEdgeChain {
             subd_id,
@@ -558,6 +526,7 @@ fn subd_edge_chain(
 fn subd_edge_chains(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
     let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
@@ -579,28 +548,36 @@ fn subd_edge_chains(
             nested.position(),
             nested.end(),
             archive,
+            warnings,
         )?;
         nested.skip(value_next - nested.position())?;
         values.push(value);
     }
-    if nested.remaining() != 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "SubD edge-chain value has trailing bytes",
-        ));
-    }
+    nested.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(values)
 }
 
+#[cfg(test)]
 fn parse_value(
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
+    let mut warnings = Vec::new();
+    parse_value_with_warnings(bytes, offset, end, archive, &mut warnings)
+}
+
+fn parse_value_with_warnings(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Result<(HistoryValue, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor != 0 {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported history-value version",
@@ -623,7 +600,7 @@ fn parse_value(
         10 => Value::Geometries(geometries(&mut reader, archive)?),
         11 => Value::Uuids(array(&mut reader, 16, uuid)?),
         13 => Value::PolyEdges(poly_edges(&mut reader, archive)?),
-        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive)?),
+        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive, warnings)?),
         _ => {
             reader.skip(reader.remaining())?;
             Value::Opaque {
@@ -632,12 +609,7 @@ fn parse_value(
             }
         }
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "history value has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok((HistoryValue { id, value }, next))
 }
 
@@ -684,13 +656,13 @@ fn parse_record(
             format!("history record has class {}", class.class_uuid),
         ));
     }
-    let (mut reader, next, minor) = anonymous(
+    let (mut reader, _next, minor) = anonymous(
         bytes,
         class.class_data_range.start,
         class.class_data_range.end,
         archive,
     )?;
-    if next != class.class_data_range.end || !(0..=2).contains(&minor) {
+    if minor < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported history-record version",
@@ -705,7 +677,7 @@ fn parse_record(
     reader.skip(next - reader.position())?;
     let (mut values_reader, next, values_minor) =
         anonymous(bytes, reader.position(), reader.end(), archive)?;
-    if values_minor != 0 {
+    if values_minor < 0 {
         return Err(FramingError::structural(
             values_reader.position(),
             "unsupported history-values version",
@@ -714,21 +686,17 @@ fn parse_record(
     let value_count = count(&mut values_reader, 1)?;
     let mut values = Vec::new();
     for _ in 0..value_count {
-        let (value, value_next) = parse_value(
+        let (value, value_next) = parse_value_with_warnings(
             bytes,
             values_reader.position(),
             values_reader.end(),
             archive,
+            warnings,
         )?;
         values_reader.skip(value_next - values_reader.position())?;
         values.push(value);
     }
-    if values_reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            values_reader.position(),
-            "history-values chunk has trailing bytes",
-        ));
-    }
+    values_reader.skip_remaining()?;
     reader.skip(next - reader.position())?;
     let record_type = if minor >= 1 {
         match reader.i32()? {
@@ -740,12 +708,7 @@ fn parse_record(
         RecordType::HistoryParameters
     };
     let copy_on_replace = minor >= 2 && reader.bool()?;
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "history record has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(HistoryRecord {
         source_range: record.range.clone(),
         id,
@@ -765,22 +728,25 @@ pub(crate) fn parse_records(
     records: &[Record],
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
-) -> Vec<HistoryRecord> {
-    records
-        .iter()
-        .filter_map(
-            |record| match parse_record(bytes, record, archive, warnings) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    warnings.push(format!(
-                        "history record at {} degraded: {error}",
-                        record.range.start
-                    ));
-                    None
-                }
-            },
-        )
-        .collect()
+    table_typecode: u32,
+) -> HistoryScan {
+    let mut result = HistoryScan::default();
+    for record in records {
+        match parse_record(bytes, record, archive, warnings) {
+            Ok(value) => result.records.push(value),
+            Err(error) => {
+                warnings.push(format!(
+                    "history record at {} degraded: {error}",
+                    record.range.start
+                ));
+                result.opaque_records.push(OpaqueRecord {
+                    table_typecode,
+                    record: record.clone(),
+                });
+            }
+        }
+    }
+    result
 }
 
 fn list<T: ToString>(values: &[T]) -> String {
@@ -939,6 +905,7 @@ fn extended_geometry_json(
                 association: None,
                 id: "rhino:history:embedded-mesh".to_string(),
                 scale,
+                userdata: &value.userdata,
             },
             &mut budget,
         )
@@ -968,11 +935,16 @@ fn extended_geometry_json(
             crate::subd::DecodedSubd::Surface {
                 surface,
                 neutral_metadata,
+                enum_diagnostics,
                 ..
             } => serde_json::json!({
                 "kind": "subd",
                 "surface": surface,
                 "neutral_metadata": neutral_metadata,
+                "enum_diagnostics": enum_diagnostics
+                    .into_iter()
+                    .map(crate::subd::SubdEnumDiagnostic::message)
+                    .collect::<Vec<_>>(),
             }),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
@@ -984,6 +956,7 @@ fn extended_geometry_json(
             archive,
             writer_version,
             scale,
+            &value.userdata,
             &mut budget,
         )
         .ok()?;
@@ -1082,8 +1055,9 @@ fn extended_geometry_json(
             scale,
         );
     } else if value.class_id == crate::hatch::CLASS {
-        let hatch =
+        let mut hatch =
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
+        crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
         let mut plane = hatch.plane;
         for coordinate in &mut plane.origin.0 {
             *coordinate *= scale;
@@ -1102,7 +1076,7 @@ fn extended_geometry_json(
                 })
             })
             .collect::<Vec<_>>();
-        serde_json::json!({
+        let mut semantic = serde_json::json!({
             "kind": "hatch",
             "plane": {
                 "origin": plane.origin.0,
@@ -1116,10 +1090,18 @@ fn extended_geometry_json(
             "pattern_index": hatch.pattern_index,
             "loops": loops,
             "basepoint": hatch.basepoint,
-        })
+        });
+        if let Some(gradient) = hatch
+            .gradient
+            .as_ref()
+            .and_then(crate::hatch::gradient_json)
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+        {
+            semantic["gradient"] = gradient;
+        }
+        semantic
     } else if value.class_id == crate::detail::CLASS {
-        let detail =
-            crate::detail::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+        let detail = crate::detail::decode(data, value.class_data_range.clone(), archive).ok()?;
         serde_json::json!({
             "kind": "detail_view",
             "boundary": detail.boundary.geometry,
@@ -1155,6 +1137,7 @@ fn extended_geometry_json(
 struct GeometrySink {
     untyped: usize,
     failed: usize,
+    redundant_repairs: usize,
 }
 
 fn structured_value_properties(
@@ -1198,6 +1181,7 @@ fn structured_value_properties(
                                 serde_json::to_string(&position)
                             }
                             crate::curves::DecodedGeometry::PointCloud(cloud) => {
+                                sink.redundant_repairs += cloud.warnings.len();
                                 serde_json::to_string(&cloud.points)
                             }
                             crate::curves::DecodedGeometry::Curve { curve } => {
@@ -1290,8 +1274,8 @@ fn structured_value_properties(
 /// Projects source history into ordered neutral native operations.
 /// Projects history records into native features and carrier geometry.
 ///
-/// Returns the number of decoded history values that reached no neutral carrier.
-/// The caller charges them; see [`GeometrySink`].
+/// Returns counts for untyped values, failed geometry, later dependencies, and
+/// repaired optional geometry channels. The caller reports these counts.
 pub(crate) fn project(
     records: &[HistoryRecord],
     geometry_context: Option<(
@@ -1301,7 +1285,7 @@ pub(crate) fn project(
         f64,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
-) -> (usize, usize, usize) {
+) -> (usize, usize, usize, usize) {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     #[derive(serde::Serialize)]
@@ -1321,6 +1305,7 @@ pub(crate) fn project(
     let mut sink = GeometrySink {
         untyped: 0,
         failed: 0,
+        redundant_repairs: 0,
     };
     let mut ids = Vec::with_capacity(records.len());
     let mut native_ids = Vec::with_capacity(records.len());
@@ -1352,14 +1337,17 @@ pub(crate) fn project(
                 .or_insert_with(|| Some((index, ids[index].clone())));
         }
     }
-    let mut later_dependencies = 0;
+    let mut dropped_dependencies = 0;
     for (index, record) in records.iter().enumerate() {
-        later_dependencies += record
-            .antecedents
-            .iter()
-            .filter_map(|antecedent| producers.get(antecedent).and_then(Option::as_ref))
-            .filter(|(producer_index, _)| *producer_index >= index)
-            .count();
+        for antecedent in &record.antecedents {
+            match producers.get(antecedent) {
+                Some(None) => dropped_dependencies += 1,
+                Some(Some((producer_index, _))) if *producer_index >= index => {
+                    dropped_dependencies += 1;
+                }
+                _ => {}
+            }
+        }
         let mut dependency_seen = HashSet::new();
         let dependencies = record
             .antecedents
@@ -1455,7 +1443,12 @@ pub(crate) fn project(
         .namespace_mut("rhino")
         .set_arena("history_records", &native)
         .expect("Rhino history records serialize");
-    (sink.untyped, sink.failed, later_dependencies)
+    (
+        sink.untyped,
+        sink.failed,
+        dropped_dependencies,
+        sink.redundant_repairs,
+    )
 }
 
 #[cfg(test)]

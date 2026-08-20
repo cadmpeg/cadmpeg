@@ -524,6 +524,65 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
 }
 
 #[test]
+fn isolated_brep_vertices_are_owned_by_the_only_shell() {
+    let (data, mut raw) = source_shaped_plane_brep();
+    raw.vertices.push(crate::brep::RawBrepVertex {
+        index: 3,
+        point: crate::settings::Point3([2.0, 2.0, 0.0]),
+        edges: Vec::new(),
+        tolerance: 0.0,
+        source_range: 0..0,
+    });
+    let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
+    let association = SourceObjectAssociation {
+        format: "rhino".to_string(),
+        object_id: "free-vertex-brep".to_string(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#free-vertex".into();
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "free-vertex",
+            association: &association,
+            unknown: &unknown,
+            scale: 1.0,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage Brep with an isolated vertex");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    assert_eq!(
+        staged.draft.model().shells[0].free_vertices,
+        vec!["rhino:object:vertex#free-vertex.slot-3".into()]
+    );
+
+    let mut candidate = CadIr::empty(Units::default());
+    candidate
+        .set_native_unknowns(
+            "rhino",
+            &[NativeUnknownRecord {
+                id: unknown,
+                links: Vec::new(),
+            }],
+        )
+        .expect("required invariant");
+    staged
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .expect("commit Brep with an isolated vertex");
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
 fn failed_trim_pcurve_does_not_discard_brep_topology() {
     let (data, mut raw) = source_shaped_plane_brep();
     raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
@@ -637,7 +696,7 @@ fn polymorphic_object_geometry_starts_with_v2() {
 }
 
 #[test]
-fn serialized_solid_state_clamps_unknown_values() {
+fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
     assert_eq!(
         serialized_brep_body_kind(2, Some(1), Some(200_210_020), false),
         BodyKind::Solid
@@ -648,6 +707,18 @@ fn serialized_solid_state_clamps_unknown_values() {
     );
     assert_eq!(
         serialized_brep_body_kind(2, Some(3), Some(200_210_020), false),
+        BodyKind::Sheet
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(3), Some(200_210_020), true),
+        BodyKind::Solid
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(0), Some(200_210_020), true),
+        BodyKind::Solid
+    );
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(0), Some(200_210_020), false),
         BodyKind::Sheet
     );
     assert_eq!(
@@ -1097,4 +1168,22 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
         .losses
         .iter()
         .any(|loss| loss.severity == Severity::Error));
+}
+
+#[test]
+fn redundant_field_diagnostics_use_the_typed_repair_loss() {
+    assert!(redundant_field_diagnostic(
+        "redundant mesh channel count mismatch"
+    ));
+    assert!(redundant_field_diagnostic(
+        "rhino:object:curve#1: redundant point-cloud color count mismatch"
+    ));
+    assert!(!redundant_field_diagnostic("mesh channel count mismatch"));
+    assert_eq!(
+        RhinoLossCode::RedundantFieldRepaired
+            .note("repair")
+            .code
+            .local_code(),
+        "container.redundant-field-repaired"
+    );
 }

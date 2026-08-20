@@ -129,7 +129,7 @@ fn segment(
     archive: ArchiveVersion,
 ) -> Result<Segment, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+    if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(FramingError::structural(
             range.start,
             "invalid polyedge-segment framing",
@@ -153,6 +153,10 @@ fn segment(
     let reversed = req_bool(&mut body)?;
     let domain = interval(&mut body)?;
     let proxy_domain = interval(&mut body)?;
+    let remaining = body.remaining();
+    body.skip(remaining).ok_or_else(|| {
+        FramingError::structural(body.position(), "polyedge segment suffix overruns body")
+    })?;
     Ok(Segment {
         object_id,
         component,
@@ -235,12 +239,10 @@ pub(crate) fn decode(
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
     }
-    if body.remaining() != 0 {
-        return Err(FramingError::structural(
-            body.position(),
-            "polyedge curve has trailing bytes",
-        ));
-    }
+    let remaining = body.remaining();
+    body.skip(remaining).ok_or_else(|| {
+        FramingError::structural(body.position(), "polyedge suffix overruns body")
+    })?;
     let segments = segments
         .finish()
         .map_err(|error| refused(body.position(), &error))?;

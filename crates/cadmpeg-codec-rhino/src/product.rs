@@ -99,11 +99,12 @@ fn hex(bytes: &[u8]) -> String {
 
 fn external_record(
     definition_uuid: Uuid,
-    legacy_path: &str,
-    legacy_relative: bool,
+    legacy_full_path: &str,
+    legacy_relative_path: &str,
+    legacy_relative_preferred: bool,
     value: Option<&FileReference>,
 ) -> Option<ExternalReferenceRecord> {
-    if value.is_none() && legacy_path.is_empty() {
+    if value.is_none() && legacy_full_path.is_empty() && legacy_relative_path.is_empty() {
         return None;
     }
     let definition = definition_id(definition_uuid);
@@ -126,9 +127,9 @@ fn external_record(
         None => ExternalReferenceRecord {
             id: external_id(definition_uuid),
             definition_uuid: definition_uuid.to_string(),
-            full_path: legacy_path.to_string(),
-            relative_path: String::new(),
-            relative_path_preferred: legacy_relative,
+            full_path: legacy_full_path.to_string(),
+            relative_path: legacy_relative_path.to_string(),
+            relative_path_preferred: legacy_relative_preferred,
             byte_count: None,
             hash_time: None,
             content_time: None,
@@ -159,6 +160,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         let external_reference = external_record(
             definition.id,
             &definition.legacy_linked_path,
+            &definition.legacy_relative_linked_path,
             definition.legacy_relative_path,
             definition.file_reference.as_ref(),
         );

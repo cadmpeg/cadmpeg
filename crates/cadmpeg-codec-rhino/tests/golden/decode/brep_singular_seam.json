@@ -9,7 +9,7 @@
       "bodies": [
         {
           "id": "rhino:object:body#record-000000-offset-177",
-          "kind": "sheet",
+          "kind": "solid",
           "regions": [
             "rhino:object:region#record-000000-offset-177.slot-1"
           ],

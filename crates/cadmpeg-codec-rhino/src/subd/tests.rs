@@ -25,6 +25,8 @@ struct Fixture {
     render_mesh: bool,
     future_additions: bool,
     saved_limit_points: bool,
+    symmetry_type: u8,
+    symmetry_coordinate_system: u8,
 }
 
 impl Default for Fixture {
@@ -44,6 +46,8 @@ impl Default for Fixture {
             render_mesh: false,
             future_additions: false,
             saved_limit_points: false,
+            symmetry_type: 0,
+            symmetry_coordinate_system: 0,
         }
     }
 }
@@ -79,6 +83,14 @@ fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
 }
 
 fn rotate_symmetry(symmetry_type: u8, include_legacy_plane: bool) -> Vec<u8> {
+    rotate_symmetry_with_coordinate(symmetry_type, include_legacy_plane, 0)
+}
+
+fn rotate_symmetry_with_coordinate(
+    symmetry_type: u8,
+    include_legacy_plane: bool,
+    coordinate_system: u8,
+) -> Vec<u8> {
     let mut transform = 1_i32.to_le_bytes().to_vec();
     transform.extend(2_i32.to_le_bytes());
     for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0] {
@@ -96,7 +108,7 @@ fn rotate_symmetry(symmetry_type: u8, include_legacy_plane: bool) -> Vec<u8> {
     body.extend(0_u32.to_le_bytes());
     body.extend([0_u8; 16]);
     body.extend(anonymous(&transform));
-    body.push(0);
+    body.push(coordinate_system);
     anonymous(&body)
 }
 
@@ -105,9 +117,47 @@ fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
     for bytes in [rotate_symmetry(2, true), rotate_symmetry(113, false)] {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
-        read_symmetry(&mut reader, ArchiveVersion::V5, &mut Vec::new()).expect("rotate symmetry");
+        read_symmetry(
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+        .expect("rotate symmetry");
         assert_eq!(reader.remaining(), 0);
     }
+}
+
+#[test]
+fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
+    let mut diagnostics = Vec::new();
+    let bytes = rotate_symmetry(6, false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
+    read_symmetry(
+        &mut reader,
+        ArchiveVersion::V5,
+        &mut diagnostics,
+        &mut Vec::new(),
+    )
+    .expect("unknown symmetry type is recoverable");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(diagnostics, vec![SubdEnumDiagnostic::SymmetryType(6)]);
+
+    let bytes = rotate_symmetry_with_coordinate(2, true, 7);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
+    diagnostics.clear();
+    read_symmetry(
+        &mut reader,
+        ArchiveVersion::V5,
+        &mut diagnostics,
+        &mut Vec::new(),
+    )
+    .expect("unknown symmetry coordinate system is recoverable");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(
+        diagnostics,
+        vec![SubdEnumDiagnostic::SymmetryCoordinateSystem(7)]
+    );
 }
 
 fn pointer(bytes: &mut Vec<u8>, id: u32, flags: u8) {
@@ -307,11 +357,19 @@ fn payload(fixture: Fixture) -> Vec<u8> {
         body.extend(child);
     }
     if fixture.minor >= 2 {
-        let mut symmetry = Vec::new();
-        symmetry.extend_from_slice(&1_i32.to_le_bytes());
-        symmetry.extend_from_slice(&4_i32.to_le_bytes());
-        symmetry.push(0);
-        let child = anonymous(&symmetry);
+        let child = if fixture.symmetry_type == 0 {
+            let mut symmetry = Vec::new();
+            symmetry.extend_from_slice(&1_i32.to_le_bytes());
+            symmetry.extend_from_slice(&4_i32.to_le_bytes());
+            symmetry.push(0);
+            anonymous(&symmetry)
+        } else {
+            rotate_symmetry_with_coordinate(
+                fixture.symmetry_type,
+                fixture.symmetry_type == 2,
+                fixture.symmetry_coordinate_system,
+            )
+        };
         children.push(body.len()..body.len() + child.len());
         body.extend(child);
     }
@@ -351,6 +409,132 @@ fn decode_fixture(fixture: Fixture, scale: f64) -> Result<DecodedSubd, SubdError
         scale,
         "test:subd#0".into(),
     )
+}
+
+fn proxy_userdata(
+    embedded: &[u8],
+    fingerprint: MeshProxyFingerprint,
+    transform_identity: bool,
+) -> (Vec<u8>, UserdataDescriptor) {
+    let mut bytes = Vec::new();
+    for index in 0..16 {
+        bytes.extend_from_slice(
+            &(if transform_identity && index % 5 == 0 {
+                1.0_f64
+            } else {
+                0.0_f64
+            })
+            .to_le_bytes(),
+        );
+    }
+    let transform_range = 0..bytes.len();
+    let mut body = Vec::new();
+    body.extend_from_slice(&1_i32.to_le_bytes());
+    body.extend_from_slice(&1_i32.to_le_bytes());
+    body.push(1);
+    body.extend_from_slice(embedded);
+    body.extend_from_slice(
+        &i32::try_from(fingerprint.face_count)
+            .expect("proxy face count")
+            .to_le_bytes(),
+    );
+    body.extend_from_slice(
+        &i32::try_from(fingerprint.vertex_count)
+            .expect("proxy vertex count")
+            .to_le_bytes(),
+    );
+    for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
+        let mut hash = Vec::new();
+        hash.extend_from_slice(&1_i32.to_le_bytes());
+        hash.extend_from_slice(&0_i32.to_le_bytes());
+        hash.extend_from_slice(&digest);
+        body.extend_from_slice(&anonymous(&hash));
+    }
+    let payload_start = bytes.len();
+    bytes.extend_from_slice(&anonymous(&body));
+    let payload_range = payload_start..bytes.len();
+    let descriptor = UserdataDescriptor {
+        range: payload_range.clone(),
+        version: (2, 2),
+        class_uuid: SUBD_MESH_PROXY_USERDATA,
+        item_uuid: SUBD_MESH_PROXY_USERDATA,
+        copy_count: 1,
+        transform_range,
+        application_uuid: None,
+        last_saved_as_goo: Some(false),
+        archive_version: Some(50),
+        writer_version: Some(202_401_010),
+        payload_range,
+        unknown_version: false,
+    };
+    (bytes, descriptor)
+}
+
+#[test]
+fn mesh_proxy_requires_identity_and_parent_fingerprint() {
+    let fingerprint = MeshProxyFingerprint {
+        face_count: 4,
+        vertex_count: 4,
+        face_sha1: [0x11; 20],
+        vertex_sha1: [0x22; 20],
+    };
+    let embedded = payload(Fixture::default());
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, true);
+    let decoded = decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        fingerprint,
+    )
+    .expect("valid proxy framing")
+    .expect("valid proxy transfer");
+    assert!(matches!(decoded, DecodedSubd::Surface { .. }));
+
+    let mut wrong_hash = fingerprint;
+    wrong_hash.face_sha1[0] ^= 1;
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, true);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        wrong_hash,
+    )
+    .expect("wrong hash is an admission rejection")
+    .is_none());
+
+    let empty_parent = MeshProxyFingerprint {
+        face_count: 0,
+        vertex_count: 0,
+        face_sha1: EMPTY_CONTENT_SHA1,
+        vertex_sha1: EMPTY_CONTENT_SHA1,
+    };
+    let (bytes, descriptor) = proxy_userdata(&embedded, empty_parent, true);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        empty_parent,
+    )
+    .expect("empty parent is an admission rejection")
+    .is_none());
+
+    let (bytes, descriptor) = proxy_userdata(&embedded, fingerprint, false);
+    assert!(decode_mesh_proxy(
+        &bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        1.0,
+        "test:proxy-subd#0".into(),
+        fingerprint,
+    )
+    .expect("nonidentity userdata transform is an admission rejection")
+    .is_none());
 }
 
 #[test]
@@ -642,6 +826,47 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+}
+
+#[test]
+fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
+    let archive = ArchiveVersion::V5;
+    let uuid = [
+        0xd9, 0xa4, 0x9b, 0xf0, 0x5b, 0x45, 0xc3, 0x42, 0xba, 0x3b, 0xe6, 0xcc, 0xac, 0xef, 0x85,
+        0x3b,
+    ];
+    let payload = payload(Fixture {
+        minor: 2,
+        symmetry_type: 6,
+        ..Fixture::default()
+    });
+    let object = object_record_with_payload(archive, 0x0004_0000, uuid, &payload);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
+    set_test_units(&mut scan, 1.0);
+    let result = crate::decode::decode_for_test(&scan);
+    assert_eq!(result.ir().model.subds.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::EnumerationValueDegraded.kind()
+            && loss.message.contains("symmetry type 6")
+    }));
+    let retained = result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|record| record.id.starts_with("rhino:object:record#"))
+        .expect("SubD source record is retained");
+    assert!(retained
+        .data
+        .as_deref()
+        .is_some_and(|data| data.windows(payload.len()).any(|window| window == payload)));
 }
 
 #[test]

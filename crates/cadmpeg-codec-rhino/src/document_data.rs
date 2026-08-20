@@ -3,9 +3,11 @@
 
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
+use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::Scan;
+use crate::container::{OpaqueRecord, Record, Scan};
+use crate::objects::{parse_userdata, UserdataDescriptor};
 use crate::settings::utf16;
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -13,7 +15,18 @@ const SETTINGS_TABLE: u32 = 0x1000_0015;
 const ANNOTATION_SETTINGS: u32 = 0x2000_8034;
 const GRID_DEFAULTS: u32 = 0x2000_803f;
 const RENDER_SETTINGS: u32 = 0x2000_803d;
+const RENDER_USERDATA: u32 = 0x2000_8136;
 const ANONYMOUS: u32 = 0x4000_8000;
+const CLASS_USERDATA: u32 = 0x0002_7ffd;
+const CLASS_END: u32 = 0x8002_7fff;
+
+#[derive(Debug, PartialEq, Eq)]
+struct RenderUserdataDescriptor {
+    source: Range<usize>,
+    items: Vec<UserdataDescriptor>,
+    unknown_chunks: Vec<Range<usize>>,
+    suffix: Range<usize>,
+}
 
 #[derive(Debug, Serialize)]
 struct RevisionRecord {
@@ -187,7 +200,7 @@ fn annotation_settings(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
-    if packed >> 4 != 1 || minor > 4 {
+    if packed >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "annotation-settings version is unsupported",
@@ -226,12 +239,7 @@ fn annotation_settings(
             None
         },
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "annotation settings have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -242,7 +250,7 @@ fn grid_defaults(
     scale: f64,
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
-    if reader.u8()? != 0x10 {
+    if reader.u8()? >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
             "grid-default version is unsupported",
@@ -259,12 +267,7 @@ fn grid_defaults(
         show_grid_axes: flag_i32(&mut reader)?,
         show_world_axes: flag_i32(&mut reader)?,
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "grid defaults have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(value)
 }
 
@@ -278,7 +281,7 @@ fn render_settings(
     let modern = data.get(body.start).copied() == Some(0);
     let (mut reader, minor, legacy_version) = if modern {
         let chunk = chunk_at(data, body.start, body.end, archive, false)?;
-        if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != body.end {
+        if chunk.typecode != ANONYMOUS || chunk.short {
             return Err(FramingError::Structural {
                 offset: body.start,
                 message: "render-settings wrapper is invalid".to_string(),
@@ -286,7 +289,7 @@ fn render_settings(
         }
         let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
-        if major != 1 || !(0..=3).contains(&minor) {
+        if major != 1 || minor < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "render-settings version is unsupported",
@@ -393,12 +396,7 @@ fn render_settings(
         };
         (dpi, units, bottom, fit)
     };
-    if reader.remaining() != 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "render settings have trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
         id: "rhino:document:render_settings#current".to_string(),
         source_offset: source_offset as u64,
@@ -436,8 +434,70 @@ fn render_settings(
     })
 }
 
+fn render_userdata(
+    data: &[u8],
+    record: &Record,
+    archive: ArchiveVersion,
+) -> Result<RenderUserdataDescriptor, FramingError> {
+    let mut offset = record.body.start;
+    let mut items = Vec::new();
+    let mut unknown_chunks = Vec::new();
+    while offset < record.body.end {
+        let chunk = chunk_at(data, offset, record.body.end, archive, false)?;
+        match chunk.typecode {
+            CLASS_USERDATA => {
+                if chunk.short {
+                    return Err(FramingError::structural(
+                        chunk.header_start,
+                        "render userdata item must be a long chunk",
+                    ));
+                }
+                let mut checksum_warnings = Vec::new();
+                items.push(parse_userdata(
+                    data,
+                    &chunk,
+                    archive,
+                    &mut checksum_warnings,
+                )?);
+                offset = chunk.next_offset;
+            }
+            CLASS_END => {
+                if !chunk.short || chunk.value != 0 {
+                    return Err(FramingError::structural(
+                        chunk.header_start,
+                        "render userdata class end must be a short zero chunk",
+                    ));
+                }
+                return Ok(RenderUserdataDescriptor {
+                    source: record.range.clone(),
+                    items,
+                    unknown_chunks,
+                    suffix: chunk.next_offset..record.body.end,
+                });
+            }
+            0 => {
+                return Err(FramingError::structural(
+                    chunk.header_start,
+                    "render userdata contains a zero typecode",
+                ));
+            }
+            _ => {
+                unknown_chunks.push(chunk.range());
+                offset = chunk.next_offset;
+            }
+        }
+    }
+    Err(FramingError::structural(
+        record.body.end,
+        "render userdata is missing its class end",
+    ))
+}
+
 /// Installs complete typed document-level metadata and named setting records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+///
+/// The returned records are complete settings records whose payload was not
+/// admitted by a registered owner.
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -524,6 +584,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
+    let mut opaque_records = Vec::new();
+    let mut render_settings_seen = false;
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
             continue;
@@ -543,11 +605,37 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
                     scan.archive,
                     scale,
                 )
-                .map(|value| renders.push(value))
+                .map(|value| {
+                    renders.push(value);
+                    render_settings_seen = true;
+                })
+            } else if record.typecode == RENDER_USERDATA {
+                if render_settings_seen {
+                    match render_userdata(scan.data, record, scan.archive) {
+                        Ok(_) => {
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
+                            continue;
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    opaque_records.push(OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    });
+                    continue;
+                }
             } else {
                 continue;
             };
             if let Err(error) = result {
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: table.typecode,
+                    record: record.clone(),
+                });
                 setting_records.push(SettingRecord {
                     id: format!("rhino:document:setting#error-{:04}", setting_records.len()),
                     source_offset: record.range.start as u64,
@@ -588,4 +676,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     namespace
         .set_arena("render_settings", &renders)
         .expect("Rhino render settings serialize");
+    opaque_records
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

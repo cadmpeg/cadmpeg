@@ -853,6 +853,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_bool(&fields, "visible") == Some(true)
         && json_bool(&fields, "locked") == Some(false)
         && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty_or_missing(&fields, "per_viewport_settings")
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
@@ -868,7 +869,15 @@ fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(&fields, "group_indexes")
         && json_array_empty(&fields, "display_materials")
         && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty_or_missing(&fields, "rendering_mappings")
+        && fields.get("casts_shadows").is_none()
+        && fields.get("receives_shadows").is_none()
+        && fields.get("advanced_texture_preview").is_none()
+        && fields.get("custom_render_mesh").is_none()
+        && fields.get("mesh_modifiers").is_none()
         && json_array_empty(&fields, "clipping_plane_uuids")
+        && json_array_empty_or_missing(&fields, "user_strings")
+        && json_array_empty_or_missing(&fields, "attribute_user_strings")
 }
 
 type NativeFields = serde_json::Map<String, serde_json::Value>;
@@ -890,6 +899,12 @@ fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
         .get(name)
         .and_then(serde_json::Value::as_array)
         .is_some_and(Vec::is_empty)
+}
+
+fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
+    fields
+        .get(name)
+        .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
 }
 
 fn planar_sheet_brep_payload(
@@ -2422,6 +2437,13 @@ fn validate_brep_pcurve_ownership(
 ) -> Result<(), CodecError> {
     let mut owned = std::collections::BTreeSet::new();
     for coedge in coedges {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has {} pcurve uses; Rhino stores one trim C2 carrier",
+                coedge.id.0,
+                coedge.pcurves.len()
+            )));
+        }
         for pcurve_use in &coedge.pcurves {
             let id = &pcurve_use.pcurve;
             if !owned.insert(id.0.clone()) {

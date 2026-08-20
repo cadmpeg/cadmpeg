@@ -10,8 +10,8 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::Record;
-use crate::objects::parse_class_wrapper;
+use crate::container::{OpaqueRecord, Record};
+use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
 
@@ -20,6 +20,12 @@ const INSTANCE_DEFINITION_UUID: Uuid = Uuid::from_canonical([
 ]);
 const INSTANCE_REFERENCE_UUID: Uuid = Uuid::from_canonical([
     0xf9, 0xcf, 0xb6, 0x38, 0xb9, 0xd4, 0x43, 0x40, 0x87, 0xe3, 0xc5, 0x6e, 0x78, 0x65, 0xd9, 0x6a,
+]);
+const IDEF_ALTERNATIVE_PATH_USERDATA: Uuid = Uuid::from_canonical([
+    0xf4, 0x2d, 0x96, 0x71, 0x21, 0xeb, 0x46, 0x92, 0x9b, 0x9a, 0xbc, 0x35, 0x07, 0xff, 0x28, 0xf5,
+]);
+const OPENNURBS5_APPLICATION: Uuid = Uuid::from_canonical([
+    0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc, 0x30, 0xd4,
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
@@ -106,6 +112,8 @@ pub(crate) struct InstanceDefinition {
     pub(crate) units: UnitDetail,
     /// V5 linked full path.
     pub(crate) legacy_linked_path: String,
+    /// V5 linked relative path.
+    pub(crate) legacy_relative_linked_path: String,
     /// Exact serialized V5 linked-file checksum range.
     pub(crate) legacy_checksum_range: Option<Range<usize>>,
     /// Legacy relative-path selector.
@@ -144,6 +152,15 @@ pub(crate) struct DefinitionScan {
     pub(crate) diagnostics: Vec<DefinitionDiagnostic>,
 }
 
+/// Result of scanning instance-definition records.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DefinitionParse {
+    /// Typed definitions and diagnostics.
+    pub(crate) scan: DefinitionScan,
+    /// Complete records whose registered class payload was not admitted.
+    pub(crate) opaque_records: Vec<OpaqueRecord>,
+}
+
 /// Recoverable instance-definition parser diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DefinitionDiagnostic {
@@ -159,15 +176,9 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     ))
 }
 
-fn finish(reader: &BoundedReader<'_>, label: &str) -> Result<(), FramingError> {
-    if reader.remaining() == 0 {
-        Ok(())
-    } else {
-        Err(FramingError::structural(
-            reader.position(),
-            format!("{label} has trailing bytes"),
-        ))
-    }
+fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 fn checksum_warning(
@@ -272,7 +283,7 @@ fn anonymous<'a>(
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
     let (chunk, payload, version) =
         anonymous_versioned(data, reader, archive, label, true, warnings)?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             format!("unsupported {label} version"),
@@ -298,7 +309,7 @@ fn unit_detail<'a>(
         ));
     }
     let custom_name = utf16(&mut payload)?;
-    finish(&payload, "unit detail")?;
+    finish(&mut payload, "unit detail")?;
     Ok(UnitDetail {
         unit,
         meters_per_unit,
@@ -321,7 +332,9 @@ fn model_component(
     }
     checksum_warning(data, &chunk, "model-component attributes", warnings)?;
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if (payload.i32()?, payload.i32()?) != (1, 0) {
+    let major = payload.i32()?;
+    let minor = payload.i32()?;
+    if major != 1 || minor < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported model-component attributes version",
@@ -378,7 +391,7 @@ fn model_component(
             ))
         }
     };
-    finish(&payload, "model-component attributes")?;
+    finish(&mut payload, "model-component attributes")?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok((index, id, name))
 }
@@ -391,7 +404,7 @@ pub(crate) fn file_reference<'a>(
 ) -> Result<FileReference, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
-    if version.0 != 1 || !(0..=1).contains(&version.1) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported file-reference version",
@@ -407,7 +420,9 @@ pub(crate) fn file_reference<'a>(
         ));
     }
     let mut hash_payload = BoundedReader::new(data, hash.body.start, hash.body.end)?;
-    if (hash_payload.i32()?, hash_payload.i32()?) != (1, 0) {
+    let hash_major = hash_payload.i32()?;
+    let hash_minor = hash_payload.i32()?;
+    if hash_major != 1 || hash_minor < 0 {
         return Err(FramingError::structural(
             hash_payload.position(),
             "unsupported content-hash version",
@@ -427,13 +442,16 @@ pub(crate) fn file_reference<'a>(
         }
         checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
         let mut bytes = BoundedReader::new(data, digest.body.start, digest.body.end)?;
-        if (bytes.i32()?, bytes.i32()?) != (1, 0) || bytes.remaining() != 20 {
+        let digest_major = bytes.i32()?;
+        let digest_minor = bytes.i32()?;
+        if digest_major != 1 || digest_minor < 0 {
             return Err(FramingError::structural(
                 bytes.position(),
                 "unsupported SHA-1 version",
             ));
         }
         let value = bytes.array()?;
+        bytes.skip_remaining()?;
         digest_ranges.push(digest.range());
         payload.skip(digest.next_offset - payload.position())?;
         Ok(value)
@@ -445,7 +463,7 @@ pub(crate) fn file_reference<'a>(
         name_sha1: read_sha1(&mut hash_payload)?,
         content_sha1: read_sha1(&mut hash_payload)?,
     };
-    finish(&hash_payload, "content hash")?;
+    finish(&mut hash_payload, "content hash")?;
     checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
     payload.skip(hash.next_offset - payload.position())?;
     let path_status = payload.u32()?;
@@ -454,7 +472,7 @@ pub(crate) fn file_reference<'a>(
     } else {
         None
     };
-    finish(&payload, "file reference")?;
+    finish(&mut payload, "file reference")?;
     checksum_warning_excluding(
         data,
         &chunk,
@@ -515,26 +533,69 @@ fn reference_settings<'a>(
 ) -> Result<Range<usize>, FramingError> {
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported reference settings version",
         ));
     }
-    let mut children = skip_object_array(data, &mut payload, archive)?;
-    children.extend(skip_object_array(data, &mut payload, archive)?);
+    let mut implementation_range = None;
     if payload.bool()? {
-        let parent = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if parent.short {
+        let (implementation, mut implementation_payload, implementation_version) =
+            anonymous_versioned(
+                data,
+                &mut payload,
+                archive,
+                "reference settings implementation",
+                false,
+                warnings,
+            )?;
+        if implementation_version.0 != 1 || implementation_version.1 < 0 {
             return Err(FramingError::structural(
-                payload.position(),
-                "reference parent layer is short-framed",
+                implementation_payload.position(),
+                "unsupported reference settings implementation version",
             ));
         }
-        children.push(parent.range());
-        payload.skip(parent.next_offset - payload.position())?;
+        let mut children = skip_object_array(data, &mut implementation_payload, archive)?;
+        children.extend(skip_object_array(
+            data,
+            &mut implementation_payload,
+            archive,
+        )?);
+        if implementation_payload.bool()? {
+            let parent = chunk_at(
+                data,
+                implementation_payload.position(),
+                implementation_payload.end(),
+                archive,
+                false,
+            )?;
+            if parent.short {
+                return Err(FramingError::structural(
+                    implementation_payload.position(),
+                    "reference parent layer is short-framed",
+                ));
+            }
+            children.push(parent.range());
+            implementation_payload.skip(parent.next_offset - implementation_payload.position())?;
+        }
+        finish(
+            &mut implementation_payload,
+            "reference settings implementation",
+        )?;
+        checksum_warning_excluding(
+            data,
+            &implementation,
+            &children,
+            "reference settings implementation",
+            warnings,
+        )?;
+        implementation_range = Some(implementation.range());
     }
-    finish(&payload, "reference settings")?;
+    finish(&mut payload, "reference settings")?;
+    let children = implementation_range
+        .as_ref()
+        .map_or_else(Vec::new, |range| vec![range.clone()]);
     checksum_warning_excluding(data, &chunk, &children, "reference settings", warnings)?;
     Ok(chunk.range())
 }
@@ -549,7 +610,7 @@ fn parse_v5(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
-    if version.0 != 1 || !(6..=7).contains(&version.1) {
+    if version.0 != 1 || version.1 < 6 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported V5 definition version",
@@ -569,13 +630,19 @@ fn parse_v5(
     let url_tag = utf16(&mut reader)?;
     let _bounds = bbox(&mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
-    let legacy_linked_path = utf16(&mut reader)?;
+    let mut legacy_linked_path = utf16(&mut reader)?;
     if matches!(
         kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
     ) && legacy_linked_path.is_empty()
     {
         kind = DefinitionKind::Static;
+    }
+    if !matches!(
+        kind,
+        DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
+    ) {
+        legacy_linked_path.clear();
     }
     let legacy_checksum_range = Some(legacy_checksum(&mut reader)?);
     let unit = i32::try_from(reader.u32()?)
@@ -588,6 +655,11 @@ fn parse_v5(
         ));
     }
     let legacy_relative_path = reader.bool()?;
+    let legacy_relative_linked_path = if legacy_relative_path {
+        std::mem::take(&mut legacy_linked_path)
+    } else {
+        String::new()
+    };
     let units = unit_detail(data, &mut reader, archive, warnings)?;
     let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
@@ -604,7 +676,7 @@ fn parse_v5(
     if version.1 >= 7 {
         reader.skip(reader.remaining())?;
     }
-    finish(&reader, "V5 instance definition")?;
+    finish(&mut reader, "V5 instance definition")?;
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -617,6 +689,7 @@ fn parse_v5(
         kind,
         units,
         legacy_linked_path,
+        legacy_relative_linked_path,
         legacy_checksum_range,
         legacy_relative_path,
         linked_depth,
@@ -645,13 +718,13 @@ fn parse_v6(
         false,
         warnings,
     )?;
-    if outer_version != (1, 0) {
+    if outer_version.0 != 1 || outer_version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance definition version",
         ));
     }
-    finish(&outer, "instance-definition wrapper")?;
+    finish(&mut outer, "instance-definition wrapper")?;
     let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
     #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
@@ -682,7 +755,7 @@ fn parse_v6(
     if reader.bool()? {
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
-        if linked_version != (1, 0) {
+        if linked_version.0 != 1 || linked_version.1 < 0 {
             return Err(FramingError::structural(
                 linked.position(),
                 "unsupported linked-type version",
@@ -706,7 +779,7 @@ fn parse_v6(
                     .clone(),
             );
         }
-        finish(&linked, "linked type")?;
+        finish(&mut linked, "linked type")?;
         checksum_warning_excluding(
             data,
             &linked_chunk,
@@ -716,7 +789,7 @@ fn parse_v6(
         )?;
         outer_children.push(linked_chunk.range());
     }
-    finish(&reader, "instance definition")?;
+    finish(&mut reader, "instance definition")?;
     checksum_warning_excluding(
         data,
         &outer_chunk,
@@ -736,6 +809,7 @@ fn parse_v6(
         kind,
         units,
         legacy_linked_path: String::new(),
+        legacy_relative_linked_path: String::new(),
         legacy_checksum_range: None,
         legacy_relative_path: false,
         linked_depth,
@@ -755,7 +829,7 @@ fn extract_member_ids(
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     if v5_layout {
         let packed = outer.u8()?;
-        if packed >> 4 != 1 || !(6..=7).contains(&(packed & 0x0f)) {
+        if packed >> 4 != 1 || packed & 0x0f < 6 {
             return Err(FramingError::structural(
                 outer.position(),
                 "unsupported V5 definition version",
@@ -772,13 +846,13 @@ fn extract_member_ids(
         false,
         &mut Vec::new(),
     )?;
-    if version != (1, 0) {
+    if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position(),
             "unsupported instance definition version",
         ));
     }
-    finish(&outer, "instance-definition wrapper")?;
+    finish(&mut outer, "instance-definition wrapper")?;
     let _component = model_component(data, &mut reader, archive, &mut Vec::new())?;
     let _kind = reader.u32()?;
     let _units = unit_detail(data, &mut reader, archive, &mut Vec::new())?;
@@ -793,18 +867,112 @@ fn extract_member_ids(
     }
 }
 
+fn parse_idef_alternative_path(
+    data: &[u8],
+    userdata: &UserdataDescriptor,
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Result<(String, bool), FramingError> {
+    let mut reader = BoundedReader::new(
+        data,
+        userdata.payload_range.start,
+        userdata.payload_range.end,
+    )?;
+    let (_chunk, mut payload, version) = anonymous_versioned(
+        data,
+        &mut reader,
+        archive,
+        "instance-definition alternate path",
+        true,
+        warnings,
+    )?;
+    if version.0 != 1 || version.1 < 0 {
+        return Err(FramingError::structural(
+            payload.position(),
+            "unsupported instance-definition alternate-path version",
+        ));
+    }
+    let path = utf16(&mut payload)?;
+    let relative = payload.bool()?;
+    finish(&mut payload, "instance-definition alternate path")?;
+    finish(&mut reader, "instance-definition alternate-path userdata")?;
+    Ok((path, relative))
+}
+
+fn apply_idef_alternative_path(
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
+    archive: ArchiveVersion,
+    definition: &mut InstanceDefinition,
+    warnings: &mut Vec<String>,
+) -> bool {
+    if !matches!(
+        definition.kind,
+        DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
+    ) {
+        return false;
+    }
+
+    let mut degraded = false;
+    for item in userdata.iter().filter(|item| {
+        item.class_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+            && item.item_uuid == IDEF_ALTERNATIVE_PATH_USERDATA
+            && (item.application_uuid.is_none()
+                || item.application_uuid == Some(OPENNURBS5_APPLICATION))
+    }) {
+        let (path, relative) = match parse_idef_alternative_path(data, item, archive, warnings) {
+            Ok(value) => value,
+            Err(error) => {
+                degraded = true;
+                warnings.push(format!(
+                    "instance-definition alternate-path userdata at offset {} was dropped: {error}",
+                    item.range.start
+                ));
+                continue;
+            }
+        };
+        let path = path.trim();
+        if path.is_empty() {
+            continue;
+        }
+        if let Some(reference) = definition.file_reference.as_mut() {
+            if relative {
+                if reference.relative_path.is_empty() {
+                    path.clone_into(&mut reference.relative_path);
+                }
+            } else if reference.full_path.is_empty() {
+                path.clone_into(&mut reference.full_path);
+            }
+        } else if relative {
+            if definition.legacy_relative_linked_path.is_empty() {
+                path.clone_into(&mut definition.legacy_relative_linked_path);
+                definition.legacy_relative_path = true;
+            }
+        } else if definition.legacy_linked_path.is_empty() {
+            path.clone_into(&mut definition.legacy_linked_path);
+        }
+    }
+    degraded
+}
+
 /// Parses all instance-definition records without losing framing after a bad record.
 pub(crate) fn parse_definitions(
     data: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
-) -> DefinitionScan {
-    let mut result = DefinitionScan::default();
+    table_typecode: u32,
+) -> DefinitionParse {
+    let mut result = DefinitionParse::default();
     let mut seen = HashSet::new();
     for record in records {
         let parsed = (|| {
             let mut warnings = Vec::new();
-            let class = parse_class_wrapper(data, record.body.clone(), archive, &mut warnings)?;
+            let (class, userdata) = parse_class_wrapper_with_userdata(
+                data,
+                record.body.clone(),
+                archive,
+                &mut warnings,
+            )?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
@@ -820,9 +988,9 @@ pub(crate) fn parse_definitions(
             if let Ok(member_ids) =
                 extract_member_ids(data, class.class_data_range.clone(), archive, v5_layout)
             {
-                result.member_object_ids.extend(member_ids);
+                result.scan.member_object_ids.extend(member_ids);
             }
-            let definition = if v5_layout {
+            let mut definition = if v5_layout {
                 parse_v5(
                     data,
                     record.range.clone(),
@@ -839,36 +1007,61 @@ pub(crate) fn parse_definitions(
                     &mut warnings,
                 )
             }?;
+            let userdata_degraded = apply_idef_alternative_path(
+                data,
+                &userdata,
+                archive,
+                &mut definition,
+                &mut warnings,
+            );
             for warning in warnings {
-                result.diagnostics.push(DefinitionDiagnostic {
+                result.scan.diagnostics.push(DefinitionDiagnostic {
                     message: warning,
                     source_range: record.range.clone(),
                 });
             }
-            Ok(definition)
+            Ok((definition, userdata_degraded))
         })();
         match parsed {
-            Ok(definition) if seen.insert(definition.id) => {
-                result
-                    .member_object_ids
-                    .extend(definition.members.iter().copied());
-                result.definitions.push(definition);
+            Ok((definition, userdata_degraded)) => {
+                if userdata_degraded {
+                    result.opaque_records.push(OpaqueRecord {
+                        table_typecode,
+                        record: record.clone(),
+                    });
+                }
+                if seen.insert(definition.id) {
+                    result
+                        .scan
+                        .member_object_ids
+                        .extend(definition.members.iter().copied());
+                    result.scan.definitions.push(definition);
+                } else {
+                    result
+                        .scan
+                        .member_object_ids
+                        .extend(definition.members.iter().copied());
+                    result.scan.ambiguous_ids.insert(definition.id);
+                    result
+                        .scan
+                        .definitions
+                        .retain(|value| value.id != definition.id);
+                    result.scan.diagnostics.push(DefinitionDiagnostic {
+                        message: format!("duplicate instance definition UUID {}", definition.id),
+                        source_range: record.range.clone(),
+                    });
+                }
             }
-            Ok(definition) => {
-                result
-                    .member_object_ids
-                    .extend(definition.members.iter().copied());
-                result.ambiguous_ids.insert(definition.id);
-                result.definitions.retain(|value| value.id != definition.id);
-                result.diagnostics.push(DefinitionDiagnostic {
-                    message: format!("duplicate instance definition UUID {}", definition.id),
+            Err(error) => {
+                result.scan.diagnostics.push(DefinitionDiagnostic {
+                    message: format!("instance definition retained: {error}"),
                     source_range: record.range.clone(),
                 });
+                result.opaque_records.push(OpaqueRecord {
+                    table_typecode,
+                    record: record.clone(),
+                });
             }
-            Err(error) => result.diagnostics.push(DefinitionDiagnostic {
-                message: format!("instance definition retained: {error}"),
-                source_range: record.range.clone(),
-            }),
         }
     }
     result
@@ -880,16 +1073,17 @@ fn determinant3(rows: &[[f64; 4]; 4]) -> f64 {
         + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
 }
 
-/// Parses an exact packed 1.0 instance-reference payload.
+/// Parses a packed major-1 instance-reference payload.
 pub(crate) fn parse_reference(
     data: &[u8],
     range: Range<usize>,
 ) -> Result<InstanceReference, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    if reader.u8()? != 0x10 {
+    let version = reader.u8()?;
+    if version >> 4 != 1 {
         return Err(FramingError::structural(
             reader.position(),
-            "instance reference version is not 1.0",
+            "instance reference major version is not 1",
         ));
     }
     let definition_id = uuid(&mut reader)?;
@@ -906,7 +1100,7 @@ pub(crate) fn parse_reference(
         }
     }
     let _bounds = bbox(&mut reader)?;
-    finish(&reader, "instance reference")?;
+    finish(&mut reader, "instance reference")?;
     if !rows.iter().flatten().all(|value| value.is_finite()) {
         return Err(FramingError::structural(
             reader.position(),

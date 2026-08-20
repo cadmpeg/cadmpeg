@@ -102,7 +102,7 @@ pub(crate) fn decode_at(
 
     let major = req_i32(&mut body)?;
     let minor = req_i32(&mut body)?;
-    if major != 1 || minor != 0 {
+    if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: chunk.body.start,
             message: format!("unsupported NURBS cage version {major}.{minor}"),
@@ -260,12 +260,10 @@ pub(crate) fn decode_at(
             .push(point)
             .map_err(|error| refused(body.position(), &error))?;
     }
-    if body.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            body.position(),
-            "NURBS cage has trailing bytes",
-        ));
-    }
+    let remaining = body.remaining();
+    body.skip(remaining).ok_or_else(|| {
+        GeometryError::malformed(body.position(), "NURBS cage suffix is out of range")
+    })?;
     let control_points = control_points
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
@@ -325,6 +323,33 @@ mod tests {
         assert_eq!(cage.knots[2], [0.0, 3.0]);
         assert_eq!(cage.control_points[7], [70.0, 0.0, 0.0]);
         assert_eq!(cage.weights.as_ref().expect("required invariant")[7], 2.0);
+    }
+
+    #[test]
+    fn accepts_major_one_future_minor_and_skips_bounded_suffix() {
+        let mut body = rational_cage_body();
+        body[4..8].copy_from_slice(&2_i32.to_le_bytes());
+        body.extend(0x1357_9bdf_i32.to_le_bytes());
+        let bytes = crc_chunk(ANONYMOUS, &body);
+        let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        })
+        .expect("major-one future minor is bounded-compatible");
+        assert_eq!(cage.control_points[7][0], 70.0);
+    }
+
+    #[test]
+    fn rejects_a_non_one_major() {
+        let mut body = rational_cage_body();
+        body[..4].copy_from_slice(&2_i32.to_le_bytes());
+        let bytes = crc_chunk(ANONYMOUS, &body);
+        let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+        });
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
     }
 
     #[test]

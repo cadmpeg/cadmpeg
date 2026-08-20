@@ -107,12 +107,7 @@ pub(crate) fn decode(
         archive,
         depth,
     )?;
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "curve-on-surface has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(CurveOnSurface {
         source_range: range,
         parameter_curve,
@@ -138,11 +133,11 @@ mod tests {
         let mut payload = vec![0x10];
         payload.extend(
             [
-                0.0_f64, 0.0, 0.0, // origin
+                1.0_f64, 2.0, 3.0, // origin
                 1.0, 0.0, 0.0, // x axis
                 0.0, 1.0, 0.0, // y axis
                 0.0, 0.0, 1.0, // z axis
-                0.0, 0.0, 1.0, 0.0, // equation
+                0.0, 0.0, 1.0, -3.0, // equation
                 0.0, 1.0, // U extent
                 0.0, 1.0, // V extent
             ]
@@ -173,12 +168,22 @@ mod tests {
             panic!("expected NURBS parameter curve");
         };
         assert_eq!(c2.control_points[1].x, 1.0);
+        let Some(DecodedCurve {
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve),
+            ..
+        }) = decoded.model_curve
+        else {
+            panic!("expected NURBS model curve");
+        };
+        assert_eq!(model_curve.control_points[1].x, 20.0);
         let DecodedSurface::Typed { geometry, .. } = decoded.surface else {
             panic!("expected typed support surface");
         };
-        assert!(matches!(
-            geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
-        ));
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = geometry else {
+            panic!("expected plane support surface");
+        };
+        assert_eq!(origin.x, 10.0);
+        assert_eq!(origin.y, 20.0);
+        assert_eq!(origin.z, 30.0);
     }
 }

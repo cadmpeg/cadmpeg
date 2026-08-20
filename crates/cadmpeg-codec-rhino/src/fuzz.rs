@@ -13,7 +13,7 @@ use crate::layout::file_header;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::wire::Uuid;
 
-const ARCHIVES: [ArchiveVersion; 9] = [
+const ARCHIVES: [ArchiveVersion; 10] = [
     ArchiveVersion::V1,
     ArchiveVersion::V2,
     ArchiveVersion::V3,
@@ -23,6 +23,7 @@ const ARCHIVES: [ArchiveVersion; 9] = [
     ArchiveVersion::V6,
     ArchiveVersion::V7,
     ArchiveVersion::V8,
+    ArchiveVersion::V9,
 ];
 
 fn selected_archive(selector: u8) -> ArchiveVersion {
@@ -94,6 +95,7 @@ pub fn object_record(data: &[u8]) {
         data,
         &record,
         selected_archive(data[0]),
+        None,
         &mut warnings,
     );
 }
@@ -130,7 +132,7 @@ pub fn brep(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None);
+    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None, &[]);
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.

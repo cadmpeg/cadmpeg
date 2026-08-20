@@ -21,6 +21,15 @@ const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
 /// The bit marking a CRC-bearing chunk.
 pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
+/// The short marker that terminates an `OpenNURBS` class child stream.
+pub(crate) const TCODE_CLASS_END: u32 = 0x8002_7fff;
+
+const CHECKSUM_CHILD_CAP: usize = 1 << 20;
+
+// The first strict boolean reader version in the encoded openNURBS version
+// form: 6.0.2017-08-24. Older files also store this value as YYYYMMDDn.
+const STRICT_BOOLEAN_VERSION_ENCODED: i64 = 2_348_836_140;
+const STRICT_BOOLEAN_VERSION_DATE: i64 = 201_708_240;
 
 /// Archive versions understood by the chunk layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +52,8 @@ pub(crate) enum ArchiveVersion {
     V7,
     /// Archive version 8.
     V8,
+    /// Archive version 9.
+    V9,
     /// A syntactically valid archive version outside the supported bands.
     Other(u64),
 }
@@ -59,6 +70,7 @@ impl ArchiveVersion {
             60 => Self::V6,
             70 => Self::V7,
             80 => Self::V8,
+            90 => Self::V9,
             other => Self::Other(other),
         }
     }
@@ -75,6 +87,7 @@ impl ArchiveVersion {
             Self::V6 => 60,
             Self::V7 => 70,
             Self::V8 => 80,
+            Self::V9 => 90,
             Self::Other(value) => value,
         }
     }
@@ -249,6 +262,19 @@ impl<'a> BoundedReader<'a> {
         Ok(())
     }
 
+    /// Skips the unread suffix of this bounded payload.
+    ///
+    /// The chunk boundary has already been validated by [`chunk_at`].  A
+    /// parser that has consumed all fields known to its payload version must
+    /// therefore advance to that boundary instead of treating later fields
+    /// as a framing failure.  Truncation and overrun still fail at the field
+    /// read that reaches beyond the bound.
+    pub(crate) fn skip_remaining(&mut self) -> Result<usize, FramingError> {
+        let count = self.remaining();
+        self.skip(count)?;
+        Ok(count)
+    }
+
     /// Reads a byte.
     pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
         self.need(1)?;
@@ -300,6 +326,29 @@ impl<'a> BoundedReader<'a> {
     /// Reads an archive boolean encoded as one byte.
     pub(crate) fn bool(&mut self) -> Result<bool, FramingError> {
         Ok(self.u8()? != 0)
+    }
+
+    /// Reads an archive boolean with the writer-version validation rule.
+    ///
+    /// A missing writer version keeps the historical permissive behavior. Raw
+    /// character fields must call [`BoundedReader::u8`] instead.
+    pub(crate) fn bool_with_writer_version(
+        &mut self,
+        writer_version: Option<i64>,
+    ) -> Result<bool, FramingError> {
+        let offset = self.position();
+        let value = self.u8()?;
+        let strict = writer_version.is_some_and(|version| {
+            version >= STRICT_BOOLEAN_VERSION_ENCODED
+                || (STRICT_BOOLEAN_VERSION_DATE..1_000_000_000).contains(&version)
+        });
+        if strict && value > 1 {
+            return Err(FramingError::structural(
+                offset,
+                "archive boolean must be encoded as 0 or 1",
+            ));
+        }
+        Ok(value != 0)
     }
 
     /// Reads a little-endian IEEE-754 binary32 value.
@@ -652,6 +701,50 @@ pub(crate) fn direct_checksum_ranges(
         direct.push(cursor..body.end);
     }
     Ok(direct)
+}
+
+/// Frames complete nested chunks through a short zero class-end marker.
+pub(crate) fn checksum_children_through_class_end(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    context: &str,
+) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut children = Vec::new();
+    loop {
+        if reader.position() == reader.end() {
+            return Err(FramingError::structural(
+                reader.end(),
+                format!("{context} is missing its class end"),
+            ));
+        }
+        let start = reader.position();
+        let child = chunk_at(data, start, reader.end(), archive, false)?;
+        if child.next_offset <= start {
+            return Err(FramingError::structural(
+                start,
+                format!("{context} child did not advance"),
+            ));
+        }
+        if children.len() >= CHECKSUM_CHILD_CAP {
+            return Err(FramingError::InvalidLength {
+                offset: start,
+                value: children.len() as i128,
+            });
+        }
+        children.push(child.range());
+        reader.skip(child.next_offset - start)?;
+        if child.typecode == TCODE_CLASS_END {
+            if !child.short || child.value != 0 {
+                return Err(FramingError::structural(
+                    start,
+                    format!("{context} class end must be a short zero chunk"),
+                ));
+            }
+            return Ok(children);
+        }
+    }
 }
 
 /// Decodes a packed one-byte payload version.
