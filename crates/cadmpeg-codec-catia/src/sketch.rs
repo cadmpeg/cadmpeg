@@ -739,7 +739,7 @@ fn dimension_parameter(
         owner: None,
         ordinal: 0,
         name: String::new(),
-        expression: value.to_string(),
+        expression: format!("{value} mm"),
         display: None,
         value: Some(ParameterValue::Length(Length(value))),
         dependencies: Vec::new(),
@@ -1808,7 +1808,7 @@ mod tests {
             parameter.native_ref.as_deref(),
             Some("catia:outer:entity-record#range")
         );
-        assert_eq!(parameter.expression, "128");
+        assert_eq!(parameter.expression, "128 mm");
         assert_eq!(
             parameter.properties.get("value_type").map(String::as_str),
             Some("LENGTH")
