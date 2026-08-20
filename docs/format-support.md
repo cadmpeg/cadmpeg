@@ -50,7 +50,7 @@ A level passes only when every criterion holds for the declared envelope:
 | Creo Parametric `.prt`                                          | **L1** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                                                                                               |
 | ASM/ACIS bare `.sat`/`.smt`/`.smb`/`.sab` (admitted branches)   | **L3** | retained unknown SAB records; unsupported ACIS binary save-format bands identified and refused                                                                                                      |
 | STEP Part 21 AP203/AP214/AP242                                  | **L9** |                                                                                                                                                                                                     |
-| IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                | **L9** | bounded semantic writing, target selection, loss refusal, and FreeCAD acceptance are gated                                                                                                         |
+| IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                | **L9** | bounded semantic writing, target selection, loss refusal, and FreeCAD acceptance are gated                                                                                                          |
 
 Each current score applies to the envelope described in its profile.
 
