@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 
 use crate::loss::IgesLossCode;
@@ -53,15 +52,11 @@ type ParsedGlobal = (
     Vec<cadmpeg_ir::report::LossNote>,
 );
 
-fn parse_global_fields(fields: &[String]) -> Result<ParsedGlobal, CodecError> {
+fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
     let mut global = fields.join(",");
     global.push(';');
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    crate::global::parse(&crate::card::scan(&bytes)?)
-}
-
-fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
-    parse_global_fields(fields).unwrap()
+    crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap()
 }
 
 fn code_count(losses: &[cadmpeg_ir::report::LossNote], code: IgesLossCode) -> usize {
