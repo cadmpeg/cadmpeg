@@ -300,3 +300,99 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         1
     );
 }
+
+#[test]
+fn legacy_ascii_spline_carrier_transfers_complete_interpolation_arrays() {
+    let real_array = |values: &[f64]| {
+        values
+            .iter()
+            .map(|value| format!("{:016X}", value.to_bits()))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let data = format!(
+        r"#UGC:2 PART 1
+#-END_OF_UGC_HEADER
+#P_OBJECT 6
+@Sld_VisGeom 1 0
+@active_geom 2 0
+@srf_array 3 0
+@geom_type 4 1
+@geom_id 5 1
+@feat_id 6 1
+@boundary_type 7 1
+@next_geom_ptr 8 1
+@orient 9 1
+@srf_prim_ptr(splsrf) 10 0
+@tan_cond 11 1
+@i_points 12 2
+@u_params 13 2
+@v_params 14 2
+@u_tangts 15 2
+@v_tangts 16 2
+@uv_deriv 17 2
+@principal_sys_units 18 10
+0 18 millimeter Newton Second (mmNs)
+0 1 ->
+1 2 ->
+2 3 [1]
+3 3 ->
+4 4 40
+4 5 42
+4 6 7
+4 7 0
+4 8 0
+4 9 1
+4 10 ->
+5 11 [2]
+0 0
+5 12 [4][3]
+${}
+5 13 [2]
+${}
+5 14 [2]
+${}
+5 15 [4][3]
+${}
+5 16 [4][3]
+${}
+5 17 [4][3]
+${}
+#END_OF_P_OBJECT
+#Pro/ENGINEER  TM  Version H-01-21
+",
+        real_array(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0,]),
+        real_array(&[0.0, 1.0]),
+        real_array(&[0.0, 1.0]),
+        real_array(&[1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0,]),
+        real_array(&[0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0,]),
+        real_array(&[0.0; 12]),
+    );
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("legacy spline surface decode");
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
+        .expect("legacy spline surface");
+    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+        panic!("legacy spline geometry: {:?}", surface.geometry);
+    };
+    assert_eq!(surface.control_points.len(), 16);
+    assert_eq!(surface.u_count, 4);
+    assert_eq!(surface.v_count, 4);
+    assert_eq!(
+        result.report().coverage["transferred_legacy_ascii_surface_carrier_count"],
+        1
+    );
+    assert_eq!(
+        result.report().coverage["transferred_visible_spline_surface_row_count"],
+        1
+    );
+}

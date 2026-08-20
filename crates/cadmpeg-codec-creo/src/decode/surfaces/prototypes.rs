@@ -372,7 +372,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         else {
             continue;
         };
-        let geometry = match carrier.geometry {
+        let geometry = match &carrier.geometry {
             crate::legacy_geometry::LegacySurfaceGeometry::Plane {
                 origin,
                 normal,
@@ -391,8 +391,28 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 origin: Point3::new(origin[0], origin[1], origin[2]),
                 axis: Vector3::new(axis[0], axis[1], axis[2]),
                 ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                radius,
+                radius: *radius,
             },
+            crate::legacy_geometry::LegacySurfaceGeometry::Spline {
+                points,
+                u_parameters,
+                v_parameters,
+                u_derivatives,
+                v_derivatives,
+                mixed_derivatives,
+            } if row.kind == crate::surface::SurfaceKind::Spline => {
+                let Some(nurbs) = interpolation_spline_surface(
+                    points,
+                    u_parameters,
+                    v_parameters,
+                    u_derivatives,
+                    v_derivatives,
+                    mixed_derivatives,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Nurbs(nurbs)
+            }
             _ => continue,
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", carrier.surface_id));

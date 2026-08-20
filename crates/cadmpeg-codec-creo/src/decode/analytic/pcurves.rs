@@ -33,6 +33,22 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
     matches.next().is_none().then_some(surface)
 }
 
+fn topology_ignored_surface_ids(
+    layout: crate::container::Layout,
+    rows: &[crate::surface::SurfaceRow],
+) -> BTreeSet<u32> {
+    // The interpolation carrier makes a legacy spline surface evaluable, but
+    // its trim/intersection join is still unresolved. Keep that surface from
+    // vetoing endpoint evidence supplied by a proven adjacent analytic face.
+    if layout != crate::container::Layout::LegacyAscii {
+        return BTreeSet::new();
+    }
+    rows.iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Spline)
+        .map(|row| row.id)
+        .collect()
+}
+
 #[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
@@ -53,9 +69,15 @@ fn mapped_pcurve_endpoint_evidence(
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Option<PcurveEndpointEvidence> {
-    let mapped = faces
+    mapped_pcurve_endpoint_evidence_for_paths(ir, faces.into_iter().zip(endpoint_sets))
+}
+
+fn mapped_pcurve_endpoint_evidence_for_paths(
+    ir: &CadIr,
+    paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
+) -> Option<PcurveEndpointEvidence> {
+    let mapped = paths
         .into_iter()
-        .zip(endpoint_sets)
         .filter_map(|(face_id, endpoints)| {
             let surface = unique_model_surface(&ir.model.surfaces, face_id)?;
             let [first, second] = endpoints.map(|uv| {
@@ -81,6 +103,8 @@ pub fn pcurve_edge_endpoint_evidence(
     scan: &ContainerScan,
     ir: &CadIr,
 ) -> BTreeMap<u32, PcurveEndpointEvidence> {
+    let ignored_surface_ids =
+        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     for (curve_id, faces, first, second) in scan
         .curves
@@ -103,7 +127,11 @@ pub fn pcurve_edge_endpoint_evidence(
             )
         }))
     {
-        if let Some(evidence) = mapped_pcurve_endpoint_evidence(ir, faces, [first, second]) {
+        let paths = faces
+            .into_iter()
+            .zip([first, second])
+            .filter(|(face_id, _)| !ignored_surface_ids.contains(face_id));
+        if let Some(evidence) = mapped_pcurve_endpoint_evidence_for_paths(ir, paths) {
             candidates.entry(curve_id).or_default().push(evidence);
         }
     }
@@ -371,6 +399,8 @@ pub fn transfer_analytic_pcurve_carriers(
     annotations: &mut AnnotationBuilder,
 ) -> BTreeSet<CurveId> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
+    let ignored_surface_ids =
+        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     for (curve_id, faces, endpoint_sets, offset) in scan
@@ -395,6 +425,9 @@ pub fn transfer_analytic_pcurve_carriers(
         }))
     {
         for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets) {
+            if ignored_surface_ids.contains(&face_id) {
+                continue;
+            }
             let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
                 continue;
             };
@@ -869,6 +902,39 @@ pub fn planar_curve_pcurve(
 mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn legacy_spline_topology_filter_is_layout_scoped() {
+        let rows = vec![
+            crate::surface::SurfaceRow {
+                id: 7,
+                type_byte: crate::surface::SurfaceKind::Spline.canonical_type_byte(),
+                kind: crate::surface::SurfaceKind::Spline,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            },
+            crate::surface::SurfaceRow {
+                id: 8,
+                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+                kind: crate::surface::SurfaceKind::Plane,
+                feature_id: 0,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            },
+        ];
+
+        assert_eq!(
+            topology_ignored_surface_ids(crate::container::Layout::LegacyAscii, &rows),
+            BTreeSet::from([7]),
+        );
+        assert!(topology_ignored_surface_ids(crate::container::Layout::Nd, &rows).is_empty());
+    }
 
     #[test]
     fn mapped_pcurve_endpoints_reject_duplicate_face_surfaces() {

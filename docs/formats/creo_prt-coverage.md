@@ -39,8 +39,13 @@ fixtures, scores above L1 remain blocked.
   Complete rows transfer their fixed-prefix surface fields. Complete plane and
   cylinder rows transfer analytic carriers from their matching primitive
   object and twelve-slot row-major `local_sys` frame, including canonical unit
-  scaling. Incomplete, duplicate, conflicting, or non-visible carriers remain
-  native.
+  scaling. A complete legacy ASCII type-40 row transfers the bicubic NURBS
+  carrier from its matching `srf_prim_ptr(splsrf)` interpolation arrays. The
+  carrier transfer does not imply trim or face admission; the interpolation
+  carrier remains excluded from cross-face pcurve endpoint reconciliation until
+  the spline trim join is defined. Those uses require the common boundary and
+  topology gates. Incomplete, duplicate, conflicting, or non-visible carriers
+  remain native.
 - Legacy ASCII `Sld_VisGeom.active_geom.crv_array` joins complete curve objects
   to their two face references, two successor references, signed endpoint
   directions, and bounded `crv_pnt_arr` endpoint witnesses. These rows use the

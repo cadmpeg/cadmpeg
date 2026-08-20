@@ -8,7 +8,7 @@ use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persisten
 use crate::surface::{self, SurfaceKind, SurfaceRow};
 
 /// A complete model-space carrier from one legacy analytic surface prototype.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum LegacySurfaceGeometry {
     /// A plane from a complete row-major local system.
     Plane {
@@ -30,14 +30,29 @@ pub(crate) enum LegacySurfaceGeometry {
         /// Positive cylinder radius in the stored model coordinate system.
         radius: f64,
     },
+    /// A complete bicubic interpolation surface carrier.
+    Spline {
+        /// Interpolation points in source order.
+        points: Vec<[f64; 3]>,
+        /// Ordered interpolation parameters in the first surface direction.
+        u_parameters: Vec<f64>,
+        /// Ordered interpolation parameters in the second surface direction.
+        v_parameters: Vec<f64>,
+        /// Boundary derivatives in the first surface direction.
+        u_derivatives: Vec<[f64; 3]>,
+        /// Boundary derivatives in the second surface direction.
+        v_derivatives: Vec<[f64; 3]>,
+        /// Mixed derivatives at the four parameter-domain corners.
+        mixed_derivatives: Vec<[f64; 3]>,
+    },
 }
 
-/// One complete legacy analytic carrier associated with a visible surface row.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// One complete legacy surface carrier associated with a visible surface row.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LegacySurfaceCarrier {
     /// Visible `srf_array` surface identifier.
     pub(crate) surface_id: u32,
-    /// Complete analytic geometry.
+    /// Complete surface geometry or interpolation data.
     pub(crate) geometry: LegacySurfaceGeometry,
     /// Byte offset of the `srf_prim_ptr` object.
     pub(crate) offset: usize,
@@ -50,7 +65,7 @@ pub(crate) struct LegacyGeometryScan {
     pub(crate) rows: Vec<SurfaceRow>,
     /// Rows under `Sld_NonVisGeom.inactive_geom.srf_array`.
     pub(crate) nonvisible_rows: Vec<SurfaceRow>,
-    /// Complete plane and cylinder carriers from visible rows.
+    /// Complete surface carriers from visible rows.
     pub(crate) carriers: Vec<LegacySurfaceCarrier>,
     /// Complete visible curve topology rows from the legacy `crv_array`
     /// namespace.
@@ -294,7 +309,7 @@ fn namespace(
         let Some(row) = surface_row(row_object, integer_fields) else {
             continue;
         };
-        if let Some(carrier) = analytic_carrier(row_object, &row, children, real_fields) {
+        if let Some(carrier) = surface_carrier(row_object, &row, children, real_fields) {
             carriers.push(carrier);
         }
         rows.push(row);
@@ -374,15 +389,12 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
     })
 }
 
-fn analytic_carrier(
+fn surface_carrier(
     row_object: &ObjectRecord,
     row: &SurfaceRow,
     children: &ChildIndex<'_>,
     reals: &RealFieldIndex<'_>,
 ) -> Option<LegacySurfaceCarrier> {
-    if !matches!(row.kind, SurfaceKind::Plane | SurfaceKind::Cylinder) {
-        return None;
-    }
     let mut primitives = children
         .get(row_object.id.as_str())?
         .iter()
@@ -393,9 +405,25 @@ fn analytic_carrier(
     let expected_name = match row.kind {
         SurfaceKind::Plane => "srf_prim_ptr(plane)",
         SurfaceKind::Cylinder => "srf_prim_ptr(cylinder)",
-        _ => unreachable!("analytic carrier family was filtered above"),
+        SurfaceKind::Spline => "srf_prim_ptr(splsrf)",
+        _ => return None,
     };
     (primitive.name == expected_name).then_some(())?;
+
+    if row.kind == SurfaceKind::Spline {
+        return Some(LegacySurfaceCarrier {
+            surface_id: row.id,
+            geometry: LegacySurfaceGeometry::Spline {
+                points: real_vector_array(reals, &primitive.id, "i_points")?,
+                u_parameters: real_scalar_array(reals, &primitive.id, "u_params")?,
+                v_parameters: real_scalar_array(reals, &primitive.id, "v_params")?,
+                u_derivatives: real_vector_array(reals, &primitive.id, "u_tangts")?,
+                v_derivatives: real_vector_array(reals, &primitive.id, "v_tangts")?,
+                mixed_derivatives: real_vector_array(reals, &primitive.id, "uv_deriv")?,
+            },
+            offset: primitive.offset,
+        });
+    }
 
     let local_system = real_record(reals, &primitive.id, "local_sys")?;
     let slots = local_system_slots(local_system)?;
@@ -417,13 +445,60 @@ fn analytic_carrier(
             radius: real_scalar(reals, &primitive.id, "radius")
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?,
         },
-        _ => unreachable!("analytic carrier family was filtered above"),
+        _ => unreachable!("surface carrier family was filtered above"),
     };
     Some(LegacySurfaceCarrier {
         surface_id: row.id,
         geometry,
         offset: primitive.offset,
     })
+}
+
+fn real_vector_array(
+    records: &RealFieldIndex<'_>,
+    parent: &str,
+    name: &str,
+) -> Option<Vec<[f64; 3]>> {
+    let record = real_record(records, parent, name)?;
+    let values = real_array_values(record)?;
+    let NumericPayload::Array { dimensions, .. } = &record.payload else {
+        return None;
+    };
+    let [count, width] = dimensions.as_slice() else {
+        return None;
+    };
+    (*width == 3 && values.len() == usize::try_from(*count).ok()?.checked_mul(3)?).then_some(())?;
+    values
+        .chunks_exact(3)
+        .map(|vector| vector.try_into().ok())
+        .collect()
+}
+
+fn real_scalar_array(records: &RealFieldIndex<'_>, parent: &str, name: &str) -> Option<Vec<f64>> {
+    let record = real_record(records, parent, name)?;
+    let NumericPayload::Array { dimensions, .. } = &record.payload else {
+        return None;
+    };
+    (dimensions.len() == 1).then_some(())?;
+    let values = real_array_values(record)?;
+    (values.len() == usize::try_from(dimensions[0]).ok()?).then_some(values)
+}
+
+fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
+    let NumericPayload::Array { dimensions, runs } = &record.payload else {
+        return None;
+    };
+    let expected = dimensions.iter().try_fold(1usize, |product, dimension| {
+        product.checked_mul(usize::try_from(*dimension).ok()?)
+    })?;
+    let mut values = Vec::with_capacity(expected);
+    for run in runs {
+        let value = run.value.value();
+        value.is_finite().then_some(())?;
+        let count = usize::try_from(run.count).ok()?;
+        values.extend(std::iter::repeat_n(value, count));
+    }
+    (values.len() == expected).then_some(values)
 }
 
 fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
@@ -594,6 +669,119 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         data.into_bytes()
     }
 
+    fn spline_real_array(
+        parent: &str,
+        name: &str,
+        dimensions: Vec<u32>,
+        values: impl IntoIterator<Item = f64>,
+        offset: usize,
+    ) -> crate::legacy::RealRecord {
+        let runs = values
+            .into_iter()
+            .map(|value| RealRun {
+                count: 1,
+                value: Real::from_bits(value.to_bits()),
+            })
+            .collect();
+        ValueRecord {
+            id: format!("{parent}:{name}"),
+            name: name.to_string(),
+            attribute_id: 0,
+            scope_offset: 0,
+            parent: Some(parent.to_string()),
+            depth: 0,
+            payload: RealPayload::Array { dimensions, runs },
+            offset,
+        }
+    }
+
+    fn spline_persistence(with_all_fields: bool) -> Persistence {
+        let root = "spline_root";
+        let branch = "spline_branch";
+        let array = "spline_array";
+        let row = "spline_row";
+        let primitive = "spline_primitive";
+        let objects = vec![
+            object(root, "Sld_VisGeom", None, ObjectPayload::Arrow),
+            object(branch, "active_geom", Some(root), ObjectPayload::Arrow),
+            object(
+                array,
+                "srf_array",
+                Some(branch),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![row.to_string()],
+                    complete: true,
+                },
+            ),
+            object(row, "srf_array", Some(array), ObjectPayload::Arrow),
+            object(
+                primitive,
+                "srf_prim_ptr(splsrf)",
+                Some(row),
+                ObjectPayload::Arrow,
+            ),
+        ];
+        let integer_values = vec![
+            integer(row, "geom_type", IntegerPayload::Scalar { value: 40 }, 10),
+            integer(row, "geom_id", IntegerPayload::Scalar { value: 42 }, 11),
+            integer(row, "feat_id", IntegerPayload::Scalar { value: 7 }, 12),
+            integer(
+                row,
+                "boundary_type",
+                IntegerPayload::Scalar { value: 0 },
+                13,
+            ),
+            integer(
+                row,
+                "next_geom_ptr",
+                IntegerPayload::Scalar { value: 0 },
+                14,
+            ),
+            integer(row, "orient", IntegerPayload::Scalar { value: 1 }, 15),
+        ];
+        let mut real_values = vec![
+            spline_real_array(
+                primitive,
+                "i_points",
+                vec![4, 3],
+                [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0],
+                20,
+            ),
+            spline_real_array(primitive, "u_params", vec![2], [0.0, 1.0], 21),
+            spline_real_array(primitive, "v_params", vec![2], [0.0, 1.0], 22),
+            spline_real_array(
+                primitive,
+                "u_tangts",
+                vec![4, 3],
+                [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                23,
+            ),
+            spline_real_array(
+                primitive,
+                "v_tangts",
+                vec![4, 3],
+                [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+                24,
+            ),
+        ];
+        if with_all_fields {
+            real_values.push(spline_real_array(
+                primitive,
+                "uv_deriv",
+                vec![4, 3],
+                [0.0; 12],
+                25,
+            ));
+        }
+        Persistence {
+            real_values,
+            integer_values,
+            objects,
+            ..Persistence::default()
+        }
+    }
+
     #[test]
     fn extracts_row_major_cylinder_carrier_from_active_namespace() {
         let data = fixture(2.0, false);
@@ -619,6 +807,40 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let data = fixture(2.0, true);
         let persistence = crate::legacy::scan(&data, std::iter::once(0..data.len()));
         let result = scan(&persistence);
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn extracts_complete_legacy_spline_surface_carrier() {
+        let result = scan(&spline_persistence(true));
+
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.carriers.len(), 1);
+        assert_eq!(result.carriers[0].surface_id, 42);
+        let LegacySurfaceGeometry::Spline {
+            points,
+            u_parameters,
+            v_parameters,
+            u_derivatives,
+            v_derivatives,
+            mixed_derivatives,
+        } = &result.carriers[0].geometry
+        else {
+            panic!("expected spline carrier");
+        };
+        assert_eq!(points.len(), 4);
+        assert_eq!(u_parameters, &[0.0, 1.0]);
+        assert_eq!(v_parameters, &[0.0, 1.0]);
+        assert_eq!(u_derivatives.len(), 4);
+        assert_eq!(v_derivatives.len(), 4);
+        assert_eq!(mixed_derivatives.len(), 4);
+    }
+
+    #[test]
+    fn incomplete_legacy_spline_surface_fields_withhold_carrier() {
+        let result = scan(&spline_persistence(false));
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());

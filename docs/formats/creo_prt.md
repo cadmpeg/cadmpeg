@@ -504,6 +504,22 @@ the normalized surface family; `tab_cyl` and `ruled_srf` remain distinct names.
 | `srf_prim_ptr(fillet_srf)`                            | Nested spline, tangent, flip, and `i_pnts` fields               |
 | `srf_prim_ptr(tab_cyl)` and `srf_prim_ptr(ruled_srf)` | Local-system, curve/spline, parameter, and control-point fields |
 
+In legacy ASCII persistence, a `geom_type = 0x28` (decimal 40) row has a model-space spline
+carrier only when its direct `srf_prim_ptr(splsrf)` child has one complete
+type-2 array for each of `i_points [4][3]`, `u_params [2]`, `v_params [2]`,
+`u_tangts [4][3]`, `v_tangts [4][3]`, and `uv_deriv [4][3]`. The arrays use
+row-major triples. `i_points` stores the four interpolation points;
+`u_tangts` and `v_tangts` store the four boundary derivatives in their
+respective directions; `uv_deriv` stores the four mixed corner derivatives.
+The two parameter arrays are strictly increasing and finite. These fields
+define a non-rational, non-periodic clamped bicubic NURBS surface with the
+source parameter ranges. A missing, duplicate, non-array, dimensionally
+incomplete, or non-finite field does not define a carrier. This carrier join
+does not by itself prove a trim curve, face instance, or neutral B-rep. The
+interpolation arrays do not join the surface to a trim or intersection curve;
+the spline surface therefore supplies no pcurve endpoint witness or face-loop
+admission witness until that join is present.
+
 Named `i_pnts` and `c_pnts` fields inside a nested curve record following a
 torus prototype belong to that curve, not to the analytic torus prototype.
 
