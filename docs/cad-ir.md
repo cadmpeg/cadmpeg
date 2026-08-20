@@ -186,6 +186,9 @@ more than once when the source serializes repeated consumption slots.
 
 ## Native namespaces
 
+A native namespace version declares which arena set and which record shapes a
+stored document holds, and it rises when either changes.
+
 When present, native namespace versions are:
 
 | Namespace         | Version |
@@ -198,6 +201,7 @@ When present, native namespace versions are:
 | `native.catia`    | 271     |
 | `native.creo`     | 1       |
 | `native.rhino`    | 2       |
+| `native.iges`     | 3       |
 | `native.sat`      | 1       |
 
 Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`.

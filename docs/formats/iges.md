@@ -131,7 +131,7 @@ The status number is exactly eight decimal digits interpreted as four two-digit 
 
 Subordinate-entity switch `00` is independent, `01` is physically dependent, `02` is logically dependent, and `03` is both physically and logically dependent. A rule that requires physical dependence accepts `01` and `03`. A rule that requires logical dependence accepts `02` and `03`.
 
-A Directory Entry whose fields do not satisfy the rules above does not refuse the file. The record quarantine section states the two-list parse result, the identity and retained bytes of a quarantined record, and the loss it charges.
+A Directory Entry whose fields do not satisfy the rules above does not refuse the file. The record quarantine section states the identity and retained bytes of a quarantined record, and the loss it charges.
 
 ## Parameter Data section
 
@@ -237,61 +237,19 @@ This table states what the card scan produces, and the card scan runs only after
 
 Recovered sequences are authoritative for identity. Every Directory Entry identity, every Directory Entry pointer target, and every Parameter Data back-pointer resolves against positional sequences, so one misnumbered card changes only its own identity.
 
-### The parse result
+### Quarantined records
 
-Directory Entry parsing returns two lists. The first holds one fully typed record for every Directory Entry whose twenty fields are readable. The second holds one quarantine record for every Directory Entry that is not. The typed list keeps its meaning: a consumer of a typed Directory Entry sees only records whose fields were read from the file, never a record with a substituted field. A quarantine record carries the section, the sequence, the byte offset of its first card, the raw card bytes, and a defect key. It carries no interpreted field, because a field the parser could not read has no interpretation.
+Every Directory Entry is either typed or quarantined. A consumer of a typed Directory Entry sees only fields read from the file, never a substituted one. A field the parser could not read has no interpretation, so a quarantined record carries none. A quarantined record is retained under a stable identity that the transfer ledger and the reference graph name.
 
 One quarantine record covers one whole Directory Entry, which is the two-card pair. A defect in either card quarantines the pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
 
-### The quarantine arenas
-
-Quarantined records live in their own `native.iges` arenas, so each keeps a stable entity identity that the reference graph, the transfer ledger, and a stored document can name.
-
-| Arena                           | Holds                                                     | Identity                               | Key                                                              |
-| ------------------------------- | --------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
-| `quarantined_directory_records` | One Directory Entry whose typed fields were not recovered | `iges:quarantine:directory#<sequence>` | The odd positional Directory sequence of the record's first card |
-| `quarantined_parameter_records` | One entity's Parameter Data                               | `iges:quarantine:parameter#<sequence>` | The odd positional Directory sequence of the owning entry        |
-
-The two arenas stay separate because their consequences differ: a `quarantined_directory_records` key names a sequence that has no typed entry and no `entities` record, while a `quarantined_parameter_records` key names a sequence that has both. One arena with a discriminator field would make every consumer filter to learn which case it holds.
-
-Each record carries these fields.
-
-| Field           | Meaning                                                                          |
-| --------------- | -------------------------------------------------------------------------------- |
-| `section`       | `directory-entry` or `parameter-data`                                            |
-| `sequence`      | The positional Directory sequence that is the record's key                       |
-| `source_offset` | The zero-based byte offset of the record's first card                            |
-| `cards`         | The number of 80-byte cards the record covers                                    |
-| `bytes`         | The ordered concatenation of those cards' 80-byte payloads, without line endings |
-| `defect`        | A stable kebab-case key for the defect class                                     |
-
-`bytes` holds the full 80-byte payloads, not the 72-byte or 64-byte data areas, because the purpose of the record is retention and the sequence and marker columns are part of what failed. The `cards` arena also holds those payloads as physical records, and the quarantine record repeats them so that a consumer never joins across arenas to see what failed; this matches how `entities` repeats Parameter Data text in `parameter_bytes`. The record carries no message text: the loss note in the decode report carries the prose, and the two join on the sequence.
-
-The defect keys are `field-not-ascii`, `field-not-an-integer`, `status-number-invalid`, `repeated-entity-type-mismatch`, and `unpaired-card` for a Directory Entry record; and `hollerith-count-unreadable`, `hollerith-payload-truncated`, `token-not-ascii`, `token-not-a-number`, `delimiter-missing`, `entity-type-token-mismatch`, `declared-card-missing`, `no-owned-cards`, `declared-count-zero`, and `ownership-conflict` for a Parameter Data record. The loss code, not the defect key, is the gating contract; the key lets a consumer of a stored document recover the class without parsing prose.
-
 Quarantined records count as native entities for resource accounting, on the same charge as every other native record.
 
-### Native store version
-
-The `native.iges` namespace version becomes `3`. Version `2` declares the arena set without the two quarantine arenas; version `3` declares the same arenas plus `quarantined_directory_records` and `quarantined_parameter_records`. The field is a declaration about a stored document: it states which arena set and which record shapes the document holds. No IGES code path branches on the value and IGES declares no accepted-version range, so the bump changes no decode or write decision. The version rises by one whenever the arena set or a stored record shape changes.
-
-### Transfer ledger rows
-
-Accounting stays complete and ledger verification stays fatal.
-
-| Source key       | Case                                                        | Target                          | Disposition | Note                                                                               |
-| ---------------- | ----------------------------------------------------------- | ------------------------------- | ----------- | ---------------------------------------------------------------------------------- |
-| `D<n>`           | A quarantined Directory Entry record                        | `iges:quarantine:directory#<n>` | `Retained`  | `quarantined directory record retained; typed Directory fields were not recovered` |
-| `D<n>`           | A typed Directory Entry whose Parameter Data is quarantined | `iges:entity:directory#<n>`     | `Retained`  | The existing attributed-loss note, unchanged                                       |
-| `D<n>:parameter` | The quarantined Parameter Data of that entry                | `iges:quarantine:parameter#<n>` | `Retained`  | `quarantined parameter data retained; tokens were not recovered`                   |
-
-`TransferLedger::verify` rejects a `Retained` row without a target, a row whose target the finalized model index does not contain, and an `Omitted` row that has one. A quarantine row satisfies all three: it names a target, and the model index collects the identity of every record in every native arena, so a quarantine-arena identity resolves. Verification therefore stays fatal and passes.
-
-Every quarantined Directory Entry record has a ledger row, including one whose entity-type field is unreadable. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null.
+Every quarantined record is accounted in the transfer ledger as retained. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null. Ledger verification stays fatal, and a failure there is a decoder defect and not a source defect.
 
 ### Pointers into a quarantined record
 
-A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence, so a report consumer joins the two on `D<sequence>`.
+A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence.
 
 ### Pointers out of a quarantined record
 
@@ -303,7 +261,7 @@ A defect in one entity's Parameter Data quarantines that entity's parameter data
 
 - The typed Directory Entry stays in the typed list with all twenty fields.
 - The entity is not projected to neutral IR. No geometry, annotation, or product record is derived from tokens that were not read.
-- The `entities` arena keeps the entity's record, with empty parameter text and no tokens. The quarantine record holds the raw text, which has no other typed home.
+- The raw Parameter Data text is retained under the quarantine identity. It has no other typed home.
 - The decoder charges one `iges/parameter.data-quarantined` loss whose provenance tag is `D<sequence>:parameter`. The reader counts that as an attributed loss, so the generic `iges/entity.retained-unprojected` note is not also charged and the entity's ledger note states that projection was omitted with an attributed loss.
 
 Ownership of Parameter Data cards resolves in a fixed order, because the Directory Entry declaration and the card back-pointers are redundant statements of the same fact and either can be the broken one.
@@ -314,9 +272,9 @@ Ownership of Parameter Data cards resolves in a fixed order, because the Directo
 
 Throughout these rules, an existing entry is one in the typed list. A back-pointer that is absent, unreadable, zero, even, or names no existing entry does not quarantine anything when rule 1 claims the card; the disagreement charges `iges/card.framing-recovered`. Any use of rule 2, and any disagreement between rule 1 and the back-pointer census, charges the same code. A readable back-pointer that names a different existing entry is a conflict rather than a broken declaration: it quarantines the Parameter Data of both entries, as does a card that two declared ranges claim. A Parameter Data card that no entry claims under either rule, and whose back-pointer names no quarantined Directory Entry record either, is retained in the `cards` arena, belongs to no record, needs no quarantine record and no ledger row, and charges `iges/card.framing-recovered`.
 
-A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no `quarantined_parameter_records` entry and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the quarantine identity space holds one record per broken source record rather than two.
+A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no quarantine record and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the quarantine identity space holds one record per broken source record rather than two.
 
-A non-null entity that declares zero Parameter Data cards has no declared range, so rule 2 decides: when a Parameter Data card's back-pointer names it, that contiguous run is its parameter data and the disagreement charges the framing loss; when no card names it, its quarantine record holds zero cards and no bytes. The zero-card record exists so that the entity's missing parameter data has one identity and one ledger row, on the same terms as every other quarantined record. A record with no card takes the `source_offset` of its owning Directory Entry's first card, because it has no first card of its own.
+A non-null entity that declares zero Parameter Data cards has no declared range, so rule 2 decides: when a Parameter Data card's back-pointer names it, that contiguous run is its parameter data and the disagreement charges the framing loss; when no card names it, its quarantine record holds zero cards and no bytes. The zero-card record exists so that the entity's missing parameter data has one identity and one ledger row, on the same terms as every other quarantined record. A record with no card takes the byte offset of its owning Directory Entry's first card, because it has no first card of its own.
 
 ### Loss codes
 
@@ -332,21 +290,7 @@ All three use `NoncanonicalSourceSyntax` rather than `RecordNotTyped`. `RecordNo
 
 Each message names its record and its defect.
 
-| Loss code                           | The message names                                                                                                                                                                                                            |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `iges/directory.record-quarantined` | The section `directory-entry`, the sequence as `D<n>`, the failing field under the name the typed parser uses, and the defect. Provenance is the first card's offset with tag `directory_entry:D<n>`.                        |
-| `iges/parameter.data-quarantined`   | The owning sequence as `D<n>`, the owned card range as `P<first>` through `P<last>`, and the defect. Provenance is the first owned card's offset, or the failing token's offset when it is known, with tag `D<n>:parameter`. |
-| `iges/card.framing-recovered`       | The section name, the position of the first offending card inside that section, the declared value, the value the decoder used, and the count of offending cards in that section.                                            |
-
 A file that misnumbers every card charges one note, not one note per card: `iges/card.framing-recovered` is charged at most once for each pair of section and defect class, where the defect classes are a recovered card boundary, a recovered sequence, a recovered Parameter Data owner, an unclaimed Parameter Data card, and a replaced Terminate count. The two quarantine codes are charged once per quarantined record.
-
-### The write path
-
-The semantic writer does not regenerate a quarantined record, because a record that failed typing has no fields to write. Both quarantine arenas are admitted native passthrough arenas, and a non-empty one charges `iges/writer.passthrough-omitted` naming the arena and its record count. Without that admission the semantic writer would refuse every document that holds a quarantined record, because it refuses any native arena it cannot preserve. Byte-exact replay is unaffected: it copies the retained source image, which holds every quarantined card.
-
-### Integrity and resource failures
-
-The third tier is unchanged. The transfer-ledger verification at the end of decode, a resource-limit refusal, and an I/O failure each refuse the request. Ledger verification checks the decoder's own output, so a failure there is a decoder defect and not a source defect. Resource refusals are admission control, described under decode admission below.
 
 ## Entity graph
 
@@ -663,11 +607,11 @@ A positive Directory line-weight number selects that numbered increment in the u
 
 A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
 
-The `native.iges` namespace version is `3`; the record quarantine section states what the version declares. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `line_fonts` arena stores typed template and visible-blank definitions. Its `definition_levels` arena stores ordered multiple-level sets. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.
+The `native.iges` namespace version is `3`. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `line_fonts` arena stores typed template and visible-blank definitions. Its `definition_levels` arena stores ordered multiple-level sets. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and for every quarantined record, and verifies it against the decoded model. The record quarantine section states the quarantine arenas and their ledger rows.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and for every quarantined record, and verifies it against the decoded model.
 
 ## Decode admission
 
