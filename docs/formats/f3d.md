@@ -940,6 +940,8 @@ A `SurfacePatch` scope in the single-group path form has `R` ordered references 
 
 A surface-patch boundary-settings record has an empty display name and a class-version prologue of two zero bytes. Its class level is `u8 IsSeedSel`, `u32 PatchContinuity`, `u32 PatchFlip`, `f64 PatchScale`, and the `rPatchModelRef` reference, at payload offsets 2, 3, 7, 11, and 19; the base level's reference run closes the record. The three named settings apply to the one boundary component the record belongs to, not to the patch as a whole. `PatchContinuity` value `0` imposes positional continuity on that component, `1` imposes tangency, and `2` imposes curvature. `rPatchModelRef` names that component's model reference: it equals the construction-operand group record immediately preceding the settings record, so the settings record and the boundary group name the same component from both directions.
 
+A `SurfacePatch` creates a new surface body. Its neutral `FilledSurface.merge_result` is therefore `false`; the scope has no independent merge-operation field.
+
 The tool-body reference of a fixed-path settings-bearing `SurfacePatch` scope is the unclaimed endpoint reference. Its record's payload contains the scope's own entity id. In the single-group path form, the tool body is the last ordered reference. The sketch-profile form has no separate tool-body reference.
 
 A `SurfacePatch` scope in the sketch-profile form is 339 bytes and has three ordered references. Reference zero is one counted construction-operand group with role `0x0000004100000000`; that group has reference one as its sole member and is the complete closed sketch boundary. Reference two carries patch settings. This form has no support-face group.

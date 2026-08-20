@@ -1351,7 +1351,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
             continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
             ref boundary_continuities,
-            merge_result: None,
+            merge_result: Some(false),
         }) if boundary_continuities
             == &[cadmpeg_ir::features::SurfaceContinuity::Contact]
             && native == &patch_group.id && faces.is_empty()

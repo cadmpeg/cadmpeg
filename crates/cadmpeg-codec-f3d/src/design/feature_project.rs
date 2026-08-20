@@ -6355,7 +6355,7 @@ pub(crate) fn project_surface_patch(
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: surface_patch_continuity(scope),
             boundary_continuities: Vec::new(),
-            merge_result: None,
+            merge_result: Some(false),
         });
     }
 
@@ -6437,7 +6437,7 @@ pub(crate) fn project_surface_patch(
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: surface_patch_continuity(scope),
         boundary_continuities: surface_patch_boundary_continuities(scope),
-        merge_result: None,
+        merge_result: Some(false),
     })
 }
 
