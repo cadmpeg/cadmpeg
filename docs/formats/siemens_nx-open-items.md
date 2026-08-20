@@ -294,18 +294,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
 
-### PS-35. Escaped and direct fixed-record disambiguation
-
-**Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
-
-**Known.** `siemens_nx.md` §5.1 "Any fixed record may place an envelope escape byte `ff` between its type and xmt" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
-
-**Need.** We must decide which test separates the two readings so that a direct record whose remainder byte is `ff` keeps its identity, and so that BODY and REGION records are not selected by candidate order.
-
-**Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss. The family-framing filter that the specification names as the disambiguator tests only SHELL, FACE, LOOP, EDGE, FIN, VERTEX, and POINT records, and admits every other kind unconditionally. For BODY and REGION the stated rule therefore selects nothing, and the reading comes from candidate order.
-
-**Note.** The original closure removed the old shell-only preference, but the current graph still ranks candidates in `topology.rs:718-856` with body-shape, boundary, reference-count, and node-quality heuristics. The ambiguity debt was not removed; it was generalized and is tracked again by PS-38.
-
 ### PS-36. Standalone `0x5a` record anchor
 
 **Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
@@ -325,16 +313,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
 
 **Note.** The closure changes several descriptor fields from narrow reads to wider reads and removes explicit ceilings, then validates basis cardinality. The synthetic large-cardinality tests are constructed for that interpretation; corpus records have not yet verified the field widths or the absence of a format/resource bound. The count and degree rule remains open.
-
-### PS-38. Fixed-record candidate ranking
-
-**Question.** What serialized evidence selects one complete fixed-record interpretation when direct, escaped, or overlapping candidates all pass structural parsing?
-
-**Known.** `siemens_nx.md` §5.1 requires the complete family grammar and record boundary to establish fixed-record identity. It does not define body-shape preference, reference-count preference, node-quality ranking, or an ownership rule based on scan order.
-
-**Need.** We must know the discriminator before indexing a candidate by `(type, XMT)` or discarding an overlapping candidate. A wrong choice changes topology ownership and every dependent geometry relation.
-
-**Note.** `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs:718-856` accepts the highest-ranked candidate after reference filtering and falls back to heuristic ranking when no candidate resolves. `crates/cadmpeg-codec-nx/src/framing.rs:24-77` supplies multiple complete interpretations. **Evidence:** the comparator uses body-shape, recognized-boundary, reference-count, and node-quality preferences; no serialized discriminator is read. **Counter-evidence:** reference-consistency checks and equal-score rejection discard some ambiguous candidates, and the ranking can be intended as recovery for malformed streams. **Failure:** if an incidental `00 kind` sequence occurs inside a valid record, or if direct and escaped readings both end at recognized boundaries, the comparator can retain one reading without a serialized discriminator, changing topology ownership and dependent geometry. This is a new selection debt found in the 2026-08-10 hostile sweep.
 
 ## 2. Object model and body composition
 

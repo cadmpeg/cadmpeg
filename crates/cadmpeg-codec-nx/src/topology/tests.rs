@@ -264,3 +264,49 @@ fn topology_rejects_duplicate_fixed_record_identity() {
     assert!(graph.get(29, 11).is_none());
     assert!(graph.of_kind(29).next().is_none());
 }
+
+#[test]
+fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
+    let mut stream = topology_partition_stream();
+    let mut duplicate = record(13, 24);
+    put_ref(&mut duplicate, 2, 3);
+    put_ref(&mut duplicate, 8, 2);
+    put_ref(&mut duplicate, 10, 2);
+    put_ref(&mut duplicate, 12, 2);
+    put_ref(&mut duplicate, 14, 4);
+    put_ref(&mut duplicate, 16, 0);
+    put_ref(&mut duplicate, 18, 0);
+    put_ref(&mut duplicate, 20, 12);
+    put_ref(&mut duplicate, 22, 0);
+    stream.extend(duplicate);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(13, 3).is_none());
+}
+
+#[test]
+fn topology_rejects_overlapping_candidates_without_ranking() {
+    let first = Node {
+        kind: 29,
+        xmt: 11,
+        pos: 0,
+        shift: 0,
+        bytes: vec![0; 24],
+    };
+    let second = Node {
+        kind: 29,
+        xmt: 12,
+        pos: 8,
+        shift: 0,
+        bytes: vec![0; 24],
+    };
+
+    assert!(Graph::select_non_overlapping_candidates(&[], vec![first, second]).is_empty());
+}
+
+#[test]
+fn topology_rejects_status_framed_delta_as_fixed_record() {
+    let graph = Graph::parse(&variable_status_framed_deltas_stream());
+
+    assert!(graph.of_kind(15).next().is_none());
+}
