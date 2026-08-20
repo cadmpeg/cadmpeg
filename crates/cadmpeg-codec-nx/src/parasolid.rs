@@ -299,67 +299,263 @@ pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
         directions: Vec::new(),
         unicode: Vec::new(),
     };
-    for offset in 0..bytes.len() {
-        match bytes.get(offset..offset.saturating_add(2)) {
-            Some([0, 0x52]) => {
-                if let Some(record) = entity_52_integer_record_at(bytes, offset) {
-                    records.integers.push(record);
-                }
-            }
-            Some([0, 0x53]) => {
-                if let Some(record) = entity_53_double_record_at(bytes, offset) {
-                    records.doubles.push(record);
-                }
-            }
-            Some([0, 0x54]) => {
-                if let Some(record) = entity_54_string_record_at(bytes, offset) {
-                    records.strings.push(record);
-                }
-            }
-            Some([0, 0x55]) => {
-                if let Some(record) = entity_55_point_record_at(bytes, offset) {
-                    records.points.push(record);
-                }
-            }
-            Some([0, 0x56]) => {
-                if let Some(record) = entity_56_vector_record_at(bytes, offset) {
-                    records.vectors.push(record);
-                }
-            }
-            Some([0, 0x57]) => {
-                if let Some(record) = entity_57_axis_record_at(bytes, offset) {
-                    records.axes.push(record);
-                }
-            }
-            Some([0, 0x58]) => {
-                if let Some(record) = entity_58_tag_record_at(bytes, offset) {
-                    records.tags.push(record);
-                }
-            }
-            Some([0, 0x59]) => {
-                if let Some(record) = entity_59_direction_record_at(bytes, offset) {
-                    records.directions.push(record);
-                }
-            }
-            Some([0, 0x62]) => {
-                if let Some(record) = entity_62_unicode_record_at(bytes, offset) {
-                    records.unicode.push(record);
-                }
-            }
-            _ => {}
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = value_record_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if append_value_record(frame, &mut records).is_some() {
+            offset = frame.next_offset();
+        } else {
+            // The frame has already passed its family-specific validation. If
+            // materialization ever disagrees, preserve the old recovery rule
+            // and keep looking for a later record instead of owning a partial
+            // candidate.
+            offset += 1;
         }
     }
     records
 }
 
-/// Decode counted type-99 attribute field-name records.
-pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| field_names_record_at(bytes, offset))
-        .collect()
+#[derive(Clone, Copy)]
+enum ValueRecordFrame<'a> {
+    Counted {
+        tag: u8,
+        offset: usize,
+        end: usize,
+        xmt: u32,
+        value_width: usize,
+        raw: &'a [u8],
+    },
+    String {
+        offset: usize,
+        end: usize,
+        xmt: u32,
+        value: &'a str,
+    },
 }
 
+impl ValueRecordFrame<'_> {
+    fn next_offset(self) -> usize {
+        match self {
+            Self::Counted { end, .. } => end,
+            // Type-84's terminator can be the leading zero of the following
+            // two-byte record tag. Keep that shared byte available to the
+            // sequential scanner.
+            Self::String { end, .. } => end.saturating_sub(1),
+        }
+    }
+}
+
+fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
+    let tag = *bytes.get(offset.checked_add(1)?)?;
+    match tag {
+        0x52 | 0x58 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 4)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x53 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 8)?;
+            finite_scalar_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x54 => {
+            let frame = string_value_frame_at(bytes, offset)?;
+            Some(ValueRecordFrame::String {
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value: frame.value,
+            })
+        }
+        0x55 | 0x56 | 0x59 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
+            finite_vector_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x57 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
+            frame.count.is_multiple_of(2).then_some(())?;
+            finite_vector_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x62 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 2)?;
+            valid_utf16_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn append_value_record<'a>(
+    frame: ValueRecordFrame<'a>,
+    records: &mut EntityValueRecords<'a>,
+) -> Option<()> {
+    match frame {
+        ValueRecordFrame::String {
+            offset,
+            end,
+            xmt,
+            value,
+        } => records.strings.push(Entity54StringRecord {
+            offset,
+            byte_len: end.checked_sub(offset)?,
+            xmt,
+            value,
+        }),
+        ValueRecordFrame::Counted {
+            tag,
+            offset,
+            end,
+            xmt,
+            value_width,
+            raw,
+        } => match tag {
+            0x52 => records.integers.push(Entity52IntegerRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+            }),
+            0x53 => records.doubles.push(Entity53DoubleRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::f64_be_at(value, 0))?,
+            }),
+            0x55 => records.points.push(Entity55PointRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x56 => records.vectors.push(Entity56VectorRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x57 => {
+                let vectors = materialize_values(raw, value_width, finite_vector)?;
+                records.axes.push(Entity57AxisRecord {
+                    offset,
+                    byte_len: end.checked_sub(offset)?,
+                    xmt,
+                    values: vectors
+                        .chunks_exact(2)
+                        .map(|axis| [axis[0], axis[1]])
+                        .collect(),
+                });
+            }
+            0x58 => records.tags.push(Entity58TagRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+            }),
+            0x59 => records.directions.push(Entity59DirectionRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x62 => {
+                let code_units =
+                    materialize_values(raw, value_width, |value| View::u16_be_at(value, 0))?;
+                records.unicode.push(Entity62UnicodeRecord {
+                    offset,
+                    byte_len: end.checked_sub(offset)?,
+                    xmt,
+                    value: String::from_utf16(&code_units).ok()?,
+                    code_units,
+                });
+            }
+            _ => return None,
+        },
+    }
+    Some(())
+}
+
+fn materialize_values<T>(
+    raw: &[u8],
+    value_width: usize,
+    decode: impl Fn(&[u8]) -> Option<T>,
+) -> Option<Vec<T>> {
+    raw.chunks_exact(value_width).map(decode).collect()
+}
+
+/// Decode counted type-99 attribute field-name records.
+pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+    let mut records = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = field_names_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if let Some(record) = field_names_record_from_frame(bytes, frame) {
+            records.push(record);
+            offset = frame.end;
+        } else {
+            offset += 1;
+        }
+    }
+    records
+}
+
+#[cfg(test)]
 pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
+    let frame = field_names_frame_at(bytes, offset)?;
+    field_names_record_from_frame(bytes, frame)
+}
+
+#[derive(Clone, Copy)]
+struct FieldNamesFrame {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    count: usize,
+    names_at: usize,
+}
+
+fn field_names_frame_at(bytes: &[u8], offset: usize) -> Option<FieldNamesFrame> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -369,14 +565,28 @@ pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<Field
     (count > 0).then_some(())?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
-    (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
-    let name_xmts = (0..count)
+    let names_at = at;
+    for _ in 0..count {
+        read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
+    }
+    Some(FieldNamesFrame {
+        offset,
+        end: at,
+        xmt,
+        count,
+        names_at,
+    })
+}
+
+fn field_names_record_from_frame(bytes: &[u8], frame: FieldNamesFrame) -> Option<FieldNamesRecord> {
+    let mut at = frame.names_at;
+    let name_xmts = (0..frame.count)
         .map(|_| read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1))
         .collect::<Option<Vec<_>>>()?;
     Some(FieldNamesRecord {
-        offset,
-        byte_len: at - offset,
-        xmt,
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
         name_xmts,
     })
 }
@@ -421,92 +631,34 @@ fn finite_vector(value: &[u8]) -> Option<[f64; 3]> {
         .then_some(values)
 }
 
-/// Decode one complete type-85 point-value record at `offset`.
-pub(crate) fn entity_55_point_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity55PointRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x55, 24, finite_vector)?;
-    Some(Entity55PointRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
+fn finite_scalar_lane(raw: &[u8]) -> Option<()> {
+    for value in raw.chunks_exact(8) {
+        View::f64_be_at(value, 0)?.is_finite().then_some(())?;
+    }
+    Some(())
 }
 
-/// Decode one complete type-86 vector-value record at `offset`.
-pub(crate) fn entity_56_vector_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity56VectorRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x56, 24, finite_vector)?;
-    Some(Entity56VectorRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
+fn finite_vector_lane(raw: &[u8]) -> Option<()> {
+    for value in raw.chunks_exact(24) {
+        finite_vector(value)?;
+    }
+    Some(())
 }
 
-/// Decode one complete type-87 axis-value record at `offset`.
-pub(crate) fn entity_57_axis_record_at(bytes: &[u8], offset: usize) -> Option<Entity57AxisRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x57, 24, finite_vector)?;
-    (record.values.len() % 2 == 0).then_some(())?;
-    let values = record
-        .values
-        .chunks_exact(2)
-        .map(|axis| axis.try_into().expect("two vectors per axis"))
-        .collect();
-    Some(Entity57AxisRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values,
-    })
-}
-
-/// Decode one complete type-88 tag-value record at `offset`.
-pub(crate) fn entity_58_tag_record_at(bytes: &[u8], offset: usize) -> Option<Entity58TagRecord> {
-    let record =
-        counted_value_record_at(bytes, offset, 0x58, 4, |value| View::u32_be_at(value, 0))?;
-    Some(Entity58TagRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
-}
-
-/// Decode one complete type-89 direction-value record at `offset`.
-pub(crate) fn entity_59_direction_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity59DirectionRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x59, 24, finite_vector)?;
-    Some(Entity59DirectionRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
-}
-
-/// Decode one complete type-98 Unicode-value record at `offset`.
-pub(crate) fn entity_62_unicode_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity62UnicodeRecord> {
-    let record =
-        counted_value_record_at(bytes, offset, 0x62, 2, |value| View::u16_be_at(value, 0))?;
-    let value = String::from_utf16(&record.values).ok()?;
-    Some(Entity62UnicodeRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        code_units: record.values,
-        value,
-    })
+fn valid_utf16_lane(raw: &[u8]) -> Option<()> {
+    let mut high_surrogate = false;
+    for value in raw.chunks_exact(2) {
+        let unit = View::u16_be_at(value, 0)?;
+        if high_surrogate {
+            (0xdc00..=0xdfff).contains(&unit).then_some(())?;
+            high_surrogate = false;
+        } else if (0xd800..=0xdbff).contains(&unit) {
+            high_surrogate = true;
+        } else {
+            (!(0xdc00..=0xdfff).contains(&unit)).then_some(())?;
+        }
+    }
+    (!high_surrogate).then_some(())
 }
 
 struct CountedValueRecord<T> {
@@ -516,13 +668,22 @@ struct CountedValueRecord<T> {
     values: Vec<T>,
 }
 
-fn counted_value_record_at<T>(
+#[derive(Clone, Copy)]
+struct CountedValueFrame<'a> {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    count: usize,
+    value_width: usize,
+    raw: &'a [u8],
+}
+
+fn counted_value_frame_at(
     bytes: &[u8],
     offset: usize,
     tag: u8,
     value_width: usize,
-    decode: impl Fn(&[u8]) -> Option<T>,
-) -> Option<CountedValueRecord<T>> {
+) -> Option<CountedValueFrame<'_>> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -536,15 +697,34 @@ fn counted_value_record_at<T>(
     let values_end = count
         .checked_mul(value_width)
         .and_then(|length| at.checked_add(length))?;
-    let values = bytes
-        .get(at..values_end)?
+    let raw = bytes.get(at..values_end)?;
+    Some(CountedValueFrame {
+        offset,
+        end: values_end,
+        xmt,
+        count,
+        value_width,
+        raw,
+    })
+}
+
+fn counted_value_record_at<T>(
+    bytes: &[u8],
+    offset: usize,
+    tag: u8,
+    value_width: usize,
+    decode: impl Fn(&[u8]) -> Option<T>,
+) -> Option<CountedValueRecord<T>> {
+    let frame = counted_value_frame_at(bytes, offset, tag, value_width)?;
+    let values = frame
+        .raw
         .chunks_exact(value_width)
         .map(decode)
         .collect::<Option<Vec<_>>>()?;
     Some(CountedValueRecord {
-        offset,
-        byte_len: values_end - offset,
-        xmt,
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
         values,
     })
 }
@@ -554,6 +734,24 @@ pub(crate) fn entity_54_string_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity54StringRecord<'_>> {
+    let frame = string_value_frame_at(bytes, offset)?;
+    Some(Entity54StringRecord {
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
+        value: frame.value,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct StringValueFrame<'a> {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    value: &'a str,
+}
+
+fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame<'_>> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x54])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -572,9 +770,9 @@ pub(crate) fn entity_54_string_record_at(
     })?;
     (bytes.get(end) == Some(&0)).then_some(())?;
     let value = std::str::from_utf8(value).ok()?;
-    Some(Entity54StringRecord {
+    Some(StringValueFrame {
         offset,
-        byte_len: end.checked_add(1)?.checked_sub(offset)?,
+        end: end.checked_add(1)?,
         xmt,
         value,
     })
@@ -582,13 +780,53 @@ pub(crate) fn entity_54_string_record_at(
 
 /// Decode framed type-81 entity/attribute-list records.
 pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_51_record_at(bytes, offset))
-        .collect()
+    let mut records = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = entity_51_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if let Some(record) = entity_51_record_from_frame(bytes, frame) {
+            records.push(record);
+            offset = frame.next_offset();
+        } else {
+            offset += 1;
+        }
+    }
+    records
 }
 
 /// Decode one complete type-81 entity/attribute-list record at `offset`.
 pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity51Record> {
+    let frame = entity_51_frame_at(bytes, offset)?;
+    entity_51_record_from_frame(bytes, frame)
+}
+
+#[derive(Clone, Copy)]
+struct Entity51Frame {
+    offset: usize,
+    end: usize,
+    flags: u32,
+    xmt: u32,
+    sequence: u32,
+    definition_xmt: u32,
+    references_at: usize,
+    reference_count: usize,
+    shared_terminal: bool,
+}
+
+impl Entity51Frame {
+    fn next_offset(self) -> usize {
+        if self.shared_terminal {
+            self.end.saturating_sub(1)
+        } else {
+            self.end
+        }
+    }
+}
+
+fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -602,19 +840,54 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
-    let references = entity_51_references(bytes, &mut at, reference_count)?;
-    let leading_references = references.get(..5)?.try_into().ok()?;
-    let trailing_references = references.get(5..)?.to_vec();
-    Some(Entity51Record {
+    let references_at = at;
+    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;
+    Some(Entity51Frame {
         offset,
-        byte_len: at - offset,
+        end,
         flags,
         xmt,
         sequence,
         definition_xmt,
+        references_at,
+        reference_count,
+        shared_terminal,
+    })
+}
+
+fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Entity51Record> {
+    let mut at = frame.references_at;
+    let references = entity_51_references(bytes, &mut at, frame.reference_count)?;
+    let leading_references = references.get(..5)?.try_into().ok()?;
+    let trailing_references = references.get(5..)?.to_vec();
+    Some(Entity51Record {
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        flags: frame.flags,
+        xmt: frame.xmt,
+        sequence: frame.sequence,
+        definition_xmt: frame.definition_xmt,
         leading_references,
         trailing_references,
     })
+}
+
+fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option<(usize, bool)> {
+    if bytes.get(*at) == Some(&1) {
+        let mut prefixed_at = *at;
+        for _ in 0..count {
+            matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+            prefixed_at += 1;
+            read_xmt(bytes, &mut prefixed_at)?;
+        }
+        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+        *at = prefixed_at + 1;
+        return Some((*at, true));
+    }
+    for _ in 0..count {
+        read_xmt(bytes, at)?;
+    }
+    Some((*at, false))
 }
 
 fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {

@@ -352,6 +352,38 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
 }
 
 #[test]
+fn parasolid_value_scan_does_not_admit_nested_counted_candidates() {
+    let mut outer = vec![0x00, 0x52];
+    outer.extend_from_slice(&4u32.to_be_bytes());
+    outer.extend_from_slice(&10u16.to_be_bytes());
+    outer.extend_from_slice(&[0x00, 0x53]);
+    outer.extend_from_slice(&1u32.to_be_bytes());
+    outer.extend_from_slice(&20u16.to_be_bytes());
+    outer.extend_from_slice(&0.25f64.to_be_bytes());
+
+    let records = crate::parasolid::entity_value_records(&outer);
+    assert_eq!(records.integers.len(), 1);
+    assert_eq!(records.integers[0].xmt, 10);
+    assert_eq!(records.integers[0].values.len(), 4);
+    assert!(records.doubles.is_empty());
+}
+
+#[test]
+fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
+    let mut bytes = vec![0x00, 0x63];
+    bytes.extend_from_slice(&6u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&[
+        0x00, 0x63, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
+    ]);
+
+    let records = crate::parasolid::field_names_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 0);
+    assert_eq!(records[0].name_xmts, [99, 256, 256, 8192, 12288, 64]);
+}
+
+#[test]
 fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let tags = [
         0x00, 0x58, 0, 0, 0, 2, 0, 24, 0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff,
