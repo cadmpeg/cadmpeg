@@ -28,4 +28,5 @@ mod extended;
 mod profile_lines;
 mod profile_roster_92;
 mod profile_roster_96;
+mod profile_zero_tail;
 mod terminals;

@@ -35,6 +35,7 @@ use crate::layout::compact_legacy_84_coordinate_roster_curve as legacy_84_roster
 use crate::layout::compact_legacy_90_geometry_line as legacy_90;
 use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96_roster;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
+use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
 use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
 use crate::layout::extended_selector44_indexed_line_continuation as sel44_cont;
@@ -410,6 +411,13 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         legacy_compact_92_profile_object_endpoint_markers(payload, curve, markers)
     {
         return endpoints;
+    }
+    if current_extended_zero_tail_92_profile_curve(payload, offset) {
+        let endpoints =
+            coordinate_roster_curve_endpoint_markers_at(payload, curve, markers, Some(64));
+        if endpoints.len() == 2 {
+            return endpoints;
+        }
     }
     if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
         return compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers);
@@ -4340,6 +4348,50 @@ pub(super) fn current_direct_92_profile_line_endpoint_indices(
     };
     let endpoints = [endpoint(64)?, endpoint(66)?];
     (endpoints[0] != endpoints[1]).then_some(endpoints)
+}
+
+pub(super) fn current_extended_zero_tail_92_profile_curve(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && payload.get(offset + zero_tail_92::HEADER..offset + zero_tail_92::NATIVE_KIND)
+        == Some(&zero_tail_92::HEADER_VALUE)
+        && matches!(
+            View::u32_le_at(payload, offset + zero_tail_92::NATIVE_KIND),
+            Some(0..=2)
+        )
+        && payload.get(offset + zero_tail_92::PROFILE_LOCUS..offset + zero_tail_92::ROLE)
+            == Some(&zero_tail_92::PROFILE_LOCUS_VALUE)
+        && marker_profile_curve_role(payload, offset) == Some(zero_tail_92::ROLE_VALUE)
+        && payload.get(offset + zero_tail_92::STATE..offset + zero_tail_92::SELECTOR)
+            == Some(&zero_tail_92::STATE_VALUE.to_le_bytes())
+        && payload.get(offset + zero_tail_92::SELECTOR..offset + zero_tail_92::SELECTOR + 8)
+            == Some(&zero_tail_92::SELECTOR_VALUE)
+        && payload.get(offset + zero_tail_92::SELECTOR + 8..offset + zero_tail_92::STATE_SCALAR)
+            == Some(&[0; 9])
+        && payload
+            .get(offset + zero_tail_92::STATE_SCALAR..offset + zero_tail_92::ZERO_ENDPOINT_PREFIX)
+            == Some(&zero_tail_92::STATE_SCALAR_VALUE.to_le_bytes())
+        && payload
+            .get(offset + zero_tail_92::ZERO_ENDPOINT_PREFIX..offset + zero_tail_92::ENDPOINT_FIRST)
+            == Some(&zero_tail_92::ZERO_ENDPOINT_PREFIX_VALUE)
+        && matches!(
+            [
+                View::u16_le_at(payload, offset + zero_tail_92::ENDPOINT_FIRST),
+                View::u16_le_at(payload, offset + zero_tail_92::ENDPOINT_SECOND),
+            ],
+            [Some(first), Some(second)]
+                if first != u16::MAX
+                    && second != u16::MAX
+                    && first != second
+        )
+        && payload
+            .get(offset + zero_tail_92::ENDPOINT_SELECTOR..offset + zero_tail_92::SIGNED_SELECTOR)
+            == Some(&zero_tail_92::ENDPOINT_SELECTOR_VALUE.to_le_bytes())
+        && payload.get(offset + zero_tail_92::SIGNED_SELECTOR..offset + zero_tail_92::ZERO_TAIL)
+            == Some(&zero_tail_92::SIGNED_SELECTOR_VALUE.to_le_bytes())
+        && payload.get(offset + zero_tail_92::ZERO_TAIL..offset + zero_tail_92::LEN)
+            == Some(&zero_tail_92::ZERO_TAIL_VALUE)
 }
 
 pub(super) fn extended_terminal_profile_line(payload: &[u8], offset: usize) -> bool {

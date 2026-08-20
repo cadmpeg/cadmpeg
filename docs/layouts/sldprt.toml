@@ -1427,6 +1427,134 @@ contains = "const TAG: [u8; 2] = [0x00, 0x3c];"
 note = "The parser identifies the type-60 carrier by its exact tag."
 
 [[record]]
+name = "current_extended_zero_tail_92_profile_curve"
+kind = "byte"
+section = "2"
+anchor = "A current- or extended-prefix zero-tail 92-byte profile curve has native value"
+size = 92
+endianness = "little"
+note = "Endpoint values are zero-based positions in the feature-owned coordinate-bearing geometry roster; the following bytes may be relation payload."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A current- or extended-prefix zero-tail 92-byte profile curve"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[12]"
+source = "spec"
+anchor = "A coordinate-bearing marker has the 12-byte prefix"
+value = [255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value `0`, `1`, or `2`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "state u16 `1`"
+value = 1
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00`"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.field]]
+name = "state_scalar"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1`"
+value = 1.0
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at marker +56 through +63"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "zero-based positions in the feature-owned coordinate-bearing geometry roster"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "zero-based positions in the feature-owned coordinate-bearing geometry roster"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "u32 `1`"
+value = 1
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "f64 `-1`"
+value = -1.0
+
+[[record.field]]
+name = "zero_tail"
+offset = 80
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes at marker +80"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "extended_wide_104_profile_curve"
 kind = "byte"
 section = "2"
