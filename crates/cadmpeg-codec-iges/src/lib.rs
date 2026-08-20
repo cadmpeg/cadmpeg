@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES Fixed ASCII codec for versions 5.1, 5.2, and 5.3.
+//! IGES Fixed ASCII codec. Decode admits every declared version and
+//! interprets it with semantics verified for versions 5.1, 5.2, and 5.3.
 //!
 //! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 //! for the declared Fixed ASCII mechanical/document envelope. Bounded

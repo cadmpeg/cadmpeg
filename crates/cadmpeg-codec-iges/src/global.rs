@@ -598,11 +598,15 @@ impl Global {
         self.values.get(14).and_then(Value::string)
     }
 
-    pub(crate) fn version_flag(&self) -> i64 {
-        match self
-            .integer_field(22, "version flag", Some(3))
+    /// The version flag as declared, with the specification default for an absent field.
+    pub(crate) fn declared_version_flag(&self) -> i64 {
+        self.integer_field(22, "version flag", Some(3))
             .expect("validated Global version flag")
-        {
+    }
+
+    /// The declared version flag after the specification's postprocessor clamp.
+    pub(crate) fn effective_version_flag(&self) -> i64 {
+        match self.declared_version_flag() {
             value if value < 1 => 3,
             value if value > 11 => 11,
             value => value,
@@ -610,7 +614,7 @@ impl Global {
     }
 
     pub(crate) fn version(&self) -> &'static str {
-        version_name(self.version_flag()).expect("validated Global version flag")
+        version_name(self.effective_version_flag()).expect("validated Global version flag")
     }
 
     pub(crate) fn summary_notes(&self) -> Vec<String> {

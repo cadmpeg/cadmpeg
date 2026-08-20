@@ -26,6 +26,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -68,6 +69,32 @@ fn parse_global_fields(fields: &[String]) -> Result<crate::global::Global, Codec
     global.push(';');
     let bytes = fixed_ascii_with_global(global.as_bytes());
     crate::global::parse(&crate::card::scan(&bytes)?)
+}
+
+fn point_file_with_version_flag(flag: &str) -> Vec<u8> {
+    point_file_with_global(
+        format!(
+            "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{flag},0,0H,0H;"
+        )
+        .as_bytes(),
+    )
+}
+
+fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
+        .count()
+}
+
+fn strict_options(container_only: bool) -> DecodeOptions {
+    let mut options = DecodeOptions {
+        container_only,
+        ..DecodeOptions::default()
+    };
+    options.policy.mode = DecodeMode::Strict;
+    options
 }
 
 fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
@@ -119,7 +146,7 @@ fn global_defaults_apply_only_to_omitted_fields() {
 
     assert_eq!(parsed.model_scale(), 1.0);
     assert_eq!(parsed.units_flag(), 1);
-    assert_eq!(parsed.version_flag(), 3);
+    assert_eq!(parsed.declared_version_flag(), 3);
     assert_eq!(parsed.minimum_resolution_mm(), 0.0);
 }
 
@@ -156,7 +183,7 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     let parsed = parse_global_fields(&fields).unwrap();
     assert_eq!(parsed.model_scale(), 1.0);
     assert_eq!(parsed.units_flag(), 1);
-    assert_eq!(parsed.version_flag(), 3);
+    assert_eq!(parsed.declared_version_flag(), 3);
     assert!((parsed.minimum_resolution_mm() - 0.0254).abs() <= f64::EPSILON * 64.0);
     assert_eq!(parsed.maximum_coordinate_mm(), 0.0);
 
@@ -228,11 +255,18 @@ fn malformed_global_values_do_not_select_defaults() {
 
 #[test]
 fn version_flags_clamp_unrecognized_values() {
-    for (value, expected) in [("-1", 3), ("0", 3), ("12", 11), ("99", 11)] {
+    for (value, declared, expected) in [
+        ("-1", -1, 3),
+        ("0", 0, 3),
+        ("12", 12, 11),
+        ("99", 99, 11),
+        ("6", 6, 6),
+    ] {
         let mut fields = valid_global_fields();
         fields[22] = value.into();
         let parsed = parse_global_fields(&fields).unwrap();
-        assert_eq!(parsed.version_flag(), expected);
+        assert_eq!(parsed.declared_version_flag(), declared);
+        assert_eq!(parsed.effective_version_flag(), expected);
     }
 }
 
@@ -459,4 +493,84 @@ fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
         );
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
     }
+}
+
+#[test]
+fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
+    for (flag, version_name) in [("6", "4.0"), ("3", "2.0")] {
+        let bytes = point_file_with_version_flag(flag);
+
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+            .unwrap();
+        let source = result.ir().source.as_ref().unwrap();
+        assert_eq!(source.attributes["iges_version"], version_name);
+        assert_eq!(source.attributes["iges_version_flag"], flag);
+        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+        assert_eq!(
+            result.report().losses[0].code,
+            IgesLossCode::SourceDialectUnverified.kind()
+        );
+
+        let error = IgesCodec
+            .decode(&mut Cursor::new(bytes), &strict_options(false))
+            .unwrap_err();
+        match error {
+            CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+                loss_code,
+                IgesLossCode::SourceDialectUnverified.kind().as_str()
+            ),
+            other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_clamped_version_flag_is_recorded_verbatim_and_charges_the_dialect_loss() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(point_file_with_version_flag("99")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let source = result.ir().source.as_ref().unwrap();
+    assert_eq!(source.attributes["iges_version"], "5.3");
+    assert_eq!(source.attributes["iges_version_flag"], "99");
+    assert_eq!(dialect_losses(result.report()), 1);
+}
+
+#[test]
+fn a_verified_declared_version_charges_no_dialect_loss() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(point_file_with_version_flag("11")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let source = result.ir().source.as_ref().unwrap();
+    assert_eq!(source.attributes["iges_version"], "5.3");
+    assert_eq!(source.attributes["iges_version_flag"], "11");
+    assert_eq!(dialect_losses(result.report()), 0);
+}
+
+#[test]
+fn a_container_only_decode_reports_the_dialect_loss_and_strict_admits_it() {
+    let bytes = point_file_with_version_flag("6");
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &options)
+        .unwrap();
+    assert_eq!(dialect_losses(result.report()), 1);
+
+    let strict = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(true))
+        .unwrap();
+    assert_eq!(dialect_losses(strict.report()), 1);
 }

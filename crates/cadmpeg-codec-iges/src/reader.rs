@@ -28,7 +28,7 @@ fn source_meta(global: &global::Global) -> SourceMeta {
     attributes.insert("iges_version".into(), global.version().into());
     attributes.insert(
         "iges_version_flag".into(),
-        global.version_flag().to_string(),
+        global.declared_version_flag().to_string(),
     );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
@@ -60,6 +60,29 @@ fn occurrence_loss(
     } else {
         note
     }
+}
+
+const VERIFIED_VERSIONS: [&str; 3] = ["5.1", "5.2", "5.3"];
+
+fn source_dialect_loss(global: &global::Global) -> Option<LossNote> {
+    let declared = global.declared_version_flag();
+    let effective = global.effective_version_flag();
+    let version = global.version();
+    let clamped = declared != effective;
+    if !clamped && VERIFIED_VERSIONS.contains(&version) {
+        return None;
+    }
+    let clamp = if clamped {
+        format!(
+            " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
+        )
+    } else {
+        String::new()
+    };
+    Some(IgesLossCode::SourceDialectUnverified.note(format!(
+        "IGES Global version flag {declared} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
+        VERIFIED_VERSIONS.join(", ")
+    )))
 }
 
 fn loss_is_attributed_to(losses: &[LossNote], source_sequence: u32) -> bool {
@@ -104,12 +127,6 @@ fn decode_with_occurrence_limits(
         .transpose()?;
     let scan = card::scan_with_context(bytes, ctx)?;
     let global = global::parse(&scan)?;
-    if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES Fixed ASCII version {} decode; target envelope is 5.1, 5.2, or 5.3",
-            global.version()
-        )));
-    }
     if !options.container_only && !global.has_supported_length_factor() {
         return Err(CodecError::NotImplemented(
             "IGES units flag 3 names a unit without a known millimetre factor".into(),
@@ -190,7 +207,9 @@ fn decode_with_occurrence_limits(
     source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();
-    let mut losses = projection.losses;
+    let mut losses = Vec::new();
+    losses.extend(source_dialect_loss(&global));
+    losses.extend(projection.losses);
     losses.extend(graph::losses(&references, &scan, &parameters));
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         losses.push(occurrence_loss(

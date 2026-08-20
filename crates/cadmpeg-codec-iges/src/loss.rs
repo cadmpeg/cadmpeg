@@ -57,6 +57,8 @@ pub enum IgesLossCode {
     SplineHeaderNotTransferred,
     /// A Type 102 composite has no admitted concatenated carrier.
     CompositeCarrierDegraded,
+    /// The declared Global specification version is outside the verified set.
+    SourceDialectUnverified,
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable,
     /// Procedural definitions were reduced to writable solved carriers.
@@ -86,6 +88,7 @@ impl IgesLossCode {
         Self::RuledDevelopabilityNotTransferred,
         Self::SplineHeaderNotTransferred,
         Self::CompositeCarrierDegraded,
+        Self::SourceDialectUnverified,
         Self::PreservedSourceUnavailable,
         Self::ProceduralReduced,
         Self::PassthroughRecordOmitted,
@@ -115,6 +118,7 @@ impl IgesLossCode {
             }
             Self::SplineHeaderNotTransferred => "geometry.spline-header-not-transferred",
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
+            Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::PreservedSourceUnavailable => "source.preserved-image-unavailable",
             Self::ProceduralReduced => "geometry.procedural-reduced",
             Self::PassthroughRecordOmitted => "writer.passthrough-omitted",
@@ -143,6 +147,7 @@ impl IgesLossCode {
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred
             | Self::CompositeCarrierDegraded
+            | Self::SourceDialectUnverified
             | Self::PassthroughRecordOmitted
             | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
         }
@@ -166,6 +171,7 @@ impl IgesLossCode {
             | Self::RuledDevelopabilityNotTransferred
             | Self::SplineHeaderNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::CompositeCarrierDegraded => LossTaxonomy::GeometryNotTransferred,
+            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
@@ -217,6 +223,7 @@ mod tests {
                 "geometry.ruled-developability-not-transferred",
                 "geometry.spline-header-not-transferred",
                 "curve.composite-carrier-degraded",
+                "source.dialect-unverified",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",
