@@ -39,6 +39,7 @@ use super::fc05_model_frame;
 const EPS_PARAMETER_AGREE: f64 = 1e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1e-9;
 const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
+const FACE_REJECTION_OPERAND_SAMPLE_LIMIT: usize = 8;
 
 /// The first admission predicate that rejected one native face candidate.
 ///
@@ -99,9 +100,59 @@ impl FaceAdmissionRejection {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
+pub(in super::super) struct FaceAdmissionDetail {
+    pub(in super::super) face_id: u32,
+    pub(in super::super) boundary_half_edges: Vec<HalfEdgeId>,
+    pub(in super::super) vertex_ids: Vec<u32>,
+}
+
+impl FaceAdmissionDetail {
+    fn face(face_id: u32) -> Self {
+        Self {
+            face_id,
+            boundary_half_edges: Vec::new(),
+            vertex_ids: Vec::new(),
+        }
+    }
+
+    fn unresolved_boundary(
+        face_id: u32,
+        loops: &[&crate::topology::Loop],
+        edge_vertices: &BTreeMap<u32, [u32; 2]>,
+        incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    ) -> Self {
+        let mut detail = Self::face(face_id);
+        for half_edge in loops.iter().flat_map(|lp| lp.half_edges.iter()) {
+            if edge_vertices.contains_key(&half_edge.curve_id) {
+                continue;
+            }
+            if detail.boundary_half_edges.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT {
+                detail.boundary_half_edges.push(*half_edge);
+            }
+            if let Some(binding) = incidence.get(half_edge) {
+                if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
+                    && !detail.vertex_ids.contains(&binding.start_vertex_id)
+                {
+                    detail.vertex_ids.push(binding.start_vertex_id);
+                }
+                if let Some(end_vertex_id) = binding.end_vertex_id {
+                    if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
+                        && !detail.vertex_ids.contains(&end_vertex_id)
+                    {
+                        detail.vertex_ids.push(end_vertex_id);
+                    }
+                }
+            }
+        }
+        detail
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(in super::super) struct FaceAdmissionEvidence {
     pub(in super::super) count: usize,
     pub(in super::super) sample_ids: Vec<u32>,
+    pub(in super::super) sample_details: Vec<FaceAdmissionDetail>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -121,10 +172,21 @@ pub(in super::super) struct BrepTransferDiagnostics {
 
 impl BrepTransferDiagnostics {
     fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
+        self.reject_face_with_detail(reason, FaceAdmissionDetail::face(face_id));
+    }
+
+    fn reject_face_with_detail(
+        &mut self,
+        reason: FaceAdmissionRejection,
+        detail: FaceAdmissionDetail,
+    ) {
         let evidence = self.rejected_faces.entry(reason).or_default();
         evidence.count += 1;
         if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_ids.push(face_id);
+            evidence.sample_ids.push(detail.face_id);
+        }
+        if evidence.sample_details.len() < FACE_REJECTION_SAMPLE_LIMIT {
+            evidence.sample_details.push(detail);
         }
     }
 
@@ -872,7 +934,15 @@ pub(in super::super) fn transfer_native_brep(
                 .any(|half_edge| !edge_vertices.contains_key(&half_edge.curve_id))
         });
         if has_unresolved_boundary_vertices {
-            diagnostics.reject_face(FaceAdmissionRejection::UnresolvedBoundaryVertices, face_id);
+            diagnostics.reject_face_with_detail(
+                FaceAdmissionRejection::UnresolvedBoundaryVertices,
+                FaceAdmissionDetail::unresolved_boundary(
+                    face_id,
+                    loops,
+                    &edge_vertices,
+                    &incidence,
+                ),
+            );
             continue;
         }
         let has_ambiguous_boundary_curve = loops.iter().any(|lp| {

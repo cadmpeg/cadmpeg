@@ -146,16 +146,47 @@ pub(super) fn push_brep_transfer_note(
         .filter_map(|reason| {
             let evidence = diagnostics.rejected_faces.get(&reason)?;
             let samples = evidence
-                .sample_ids
+                .sample_details
                 .iter()
-                .map(ToString::to_string)
+                .map(|detail| {
+                    let half_edges = detail
+                        .boundary_half_edges
+                        .iter()
+                        .map(|half_edge| format!("{}:{}", half_edge.curve_id, half_edge.side))
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    let vertices = detail
+                        .vertex_ids
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    match (half_edges.is_empty(), vertices.is_empty()) {
+                        (true, true) => detail.face_id.to_string(),
+                        (false, true) => format!("{}[edges:{half_edges}]", detail.face_id),
+                        (true, false) => format!("{}[vertices:{vertices}]", detail.face_id),
+                        (false, false) => {
+                            format!("{}[edges:{half_edges};vertices:{vertices}]", detail.face_id)
+                        }
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(",");
+            let samples = if samples.is_empty() {
+                evidence
+                    .sample_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            } else {
+                samples
+            };
             Some(if samples.is_empty() {
                 format!("{}={}", reason.label(), evidence.count)
             } else {
                 format!(
-                    "{}={} (sample face ids: {samples})",
+                    "{}={} (sample faces: {samples})",
                     reason.label(),
                     evidence.count
                 )
