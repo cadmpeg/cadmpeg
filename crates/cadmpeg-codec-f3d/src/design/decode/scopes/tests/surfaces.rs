@@ -572,6 +572,26 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
         assert_eq!(result_records.len(), body_count);
+
+        let mut class_360_scope = scope.clone();
+        class_360_scope.class_tag = "360".into();
+        class_360_scope.paired_class_tag = "258".into();
+        let construction = exact_base_feature_construction(&bytes, &class_360_scope)
+            .expect("class-360/class-258 result-body frame is canonical");
+        let DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes,
+            body_reference_records,
+            metadata_record,
+            result_records,
+            ..
+        } = construction
+        else {
+            panic!("class-360/class-258 frame selected the wrong form");
+        };
+        assert_eq!(body_entity_suffixes.len(), body_count);
+        assert_eq!(body_reference_records.len(), body_count);
+        assert_eq!(metadata_record, 301);
+        assert_eq!(result_records.len(), body_count);
     }
 
     let prefix = 17;

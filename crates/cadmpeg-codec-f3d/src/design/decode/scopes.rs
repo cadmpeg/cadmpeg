@@ -3648,6 +3648,7 @@ pub(crate) fn exact_base_feature_construction(
         });
     }
     let legacy_290_261 = scope.class_tag == "290" && scope.paired_class_tag == "261";
+    let legacy_360_258 = scope.class_tag == "360" && scope.paired_class_tag == "258";
     let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
     let legacy_444_263 = scope.class_tag == "444" && scope.paired_class_tag == "263";
     if legacy_409_262 && scope.frame_length == 258 {
@@ -3805,6 +3806,7 @@ pub(crate) fn exact_base_feature_construction(
     }
     let body_count = combined_count / 2;
     let expanded = legacy_290_261
+        || legacy_360_258
         || matches!(
             (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
             ("384", "264") | ("409", "262")
