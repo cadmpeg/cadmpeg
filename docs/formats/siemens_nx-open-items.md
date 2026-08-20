@@ -866,18 +866,6 @@ unresolved.
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-30. Hole-package feature hierarchy
-
-**Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
-
-**Known.** `siemens_nx.md` §7.1 "A `HOLE PACKAGE` payload contains at most one construction-group lane framed as" and `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" define the four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
-
-**Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
-
-**Conflict.** This item, the specification, and the decoder disagree, and the specification disagrees with itself. `siemens_nx.md` §7.1 "A `HOLE PACKAGE` operation related to one simple-hole construction group owns" states the ownership as fact and adds that the internal operations do not also project as neutral history features. `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" asserts the same ownership in its fourth sentence and then states that the equality does not assign hole parameters, placement, output, suppression, or dependency direction. The decoder applies the ownership: `hole_package_projection` in `crates/cadmpeg-codec-nx/src/native/attach.rs` collects the group's `SIMPLE HOLE` labels as internal operations, and `attach_feature_operations` removes them from the emitted features and transfers their output, diameter, treatments, and axis placements to the package. This item says that field is not yet identified, so one of the three must change. Resolve the specification against the serialized evidence before the decoder keeps deleting history features.
-
-**Note.** The closure commit matched four resolved blocks and used synthetic feature records to exercise the projection. `native/attach.rs:5753-5869` still infers ownership from block equality and suppresses the child operations. A parent, child, or operation-role field has not yet been identified in corpus NX records. The equality was promoted to a hierarchy witness, so this item is reopened.
-
 ### OM-31. Feature-history construction-order evidence
 
 **Question.** Which serialized field establishes the construction order of feature-history operations, inside one record area and between record areas?
