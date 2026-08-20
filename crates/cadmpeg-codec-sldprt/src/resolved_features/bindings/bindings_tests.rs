@@ -1,6 +1,6 @@
 //! Tests for the `bindings` module.
 
-use super::super::LEGACY_SKETCH_MARKER;
+use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
     bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
@@ -684,6 +684,76 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     bind_resolved_curve_vertices(&mut lane);
 
     assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
+}
+
+#[test]
+fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
+    let mut payload = vec![0; 157];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+    payload[82..86].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    payload[86..88].copy_from_slice(&0xbc87u16.to_le_bytes());
+    payload[88..90].copy_from_slice(&22u16.to_le_bytes());
+    payload[90..94].fill(0xff);
+    payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
+    payload[152..].copy_from_slice(SKETCH_MARKER);
+    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![
+            entity(
+                "line",
+                0,
+                Some(1),
+                SketchInputKind::LineOrCircle,
+                Some([2.0, 3.0]),
+            ),
+            entity(
+                "curve-vertex",
+                152,
+                Some(22),
+                SketchInputKind::LineOrCircle,
+                Some([4.0, 5.0]),
+            ),
+        ],
+    };
+
+    bind_resolved_curve_vertices(&mut lane);
+
+    assert_eq!(lane.sketch_entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
 }
 
 #[test]

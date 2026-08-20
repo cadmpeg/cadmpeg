@@ -2263,13 +2263,21 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
         return None;
     }
     let local_id = u32::from(View::u16_le_at(cell, 2)?);
+    // A local-link endpoint can select a coordinate-bearing curve marker before
+    // the binding pass promotes it to a profile vertex. Keep that candidate in
+    // the graph; the binding pass retains it as a curve only when it resolves
+    // its own two endpoints.
     let mut endpoints = markers.iter().copied().filter(|marker| {
         marker.feature_ref == line.feature_ref
+            && marker.id != line.id
             && marker.local_id == Some(local_id)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
             )
     });
     let endpoint = endpoints.next()?;
