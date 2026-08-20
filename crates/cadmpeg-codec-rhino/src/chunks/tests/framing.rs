@@ -48,6 +48,7 @@ fn parses_exact_header_and_scope() {
         ("60", ArchiveVersion::V6),
         ("70", ArchiveVersion::V7),
         ("80", ArchiveVersion::V8),
+        ("90", ArchiveVersion::V9),
     ] {
         let parsed = parse_header(&header(text)).expect("valid header");
         assert_eq!(parsed.archive_version, expected);
@@ -273,6 +274,39 @@ fn bounded_reader_fixed_arrays_preserve_absolute_cursor_bounds() {
     assert_eq!(reader.position(), 4);
     assert!(reader.array::<2>().is_err());
     assert_eq!(reader.position(), 4);
+}
+
+#[test]
+fn bounded_reader_skips_a_valid_future_suffix() {
+    let bytes = [9, 8, 7, 6, 5];
+    let mut reader = BoundedReader::new(&bytes, 1, 5).expect("required invariant");
+    assert_eq!(reader.u16().expect("required invariant"), 0x0708);
+    assert_eq!(reader.skip_remaining().expect("required invariant"), 2);
+    assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
+fn archive_boolean_strictness_uses_writer_version_encoding() {
+    for writer_version in [Some(200_206_180), None] {
+        let bytes = [2_u8];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        assert!(reader
+            .bool_with_writer_version(writer_version)
+            .expect("legacy boolean is normalized"));
+    }
+
+    for writer_version in [Some(201_708_240), Some(2_348_836_140)] {
+        let bytes = [2_u8];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        assert!(matches!(
+            reader.bool_with_writer_version(writer_version),
+            Err(FramingError::Structural { .. })
+        ));
+    }
+
+    let bytes = [2_u8];
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+    assert_eq!(reader.u8().expect("raw character"), 2);
 }
 
 #[test]

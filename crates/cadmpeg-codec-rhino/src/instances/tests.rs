@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(unused_imports, dead_code, clippy::disallowed_methods)]
 
-use super::{anonymous, parse_reference, scale_translation};
+use super::{
+    anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
@@ -9,6 +11,10 @@ use cadmpeg_ir::transform::Transform;
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
+
+const OBSOLETE_IDEF_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
+    0x11, 0xee, 0x2c, 0x1f, 0xf9, 0x0d, 0x4c, 0x6a, 0xa7, 0xcd, 0xec, 0x85, 0x32, 0xe1, 0xe3, 0x2d,
+]);
 
 #[test]
 fn parent_child_composition_uses_column_point_order() {
@@ -105,8 +111,22 @@ fn reference_bytes(transform: Transform) -> Vec<u8> {
     bytes
 }
 
+fn set_anonymous_minor(chunk: &mut [u8], minor: i32) {
+    chunk[16..20].copy_from_slice(&minor.to_le_bytes());
+}
+
+fn append_crc_suffix(chunk: &mut Vec<u8>, suffix: &[u8]) {
+    let crc_offset = chunk.len() - 4;
+    chunk.splice(crc_offset..crc_offset, suffix.iter().copied());
+    let length = i64::from_le_bytes(chunk[4..12].try_into().expect("chunk header"));
+    chunk[4..12].copy_from_slice(&(length + suffix.len() as i64).to_le_bytes());
+    let crc = crc32fast::hash(&chunk[12..chunk.len() - 4]);
+    let crc_offset = chunk.len() - 4;
+    chunk[crc_offset..].copy_from_slice(&crc.to_le_bytes());
+}
+
 #[test]
-fn instance_reference_requires_exact_finite_invertible_affine_payload() {
+fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future_suffix() {
     let valid = reference_bytes(Transform::identity());
     let parsed = parse_reference(&valid, 0..valid.len()).expect("required invariant");
     assert_eq!(
@@ -126,8 +146,10 @@ fn instance_reference_requires_exact_finite_invertible_affine_payload() {
     assert!(parse_reference(&projective, 0..projective.len()).is_err());
 
     let mut trailing = valid;
+    trailing[0] = 0x1f;
     trailing.push(0);
-    assert!(parse_reference(&trailing, 0..trailing.len()).is_err());
+    let parsed = parse_reference(&trailing, 0..trailing.len()).expect("future suffix is bounded");
+    assert_eq!(parsed.transform, Transform::identity());
 }
 
 #[test]
@@ -140,6 +162,396 @@ fn instance_reference_rejects_nil_definition_and_nonfinite_transform() {
     nonfinite.rows[1][2] = f64::NAN;
     let nonfinite = reference_bytes(nonfinite);
     assert!(parse_reference(&nonfinite, 0..nonfinite.len()).is_err());
+}
+
+#[test]
+fn instance_definition_readers_follow_source_minor_boundaries() {
+    let definition_id = [0x10; 16];
+    let member_id = [0x20; 16];
+
+    let mut v5_payload =
+        v5_definition_payload(ArchiveVersion::V5, 7, definition_id, &[member_id], true);
+    v5_payload.extend([0xde, 0xad, 0xbe, 0xef]);
+    let v5_record = definition_record(ArchiveVersion::V5, &v5_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        ArchiveVersion::V5,
+        &[v5_record],
+        &[],
+    ))
+    .expect("required invariant");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert!(scan.definitions.definitions[0].file_reference.is_some());
+
+    let mut future_payload =
+        v5_definition_payload(ArchiveVersion::V5, 6, definition_id, &[], false);
+    future_payload[0] = 0x20;
+    let future_record = definition_record(ArchiveVersion::V5, &future_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        ArchiveVersion::V5,
+        std::slice::from_ref(&future_record),
+        &[],
+    ))
+    .expect("future instance-definition record");
+    assert!(scan.definitions.definitions.is_empty());
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|record| record.table_typecode & !crate::chunks::TCODE_CRC == 0x1000_0021)
+        .expect("future instance-definition record is retained");
+    assert_eq!(retained.record.typecode, 0x2000_8076);
+    assert_eq!(
+        &scan.data[retained.record.range.clone()],
+        future_record.as_slice()
+    );
+
+    let mut v6_payload = v6_definition_payload(
+        ArchiveVersion::V7,
+        [0x30; 16],
+        &[member_id],
+        1,
+        false,
+        false,
+    );
+    set_anonymous_minor(&mut v6_payload, 9);
+    append_crc_suffix(&mut v6_payload, &[0xca, 0xfe]);
+    let v6_record = definition_record(ArchiveVersion::V7, &v6_payload);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "70",
+        ArchiveVersion::V7,
+        &[v6_record],
+        &[],
+    ))
+    .expect("required invariant");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert_eq!(
+        scan.definitions.definitions[0].members,
+        vec![Uuid::from_wire(member_id)]
+    );
+
+    let mut reference = file_reference(ArchiveVersion::V6, "/full/source.3dm", "source.3dm");
+    set_anonymous_minor(&mut reference, 9);
+    append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
+    let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
+    let parsed = parse_file_reference(&reference, &mut reader, ArchiveVersion::V6, &mut Vec::new())
+        .expect("future file-reference suffix is bounded");
+    assert_eq!(parsed.full_path, "/full/source.3dm");
+    assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
+fn obsolete_idef_layer_settings_are_consumed_without_definition_fields() {
+    let archive = ArchiveVersion::V5;
+    let application_uuid = super::OPENNURBS5_APPLICATION.to_wire();
+    for major in [1, 2] {
+        let definition_id = [0x51; 16];
+        let payload = v5_definition_payload_with_paths(
+            archive,
+            6,
+            definition_id,
+            &[],
+            true,
+            "/full/source.3dm",
+            false,
+        );
+        let userdata = class_userdata_with_anonymous_payload(
+            archive,
+            OBSOLETE_IDEF_LAYER_SETTINGS.to_wire(),
+            application_uuid,
+            major,
+            &[0xde, 0xad],
+        );
+        let record = definition_record_with_userdata(archive, &payload, &userdata);
+        let scan = crate::container::scan_owned(document_with_definitions(
+            "50",
+            archive,
+            std::slice::from_ref(&record),
+            &[],
+        ))
+        .expect("obsolete instance-definition userdata witness");
+        assert_eq!(scan.definitions.definitions.len(), 1);
+        let definition = &scan.definitions.definitions[0];
+        assert_eq!(definition.kind, super::DefinitionKind::Linked);
+        assert_eq!(definition.legacy_linked_path, "/full/source.3dm");
+        assert!(scan.definitions.diagnostics.is_empty());
+        assert!(scan.opaque_records.is_empty());
+    }
+
+    let definition_id = [0x52; 16];
+    let payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        definition_id,
+        &[],
+        true,
+        "/full/source.3dm",
+        false,
+    );
+    let malformed = class_userdata_v2_with_direct_payload(
+        archive,
+        OBSOLETE_IDEF_LAYER_SETTINGS.to_wire(),
+        application_uuid,
+        50,
+        202_608_010,
+        &[0xde, 0xad],
+    );
+    let record = definition_record_with_userdata(archive, &payload, &malformed);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        std::slice::from_ref(&record),
+        &[],
+    ))
+    .expect("malformed obsolete instance-definition userdata witness");
+    assert_eq!(scan.definitions.definitions.len(), 1);
+    assert_eq!(
+        scan.definitions.definitions[0].kind,
+        super::DefinitionKind::Linked
+    );
+    assert!(scan.definitions.diagnostics.is_empty());
+    assert!(scan.opaque_records.is_empty());
+}
+
+#[test]
+fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
+    let archive = ArchiveVersion::V5;
+    let definition_id = [0x41; 16];
+    let class_uuid = super::IDEF_ALTERNATIVE_PATH_USERDATA.to_wire();
+    let application_uuid = super::OPENNURBS5_APPLICATION.to_wire();
+
+    let relative_carrier = class_userdata(
+        archive,
+        class_uuid,
+        application_uuid,
+        "  relative/source.3dm  ",
+        true,
+    );
+    let relative_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        definition_id,
+        &[],
+        true,
+        "/full/source.3dm",
+        false,
+    );
+    let record = definition_record_with_userdata(archive, &relative_payload, &relative_carrier);
+    let mut scan =
+        crate::container::scan_owned(document_with_definitions("50", archive, &[record], &[]))
+            .expect("V5 alternate-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
+    assert_eq!(parsed.legacy_linked_path, "/full/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path, "relative/source.3dm");
+    assert!(parsed.legacy_relative_path);
+    assert!(scan.definitions.diagnostics.is_empty());
+    set_test_units(&mut scan, 1.0);
+    let result = crate::decode::decode_for_test(&scan);
+    let external = &result
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("Rhino native namespace")
+        .arenas["external_references"][0];
+    assert_eq!(external.fields()["full_path"], "/full/source.3dm");
+    assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
+    assert_eq!(external.fields()["relative_path_preferred"], true);
+    assert!(result.source_fidelity().retained_records.is_empty());
+
+    let full_carrier = class_userdata(
+        archive,
+        class_uuid,
+        application_uuid,
+        "/replacement/source.3dm",
+        false,
+    );
+    let occupied_full = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x42; 16],
+        &[],
+        true,
+        "/full/original.3dm",
+        false,
+    );
+    let occupied_full_record =
+        definition_record_with_userdata(archive, &occupied_full, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[occupied_full_record],
+        &[],
+    ))
+    .expect("occupied full-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/full/original.3dm");
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+
+    let relative_base = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x43; 16],
+        &[],
+        true,
+        "relative/base.3dm",
+        true,
+    );
+    let relative_base_record =
+        definition_record_with_userdata(archive, &relative_base, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[relative_base_record],
+        &[],
+    ))
+    .expect("relative-base witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/replacement/source.3dm");
+    assert_eq!(parsed.legacy_relative_linked_path, "relative/base.3dm");
+    assert!(parsed.legacy_relative_path);
+
+    let static_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x44; 16],
+        &[],
+        false,
+        "ignored-on-static-definition.3dm",
+        false,
+    );
+    let static_record = definition_record_with_userdata(archive, &static_payload, &full_carrier);
+    let scan = crate::container::scan_owned(document_with_definitions(
+        "50",
+        archive,
+        &[static_record],
+        &[],
+    ))
+    .expect("static-path witness");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.kind, crate::instances::DefinitionKind::Static);
+    assert!(parsed.legacy_linked_path.is_empty());
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+
+    let malformed_body = utf16_bytes("/ignored/malformed.3dm");
+    let malformed_carrier =
+        class_userdata_with_payload(archive, class_uuid, application_uuid, &malformed_body);
+    let malformed_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x45; 16],
+        &[],
+        true,
+        "/retained/source.3dm",
+        false,
+    );
+    let malformed_record =
+        definition_record_with_userdata(archive, &malformed_payload, &malformed_carrier);
+    let malformed_document = document_with_definitions("50", archive, &[malformed_record], &[]);
+    let malformed_source_bytes = malformed_document.clone();
+    let mut scan = crate::container::scan_owned(malformed_document)
+        .expect("malformed optional carrier remains framed");
+    let parsed = &scan.definitions.definitions[0];
+    assert_eq!(parsed.legacy_linked_path, "/retained/source.3dm");
+    assert!(parsed.legacy_relative_linked_path.is_empty());
+    assert!(scan
+        .definitions
+        .diagnostics
+        .iter()
+        .any(
+            |diagnostic| diagnostic.message.contains("alternate-path userdata")
+                && diagnostic.message.contains("was dropped")
+        ));
+    let malformed_range = scan
+        .opaque_records
+        .iter()
+        .find(|source| source.record.typecode == 0x2000_8076)
+        .map(|source| source.record.range.clone())
+        .expect("malformed definition record is retained");
+    assert_eq!(
+        &scan.data[malformed_range.clone()],
+        &malformed_source_bytes[malformed_range.clone()]
+    );
+    set_test_units(&mut scan, 1.0);
+    let malformed_result = crate::decode::decode_for_test(&scan);
+    let malformed_retained = malformed_result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|source| source.offset == malformed_range.start as u64)
+        .expect("malformed definition fidelity");
+    assert_eq!(
+        malformed_retained.data.as_deref(),
+        Some(&malformed_source_bytes[malformed_range])
+    );
+
+    let future_body = [
+        utf16_bytes(" relative/future.3dm ").as_slice(),
+        [1].as_slice(),
+    ]
+    .concat();
+    let future_carrier = class_userdata_with_anonymous_payload(
+        archive,
+        class_uuid,
+        application_uuid,
+        2,
+        &future_body,
+    );
+    let future_payload = v5_definition_payload_with_paths(
+        archive,
+        6,
+        [0x46; 16],
+        &[],
+        true,
+        "/future/full.3dm",
+        false,
+    );
+    let future_record = definition_record_with_userdata(archive, &future_payload, &future_carrier);
+    let future_document =
+        document_with_definitions("50", archive, std::slice::from_ref(&future_record), &[]);
+    let mut future_scan = crate::container::scan_owned(future_document)
+        .expect("future optional carrier remains framed");
+    let future_definition = &future_scan.definitions.definitions[0];
+    assert_eq!(future_definition.legacy_linked_path, "/future/full.3dm");
+    assert!(future_definition.legacy_relative_linked_path.is_empty());
+    assert!(future_scan
+        .definitions
+        .diagnostics
+        .iter()
+        .any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("unsupported instance-definition alternate-path version")
+        }));
+    let future_range = future_scan
+        .opaque_records
+        .iter()
+        .find(|source| source.record.typecode == 0x2000_8076)
+        .map(|source| source.record.range.clone())
+        .expect("future definition record is retained");
+    assert_eq!(
+        &future_scan.data[future_range.clone()],
+        future_record.as_slice()
+    );
+    set_test_units(&mut future_scan, 1.0);
+    let future_result = crate::decode::decode_for_test(&future_scan);
+    let future_external = &future_result
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("Rhino native namespace")
+        .arenas["external_references"][0];
+    assert_eq!(future_external.fields()["relative_path"], "");
+    let future_retained = future_result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .find(|source| source.offset == future_range.start as u64)
+        .expect("future definition fidelity");
+    assert_eq!(
+        future_retained.data.as_deref(),
+        Some(future_record.as_slice())
+    );
 }
 
 #[test]
@@ -448,6 +860,55 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+}
+
+#[test]
+fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
+    let archive = ArchiveVersion::V5;
+    let point_id = [0x58; 16];
+    let curve_id = [0x59; 16];
+    let definition_id = [0x68; 16];
+    let reference_id = [0x79; 16];
+    let point =
+        object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
+    let curve = object_record_with_payload(
+        archive,
+        4,
+        NURBS_CURVE_CLASS,
+        &nurbs_curve_payload([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+    );
+    let reference = object_record_with_payload(
+        archive,
+        0x1000,
+        INSTANCE_REFERENCE_CLASS,
+        &instance_reference_payload(definition_id, transform(1.0, [10.0, 0.0, 0.0])),
+    );
+    let mut scan = scan_with_objects(&[point, curve, reference]);
+    set_identity(&mut scan, 0, point_id, "point-member", None, true);
+    set_identity(&mut scan, 1, curve_id, "curve-member", None, true);
+    set_identity(&mut scan, 2, reference_id, "reference", None, true);
+    install_definitions(
+        &mut scan,
+        vec![static_definition(definition_id, &[point_id, curve_id])],
+    );
+
+    let result = crate::decode::decode_for_test(&scan);
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.points[0].position.x, 11.0);
+    assert_eq!(
+        result.ir().model.bodies[0]
+            .transform
+            .expect("body carrier transform")
+            .rows[0][3],
+        10.0
+    );
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &result.ir().model.curves[0].geometry
+    else {
+        panic!("free member curve must remain a transformed solved carrier");
+    };
+    assert_eq!(curve.control_points[0].x, 11.0);
+    assert_eq!(curve.control_points[1].x, 12.0);
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
