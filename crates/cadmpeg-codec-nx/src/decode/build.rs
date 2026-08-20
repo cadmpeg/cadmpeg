@@ -1005,6 +1005,8 @@ pub(crate) fn try_decode_geometry(
         stream_unknowns.push((si, unknown_index));
     }
 
+    intersection_index.complete_from_model(&mut ir);
+
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
     }

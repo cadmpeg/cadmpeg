@@ -300,6 +300,16 @@ impl IntersectionIncidenceIndex {
         self.complete_pcurves(ir, &affected_curves);
     }
 
+    /// Complete incidence relations after every Parasolid stream has contributed
+    /// its model entities. Stream-local completion cannot revisit a coedge whose
+    /// edge, loop, or face arrived in a later stream.
+    pub(crate) fn complete_from_model(&mut self, ir: &mut CadIr) {
+        *self = Self::default();
+        let affected_curves = self.index_stream(ir, IntersectionEntityStarts::default());
+        self.complete_supports(ir, &affected_curves);
+        self.complete_pcurves(ir, &affected_curves);
+    }
+
     pub(crate) fn complete_new_pcurves_from_stream(&mut self, ir: &CadIr, start: usize) {
         self.index_new_pcurves(ir, start);
     }
@@ -3526,11 +3536,150 @@ pub(crate) fn pcurve_matches_edge_endpoint_contract(
 mod tests {
     use super::opposite_chart_geometry_work_limit;
 
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition,
+    };
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense};
+    use cadmpeg_ir::units::Units;
+
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
         assert_eq!(opposite_chart_geometry_work_limit(0, 10), 0);
         assert_eq!(opposite_chart_geometry_work_limit(3, 10), 4);
         assert_eq!(opposite_chart_geometry_work_limit(2, 6), 3);
         assert_eq!(opposite_chart_geometry_work_limit(1, 3), 3);
+    }
+
+    #[test]
+    fn model_wide_intersection_completion_revisits_prior_coedge_incidence() {
+        let known_surface = SurfaceId("nx:test:surface-known".into());
+        let completed_surface = SurfaceId("nx:test:surface-completed".into());
+        let curve = CurveId("nx:s0:intersection-crv#0".into());
+        let procedural_id = ProceduralCurveId("nx:s0:intersection#0".into());
+        let edge_id = EdgeId("nx:s1:edge#0".into());
+        let loop_id = LoopId("nx:s1:loop#0".into());
+        let face_id = FaceId("nx:s1:face#0".into());
+        let coedge_id = CoedgeId("nx:s0:fin#0".into());
+        let pcurve_id = PcurveId("nx:s1:pcurve#0".into());
+        let vertex_id = VertexId("nx:s1:vertex#0".into());
+
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: procedural_id,
+            curve,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(known_surface),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+        ir.model.coedges.push(Coedge {
+            id: coedge_id,
+            owner_loop: loop_id.clone(),
+            edge: edge_id.clone(),
+            next: CoedgeId("nx:s0:fin#0".into()),
+            previous: CoedgeId("nx:s0:fin#0".into()),
+            radial_next: CoedgeId("nx:s0:fin#0".into()),
+            sense: Sense::Forward,
+            pcurves: vec![PcurveUse {
+                pcurve: pcurve_id.clone(),
+                isoparametric: None,
+                parameter_range: None,
+            }],
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+
+        let mut index = super::IntersectionIncidenceIndex::default();
+        index.complete_from_stream(&mut ir, super::IntersectionEntityStarts::default());
+
+        let later_starts = super::IntersectionEntityStarts {
+            loops: ir.model.loops.len(),
+            faces: ir.model.faces.len(),
+            edges: ir.model.edges.len(),
+            coedges: ir.model.coedges.len(),
+            pcurves: ir.model.pcurves.len(),
+            procedural_curves: ir.model.procedural_curves.len(),
+        };
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: ShellId("nx:s1:shell#0".into()),
+            surface: completed_surface.clone(),
+            sense: Sense::Forward,
+            loops: vec![loop_id.clone()],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.loops.push(Loop {
+            id: loop_id,
+            face: face_id,
+            boundary_role: LoopBoundaryRole::default(),
+            coedges: vec![CoedgeId("nx:s0:fin#0".into())],
+            vertex_uses: Vec::new(),
+        });
+        ir.model.edges.push(Edge {
+            id: edge_id,
+            curve: Some(CurveId("nx:s0:intersection-crv#0".into())),
+            start: vertex_id.clone(),
+            end: vertex_id,
+            param_range: None,
+            tolerance: None,
+        });
+        ir.model.pcurves.push(Pcurve {
+            id: pcurve_id,
+            geometry: PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(1.0, 0.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+
+        index.complete_from_stream(&mut ir, later_starts);
+        let procedural = &ir.model.procedural_curves[0];
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            panic!("test construction is not an intersection");
+        };
+        assert!(context.sides[1].surface.is_none());
+        assert!(context.sides[1].pcurve.is_none());
+
+        index.complete_from_model(&mut ir);
+        let procedural = &ir.model.procedural_curves[0];
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            panic!("test construction is not an intersection");
+        };
+        assert_eq!(context.sides[1].surface, Some(completed_surface));
+        assert_eq!(
+            context.sides[1].pcurve,
+            Some(PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(1.0, 0.0),
+            })
+        );
     }
 }
