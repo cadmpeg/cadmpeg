@@ -463,7 +463,17 @@ owner relation are serialized.
 
 **Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the suffix boundary and the 11-to-14-byte prefix, fingerprint, and terminal-byte decomposition.
 
-**Need.** We must know the field roles to construct the complete OM schema registry.
+**Need.** We must know the semantic field roles represented by the layout
+prefix, schema fingerprint, and terminal byte.
+
+**Conflict.** The 11–14-byte suffix decomposes into a 2–5-byte prefix,
+eight-byte fingerprint, and one terminal byte for both class and member
+declarations. The decomposition does not assign a member type, cardinality,
+ownership, or access role.
+
+**Note.** The decoder retains the raw suffix and its exact three components for
+each declaration. No OM field schema is constructed from those bytes until a
+semantic role relation is serialized.
 
 ### OM-07. Offset-store body to segment-image relation
 

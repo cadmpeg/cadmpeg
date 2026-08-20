@@ -257,6 +257,15 @@ pub struct FieldDefinition {
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
+    /// Variable-width prefix of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layout_prefix: Vec<u8>,
+    /// Stable eight-byte field fingerprint in a framed registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_fingerprint: Option<[u8; 8]>,
+    /// Terminal byte of a framed indexed-store registry suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section signature.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1825,7 +1834,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
-                class_layout_fields(definition.registry_suffix);
+                registry_layout_fields(definition.registry_suffix);
             definitions.insert(
                 (entry_index, definition.offset),
                 ClassDefinition {
@@ -1854,7 +1863,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
-                class_layout_fields(definition.registry_suffix);
+                registry_layout_fields(definition.registry_suffix);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| ClassDefinition {
@@ -1875,7 +1884,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     definitions.into_values().collect()
 }
 
-fn class_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8>) {
+fn registry_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8>) {
     if !(11..=14).contains(&suffix.len()) {
         return (Vec::new(), None, None);
     }
@@ -1900,6 +1909,8 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
+            let (layout_prefix, schema_fingerprint, layout_terminal) =
+                registry_layout_fields(definition.registry_suffix);
             definitions.insert(
                 (entry_index, definition.offset),
                 FieldDefinition {
@@ -1908,6 +1919,9 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
                     registry_suffix: definition.registry_suffix.to_vec(),
+                    layout_prefix,
+                    schema_fingerprint,
+                    layout_terminal,
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -1924,6 +1938,8 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
+            let (layout_prefix, schema_fingerprint, layout_terminal) =
+                registry_layout_fields(definition.registry_suffix);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| FieldDefinition {
@@ -1932,6 +1948,9 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
                     registry_suffix: definition.registry_suffix.to_vec(),
+                    layout_prefix,
+                    schema_fingerprint,
+                    layout_terminal,
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -5058,10 +5077,22 @@ mod tests {
         assert_eq!(fields[0].name, "m_target");
         assert_eq!(fields[0].ordinal, 0);
         assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
+        assert_eq!(fields[0].layout_prefix, Vec::<u8>::new());
+        assert_eq!(fields[0].schema_fingerprint, None);
+        assert_eq!(fields[0].layout_terminal, None);
         assert_eq!(fields[1].name, "m_tools");
         assert_eq!(fields[1].trailing_code, 0x81);
         assert!(fields[1].registry_suffix.is_empty());
         assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
+        let (prefix, fingerprint, terminal) = super::registry_layout_fields(&[
+            0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+        ]);
+        assert_eq!(prefix, [0x81, 0x21]);
+        assert_eq!(
+            fingerprint,
+            Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+        );
+        assert_eq!(terminal, Some(0x06));
         let classes = result
             .ir()
             .native
