@@ -192,6 +192,8 @@ Selector-state pair `(1,0)` is used by NURBS incidence and current-line auxiliar
 
 The selector-state pair and the versioned flags do not select the neutral construction Boolean. The neutral projection keeps points non-construction, and a valid `TextFrame` relation selects construction curves independently of their endpoint point records. Pair `(4,0)` can occur on a bounded line used by a midpoint relation and on a bounded line with no sketch relation; neither form is classified as construction from the pair alone. Profile admission remains determined by the resolved curve graph and the explicit `TextFrame` exclusion.
 
+Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve count of zero, and the point remains non-construction.
+
 **Need.** The mappings determine which point and curve records are construction or helper geometry, which records can participate in a neutral profile, and which versioned flags and selector-state pair a writer derives from each neutral point role.
 
 ### DR-65. Agreement test of the parallel-line and concentric-circle dimensions

@@ -288,6 +288,28 @@ fn point_closure_does_not_mark_construction_geometry() {
         }),
         companion: None,
     };
+    let standalone_point = SketchPoint {
+        id: "f3d:BulkStream.dat:point#11".into(),
+        record_index: 11,
+        owner_reference: Some(42),
+        class_tag: "413".into(),
+        byte_offset: 11,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: false,
+        },
+        persistent_id: Some(11),
+        paired_reference: 12,
+        flags: [0; 8],
+        coordinates: Point2::new(2.0, 0.0),
+        depth: 0.0,
+        closure: Some(SketchPointClosure {
+            selector: 2,
+            state: 1,
+        }),
+        companion: None,
+    };
     let curve = SketchCurveIdentity {
         id: "f3d:BulkStream.dat:curve#20".into(),
         record_index: 20,
@@ -308,7 +330,7 @@ fn point_closure_does_not_mark_construction_geometry() {
 
     let (sketches, entities) = project_sketch_design(
         &[placement],
-        &[point],
+        &[point, standalone_point],
         &[curve],
         &[],
         &[],
@@ -316,7 +338,7 @@ fn point_closure_does_not_mark_construction_geometry() {
     );
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
-    assert_eq!(entities.len(), 2);
+    assert_eq!(entities.len(), 3);
     assert!(entities.iter().all(|entity| !entity.construction));
 }
 
