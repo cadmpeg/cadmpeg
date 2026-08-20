@@ -3063,7 +3063,24 @@ fn sketch_reference_field(
         _ => return None,
     };
     let leading_count = declared_count.saturating_sub(1) as usize;
+    let leading_start = at;
+    let mut scan_at = leading_start;
+    for _ in 0..leading_count {
+        let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+        scan_at += width;
+    }
+    if record.payload.get(scan_at..scan_at + 2) != Some(&[0x00, 0x00]) {
+        return None;
+    }
+    scan_at += 2;
+    let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+    scan_at += width;
+    if record.payload.get(scan_at..scan_at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
+        return None;
+    }
+
     let mut references = Vec::with_capacity(leading_count + 1);
+    at = leading_start;
     for _ in 0..leading_count {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
@@ -3073,9 +3090,6 @@ fn sketch_reference_field(
         });
         at += width;
     }
-    if record.payload.get(at..at + 2) != Some(&[0x00, 0x00]) {
-        return None;
-    }
     at += 2;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
     references.push(PayloadObjectReference {
@@ -3083,10 +3097,6 @@ fn sketch_reference_field(
         object_index,
         raw_object_index: record.payload[at..at + width].to_vec(),
     });
-    at += width;
-    if record.payload.get(at..at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
-        return None;
-    }
     Some(SketchPayloadReferenceField {
         declared_count,
         references,
@@ -3356,6 +3366,14 @@ pub fn pattern_payload_counted_reference_lane(
             2,
             record.payload.len().saturating_sub(references_start),
         )?;
+        let mut scan_at = references_start;
+        for _ in 0..reference_count {
+            let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+            scan_at = scan_at.checked_add(width)?;
+        }
+        let trailer_end = scan_at.checked_add(TRAILER.len())?;
+        (record.payload.get(scan_at..trailer_end) == Some(&TRAILER)).then_some(())?;
+
         let mut at = references_start;
         let mut references = Vec::with_capacity(reference_count);
         for _ in 0..reference_count {
@@ -3368,8 +3386,6 @@ pub fn pattern_payload_counted_reference_lane(
                 raw_object_index: record.payload[offset..at].to_vec(),
             });
         }
-        let trailer_end = at.checked_add(TRAILER.len())?;
-        (record.payload.get(at..trailer_end) == Some(&TRAILER)).then_some(())?;
         Some(PatternPayloadCountedReferenceLane {
             offset: record.payload_offset + start,
             declared_count,
@@ -3992,8 +4008,19 @@ pub fn draft_feature_leading_index_lane(
     let declared_count = *record.payload.get(at + 1)?;
     (declared_count >= 2).then_some(())?;
     at += 2;
+    let indices_start = at;
+    let mut scan_at = indices_start;
+    for _ in 1..declared_count {
+        let (CompactIndex::Value(_), width) = compact_index(record.payload.get(scan_at..)?)? else {
+            return None;
+        };
+        scan_at += width;
+    }
+    (record.payload.get(scan_at..scan_at + 2) == Some(&[0x01, 0x02])).then_some(())?;
+
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
     let mut raw_indices = Vec::with_capacity(usize::from(declared_count - 1));
+    at = indices_start;
     for _ in 1..declared_count {
         let offset = at;
         let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
@@ -4003,7 +4030,6 @@ pub fn draft_feature_leading_index_lane(
         indices.push((value, record.payload_offset + offset));
         raw_indices.push(record.payload[offset..offset + width].to_vec());
     }
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
     Some(DraftFeatureLeadingIndexLane {
         declared_count,
         indices,
@@ -4701,11 +4727,30 @@ pub fn operation_body_reference_lanes(
 
 fn operation_body_reference_lane_values(
     record: OperationRecord<'_>,
-    mut at: usize,
+    at: usize,
     count: usize,
     encoding: OperationBodyReferenceLaneEncoding,
 ) -> Option<Vec<OperationBodyReferenceLaneValue>> {
+    let mut scan_at = at;
+    for _ in 0..count {
+        let width = match encoding {
+            OperationBodyReferenceLaneEncoding::CompactIndex => {
+                let (CompactIndex::Value(_), width) = compact_index(record.bytes.get(scan_at..)?)?
+                else {
+                    return None;
+                };
+                width
+            }
+            OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
+                payload_object_index(record.bytes.get(scan_at..)?)?.1
+            }
+        };
+        scan_at += width;
+    }
+    (record.bytes.get(scan_at..scan_at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(())?;
+
     let mut values = Vec::with_capacity(count);
+    let mut at = at;
     for ordinal in 0..count {
         let value_at = at;
         let (object_index, width) = match encoding {
@@ -4728,7 +4773,7 @@ fn operation_body_reference_lane_values(
             offset: record.offset + value_at,
         });
     }
-    (record.bytes.get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
+    Some(values)
 }
 
 /// Decode the structured `32` branch following an extrusion body field.
@@ -5033,10 +5078,26 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         if declared_count < 2 {
             continue;
         }
-        let mut at = start + 2;
+        let indices_start = start + 2;
+        let mut at = indices_start;
+        let mut complete = true;
+        for _ in 1..declared_count {
+            let Some((CompactIndex::Value(_), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                complete = false;
+                break;
+            };
+            at += width;
+        }
+        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+            continue;
+        }
+        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
+            continue;
+        };
         let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
         let mut raw_indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        let mut complete = true;
+        at = indices_start;
         for _ in 1..declared_count {
             let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
             else {
@@ -5047,12 +5108,9 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             raw_indices.push(bytes[at..at + width].to_vec());
             at += width;
         }
-        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+        if !complete {
             continue;
         }
-        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
-            continue;
-        };
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
             declared_count,
@@ -5631,8 +5689,16 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usiz
         return None;
     }
     *at += 2;
+    let values_start = *at;
+    let mut scan_at = values_start;
+    for _ in 1..count {
+        View::u32_be_at(bytes, scan_at)?;
+        scan_at += 4;
+    }
+
     let mut values = Vec::with_capacity(count - 1);
     let mut offsets = Vec::with_capacity(count - 1);
+    *at = values_start;
     for _ in 1..count {
         offsets.push(*at);
         values.push(View::u32_be_at(bytes, *at)?);
@@ -5656,13 +5722,22 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<CountedCompact
         return None;
     }
     *at += 2;
+    let values_start = *at;
+    let mut scan_at = values_start;
+    for _ in 1..count {
+        let (CompactIndex::Value(_), width) = compact_index(bytes.get(scan_at..)?)? else {
+            return None;
+        };
+        scan_at += width;
+    }
+
     let mut values = Vec::with_capacity(count - 1);
     let mut raw_values = Vec::with_capacity(count - 1);
     let mut offsets = Vec::with_capacity(count - 1);
+    *at = values_start;
     for _ in 1..count {
         let value_at = *at;
-        let (value, width) = compact_index(bytes.get(*at..)?)?;
-        let CompactIndex::Value(value) = value else {
+        let (CompactIndex::Value(value), width) = compact_index(bytes.get(*at..)?)? else {
             return None;
         };
         values.push(value);
@@ -6231,7 +6306,15 @@ fn counted_feature_object_indices(
         return None;
     }
     let count = usize::from(*bytes.get(at + 1)?).checked_sub(1)?;
-    let mut cursor = at + 2;
+    let values_start = at + 2;
+    let mut scan_cursor = values_start;
+    for _ in 0..count {
+        let (value, next) = feature_object_index(bytes, scan_cursor)?;
+        value?;
+        scan_cursor = next;
+    }
+
+    let mut cursor = values_start;
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         let (value, next) = feature_object_index(bytes, cursor)?;
@@ -6267,14 +6350,18 @@ pub fn counted_record_references(
             at += 1;
             continue;
         }
+        if (0..count).any(|index| {
+            let token = at + 2 + index * 3;
+            let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
+            usize::from(value) >= record_count
+        }) {
+            at += 1;
+            continue;
+        }
         let mut run = Vec::with_capacity(count);
         for index in 0..count {
             let token = at + 2 + index * 3;
             let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
-            if usize::from(value) >= record_count {
-                run.clear();
-                break;
-            }
             run.push(ReferenceValue {
                 offset: base_offset + token,
                 kind: ReferenceKind::RecordOrdinal16,
