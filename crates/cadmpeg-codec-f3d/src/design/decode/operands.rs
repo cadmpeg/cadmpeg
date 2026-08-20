@@ -689,6 +689,13 @@ pub fn decode_face_operands(
         }
     }
     for scope in scopes.values().filter(|scope| {
+        let is_legacy_as_built_421 = scope.kind == "As-built"
+            && crate::design::assembly::legacy_as_built_421_generation(
+                scope.frame_length,
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            )
+            .is_some();
         matches!(
             design_feature_family(&scope.kind),
             Some(
@@ -699,6 +706,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::ReplaceFace
             )
         ) || matches!(scope.kind.as_str(), "SplitFace" | "Hole")
+            || is_legacy_as_built_421
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -710,7 +718,22 @@ pub fn decode_face_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        let ordinals = if scope.kind == "As-built"
+            && crate::design::assembly::legacy_as_built_421_generation(
+                scope.frame_length,
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            )
+            .is_some()
+        {
+            [1_usize, 3].into_iter().collect::<Vec<_>>()
+        } else {
+            (0..scope.reference_members.len()).collect::<Vec<_>>()
+        };
+        for ordinal in ordinals {
+            let Some(record_index) = scope.reference_members.get(ordinal).copied() else {
+                continue;
+            };
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }
@@ -719,13 +742,29 @@ pub fn decode_face_operands(
             else {
                 continue;
             };
+            let next_byte_offset = if scope.kind == "As-built"
+                && crate::design::assembly::legacy_as_built_421_generation(
+                    scope.frame_length,
+                    &scope.class_tag,
+                    &scope.paired_class_tag,
+                )
+                .is_some()
+            {
+                scope
+                    .reference_members
+                    .get(ordinal + 1)
+                    .and_then(|record_index| headers.get(&(stream, *record_index)))
+                    .map(|header| header.byte_offset)
+            } else {
+                None
+            };
             if let Some(operand) = parse_face_operand(
                 bytes,
                 records,
                 scope,
                 scope_reference_ordinal,
                 None,
-                None,
+                next_byte_offset,
                 header,
                 recipes,
             ) {
@@ -4115,7 +4154,7 @@ pub(crate) enum FaceRecipeProgramKind {
 }
 
 pub(crate) fn face_recipe_program_kind(program: &[i32]) -> Option<FaceRecipeProgramKind> {
-    if program == [0, -1] {
+    if matches!(program, [0, -1 | 0]) {
         return Some(FaceRecipeProgramKind::Terminal);
     }
     if !matches!(program.get(0..2), Some([0, -1 | 0])) {

@@ -1543,6 +1543,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         face_recipe_program_kind(&terminal.recipe_program),
         Some(FaceRecipeProgramKind::Terminal)
     );
+    assert_eq!(
+        face_recipe_program_kind(&[0, 0]),
+        Some(FaceRecipeProgramKind::Terminal)
+    );
     assert_eq!(face_recipe_program_kind(&[0, 1, 4]), None);
     assert_eq!(face_recipe_program_kind(&[0, -1, 0]), None);
     operand.recipe_references.push(DesignRecipeReference {
