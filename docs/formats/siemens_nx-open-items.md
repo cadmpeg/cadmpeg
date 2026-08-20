@@ -668,6 +668,16 @@ selector domain and object-family relation for each group.
 
 **Need.** We must know the roles to construct neutral pattern dependencies and transforms.
 
+**Conflict.** The graph layouts distinguish framing variants and preserve slot
+order, but every non-null reference uses the same object-index form. Repeated
+anchors, terminal slots, and the `Geometry Instance` one-reference form do not
+identify a seed, transform, or control family. No relation joins a graph slot
+to a transform row or an operation input with that role.
+
+**Note.** Preserve pattern references, construction payloads, and transform
+lanes as native data. A neutral pattern dependency or transform requires an
+independent seed and control-role relation.
+
 ### OM-19. Pattern-row scalar roles
 
 **Question.** What does each scalar in a counted pattern row mean?
@@ -675,6 +685,15 @@ selector domain and object-family relation for each group.
 **Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the Q1.55 and wide-row scalar encodings, row order, exact values, and boundaries.
 
 **Need.** We must know the roles to construct pattern coordinates, spacing, angles, and other controls.
+
+**Conflict.** Row schemas and terminal modes select byte layout and scalar
+width, not physical meaning. The Q1.55 and binary scalar lanes retain finite
+values, order, selectors, and row ordinals, but provide no units, axis or
+spacing labels, or relation to a seed/reference role.
+
+**Note.** Preserve every row scalar with its encoding and offsets. Do not map
+the values to coordinates, spacing, angles, or other neutral controls until a
+pattern-family schema assigns those roles.
 
 ### OM-20. Pattern-row selector roles
 
