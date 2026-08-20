@@ -549,7 +549,7 @@ enum Command {
     #[command(
         display_order = 6,
         subcommand_help_heading = "Views",
-        after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json"
+        after_help = "Examples:\n  cadmpeg query losses part.convert.json\n  cadmpeg query counts part.cadir.json\n  cadmpeg query graph part.cadir.json model.features ID\n  cadmpeg query join part.cadir.json model.features native.rhino.unknowns --left-key native_ref --right-key id"
     )]
     Query {
         /// Table to print.

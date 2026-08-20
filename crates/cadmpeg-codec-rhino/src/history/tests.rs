@@ -5,11 +5,20 @@ use super::*;
 use crate::chunks::TCODE_CRC;
 use crate::test_support::test_dump::*;
 
-fn anonymous_value(minor: i32, body: &[u8]) -> Vec<u8> {
-    let mut payload = 1_i32.to_le_bytes().to_vec();
+fn versioned_anonymous_chunk(
+    archive: ArchiveVersion,
+    major: i32,
+    minor: i32,
+    body: &[u8],
+) -> Vec<u8> {
+    let mut payload = major.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
-    crate::test_support::crc_chunk(ANONYMOUS, &payload)
+    crate::test_support::test_dump::crc_chunk(archive, ANONYMOUS, &payload)
+}
+
+fn anonymous_value(minor: i32, body: &[u8]) -> Vec<u8> {
+    versioned_anonymous_chunk(ArchiveVersion::V8, 1, minor, body)
 }
 
 fn value(type_code: i32, payload: &[u8]) -> Vec<u8> {
@@ -42,11 +51,44 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
     }
 }
 
+fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
+    source_band_history_record_with_major(archive, 1, minor)
+}
+
+fn source_band_history_record_with_major(
+    archive: ArchiveVersion,
+    major: i32,
+    minor: i32,
+) -> Vec<u8> {
+    let mut values_body = 0_i32.to_le_bytes().to_vec();
+    values_body.extend([0xcc, 0xdd]);
+    let values = anonymous_chunk(archive, 0, &values_body);
+    let empty_list = anonymous_chunk(archive, 0, &0_i32.to_le_bytes());
+
+    let mut body = id(1).to_wire().to_vec();
+    body.extend(42_i32.to_le_bytes());
+    body.extend(id(2).to_wire());
+    body.extend(&empty_list);
+    body.extend(&empty_list);
+    body.extend(values);
+    if minor >= 1 {
+        body.extend(1_i32.to_le_bytes());
+    }
+    if minor >= 2 {
+        body.push(1);
+    }
+    body.extend([0xaa, 0xbb]);
+
+    let payload = versioned_anonymous_chunk(archive, major, minor, &body);
+    let class = class_wrapper(archive, HISTORY_CLASS.to_wire(), &payload);
+    crc_chunk(archive, 0x2000_807b, &class)
+}
+
 #[test]
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(
@@ -74,8 +116,20 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 1));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn projection_counts_dependency_with_ambiguous_producers() {
+    let records = [
+        record(1, 11, &[], &[40]),
+        record(2, 12, &[], &[40]),
+        record(3, 13, &[40], &[41]),
+    ];
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
+    assert!(ir.model.features[2].dependencies.is_empty());
 }
 
 #[test]
@@ -97,6 +151,74 @@ fn unstored_evaluation_intervals_remain_absent() {
 }
 
 #[test]
+fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
+    let mut body = 2_i32.to_le_bytes().to_vec();
+    body.extend(7_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(42_i32.to_le_bytes());
+    body.extend([0xaa, 0xbb]);
+    let bytes = anonymous_value(9, &body);
+    let (parsed, next) = parse_value(&bytes, 0, bytes.len(), ArchiveVersion::V8)
+        .expect("future history minor is bounded");
+    assert_eq!(next, bytes.len());
+    assert!(matches!(parsed.value, Value::Integers(values) if values == [42]));
+}
+
+#[test]
+fn history_record_writer_bands_follow_archive_version() {
+    for (version, archive, minor, copy_on_replace) in [
+        ("50", ArchiveVersion::V5, 1, false),
+        ("60", ArchiveVersion::V6, 2, true),
+    ] {
+        let history_record = source_band_history_record(archive, minor);
+        let bytes = minimal_document(
+            version,
+            &[
+                crc_table(archive, 0x1000_0014, &[]),
+                crc_table(archive, 0x1000_0015, &[]),
+                crc_table(archive, 0x1000_0013, &[]),
+                crc_table(archive, 0x1000_0026, &[history_record]),
+            ],
+        );
+
+        let scan = crate::container::scan_owned(bytes).expect("source-shaped history record");
+        assert_eq!(scan.history.len(), 1);
+        let history = &scan.history[0];
+        assert_eq!(history.values.len(), 0);
+        assert_eq!(history.record_type, RecordType::FeatureParameters);
+        assert_eq!(history.copy_on_replace, copy_on_replace);
+    }
+}
+
+#[test]
+fn future_history_major_is_retained_as_a_complete_record() {
+    let archive = ArchiveVersion::V5;
+    let future_record = source_band_history_record_with_major(archive, 2, 1);
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, std::slice::from_ref(&future_record)),
+        ],
+    );
+
+    let scan = crate::container::scan_owned(bytes).expect("future history record");
+    assert!(scan.history.is_empty());
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|record| record.table_typecode & !TCODE_CRC == 0x1000_0026)
+        .expect("future history record is retained");
+    assert_eq!(retained.record.typecode, 0x2000_807b);
+    assert_eq!(
+        &scan.data[retained.record.range.clone()],
+        future_record.as_slice()
+    );
+}
+
+#[test]
 fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut producer = record(1, 11, &[], &[40, 40]);
     producer.values.push(HistoryValue {
@@ -105,7 +227,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     });
     let records = [producer, record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
-    assert_eq!(project(&records, None, &mut ir), (0, 0, 0));
+    assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(
         ir.model.features[1].dependencies,
@@ -141,6 +263,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         let mut sink = GeometrySink {
             untyped: 0,
             failed: 0,
+            redundant_repairs: 0,
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
@@ -175,6 +298,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut sink = GeometrySink {
         untyped: 0,
         failed: 0,
+        redundant_repairs: 0,
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
@@ -228,6 +352,33 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
             && values[0].subd_id == subd_id
             && values[0].edge_ids == [11, 12]
             && values[0].orientations == [0, 1]));
+}
+
+#[test]
+fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
+    let mut chain = [0_u8; 16].to_vec();
+    chain[15] = 42;
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(11_u32.to_le_bytes());
+    chain.extend(12_u32.to_le_bytes());
+    chain.extend(1_i32.to_le_bytes());
+    chain.push(0);
+    let mut chains = 1_i32.to_le_bytes().to_vec();
+    chains.extend(anonymous_value(1, &chain));
+    let value = value(14, &anonymous_value(1, &chains));
+    let mut warnings = Vec::new();
+    let (parsed, _) =
+        parse_value_with_warnings(&value, 0, value.len(), ArchiveVersion::V8, &mut warnings)
+            .expect("mismatched redundant arrays remain bounded");
+    assert!(matches!(
+        parsed.value,
+        Value::SubdEdgeChains(values)
+            if values.len() == 1
+                && values[0].edge_ids.is_empty()
+                && values[0].orientations.is_empty()
+    ));
+    assert_eq!(warnings.len(), 1);
 }
 
 #[test]

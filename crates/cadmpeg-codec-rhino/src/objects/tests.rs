@@ -28,6 +28,7 @@ fn parses_fixed_attributes_through_every_minor_gate() {
             0..bytes.len(),
             100..100 + bytes.len(),
             ArchiveVersion::V4,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("minor {minor}: {error}"));
@@ -50,6 +51,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..hidden.len(),
         0..hidden.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -61,6 +63,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..locked.len(),
         0..locked.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -72,6 +75,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
         0..definition.len(),
         0..definition.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -86,10 +90,72 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
     assert!(parsed.visible);
+}
+
+#[test]
+fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
+    let bytes = fixed_attributes(1, 0, Some(true));
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        Some(200_712_189),
+        &mut Vec::new(),
+    )
+    .expect("pre-cutoff V5 writer uses the fixed attributes reader");
+    assert_eq!(parsed.version, (1, 1));
+    assert_eq!(parsed.name, "name");
+
+    let error = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        Some(200_712_190),
+        &mut Vec::new(),
+    )
+    .expect_err("the cutoff selects the tagged V5 reader");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Structural { .. }
+    ));
+}
+
+#[test]
+fn object_attribute_booleans_use_writer_version_strictness() {
+    let bytes = tagged_attributes(&[(11, vec![2])], 0);
+    let legacy = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        Some(201_708_239),
+        &mut Vec::new(),
+    )
+    .expect("legacy Boolean remains permissive");
+    assert!(legacy.visible);
+
+    for writer_version in [201_708_240_i64, 2_348_836_140_i64] {
+        let error = crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            Some(writer_version),
+            &mut Vec::new(),
+        )
+        .expect_err("modern Boolean must be canonical");
+        assert!(matches!(
+            error,
+            crate::chunks::FramingError::Structural { .. }
+        ));
+    }
 }
 
 #[test]
@@ -98,7 +164,12 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     let rendering = crc_chunk(
         ArchiveVersion::V8,
         0x4000_8000,
-        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        &[
+            1, 0, 0, 0, 3, 0, 0, 0, // object rendering version 1.3
+            0, 0, 0, 0, // material-reference count
+            0, 0, 0, 0, // mapping-reference count
+            1, 1, 0, // casts shadows, receives shadows, advanced preview
+        ],
     );
     let model_attributes = crc_chunk(ArchiveVersion::V8, 0x4000_8002, &[]);
     let mut direct_linetype = vec![2, 0, 0, 0, 1, 0, 0, 0];
@@ -154,6 +225,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         (39, direct_section_style),
         (40, vec![2]),
         (41, vec![1]),
+        (42, vec![1]),
     ]);
     for (item, payload) in &items {
         let gate = match item {
@@ -169,8 +241,8 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             38 => 10,
             39 => 11,
             40 => 12,
-            41 => 13,
-            _ => unreachable!("items are limited to 1 through 41"),
+            41 | 42 => 13,
+            _ => unreachable!("items are limited to 1 through 42"),
         };
         let minimum = tagged_attributes(&[(*item, payload.clone())], gate);
         let mut decoded_at_gate = crate::objects::parse_attributes(
@@ -178,6 +250,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..minimum.len(),
             0..minimum.len(),
             ArchiveVersion::V8,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor {gate}: {error}"));
@@ -187,6 +260,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             0..latest.len(),
             0..latest.len(),
             ArchiveVersion::V8,
+            None,
             &mut Vec::new(),
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor 13: {error}"));
@@ -197,16 +271,28 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         );
         if gate > 0 {
             let preceding = tagged_attributes(&[(*item, payload.clone())], gate - 1);
-            assert!(
-                crate::objects::parse_attributes(
-                    &preceding,
-                    0..preceding.len(),
-                    0..preceding.len(),
-                    ArchiveVersion::V8,
-                    &mut Vec::new(),
-                )
-                .is_err(),
-                "item {item} was accepted before minor {gate}"
+            let decoded = crate::objects::parse_attributes(
+                &preceding,
+                0..preceding.len(),
+                0..preceding.len(),
+                ArchiveVersion::V8,
+                None,
+                &mut Vec::new(),
+            )
+            .unwrap_or_else(|error| panic!("item {item} failed before minor {gate}: {error}"));
+            let empty = tagged_attributes(&[], gate - 1);
+            let expected = crate::objects::parse_attributes(
+                &empty,
+                0..empty.len(),
+                0..preceding.len(),
+                ArchiveVersion::V8,
+                None,
+                &mut Vec::new(),
+            )
+            .expect("empty tagged attributes have source defaults");
+            assert_eq!(
+                decoded, expected,
+                "item {item} crossed its gate instead of stopping at the boundary"
             );
         }
     }
@@ -216,6 +302,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         0..bytes.len(),
         10..10 + bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -229,24 +316,121 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     assert!(parsed.embedded_section_style.is_some());
     assert_eq!(parsed.clipping_plane_label_style, 2);
     assert!(parsed.selective_clipping_list);
+    assert!(parsed.detail_background_visible);
 }
 
 #[test]
-fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
-    for (minor, item) in [(0, 22), (1, 23), (2, 27), (8, 36), (12, 41)] {
-        let bytes = tagged_attributes(&[(item, vec![0])], minor);
-        assert!(
-            crate::objects::parse_attributes(
-                &bytes,
-                0..bytes.len(),
-                0..bytes.len(),
-                ArchiveVersion::V8,
-                &mut Vec::new()
-            )
-            .is_err(),
-            "minor {minor} item {item}"
-        );
+fn object_rendering_attributes_require_minor_one() {
+    let rendering = crc_chunk(
+        ArchiveVersion::V8,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    );
+    let bytes = tagged_attributes(&[(5, rendering)], 0);
+    assert!(crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .is_err());
+}
+
+#[test]
+fn object_rendering_attributes_consume_mapping_reference_and_channel() {
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend(uuid_bytes());
+    channel_body.extend(
+        [
+            1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.25, -2.5, 3.75, 1.0,
+        ]
+        .into_iter()
+        .flat_map(f64::to_le_bytes),
+    );
+    let channel = anonymous_chunk(ArchiveVersion::V8, 1, &channel_body);
+    let mut mapping_body = uuid_bytes();
+    mapping_body.extend(1_i32.to_le_bytes());
+    mapping_body.extend(channel);
+    let mapping = anonymous_chunk(ArchiveVersion::V8, 0, &mapping_body);
+    let mut rendering = vec![1, 0, 0, 0, 3, 0, 0, 0];
+    rendering.extend(0_i32.to_le_bytes());
+    rendering.extend(1_i32.to_le_bytes());
+    rendering.extend(mapping);
+    rendering.extend([0, 0, 0]);
+    let rendering = crc_chunk(ArchiveVersion::V8, 0x4000_8000, &rendering);
+    let bytes = tagged_attributes(&[(5, rendering)], 0);
+
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("mapping reference and channel have source-shaped framing");
+    assert!(parsed.rendering_range.is_some());
+}
+
+#[test]
+fn tagged_attributes_follow_source_cascade_boundaries() {
+    for (minor, item) in [(0, 22), (1, 23), (2, 27), (12, 41), (12, 42)] {
+        let bytes = tagged_attributes(&[(item, vec![0xaa, 0xbb])], minor);
+        let parsed = crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            &mut Vec::new(),
+        )
+        .unwrap_or_else(|error| panic!("minor {minor} item {item}: {error}"));
+        assert_eq!(parsed.version, (2, minor));
     }
+
+    let mut out_of_order = tagged_attributes(&[(2, utf16_bytes("U")), (1, utf16_bytes("N"))], 0);
+    out_of_order.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
+        &out_of_order,
+        0..out_of_order.len(),
+        0..out_of_order.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("out-of-order item stops at the containing attributes boundary");
+    assert_eq!(parsed.url, "U");
+    assert!(parsed.name.is_empty());
+}
+
+#[test]
+fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
+    let bytes = tagged_attributes(&[(36, vec![0])], 8);
+    assert!(
+        crate::objects::parse_attributes(
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            None,
+            &mut Vec::new()
+        )
+        .is_err(),
+        "an admitted object-frame item still requires its value grammar"
+    );
+    let bytes = tagged_attributes(&[(42, vec![])], 13);
+    assert!(crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new()
+    )
+    .is_err());
+
     let mut bytes = tagged_attributes(&[(1, utf16_bytes("N"))], 0);
     bytes.pop();
     assert!(crate::objects::parse_attributes(
@@ -254,18 +438,46 @@ fn tagged_attributes_reject_unknown_items_gates_and_missing_terminator() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new()
     )
     .is_err());
-    let bytes = tagged_attributes(&[(42, vec![])], 13);
-    assert!(crate::objects::parse_attributes(
+}
+
+#[test]
+fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
+    let mut bytes = tagged_attributes(&[(43, vec![0xaa, 0xbb])], 14);
+    bytes.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
-        &mut Vec::new()
+        None,
+        &mut Vec::new(),
     )
-    .is_err());
+    .expect("future unknown item is bounded by the containing chunk");
+    assert_eq!(parsed.version, (2, 14));
+    assert_eq!(parsed.object_id, Uuid::nil());
+    assert_eq!(parsed.layer_index, -1);
+    assert!(parsed.name.is_empty());
+}
+
+#[test]
+fn future_tagged_attributes_accept_known_prefix_and_suffix() {
+    let mut bytes = tagged_attributes(&[(1, utf16_bytes("future"))], 14);
+    bytes.extend([0xde, 0xad]);
+    let parsed = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Vec::new(),
+    )
+    .expect("future minor with a known prefix");
+    assert_eq!(parsed.version, (2, 14));
+    assert_eq!(parsed.name, "future");
 }
 
 #[test]
@@ -276,6 +488,7 @@ fn tagged_attributes_reject_nonfinite_numeric_items() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V8,
+        None,
         &mut Vec::new()
     )
     .is_err());
@@ -292,6 +505,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         render_material_index: -1,
         color: [10, 20, 30, 255],
         name: "Layer".to_string(),
+        description: None,
         visible: true,
         locked: false,
         id: Some(Uuid::from_wire([1; 16])),
@@ -302,18 +516,24 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         plot_weight: None,
         display_material_id: None,
         no_clipping_planes: None,
+        visible_in_new_details: None,
         rendering_range: None,
         extension_items: Vec::new(),
         embedded_linetype: None,
         embedded_section_style: None,
+        per_viewport_settings: Vec::new(),
     };
+    let mut duplicate_layer = layer.clone();
+    duplicate_layer.name = "Later layer".to_string();
+    duplicate_layer.color = [90, 80, 70, 255];
     let mut metadata = settings::DocumentMetadata::default();
-    metadata.layers.push(layer);
+    metadata.layers.extend([layer, duplicate_layer]);
     let mut attributes = crate::objects::parse_attributes(
         &fixed_attributes(1, 0, None),
         0..fixed_attributes(1, 0, None).len(),
         0..fixed_attributes(1, 0, None).len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -329,6 +549,15 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
             .expect("required invariant")
             .effective_color,
         None
+    );
+    assert_eq!(
+        material[0]
+            .identity
+            .as_ref()
+            .expect("required invariant")
+            .layer_name
+            .as_deref(),
+        Some("Layer")
     );
 
     attributes.color_source = 3;
@@ -360,6 +589,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         0..bytes.len(),
         0..bytes.len(),
         ArchiveVersion::V4,
+        None,
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -416,6 +646,7 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     valid_body.extend(1_i32.to_le_bytes());
     valid_body.extend([0; 128]);
     valid_body.extend(crc_chunk(ArchiveVersion::V4, 0x4000_8000, &[9, 8, 7]));
+    valid_body.extend(short_chunk(ArchiveVersion::V4, 0x8002_7fff, 0));
     let valid = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &valid_body);
     malformed.extend(valid);
     let mut warnings = Vec::new();
@@ -429,6 +660,277 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     assert!(descriptors[0].known);
     assert!(descriptors[0].range.start > 0);
     assert!(!warnings.is_empty());
+}
+
+#[test]
+fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
+    for (version, archive) in [("40", ArchiveVersion::V4), ("50", ArchiveVersion::V5)] {
+        let mut userdata_body = 37_i32.to_le_bytes().to_vec();
+        userdata_body.push(1);
+        userdata_body.extend(mesh_parameters(archive));
+        userdata_body.extend([0xde, 0xad]);
+        let userdata = if archive == ArchiveVersion::V4 {
+            class_userdata_v1_with_direct_payload(
+                archive,
+                crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+                &userdata_body,
+            )
+        } else {
+            class_userdata_v2_with_direct_payload(
+                archive,
+                crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+                [0; 16],
+                50,
+                2_348_836_140_u32,
+                &userdata_body,
+            )
+        };
+        let attributes = if archive == ArchiveVersion::V4 {
+            fixed_attributes(8, 0, Some(true))
+        } else {
+            tagged_attributes(&[], 0)
+        };
+        let object =
+            object_record_with_attribute_userdata(archive, 1, POINT_CLASS, &attributes, &userdata);
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[object]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("custom mesh object record");
+        let object = &scan.objects[0];
+        assert_eq!(object.attributes_userdata.len(), 1);
+        assert_eq!(
+            object.attributes_userdata[0].class_uuid,
+            Some(crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA)
+        );
+        let mesh = object
+            .attributes
+            .as_ref()
+            .and_then(|attributes| attributes.custom_render_mesh.as_ref())
+            .expect("converted custom mesh settings");
+        assert_eq!(mesh.version, (1, 5));
+        assert!(!mesh.compute_curvature);
+        assert!(mesh.simple_planes);
+        assert_eq!(mesh.obsolete_weld, -17);
+        assert_eq!(mesh.tolerance, 0.125);
+        assert_eq!(mesh.custom_settings, Some(true));
+        assert_eq!(mesh.custom_settings_enabled, Some(true));
+        assert_eq!(
+            mesh.subd.as_ref().map(|value| value.display_density),
+            Some(5)
+        );
+        assert_eq!(mesh.subd.as_ref().map(|value| value.mesh_location), Some(2));
+        assert!(object.checksum_warnings.iter().all(|warning| {
+            !warning.contains("obsolete custom mesh userdata") || !warning.contains("dropped")
+        }));
+    }
+}
+
+#[test]
+fn malformed_obsolete_custom_mesh_userdata_keeps_object_attributes() {
+    let archive = ArchiveVersion::V5;
+    let userdata_body = [7_i32.to_le_bytes().as_slice(), [2].as_slice()].concat();
+    let userdata = class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA.to_wire(),
+        [0; 16],
+        50,
+        2_348_836_140_u32,
+        &userdata_body,
+    );
+    let attributes = tagged_attributes(&[], 0);
+    let object =
+        object_record_with_attribute_userdata(archive, 1, POINT_CLASS, &attributes, &userdata);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("malformed custom mesh record");
+    let object = &scan.objects[0];
+    assert!(object.attributes.is_some());
+    assert!(object
+        .attributes
+        .as_ref()
+        .expect("object attributes")
+        .custom_render_mesh
+        .is_none());
+    assert!(object
+        .checksum_warnings
+        .iter()
+        .any(|warning| warning.contains("obsolete custom mesh userdata")
+            && warning.contains("dropped")));
+}
+
+#[test]
+fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
+    for (version, archive, archive_version) in [
+        ("4", ArchiveVersion::V4, 4),
+        ("50", ArchiveVersion::V5, 50),
+        ("60", ArchiveVersion::V6, 60),
+    ] {
+        let inner = crc_chunk(archive, 0x4000_8000, &mesh_parameters(archive));
+        let mut outer_body = 1_i32.to_le_bytes().to_vec();
+        outer_body.extend(0_i32.to_le_bytes());
+        outer_body.extend(inner);
+        outer_body.extend([0xde, 0xad]);
+        let userdata_body = crc_chunk(archive, 0x4000_8000, &outer_body);
+        let userdata = class_userdata_v2_with_direct_payload(
+            archive,
+            crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA.to_wire(),
+            [0; 16],
+            archive_version,
+            0,
+            &userdata_body,
+        );
+        let object = object_record_with_attribute_userdata(
+            archive,
+            1,
+            POINT_CLASS,
+            &(if archive == ArchiveVersion::V4 {
+                fixed_attributes(8, 0, Some(true))
+            } else {
+                tagged_attributes(&[], 0)
+            }),
+            &userdata,
+        );
+        let bytes = minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[object]),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes).expect("per-object mesh record");
+        let object = &scan.objects[0];
+        assert_eq!(object.attributes_userdata.len(), 1);
+        assert_eq!(
+            object.attributes_userdata[0].class_uuid,
+            Some(crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA)
+        );
+        let mesh = object
+            .attributes
+            .as_ref()
+            .and_then(|attributes| attributes.custom_render_mesh.as_ref())
+            .expect("nested custom mesh settings");
+        assert_eq!(mesh.version, (1, 5));
+        assert!(!mesh.compute_curvature);
+        assert_eq!(mesh.custom_settings, Some(true));
+        assert_eq!(mesh.custom_settings_enabled, Some(false));
+        assert_eq!(mesh.obsolete_weld, -17);
+        assert_eq!(mesh.tolerance, 0.125);
+        assert_eq!(
+            mesh.subd.as_ref().map(|value| value.display_density),
+            Some(5)
+        );
+        assert_eq!(mesh.subd.as_ref().map(|value| value.mesh_location), Some(2));
+        assert!(object.checksum_warnings.iter().all(|warning| {
+            !warning.contains("per-object mesh userdata") || !warning.contains("dropped")
+        }));
+    }
+}
+
+#[test]
+fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
+    let archive = ArchiveVersion::V5;
+    let malformed_outer = anonymous_chunk(archive, 0, &short_chunk(archive, 0x4000_8000, 0));
+    let userdata = class_userdata_v2_with_direct_payload(
+        archive,
+        crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA.to_wire(),
+        [0; 16],
+        50,
+        0,
+        &malformed_outer,
+    );
+    let object = object_record_with_attribute_userdata(
+        archive,
+        1,
+        POINT_CLASS,
+        &tagged_attributes(&[], 0),
+        &userdata,
+    );
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("malformed per-object mesh record");
+    let object = &scan.objects[0];
+    assert!(object.attributes.is_some());
+    assert!(object
+        .attributes
+        .as_ref()
+        .expect("object attributes")
+        .custom_render_mesh
+        .is_none());
+    assert!(
+        object
+            .checksum_warnings
+            .iter()
+            .any(|warning| warning.contains("per-object mesh userdata")
+                && warning.contains("dropped"))
+    );
+}
+
+#[test]
+fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
+    let archive = ArchiveVersion::V5;
+    let mut first = utf16_bytes("CaseKey");
+    first.extend(utf16_bytes("first"));
+    let mut second = utf16_bytes("casekey");
+    second.extend(utf16_bytes("second"));
+    let mut list_body = 2_i32.to_le_bytes().to_vec();
+    list_body.extend(anonymous_chunk(archive, 7, &first));
+    let mut second_entry = anonymous_chunk(archive, 9, &second);
+    second_entry.extend([0xaa, 0xbb]);
+    list_body.extend(second_entry);
+    let mut payload = anonymous_chunk(archive, 3, &list_body);
+    payload.extend([0xde, 0xad]);
+
+    let values = crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive)
+        .expect("user-string list");
+    assert_eq!(
+        values,
+        [
+            ("CaseKey".to_string(), "first".to_string()),
+            ("casekey".to_string(), "second".to_string())
+        ]
+    );
+}
+
+#[test]
+fn user_string_list_rejects_a_negative_count() {
+    let archive = ArchiveVersion::V5;
+    let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
+    assert!(crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive).is_err());
+}
+
+#[test]
+fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
+    let archive = ArchiveVersion::V5;
+    let uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
+    let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
+    let (class, userdata) = crate::objects::parse_class_wrapper_with_userdata(
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Vec::new(),
+    )
+    .expect("null object wrapper");
+    assert_eq!(class.class_uuid, Uuid::nil());
+    assert!(class.class_data_range.is_empty());
+    assert!(userdata.is_empty());
 }
 
 #[test]
