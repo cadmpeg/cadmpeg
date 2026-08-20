@@ -164,6 +164,20 @@ cylinder also has one positive finite scalar `radius`. A missing, repeated,
 incomplete, non-finite, non-positive, or conflicting field leaves the bounded
 row and prototype native.
 
+A visible legacy ASCII cone row has one direct `srf_prim_ptr(cone)` child. Its
+complete `local_sys` type-2 array has dimensions `[4][3]` and twelve scalar
+slots in row-major order. Columns zero, one, and two are the reference
+direction, transverse support direction, and signed axis direction; slots nine
+through eleven are the apex. The three directions form a right-handed
+orthonormal frame. Its unique scalar `half_angle` is finite, nonzero, and has
+absolute value in `(0, pi/2)`. A positive angle selects column two as the axis;
+a negative angle selects its negation. The carrier is circular with zero apex
+radius, unit radial ratio, and the absolute half-angle. For a negative angle,
+the source `v` parameter is negated when it is mapped into that positive-angle
+frame; the source `u` parameter is unchanged. A missing, repeated,
+incomplete, non-finite, zero, out-of-range, or conflicting field leaves the
+bounded row and prototype native.
+
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
 compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only

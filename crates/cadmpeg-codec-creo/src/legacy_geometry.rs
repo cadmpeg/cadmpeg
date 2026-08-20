@@ -30,6 +30,19 @@ pub(crate) enum LegacySurfaceGeometry {
         /// Positive cylinder radius in the stored model coordinate system.
         radius: f64,
     },
+    /// A circular cone from a complete legacy local system and signed angle.
+    Cone {
+        /// The cone apex in the stored model coordinate system.
+        apex: [f64; 3],
+        /// Unit axis directed from the apex toward increasing radius.
+        axis: [f64; 3],
+        /// Unit parameter-space reference direction.
+        ref_direction: [f64; 3],
+        /// Positive cone half-angle in radians.
+        half_angle: f64,
+        /// Sign that maps the source `v` parameter to this positive-angle frame.
+        parameter_v_sign: f64,
+    },
     /// A complete bicubic interpolation surface carrier.
     Spline {
         /// Interpolation points in source order.
@@ -405,6 +418,7 @@ fn surface_carrier(
     let expected_name = match row.kind {
         SurfaceKind::Plane => "srf_prim_ptr(plane)",
         SurfaceKind::Cylinder => "srf_prim_ptr(cylinder)",
+        SurfaceKind::Cone => "srf_prim_ptr(cone)",
         SurfaceKind::Spline => "srf_prim_ptr(splsrf)",
         _ => return None,
     };
@@ -445,6 +459,28 @@ fn surface_carrier(
             radius: real_scalar(reals, &primitive.id, "radius")
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?,
         },
+        SurfaceKind::Cone => {
+            let signed_half_angle = real_scalar(reals, &primitive.id, "half_angle")?;
+            if !signed_half_angle.is_finite()
+                || signed_half_angle == 0.0
+                || signed_half_angle.abs() >= std::f64::consts::FRAC_PI_2
+            {
+                return None;
+            }
+            LegacySurfaceGeometry::Cone {
+                apex: origin,
+                axis: third.map(|value| {
+                    if signed_half_angle.is_sign_positive() {
+                        value
+                    } else {
+                        -value
+                    }
+                }),
+                ref_direction: first,
+                half_angle: signed_half_angle.abs(),
+                parameter_v_sign: signed_half_angle.signum(),
+            }
+        }
         _ => unreachable!("surface carrier family was filtered above"),
     };
     Some(LegacySurfaceCarrier {
@@ -452,6 +488,27 @@ fn surface_carrier(
         geometry,
         offset: primitive.offset,
     })
+}
+
+/// Map legacy pcurve `v` coordinates into the positive-angle frame emitted by
+/// [`LegacySurfaceGeometry::Cone`].
+pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
+    carriers: &[LegacySurfaceCarrier],
+    face_id: u32,
+    endpoints: [[f64; 2]; 2],
+) -> [[f64; 2]; 2] {
+    let sign = carriers
+        .iter()
+        .find_map(|carrier| {
+            (carrier.surface_id == face_id).then_some(match carrier.geometry {
+                LegacySurfaceGeometry::Cone {
+                    parameter_v_sign, ..
+                } => parameter_v_sign,
+                _ => 1.0,
+            })
+        })
+        .unwrap_or(1.0);
+    endpoints.map(|[u, v]| [u, v * sign])
 }
 
 fn real_vector_array(
@@ -614,7 +671,10 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, LegacySurfaceGeometry};
+    use super::{
+        canonicalize_legacy_cone_pcurve_endpoints, scan, LegacySurfaceCarrier,
+        LegacySurfaceGeometry,
+    };
     use crate::legacy::{
         IntegerPayload, IntegerRun, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload,
         RealRun, ValueRecord,
@@ -782,6 +842,80 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         }
     }
 
+    fn cone_persistence(with_angle: bool) -> Persistence {
+        let root = "cone_root";
+        let branch = "cone_branch";
+        let array = "cone_array";
+        let row = "cone_row";
+        let primitive = "cone_primitive";
+        let objects = vec![
+            object(root, "Sld_VisGeom", None, ObjectPayload::Arrow),
+            object(branch, "active_geom", Some(root), ObjectPayload::Arrow),
+            object(
+                array,
+                "srf_array",
+                Some(branch),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![row.to_string()],
+                    complete: true,
+                },
+            ),
+            object(row, "srf_array", Some(array), ObjectPayload::Arrow),
+            object(
+                primitive,
+                "srf_prim_ptr(cone)",
+                Some(row),
+                ObjectPayload::Arrow,
+            ),
+        ];
+        let integer_values = vec![
+            integer(row, "geom_type", IntegerPayload::Scalar { value: 37 }, 10),
+            integer(row, "geom_id", IntegerPayload::Scalar { value: 42 }, 11),
+            integer(row, "feat_id", IntegerPayload::Scalar { value: 7 }, 12),
+            integer(
+                row,
+                "boundary_type",
+                IntegerPayload::Scalar { value: 0 },
+                13,
+            ),
+            integer(
+                row,
+                "next_geom_ptr",
+                IntegerPayload::Scalar { value: 0 },
+                14,
+            ),
+            integer(row, "orient", IntegerPayload::Scalar { value: 1 }, 15),
+        ];
+        let mut real_values = vec![spline_real_array(
+            primitive,
+            "local_sys",
+            vec![4, 3],
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0],
+            20,
+        )];
+        if with_angle {
+            real_values.push(ValueRecord {
+                id: format!("{primitive}:half_angle"),
+                name: "half_angle".to_string(),
+                attribute_id: 0,
+                scope_offset: 0,
+                parent: Some(primitive.to_string()),
+                depth: 0,
+                payload: RealPayload::Scalar {
+                    value: Real::from_bits((-std::f64::consts::FRAC_PI_4).to_bits()),
+                },
+                offset: 21,
+            });
+        }
+        Persistence {
+            real_values,
+            integer_values,
+            objects,
+            ..Persistence::default()
+        }
+    }
+
     #[test]
     fn extracts_row_major_cylinder_carrier_from_active_namespace() {
         let data = fixture(2.0, false);
@@ -844,6 +978,56 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn extracts_signed_legacy_cone_carrier_from_active_namespace() {
+        let result = scan(&cone_persistence(true));
+
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.carriers.len(), 1);
+        assert_eq!(
+            result.carriers[0].geometry,
+            LegacySurfaceGeometry::Cone {
+                apex: [1.0, 2.0, 3.0],
+                axis: [-0.0, -0.0, -1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                half_angle: std::f64::consts::FRAC_PI_4,
+                parameter_v_sign: -1.0,
+            }
+        );
+    }
+
+    #[test]
+    fn incomplete_legacy_cone_angle_withholds_carrier() {
+        let result = scan(&cone_persistence(false));
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn canonicalizes_negative_legacy_cone_v_parameters() {
+        let carriers = [LegacySurfaceCarrier {
+            surface_id: 42,
+            geometry: LegacySurfaceGeometry::Cone {
+                apex: [0.0, 0.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                half_angle: std::f64::consts::FRAC_PI_4,
+                parameter_v_sign: -1.0,
+            },
+            offset: 0,
+        }];
+
+        assert_eq!(
+            canonicalize_legacy_cone_pcurve_endpoints(
+                &carriers,
+                42,
+                [[0.0, 2.0], [std::f64::consts::PI, -3.0]],
+            ),
+            [[0.0, -2.0], [std::f64::consts::PI, 3.0]],
+        );
     }
 
     fn object(id: &str, name: &str, parent: Option<&str>, payload: ObjectPayload) -> ObjectRecord {

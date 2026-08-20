@@ -393,6 +393,20 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
                 radius: *radius,
             },
+            crate::legacy_geometry::LegacySurfaceGeometry::Cone {
+                apex,
+                axis,
+                ref_direction,
+                half_angle,
+                ..
+            } if row.kind == crate::surface::SurfaceKind::Cone => SurfaceGeometry::Cone {
+                origin: Point3::new(apex[0], apex[1], apex[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: *half_angle,
+            },
             crate::legacy_geometry::LegacySurfaceGeometry::Spline {
                 points,
                 u_parameters,

@@ -20,10 +20,11 @@ use crate::container::ContainerScan;
 use crate::topology::HalfEdgeId;
 
 use super::super::analytic::{
-    exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
-    full_periodic_nurbs_edge_parameter_range, geometry_section_record, meridian_circle_pcurve,
-    native_face_orientations, nonperiodic_conic_edge_parameter_range, ordered_face_loops,
-    ordered_parameter_face_loops, orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
+    canonicalized_pcurve_endpoints, exact_line_edge_parameter_range,
+    full_periodic_conic_edge_parameter_range, full_periodic_nurbs_edge_parameter_range,
+    geometry_section_record, meridian_circle_pcurve, native_face_orientations,
+    nonperiodic_conic_edge_parameter_range, ordered_face_loops, ordered_parameter_face_loops,
+    orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
     pcurve_backed_periodic_conic_parameter_range, placed_carriers, planar_curve_pcurve,
     ruled_generator_line_pcurve, solved_topological_vertices,
     surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve, CarrierEquation,
@@ -474,20 +475,32 @@ pub(in super::super) fn transfer_native_brep(
         .pcurves
         .iter()
         .map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
+            );
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                face_0_endpoints,
+                face_1_endpoints,
                 pcurve.offset,
             )
         })
         .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
+            );
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                face_0_endpoints,
+                face_1_endpoints,
                 pcurve.offset,
             )
         }))

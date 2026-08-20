@@ -49,6 +49,26 @@ fn topology_ignored_surface_ids(
         .collect()
 }
 
+pub fn canonicalized_pcurve_endpoints(
+    scan: &ContainerScan,
+    faces: [u32; 2],
+    face_0_endpoints: [[f64; 2]; 2],
+    face_1_endpoints: [[f64; 2]; 2],
+) -> [[[f64; 2]; 2]; 2] {
+    [
+        crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
+            &scan.surfaces.legacy_carriers,
+            faces[0],
+            face_0_endpoints,
+        ),
+        crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
+            &scan.surfaces.legacy_carriers,
+            faces[1],
+            face_1_endpoints,
+        ),
+    ]
+}
+
 #[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
@@ -111,20 +131,22 @@ pub fn pcurve_edge_endpoint_evidence(
         .pcurves
         .iter()
         .map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            )
+            );
+            (pcurve.curve_id, pcurve.faces, first, second)
         })
         .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            )
+            );
+            (pcurve.curve_id, pcurve.faces, first, second)
         }))
     {
         let paths = faces
@@ -408,20 +430,22 @@ pub fn transfer_analytic_pcurve_carriers(
         .pcurves
         .iter()
         .map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let endpoint_sets = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
-                [pcurve.face_0_endpoints, pcurve.face_1_endpoints],
-                pcurve.offset,
-            )
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            (pcurve.curve_id, pcurve.faces, endpoint_sets, pcurve.offset)
         })
         .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-            (
-                pcurve.curve_id,
+            let endpoint_sets = canonicalized_pcurve_endpoints(
+                scan,
                 pcurve.faces,
-                [pcurve.face_0_endpoints, pcurve.face_1_endpoints],
-                pcurve.offset,
-            )
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            (pcurve.curve_id, pcurve.faces, endpoint_sets, pcurve.offset)
         }))
     {
         for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets) {
