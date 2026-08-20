@@ -5148,10 +5148,15 @@ pub(crate) fn exact_move_operation(
             else {
                 continue;
             };
-            if class_tag == "447"
-                && lp_ascii_filtered(bytes, paired, 3..=3, u8::is_ascii_digit)
-                    .is_none_or(|(paired_class_tag, _)| paired_class_tag != "263")
-            {
+            let expected_paired_class = match class_tag.as_str() {
+                "447" => Some("263"),
+                "456" => Some("258"),
+                _ => None,
+            };
+            if expected_paired_class.is_some_and(|expected| {
+                lp_ascii_filtered(bytes, paired, 3..=3, u8::is_ascii_digit)
+                    .is_none_or(|(paired_class_tag, _)| paired_class_tag != expected)
+            }) {
                 continue;
             }
             if bytes.get(start + 47) != Some(&0) {
@@ -5195,7 +5200,7 @@ fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize,
         "296" | "362" | "433" | "447" if frame_length == 253 => true,
         "349" if matches!(frame_length, 254 | 274) => true,
         "368" if frame_length == 254 => true,
-        "293" | "393" | "442" | "451" if frame_length == 253 => true,
+        "293" | "393" | "442" | "451" | "456" if frame_length == 253 => true,
         _ => false,
     };
     admitted.then_some((43, 48))

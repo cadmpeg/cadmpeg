@@ -2012,7 +2012,14 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
 #[test]
 fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
     let mut bytes = Vec::new();
-    let classes: [(&str, u32); 5] = [("393", 5), ("293", 1), ("451", 5), ("442", 5), ("447", 5)];
+    let classes: [(&str, u32); 6] = [
+        ("393", 5),
+        ("293", 1),
+        ("451", 5),
+        ("442", 5),
+        ("447", 5),
+        ("456", 5),
+    ];
 
     for (ordinal, (class_tag, form)) in classes.into_iter().enumerate() {
         let record_index = 900 + u32::try_from(ordinal).expect("small test ordinal");
@@ -2030,7 +2037,11 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         }
         bytes.extend_from_slice(&frame);
         bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(if class_tag == "447" { b"263" } else { b"262" });
+        bytes.extend_from_slice(match class_tag {
+            "447" => b"263",
+            "456" => b"258",
+            _ => b"262",
+        });
         bytes.extend_from_slice(&record_index.to_le_bytes());
 
         let mut scope = DesignParameterScope::empty(
@@ -2051,6 +2062,20 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         assert_eq!(decoded.form, form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
         assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
+
+        if class_tag == "456" {
+            let paired_class_at = frame_at + 253 + 4;
+            bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
+            assert!(
+                crate::design::decode::scopes::exact_move_operation(
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                )
+                .is_none(),
+                "class-456 Move requires paired class 258"
+            );
+        }
     }
 }
 
