@@ -8,11 +8,12 @@ use super::operands::{
     coordinate_line_endpoints_with_linked_point, linked_coordinate_line_endpoints,
 };
 use super::relation_loci::{
-    line_line_distance, marker_point_locus, marker_transform_candidates_by_feature,
-    point_line_distance_value, profile_loci_by_marker, profile_locus_point,
-    relation_constraint_is_inactive, same_dimension_length, typed_relation_definition,
+    line_line_angle, line_line_distance, marker_point_locus,
+    marker_transform_candidates_by_feature, point_line_distance_value, profile_loci_by_marker,
+    profile_locus_point, relation_constraint_is_inactive, relation_operand_marker,
+    same_dimension_angle, same_dimension_length, typed_relation_definition,
 };
-use super::relation_records::circle_dimension_handle_driver;
+use super::relation_records::{circle_dimension_handle_driver, relation_uses_dynamic_operands};
 use super::transforms::{
     marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform,
 };
@@ -409,6 +410,25 @@ pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
     )
 }
 
+pub(super) fn relation_uses_solver_line_operand(
+    relation: &FeatureInputRelationInstance,
+    index: usize,
+) -> bool {
+    let Some(operand) = relation.operands.get(index) else {
+        return false;
+    };
+    is_solver_line_operand(operand.kind)
+        || (relation_uses_dynamic_operands(relation)
+            && matches!(
+                (relation.family, index),
+                (
+                    FeatureInputRelationFamily::LineLineDistance
+                        | FeatureInputRelationFamily::Angle,
+                    0 | 1
+                ) | (FeatureInputRelationFamily::PointLineDistance, 1)
+            ))
+}
+
 pub(crate) fn project_relation_solved_line_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -439,6 +459,11 @@ pub(crate) fn project_relation_solved_line_geometry(
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
 
     for lane in lanes {
         for relation in &lane.relation_instances {
@@ -447,8 +472,8 @@ pub(crate) fn project_relation_solved_line_geometry(
             };
             let line_operands = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance
-                    if is_solver_line_operand(first_operand.kind)
-                        && is_solver_line_operand(second_operand.kind)
+                    if relation_uses_solver_line_operand(relation, 0)
+                        && relation_uses_solver_line_operand(relation, 1)
                         && first_operand.entity_ref.is_none()
                         && second_operand.entity_ref.is_none()
                         && first_operand.entity_index != second_operand.entity_index =>
@@ -456,17 +481,26 @@ pub(crate) fn project_relation_solved_line_geometry(
                     vec![first_operand, second_operand]
                 }
                 FeatureInputRelationFamily::PointLineDistance
-                    if is_solver_line_operand(second_operand.kind)
+                    if relation_uses_solver_line_operand(relation, 1)
                         && second_operand.entity_ref.is_none() =>
                 {
                     vec![second_operand]
+                }
+                FeatureInputRelationFamily::Angle
+                    if relation_uses_solver_line_operand(relation, 0)
+                        && relation_uses_solver_line_operand(relation, 1)
+                        && first_operand.entity_ref.is_none()
+                        && second_operand.entity_ref.is_none()
+                        && first_operand.entity_index != second_operand.entity_index =>
+                {
+                    vec![first_operand, second_operand]
                 }
                 _ => continue,
             };
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = ownership
+            let Some(parameter_value) = ownership
                 .get(&relation.id)
                 .and_then(Option::as_ref)
                 .and_then(|parameter| parameters_by_id.get(parameter))
@@ -474,7 +508,19 @@ pub(crate) fn project_relation_solved_line_geometry(
             else {
                 continue;
             };
-            if !expected.0.is_finite() || expected.0 < 0.0 {
+            let expected = match (relation.family, parameter_value) {
+                (
+                    FeatureInputRelationFamily::LineLineDistance
+                    | FeatureInputRelationFamily::PointLineDistance,
+                    cadmpeg_ir::features::ParameterValue::Length(expected),
+                ) => expected.0,
+                (
+                    FeatureInputRelationFamily::Angle,
+                    cadmpeg_ir::features::ParameterValue::Angle(expected),
+                ) => expected.0,
+                _ => continue,
+            };
+            if !expected.is_finite() || expected < 0.0 {
                 continue;
             }
             let mut points = lane
@@ -550,6 +596,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                     .as_deref()
                     .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id == id))
                     .or_else(|| {
+                        relation_operand_marker(relation, 0, sketch, &markers_by_id).and_then(
+                            |id| lane.sketch_entities.iter().find(|marker| marker.id == id),
+                        )
+                    })
+                    .or_else(|| {
                         (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
                             .then(|| points.get(usize::from(first_operand.entity_index)).copied())
                             .flatten()
@@ -578,14 +629,19 @@ pub(crate) fn project_relation_solved_line_geometry(
             let valid = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => match lines.as_slice() {
                     [(_, _, first), (_, _, second)] => line_line_distance(first, second)
-                        .is_some_and(|measured| same_dimension_length(measured, expected.0)),
+                        .is_some_and(|measured| same_dimension_length(measured, expected)),
                     _ => false,
                 },
                 FeatureInputRelationFamily::PointLineDistance => match lines.as_slice() {
                     [(_, _, line)] => point_position.is_some_and(|point| {
                         point_line_distance_value(point, line)
-                            .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                            .is_some_and(|measured| same_dimension_length(measured, expected))
                     }),
+                    _ => false,
+                },
+                FeatureInputRelationFamily::Angle => match lines.as_slice() {
+                    [(_, _, first), (_, _, second)] => line_line_angle(first, second)
+                        .is_some_and(|measured| same_dimension_angle(measured, expected)),
                     _ => false,
                 },
                 _ => false,

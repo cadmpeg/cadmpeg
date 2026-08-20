@@ -2,8 +2,9 @@
 
 use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{
-    is_solver_line_operand, relation_operand_geometry_ref, solver_line_geometry_ref,
+    relation_operand_geometry_ref, relation_uses_solver_line_operand, solver_line_geometry_ref,
 };
+use super::relation_records::relation_uses_dynamic_operands;
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
     marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
@@ -345,6 +346,27 @@ pub(super) fn typed_relation_definition(
                 }
             })
     };
+    let curve = |index: usize| {
+        solver_line_entity(relation, index, sketch, sketch_entities).or_else(|| {
+            marker(index).and_then(|marker| {
+                single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+            })
+        })
+    };
+    let dynamic = relation_uses_dynamic_operands(relation);
+    if dynamic {
+        let witnessed = match relation.family {
+            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
+                point(0).is_some() && point(1).is_some()
+            }
+            PointLineDistance => point(0).is_some() && curve(1).is_some(),
+            LineLineDistance | Angle => curve(0).is_some() && curve(1).is_some(),
+            CircleDiameter => true,
+        };
+        if !witnessed {
+            return None;
+        }
+    }
     match relation.family {
         PointPointDistance => {
             let first = point(0);
@@ -401,6 +423,9 @@ pub(super) fn typed_relation_definition(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
+                    if dynamic {
+                        return None;
+                    }
                     let horizontal =
                         same_dimension_length((second_point.u - first_point.u).abs(), expected.0);
                     let vertical =
@@ -496,15 +521,20 @@ pub(super) fn typed_relation_definition(
                 } else {
                     (second_point.v - first_point.v).abs()
                 };
-                if !same_dimension_length(measured, expected.0) && !authoritative {
-                    (first, second) = unique_repaired_profile_axis_distance_pair(
-                        sketch,
-                        &first,
-                        &second,
-                        parameter,
-                        sketch_entities,
-                        horizontal,
-                    )?;
+                if !same_dimension_length(measured, expected.0) {
+                    if dynamic {
+                        return None;
+                    }
+                    if !authoritative {
+                        (first, second) = unique_repaired_profile_axis_distance_pair(
+                            sketch,
+                            &first,
+                            &second,
+                            parameter,
+                            sketch_entities,
+                            horizontal,
+                        )?;
+                    }
                 }
             }
             Some(match relation.family {
@@ -524,16 +554,7 @@ pub(super) fn typed_relation_definition(
         PointLineDistance => {
             let point = marker(0)
                 .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
-            let line = solver_line_entity(relation, 1, sketch, sketch_entities).or_else(|| {
-                marker(1).and_then(|marker| {
-                    single_marker_line_entity(
-                        marker,
-                        markers_by_id,
-                        loci_by_marker,
-                        sketch_entities,
-                    )
-                })
-            });
+            let line = curve(1);
             let authoritative = point.is_some() && line.is_some();
             let (mut point, mut line) = match (point, line) {
                 (Some(point), Some(line)) => (point, line),
@@ -556,15 +577,19 @@ pub(super) fn typed_relation_definition(
             let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
-                && !authoritative
             {
-                (point, line) = unique_repaired_profile_point_line_pair(
-                    sketch,
-                    &point,
-                    &line,
-                    parameter,
-                    sketch_entities,
-                )?;
+                if dynamic {
+                    return None;
+                }
+                if !authoritative {
+                    (point, line) = unique_repaired_profile_point_line_pair(
+                        sketch,
+                        &point,
+                        &line,
+                        parameter,
+                        sketch_entities,
+                    )?;
+                }
             }
             Some(SketchConstraintDefinition::DistanceLoci {
                 first: point,
@@ -579,20 +604,26 @@ pub(super) fn typed_relation_definition(
                         .map(|marker| marker.id.as_str())
                 })
             };
-            let curve = |index: usize| {
-                solver_line_entity(relation, index, sketch, sketch_entities).or_else(|| {
-                    operand_marker(index).and_then(|marker| {
-                        single_marker_line_entity(
-                            marker,
-                            markers_by_id,
-                            loci_by_marker,
-                            sketch_entities,
-                        )
-                    })
+            let first = curve(0).or_else(|| {
+                operand_marker(0).and_then(|marker| {
+                    single_marker_line_entity(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
                 })
-            };
-            let first = curve(0);
-            let second = curve(1);
+            });
+            let second = curve(1).or_else(|| {
+                operand_marker(1).and_then(|marker| {
+                    single_marker_line_entity(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
+                })
+            });
             let authoritative =
                 matches!((&first, &second), (Some(first), Some(second)) if first != second);
             let (mut first, mut second) = match (first, second) {
@@ -666,15 +697,19 @@ pub(super) fn typed_relation_definition(
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
             if !line_line_distance(first_line, second_line)
                 .is_some_and(|measured| same_dimension_length(measured, expected.0))
-                && !authoritative
             {
-                (first, second) = unique_repaired_profile_line_distance_pair(
-                    sketch,
-                    &first,
-                    &second,
-                    parameter,
-                    sketch_entities,
-                )?;
+                if dynamic {
+                    return None;
+                }
+                if !authoritative {
+                    (first, second) = unique_repaired_profile_line_distance_pair(
+                        sketch,
+                        &first,
+                        &second,
+                        parameter,
+                        sketch_entities,
+                    )?;
+                }
             }
             Some(SketchConstraintDefinition::Distance {
                 entities: vec![first, second],
@@ -682,16 +717,6 @@ pub(super) fn typed_relation_definition(
             })
         }
         Angle => {
-            let curve = |index| {
-                marker(index).and_then(|marker| {
-                    single_marker_line_entity(
-                        marker,
-                        markers_by_id,
-                        loci_by_marker,
-                        sketch_entities,
-                    )
-                })
-            };
             let first = curve(0);
             let second = curve(1);
             let authoritative = first.is_some() && second.is_some();
@@ -718,15 +743,19 @@ pub(super) fn typed_relation_definition(
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
             if !line_line_angle(first_line, second_line)
                 .is_some_and(|measured| same_dimension_angle(measured, expected.0))
-                && !authoritative
             {
-                (first, second) = unique_repaired_profile_line_angle_pair(
-                    sketch,
-                    &first,
-                    &second,
-                    parameter,
-                    sketch_entities,
-                )?;
+                if dynamic {
+                    return None;
+                }
+                if !authoritative {
+                    (first, second) = unique_repaired_profile_line_angle_pair(
+                        sketch,
+                        &first,
+                        &second,
+                        parameter,
+                        sketch_entities,
+                    )?;
+                }
             }
             Some(SketchConstraintDefinition::Angle {
                 first,
@@ -836,7 +865,7 @@ fn solver_line_entity(
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
     let operand = relation.operands.get(index)?;
-    if operand.entity_ref.is_some() || !is_solver_line_operand(operand.kind) {
+    if operand.entity_ref.is_some() || !relation_uses_solver_line_operand(relation, index) {
         return None;
     }
     let geometry_ref = solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
@@ -1387,7 +1416,7 @@ pub(super) fn unique_repaired_profile_line_angle_pair(
     })
 }
 
-fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
+pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
     let SketchGeometry::Line {
         start: first_start,
         end: first_end,
@@ -1617,7 +1646,99 @@ pub(super) fn relation_operand_marker<'a>(
             .get(usize::from(operand.entity_index))
             .map(|marker| marker.id.as_str());
     }
-    operand.entity_ref.as_deref()
+    operand
+        .entity_ref
+        .as_deref()
+        .or_else(|| dynamic_relation_marker(relation, index, markers_by_id))
+}
+
+fn dynamic_relation_marker<'a>(
+    relation: &FeatureInputRelationInstance,
+    index: usize,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<&'a str> {
+    if !relation_uses_dynamic_operands(relation) {
+        return None;
+    }
+    let point_role = matches!(
+        (relation.family, index),
+        (
+            FeatureInputRelationFamily::PointPointDistance
+                | FeatureInputRelationFamily::PointPointHorizontalDistance
+                | FeatureInputRelationFamily::PointPointVerticalDistance,
+            0 | 1
+        ) | (FeatureInputRelationFamily::PointLineDistance, 0)
+    );
+    let line_role = matches!(
+        (relation.family, index),
+        (
+            FeatureInputRelationFamily::LineLineDistance | FeatureInputRelationFamily::Angle,
+            0 | 1
+        ) | (FeatureInputRelationFamily::PointLineDistance, 1)
+    );
+    if !point_role && !line_role {
+        return None;
+    }
+    let operand = relation.operands.get(index)?;
+    let address = u32::from(operand.entity_index);
+    let direct_kind = |marker: &SketchInputEntity| {
+        if point_role {
+            matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        } else {
+            matches!(
+                marker.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        }
+    };
+    let address_kind = |marker: &SketchInputEntity| {
+        direct_kind(marker) || matches!(marker.kind, SketchInputKind::Relation(_))
+    };
+    let mut by_object = markers_by_id
+        .values()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
+        .filter(|marker| marker.object_index == Some(address) && address_kind(marker))
+        .collect::<Vec<_>>();
+    if !by_object.is_empty() {
+        return unique_dynamic_marker(&mut by_object);
+    }
+    let mut by_local = markers_by_id
+        .values()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
+        .filter(|marker| marker.local_id == Some(address) && address_kind(marker))
+        .collect::<Vec<_>>();
+    if !by_local.is_empty() {
+        return unique_dynamic_marker(&mut by_local);
+    }
+    let mut ordinal = markers_by_id
+        .values()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str()))
+        .filter(|marker| direct_kind(marker))
+        .collect::<Vec<_>>();
+    ordinal.sort_unstable_by(|left, right| {
+        left.offset
+            .cmp(&right.offset)
+            .then_with(|| left.ordinal.cmp(&right.ordinal))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    ordinal
+        .get(usize::from(operand.entity_index))
+        .map(|marker| marker.id.as_str())
+}
+
+fn unique_dynamic_marker<'a>(candidates: &mut Vec<&'a SketchInputEntity>) -> Option<&'a str> {
+    candidates.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    candidates.dedup_by(|left, right| left.id == right.id);
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.id.as_str())
 }
 
 fn relation_line_point_marker<'a>(

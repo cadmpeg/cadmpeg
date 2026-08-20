@@ -1,6 +1,7 @@
 //! Relation instance records and scalar roles.
 
 use super::scalars::feature_object_name;
+use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
@@ -91,6 +92,31 @@ pub(super) fn relation_declaration_candidates<'a>(
     &'a FeatureInputScalar,
     FeatureInputRelationFamily,
 )> {
+    relation_declaration_candidates_impl(classes, scalars, intervals, false)
+}
+
+fn relation_declaration_candidates_with_dynamic<'a>(
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, u64, String)],
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    relation_declaration_candidates_impl(classes, scalars, intervals, true)
+}
+
+fn relation_declaration_candidates_impl<'a>(
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, u64, String)],
+    allow_dynamic: bool,
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
     classes
         .iter()
         .filter_map(|class| {
@@ -104,7 +130,11 @@ pub(super) fn relation_declaration_candidates<'a>(
                         && scalar.offset < scope_end
                         && class_feature
                             .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
-                        && relation_signature(family, &scalar.operands)
+                        && if allow_dynamic {
+                            relation_signature_for_declaration(family, scalar)
+                        } else {
+                            relation_signature(family, &scalar.operands)
+                        }
                 })
                 .min_by_key(|scalar| scalar.offset)?;
             Some((class, scalar, family))
@@ -144,7 +174,7 @@ pub(super) fn relation_instances(
         .collect::<HashSet<_>>();
     let intervals = feature_intervals(histories, lane);
     let declaration_candidates =
-        relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals);
+        relation_declaration_candidates_with_dynamic(&lane.classes, &lane.scalars, &intervals);
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
         *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
@@ -315,6 +345,7 @@ pub(super) fn relation_instances(
         .collect::<Vec<_>>();
     bind_detached_relation_drivers(&mut instances, lane);
     bind_circle_dimension_centers(&mut instances, lane);
+    bind_relation_geometry_operands(&mut instances, lane);
     instances
 }
 
@@ -842,6 +873,373 @@ mod relation_records_tests {
         assert!(relation.parameter_scalar_ref.is_none());
         assert!(circle_dimension_handle_driver(relation, &lane).is_none());
     }
+
+    fn dynamic_scalar(
+        offset: u64,
+        kind: FeatureInputOperandKind,
+        indices: &[u16],
+        value: f64,
+    ) -> FeatureInputScalar {
+        let mut scalar = scalar(offset, FeatureInputScalarRole::Driving);
+        scalar.value = value;
+        scalar.entity_indices = indices.to_vec();
+        scalar.operands = indices
+            .iter()
+            .enumerate()
+            .map(|(ordinal, entity_index)| FeatureInputOperand {
+                offset: offset + ordinal as u64,
+                reference_ref: format!("reference-{offset}-{ordinal}"),
+                kind,
+                entity_index: *entity_index,
+                entity_ref: None,
+            })
+            .collect();
+        scalar
+    }
+
+    fn sketch_marker(
+        id: &str,
+        ordinal: u32,
+        offset: u64,
+        kind: crate::records::SketchInputKind,
+        coordinates_m: Option<[f64; 2]>,
+    ) -> crate::records::SketchInputEntity {
+        let mut marker = crate::records::SketchInputEntity::new(id, "lane", ordinal, offset, kind);
+        marker.feature_ref = Some("sketch".into());
+        marker.coordinates_m = coordinates_m;
+        marker
+    }
+
+    fn dynamic_point_markers() -> Vec<crate::records::SketchInputEntity> {
+        vec![
+            sketch_marker(
+                "relation",
+                0,
+                1,
+                crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Distance,
+                ),
+                None,
+            ),
+            sketch_marker(
+                "p0",
+                1,
+                10,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "p1",
+                2,
+                20,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 0.0]),
+            ),
+            sketch_marker(
+                "p2",
+                3,
+                30,
+                crate::records::SketchInputKind::Point,
+                Some([3.0, 0.0]),
+            ),
+        ]
+    }
+
+    #[test]
+    fn dynamic_relation_tags_are_admitted_by_family_scope() {
+        let lane = lane(
+            vec![class(10, "sgPntPntDist")],
+            vec![dynamic_scalar(
+                40,
+                FeatureInputOperandKind::Native(0x812a),
+                &[0, 1],
+                2.0,
+            )],
+        );
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert_eq!(
+            relation.family,
+            FeatureInputRelationFamily::PointPointDistance
+        );
+        assert!(relation_uses_dynamic_operands(relation));
+    }
+
+    #[test]
+    fn dynamic_point_relation_uses_unique_geometry_match_across_address_tiers() {
+        let mut lane = lane(
+            vec![class(10, "sgPntPntDist")],
+            vec![dynamic_scalar(
+                40,
+                FeatureInputOperandKind::Native(0x812a),
+                &[1, 2],
+                2.0,
+            )],
+        );
+        lane.sketch_entities = dynamic_point_markers();
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert_eq!(
+            relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("p1"), Some("p2")]
+        );
+    }
+
+    #[test]
+    fn dynamic_point_relation_preserves_explicit_driving_operand_reference() {
+        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        driving.operands[0].entity_ref = Some("p1".into());
+        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
+        lane.sketch_entities = dynamic_point_markers();
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert_eq!(
+            relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("p1"), Some("p2")]
+        );
+    }
+
+    #[test]
+    fn dynamic_point_relation_falls_back_to_unique_geometry_after_address_miss() {
+        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[3, 1], 1.0);
+        driving.operands[0].entity_ref = Some("p0".into());
+        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![driving]);
+        lane.sketch_entities = vec![
+            sketch_marker(
+                "relation",
+                0,
+                1,
+                crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Distance,
+                ),
+                None,
+            ),
+            sketch_marker(
+                "p0",
+                1,
+                10,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "p1",
+                2,
+                20,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 1.0]),
+            ),
+            sketch_marker(
+                "p2",
+                3,
+                30,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 0.0]),
+            ),
+        ];
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert_eq!(
+            relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("p0"), Some("p2")]
+        );
+    }
+
+    #[test]
+    fn relation_instance_keeps_first_scalar_operands_when_grouping_display_and_driver() {
+        let mut display = dynamic_scalar(20, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        display.role = FeatureInputScalarRole::Display;
+        display.operands[0].entity_ref = Some("p1".into());
+        let mut driving = dynamic_scalar(30, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        driving.operands[0].entity_ref = Some("p0".into());
+        let mut lane = lane(
+            vec![class(10, "sgPntPntDist")],
+            vec![display, driving.clone()],
+        );
+        lane.sketch_entities = dynamic_point_markers();
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one grouped relation instance");
+        };
+        assert_eq!(relation.parameter_scalar_ref, Some(driving.id));
+        assert_eq!(
+            relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("p1"), Some("p2")]
+        );
+    }
+
+    #[test]
+    fn dynamic_display_relation_uses_display_value_without_driver() {
+        let mut display = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        display.role = FeatureInputScalarRole::Display;
+        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![display]);
+        lane.sketch_entities = dynamic_point_markers();
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert!(relation.parameter_scalar_ref.is_none());
+        assert_eq!(
+            relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>(),
+            vec![Some("p1"), Some("p2")]
+        );
+    }
+
+    #[test]
+    fn dynamic_point_relation_with_ambiguous_geometry_stays_unbound() {
+        let mut lane = lane(
+            vec![class(10, "sgPntPntDist")],
+            vec![dynamic_scalar(
+                40,
+                FeatureInputOperandKind::Native(0x812a),
+                &[1, 2],
+                1.0,
+            )],
+        );
+        lane.sketch_entities = dynamic_point_markers();
+        lane.sketch_entities[3].coordinates_m = Some([1.0, 0.0]);
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert!(relation
+            .operands
+            .iter()
+            .all(|operand| operand.entity_ref.is_none()));
+    }
+
+    #[test]
+    fn dynamic_point_line_relation_resolves_solver_line_by_exact_distance() {
+        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[0, 1], 1.0);
+        driving.operands[1].entity_ref = Some("p0".into());
+        let mut lane = lane(vec![class(10, "sgPntLineDist")], vec![driving]);
+        lane.sketch_entities = vec![
+            sketch_marker(
+                "relation",
+                0,
+                1,
+                crate::records::SketchInputKind::Relation(
+                    crate::records::SketchRelationKind::Distance,
+                ),
+                None,
+            ),
+            sketch_marker(
+                "p0",
+                1,
+                10,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "p1",
+                2,
+                20,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 0.0]),
+            ),
+            sketch_marker(
+                "p2",
+                3,
+                30,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 1.0]),
+            ),
+            sketch_marker(
+                "p3",
+                4,
+                40,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 1.0]),
+            ),
+        ];
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert_eq!(relation.operands[0].entity_ref.as_deref(), Some("p0"));
+        assert!(relation.operands[1].entity_ref.is_none());
+    }
+
+    #[test]
+    fn dynamic_line_relation_validates_solver_line_pair() {
+        let mut driving = dynamic_scalar(40, FeatureInputOperandKind::Native(0x812a), &[0, 1], 1.0);
+        driving.operands[0].entity_ref = Some("p0".into());
+        let mut lane = lane(vec![class(10, "sgLLDist")], vec![driving]);
+        lane.sketch_entities = vec![
+            sketch_marker(
+                "p0",
+                0,
+                10,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 0.0]),
+            ),
+            sketch_marker(
+                "p1",
+                1,
+                20,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 0.0]),
+            ),
+            sketch_marker(
+                "p2",
+                2,
+                30,
+                crate::records::SketchInputKind::Point,
+                Some([0.0, 1.0]),
+            ),
+            sketch_marker(
+                "p3",
+                3,
+                40,
+                crate::records::SketchInputKind::Point,
+                Some([1.0, 1.0]),
+            ),
+        ];
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one dynamically tagged relation");
+        };
+        assert!(relation
+            .operands
+            .iter()
+            .all(|operand| operand.entity_ref.is_none()));
+    }
 }
 
 pub(super) fn bind_circle_dimension_centers(
@@ -1154,6 +1552,536 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x80d5) && second.kind == Native(0x80d5))
         }
         CircleDiameter => unreachable!("handled as a unary relation"),
+    }
+}
+
+fn relation_signature_for_declaration(
+    family: FeatureInputRelationFamily,
+    scalar: &FeatureInputScalar,
+) -> bool {
+    relation_signature(family, &scalar.operands)
+        || (matches!(
+            scalar.role,
+            FeatureInputScalarRole::Display | FeatureInputScalarRole::Driving
+        ) && dynamic_relation_signature(family, &scalar.operands))
+}
+
+fn dynamic_relation_signature(
+    family: FeatureInputRelationFamily,
+    operands: &[FeatureInputOperand],
+) -> bool {
+    !matches!(family, FeatureInputRelationFamily::CircleDiameter)
+        && matches!(
+            operands,
+            [
+                FeatureInputOperand {
+                    kind: FeatureInputOperandKind::Native(_),
+                    ..
+                },
+                FeatureInputOperand {
+                    kind: FeatureInputOperandKind::Native(_),
+                    ..
+                }
+            ]
+        )
+}
+
+/// Returns whether a relation uses a lane-local operand tag whose meaning is
+/// supplied by the declared relation family and operand position.
+pub(super) fn relation_uses_dynamic_operands(relation: &FeatureInputRelationInstance) -> bool {
+    match relation.family {
+        // `80d5` is a point carrier in point-distance records but occurs in the
+        // line-role cells of angular records. The family therefore owns its
+        // meaning in this case even though the static signature recognizes it.
+        FeatureInputRelationFamily::Angle => {
+            dynamic_relation_signature(relation.family, &relation.operands)
+                && !matches!(
+                    relation.operands.as_slice(),
+                    [
+                        FeatureInputOperand {
+                            kind: FeatureInputOperandKind::Native(0x8dda),
+                            ..
+                        },
+                        FeatureInputOperand {
+                            kind: FeatureInputOperandKind::Native(0x8dda),
+                            ..
+                        }
+                    ]
+                )
+        }
+        FeatureInputRelationFamily::CircleDiameter => false,
+        family => {
+            !relation_signature(family, &relation.operands)
+                && dynamic_relation_signature(family, &relation.operands)
+        }
+    }
+}
+
+fn relation_target_value(
+    relation: &FeatureInputRelationInstance,
+    lane: &FeatureInputLane,
+) -> Option<f64> {
+    let scalar_id = relation
+        .parameter_scalar_ref
+        .as_deref()
+        .or(relation.display_scalar_ref.as_deref())?;
+    let scalar = lane.scalars.iter().find(|scalar| scalar.id == scalar_id)?;
+    scalar.value.is_finite().then_some(scalar.value)
+}
+
+fn feature_entities<'a>(
+    lane: &'a FeatureInputLane,
+    feature: &str,
+) -> Vec<&'a crate::records::SketchInputEntity> {
+    let mut entities = lane
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.feature_ref.as_deref() == Some(feature))
+        .collect::<Vec<_>>();
+    entities.sort_unstable_by_key(|entity| (entity.offset, entity.ordinal));
+    entities
+}
+
+fn is_finite_point(entity: &crate::records::SketchInputEntity) -> bool {
+    matches!(
+        entity.kind,
+        crate::records::SketchInputKind::Point | crate::records::SketchInputKind::ConstrainedPoint
+    ) && entity
+        .coordinates_m
+        .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+}
+
+fn push_point_candidate<'a>(
+    candidates: &mut Vec<&'a crate::records::SketchInputEntity>,
+    seen: &mut HashSet<String>,
+    candidate: Option<&'a crate::records::SketchInputEntity>,
+) {
+    let Some(candidate) = candidate.filter(|candidate| is_finite_point(candidate)) else {
+        return;
+    };
+    if seen.insert(candidate.id.clone()) {
+        candidates.push(candidate);
+    }
+}
+
+fn dynamic_point_candidates<'a>(
+    entities: &[&'a crate::records::SketchInputEntity],
+    operand: &FeatureInputOperand,
+) -> Vec<&'a crate::records::SketchInputEntity> {
+    let address = usize::from(operand.entity_index);
+    if let Some(entity_ref) = operand.entity_ref.as_deref() {
+        return entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.id == entity_ref && is_finite_point(entity))
+            .collect();
+    }
+    let coordinate_points = entities
+        .iter()
+        .copied()
+        .filter(|entity| is_finite_point(entity))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    push_point_candidate(&mut candidates, &mut seen, entities.get(address).copied());
+    push_point_candidate(
+        &mut candidates,
+        &mut seen,
+        coordinate_points.get(address).copied(),
+    );
+    for entity in entities.iter().copied().filter(|entity| {
+        entity.object_index == Some(u32::from(operand.entity_index))
+            || entity.local_id == Some(u32::from(operand.entity_index))
+    }) {
+        push_point_candidate(&mut candidates, &mut seen, Some(entity));
+    }
+    candidates.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    candidates
+}
+
+fn dynamic_point_candidates_without_explicit<'a>(
+    entities: &[&'a crate::records::SketchInputEntity],
+    operand: &FeatureInputOperand,
+) -> Vec<&'a crate::records::SketchInputEntity> {
+    let mut unreferenced = operand.clone();
+    unreferenced.entity_ref = None;
+    dynamic_point_candidates(entities, &unreferenced)
+}
+
+fn dynamic_solver_line<'a>(
+    entities: &[&'a crate::records::SketchInputEntity],
+    index: u16,
+) -> Option<[&'a crate::records::SketchInputEntity; 2]> {
+    let points = entities
+        .iter()
+        .copied()
+        .filter(|entity| is_finite_point(entity))
+        .collect::<Vec<_>>();
+    let start = usize::from(index).checked_mul(2)?;
+    let [first, second] = points.get(start..start + 2)? else {
+        return None;
+    };
+    (first.coordinates_m? != second.coordinates_m?).then_some([*first, *second])
+}
+
+fn point_distance(first: [f64; 2], second: [f64; 2]) -> f64 {
+    (second[0] - first[0]).hypot(second[1] - first[1])
+}
+
+fn axis_distance(first: [f64; 2], second: [f64; 2], horizontal: bool) -> f64 {
+    if horizontal {
+        (second[0] - first[0]).abs()
+    } else {
+        (second[1] - first[1]).abs()
+    }
+}
+
+fn line_direction(line: [[f64; 2]; 2]) -> [f64; 2] {
+    [line[1][0] - line[0][0], line[1][1] - line[0][1]]
+}
+
+fn line_line_distance(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let first_direction = line_direction(first);
+    let second_direction = line_direction(second);
+    let first_length = first_direction[0].hypot(first_direction[1]);
+    let second_length = second_direction[0].hypot(second_direction[1]);
+    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    let cross = |left: [f64; 2], right: [f64; 2]| left[0] * right[1] - left[1] * right[0];
+    if cross(first_direction, second_direction).abs()
+        > SKETCH_POINT_TOLERANCE * first_length * second_length
+    {
+        return None;
+    }
+    Some(
+        cross(
+            [second[0][0] - first[0][0], second[0][1] - first[0][1]],
+            first_direction,
+        )
+        .abs()
+            / first_length,
+    )
+}
+
+fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let first_direction = line_direction(first);
+    let second_direction = line_direction(second);
+    let first_length = first_direction[0].hypot(first_direction[1]);
+    let second_length = second_direction[0].hypot(second_direction[1]);
+    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    Some(
+        ((first_direction[0] * second_direction[0] + first_direction[1] * second_direction[1])
+            / (first_length * second_length))
+            .clamp(-1.0, 1.0)
+            .acos(),
+    )
+}
+
+fn same_relation_dimension(left: f64, right: f64) -> bool {
+    (left - right).abs() <= SKETCH_POINT_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+}
+
+fn clear_relation_operands(relation: &mut FeatureInputRelationInstance) {
+    for operand in &mut relation.operands {
+        operand.entity_ref = None;
+    }
+}
+
+fn dynamic_curve_reference_is_valid(
+    entities: &[&crate::records::SketchInputEntity],
+    entity_ref: Option<&str>,
+) -> bool {
+    entity_ref.is_some_and(|entity_ref| {
+        entities.iter().any(|entity| {
+            entity.id == entity_ref
+                && matches!(
+                    entity.kind,
+                    crate::records::SketchInputKind::LineOrCircle
+                        | crate::records::SketchInputKind::Arc
+                        | crate::records::SketchInputKind::Relation(_)
+                )
+        })
+    })
+}
+
+fn bind_dynamic_point_relation(
+    relation: &mut FeatureInputRelationInstance,
+    entities: &[&crate::records::SketchInputEntity],
+    target: f64,
+    horizontal: Option<bool>,
+) {
+    let [first, second] = relation.operands.as_slice() else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let first_candidates = dynamic_point_candidates(entities, first);
+    let second_candidates = dynamic_point_candidates(entities, second);
+    let matches_for =
+        |first_candidates: &[&crate::records::SketchInputEntity],
+         second_candidates: &[&crate::records::SketchInputEntity]| {
+            let mut matches = Vec::<(String, String)>::new();
+            for first in first_candidates {
+                let Some(first_coordinates) = first.coordinates_m else {
+                    continue;
+                };
+                for second in second_candidates {
+                    if first.id == second.id {
+                        continue;
+                    }
+                    let Some(second_coordinates) = second.coordinates_m else {
+                        continue;
+                    };
+                    let measured = horizontal.map_or_else(
+                        || point_distance(first_coordinates, second_coordinates),
+                        |horizontal| {
+                            axis_distance(first_coordinates, second_coordinates, horizontal)
+                        },
+                    );
+                    if same_relation_dimension(measured, target) {
+                        matches.push((first.id.clone(), second.id.clone()));
+                    }
+                }
+            }
+            matches
+        };
+    let coordinate_points = entities
+        .iter()
+        .copied()
+        .filter(|entity| is_finite_point(entity))
+        .collect::<Vec<_>>();
+    let mut matches = matches_for(&first_candidates, &second_candidates);
+    if matches.is_empty() {
+        let first_fallback = if first.entity_ref.is_none() {
+            &coordinate_points
+        } else {
+            &first_candidates
+        };
+        let second_fallback = if second.entity_ref.is_none() {
+            &coordinate_points
+        } else {
+            &second_candidates
+        };
+        matches = matches_for(first_fallback, second_fallback);
+    }
+    if matches.is_empty() {
+        let first_relaxed = if first.entity_ref.is_some() {
+            dynamic_point_candidates_without_explicit(entities, first)
+        } else {
+            first_candidates.clone()
+        };
+        let second_relaxed = if second.entity_ref.is_some() {
+            dynamic_point_candidates_without_explicit(entities, second)
+        } else {
+            second_candidates.clone()
+        };
+        matches = matches_for(&first_relaxed, &second_relaxed);
+    }
+    if matches.is_empty() {
+        let first_relaxed = if first.entity_ref.is_some() {
+            &coordinate_points
+        } else {
+            &first_candidates
+        };
+        let second_relaxed = if second.entity_ref.is_some() {
+            &coordinate_points
+        } else {
+            &second_candidates
+        };
+        matches = matches_for(first_relaxed, second_relaxed);
+    }
+    matches.sort_unstable();
+    matches.dedup();
+    if let [(first, second)] = matches.as_slice() {
+        relation.operands[0].entity_ref = Some(first.clone());
+        relation.operands[1].entity_ref = Some(second.clone());
+    } else {
+        clear_relation_operands(relation);
+    }
+}
+
+fn bind_dynamic_point_line_relation(
+    relation: &mut FeatureInputRelationInstance,
+    entities: &[&crate::records::SketchInputEntity],
+    target: f64,
+) {
+    if relation.operands.len() != 2 {
+        clear_relation_operands(relation);
+        return;
+    }
+    let line_reference = relation.operands[1].entity_ref.clone();
+    if dynamic_curve_reference_is_valid(entities, line_reference.as_deref()) {
+        return;
+    }
+    if line_reference.is_some() {
+        relation.operands[1].entity_ref = None;
+    }
+    let [point_operand, line_operand] = relation.operands.as_slice() else {
+        unreachable!("checked binary relation operands");
+    };
+    let point_candidates = dynamic_point_candidates(entities, point_operand);
+    let Some(line_markers) = dynamic_solver_line(entities, line_operand.entity_index) else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let [Some(first), Some(second)] = line_markers.map(|marker| marker.coordinates_m) else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let direction = [second[0] - first[0], second[1] - first[1]];
+    let length = direction[0].hypot(direction[1]);
+    if length <= SKETCH_POINT_TOLERANCE {
+        clear_relation_operands(relation);
+        return;
+    }
+    let mut matches = point_candidates
+        .iter()
+        .filter_map(|point| {
+            let coordinates = point.coordinates_m?;
+            let measured = ((coordinates[0] - first[0]) * direction[1]
+                - (coordinates[1] - first[1]) * direction[0])
+                .abs()
+                / length;
+            same_relation_dimension(measured, target).then(|| point.id.clone())
+        })
+        .collect::<Vec<_>>();
+    matches.sort_unstable();
+    matches.dedup();
+    if let [point] = matches.as_slice() {
+        relation.operands[0].entity_ref = Some(point.clone());
+        relation.operands[1].entity_ref = None;
+    } else {
+        clear_relation_operands(relation);
+    }
+}
+
+fn bind_dynamic_line_relation(
+    relation: &mut FeatureInputRelationInstance,
+    entities: &[&crate::records::SketchInputEntity],
+    target: f64,
+    angle: bool,
+) {
+    if relation.operands.len() != 2 {
+        clear_relation_operands(relation);
+        return;
+    }
+    let first_reference = relation.operands[0].entity_ref.clone();
+    let second_reference = relation.operands[1].entity_ref.clone();
+    let first_valid = dynamic_curve_reference_is_valid(entities, first_reference.as_deref());
+    let second_valid = dynamic_curve_reference_is_valid(entities, second_reference.as_deref());
+    if first_valid && second_valid {
+        return;
+    }
+    if first_reference.is_some() && !first_valid {
+        relation.operands[0].entity_ref = None;
+    }
+    if second_reference.is_some() && !second_valid {
+        relation.operands[1].entity_ref = None;
+    }
+    let [first_operand, second_operand] = relation.operands.as_slice() else {
+        unreachable!("checked binary relation operands");
+    };
+    if first_operand.entity_ref.is_some() || second_operand.entity_ref.is_some() {
+        return;
+    }
+    let Some(first_markers) = dynamic_solver_line(entities, first_operand.entity_index) else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let Some(second_markers) = dynamic_solver_line(entities, second_operand.entity_index) else {
+        clear_relation_operands(relation);
+        return;
+    };
+    if first_operand.entity_index == second_operand.entity_index {
+        clear_relation_operands(relation);
+        return;
+    }
+    let [Some(first_line_first), Some(first_line_second)] =
+        first_markers.map(|marker| marker.coordinates_m)
+    else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let [Some(second_line_first), Some(second_line_second)] =
+        second_markers.map(|marker| marker.coordinates_m)
+    else {
+        clear_relation_operands(relation);
+        return;
+    };
+    let measured = if angle {
+        line_line_angle(
+            [first_line_first, first_line_second],
+            [second_line_first, second_line_second],
+        )
+    } else {
+        line_line_distance(
+            [first_line_first, first_line_second],
+            [second_line_first, second_line_second],
+        )
+    };
+    if measured.is_some_and(|measured| same_relation_dimension(measured, target)) {
+        relation.operands[0].entity_ref = None;
+        relation.operands[1].entity_ref = None;
+    } else {
+        clear_relation_operands(relation);
+    }
+}
+
+fn bind_relation_geometry_operands(
+    relations: &mut [FeatureInputRelationInstance],
+    lane: &FeatureInputLane,
+) {
+    for relation in relations.iter_mut().filter(|relation| {
+        relation_uses_dynamic_operands(relation)
+            || (matches!(
+                relation.family,
+                FeatureInputRelationFamily::PointPointDistance
+                    | FeatureInputRelationFamily::PointPointHorizontalDistance
+                    | FeatureInputRelationFamily::PointPointVerticalDistance
+            ) && relation
+                .operands
+                .iter()
+                .all(|operand| operand.entity_ref.is_none()))
+    }) {
+        let dynamic = relation_uses_dynamic_operands(relation);
+        let Some(target) = relation_target_value(relation, lane) else {
+            if dynamic {
+                clear_relation_operands(relation);
+            }
+            continue;
+        };
+        if !target.is_finite() || target < 0.0 {
+            if dynamic {
+                clear_relation_operands(relation);
+            }
+            continue;
+        }
+        let entities = feature_entities(lane, relation.feature_ref.as_str());
+        match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => {
+                bind_dynamic_point_relation(relation, &entities, target, None);
+            }
+            FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                bind_dynamic_point_relation(relation, &entities, target, Some(true));
+            }
+            FeatureInputRelationFamily::PointPointVerticalDistance => {
+                bind_dynamic_point_relation(relation, &entities, target, Some(false));
+            }
+            FeatureInputRelationFamily::PointLineDistance => {
+                bind_dynamic_point_line_relation(relation, &entities, target);
+            }
+            FeatureInputRelationFamily::LineLineDistance => {
+                bind_dynamic_line_relation(relation, &entities, target, false);
+            }
+            FeatureInputRelationFamily::Angle => {
+                bind_dynamic_line_relation(relation, &entities, target, true);
+            }
+            FeatureInputRelationFamily::CircleDiameter => {
+                unreachable!("circle dimensions do not use dynamic two-cell relation operands")
+            }
+        }
     }
 }
 

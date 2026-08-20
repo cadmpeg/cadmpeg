@@ -12,8 +12,90 @@ use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+};
 use std::collections::{BTreeMap, HashMap};
+
+fn marker(
+    id: &str,
+    ordinal: u32,
+    offset: u64,
+    kind: SketchInputKind,
+    coordinates_m: Option<[f64; 2]>,
+) -> SketchInputEntity {
+    SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    }
+}
+
+fn dynamic_relation(
+    family: FeatureInputRelationFamily,
+    indices: [u16; 2],
+) -> FeatureInputRelationInstance {
+    FeatureInputRelationInstance {
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        family,
+        class_ref: "class".into(),
+        feature_ref: "feature".into(),
+        scalar_refs: vec!["scalar".into()],
+        parameter_scalar_ref: Some("scalar".into()),
+        display_scalar_ref: None,
+        operands: indices
+            .into_iter()
+            .enumerate()
+            .map(|(index, entity_index)| FeatureInputOperand {
+                offset: index as u64,
+                reference_ref: format!("reference-{index}"),
+                kind: FeatureInputOperandKind::Native(0x812a),
+                entity_index,
+                entity_ref: None,
+            })
+            .collect(),
+    }
+}
+
+fn length_parameter(value: f64) -> DesignParameter {
+    DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: value.to_string(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(value))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }
+}
+
+fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> SketchEntity {
+    SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line { start, end },
+    }
+}
 
 #[test]
 fn point_operand_requires_one_profile_locus() {
@@ -175,6 +257,169 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
             entity: circle.id,
             parameter: parameter.id,
         })
+    );
+}
+
+#[test]
+fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
+    let sketch = SketchId("sketch".into());
+    let markers = [
+        marker(
+            "point-marker",
+            0,
+            10,
+            SketchInputKind::Point,
+            Some([5.0, 1.0]),
+        ),
+        marker(
+            "first-curve-marker",
+            1,
+            20,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+        marker(
+            "second-curve-marker",
+            2,
+            30,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+    ];
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(5.0, 1.0),
+        },
+    };
+    let first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 10.0),
+        Point2::new(10.0, 10.0),
+    );
+    let second_line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([
+        (
+            "point-marker".into(),
+            vec![SketchLocus::Entity(point.id.clone())],
+        ),
+        (
+            "first-curve-marker".into(),
+            vec![SketchLocus::Entity(first_line.id.clone())],
+        ),
+        (
+            "second-curve-marker".into(),
+            vec![SketchLocus::Entity(second_line.id.clone())],
+        ),
+    ]);
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
+    let parameter = length_parameter(1.0);
+    let definition = typed_relation_definition(
+        &relation,
+        Some(&parameter),
+        &sketch,
+        &[point.clone(), first_line.clone(), second_line.clone()],
+        &markers_by_id,
+        &loci_by_marker,
+    );
+
+    assert_eq!(
+        definition,
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Entity(second_line.id),
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
+fn dynamic_line_relation_requires_exact_curve_dimension() {
+    let sketch = SketchId("sketch".into());
+    let markers = [
+        marker(
+            "first-curve-marker",
+            0,
+            10,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+        marker(
+            "second-curve-marker",
+            1,
+            20,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+    ];
+    let first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 10.0),
+        Point2::new(10.0, 10.0),
+    );
+    let second_line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([
+        (
+            "first-curve-marker".into(),
+            vec![SketchLocus::Entity(first_line.id.clone())],
+        ),
+        (
+            "second-curve-marker".into(),
+            vec![SketchLocus::Entity(second_line.id.clone())],
+        ),
+    ]);
+    let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [0, 1]);
+    let entities = [first_line.clone(), second_line.clone()];
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(10.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities: vec![first_line.id.clone(), second_line.id.clone()],
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(9.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        None
     );
 }
 
