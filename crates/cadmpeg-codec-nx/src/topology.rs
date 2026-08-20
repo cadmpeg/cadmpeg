@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
     fixed_len, fixed_record_boundary, fixed_record_candidates as framed_record_candidates,
-    read_and_advance, read_sequence_at, read_xmt,
+    read_and_advance, read_sequence_at, read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 
@@ -167,7 +167,7 @@ impl Node {
     /// Locate the payload following the five-reference compact geometry header.
     pub fn compact_tail_offset(&self) -> Option<usize> {
         let mut at = 8 + self.shift;
-        read_sequence_at(&self.bytes, &mut at, 5)?;
+        skip_sequence_at(&self.bytes, &mut at, 5)?;
         matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
     }
 
@@ -296,7 +296,7 @@ impl Node {
     pub fn point_position(&self) -> Option<Point3> {
         (self.kind == 29).then_some(())?;
         let mut at = 8 + self.shift;
-        read_sequence_at(&self.bytes, &mut at, 4)?;
+        skip_sequence_at(&self.bytes, &mut at, 4)?;
         let xyz = vec3_be_at(&self.bytes, at)?;
         xyz.iter()
             .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
@@ -1131,40 +1131,40 @@ fn candidate_has_valid_family_framing(
     match kind {
         13 => {
             let mut at = 8 + shift;
-            read_sequence_at(bytes, &mut at, 8)?;
+            skip_sequence_at(bytes, &mut at, 8)?;
         }
         14 => {
             let mut at = 8 + shift;
             read_and_advance(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
-            read_sequence_at(bytes, &mut at, 5)?;
+            skip_sequence_at(bytes, &mut at, 5)?;
             matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
         }
         15 => {
             let mut at = 8 + shift;
-            read_sequence_at(bytes, &mut at, 4)?;
+            skip_sequence_at(bytes, &mut at, 4)?;
         }
         16 => {
             let mut at = 8 + shift;
             read_and_advance(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
-            read_sequence_at(bytes, &mut at, 7)?;
+            skip_sequence_at(bytes, &mut at, 7)?;
         }
         17 => {
             let mut at = 4 + shift;
-            read_sequence_at(bytes, &mut at, 9)?;
+            skip_sequence_at(bytes, &mut at, 9)?;
             matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
         }
         18 => {
             let mut at = 8 + shift;
-            read_sequence_at(bytes, &mut at, 5)?;
+            skip_sequence_at(bytes, &mut at, 5)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
         }
         29 => {
             let mut at = 8 + shift;
-            read_sequence_at(bytes, &mut at, 4)?;
+            skip_sequence_at(bytes, &mut at, 4)?;
             let point = vec3_be_at(bytes, at)?;
             point
                 .iter()

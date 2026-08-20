@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::framing::{
-    fixed_len, fixed_record_boundary, fixed_record_candidates, read_sequence_at, FixedRecordFrame,
+    fixed_len, fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
 
@@ -149,7 +149,7 @@ fn analytic_candidate(
     let record = match kind {
         0x1d => {
             let mut at = pos + 8 + frame.shift;
-            read_sequence_at(stream, &mut at, 4)?;
+            skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
             xyz.iter()
                 .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
