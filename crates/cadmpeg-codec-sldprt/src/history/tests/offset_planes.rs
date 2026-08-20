@@ -487,6 +487,33 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
 }
 
 #[test]
+fn native_face_offset_reference_keeps_support_frame() {
+    let mut offset = feature("sldprt:history:feature#0:0", None, 0);
+    offset.input_class = Some("moRefPlane_c".into());
+    offset.parameters.insert("D1".into(), "6mm".into());
+    for (name, value) in [
+        ("Origin", "0mm,0mm,0mm"),
+        ("Normal", "0,0,1"),
+        ("UAxis", "1,0,0"),
+        ("ReferenceFaceNative", "native-face"),
+    ] {
+        offset.properties.insert(name.into(), value.into());
+    }
+
+    let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
+    let FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+        distance,
+    } = definition
+    else {
+        panic!("native face offset did not project as a face reference");
+    };
+    assert_eq!(face, FaceSelection::Native("native-face".into()));
+    assert_eq!(origin, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(distance, Length(6.0));
+}
+
+#[test]
 fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
     let mut offset = feature("sldprt:history:feature#0:0", None, 0);
     offset.input_class = Some("moRefPlane_c".into());

@@ -202,10 +202,7 @@ pub fn bind_topology_selections(
                     &surfaces_by_id,
                 );
             }
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } if reference.is_none() => {
+            FeatureDefinition::DatumOffsetPlane { reference, .. } if reference.is_none() => {
                 let Some(origin) = feature
                     .source_properties
                     .get("Origin")
@@ -227,23 +224,12 @@ pub fn bind_topology_selections(
                 else {
                     continue;
                 };
-                let support_origin = Point3::new(
-                    origin.x + normal.x * distance.0,
-                    origin.y + normal.y * distance.0,
-                    origin.z + normal.z * distance.0,
-                );
                 let mut face = FaceSelection::Unresolved;
-                resolve_planar_face_selection(
-                    &mut face,
-                    support_origin,
-                    normal,
-                    faces,
-                    &surfaces_by_id,
-                );
+                resolve_planar_face_selection(&mut face, origin, normal, faces, &surfaces_by_id);
                 if !matches!(face, FaceSelection::Unresolved) {
                     *reference = Some(DatumPlaneReference::Face {
                         face,
-                        origin: support_origin,
+                        origin,
                         normal,
                         u_axis,
                     });

@@ -25,7 +25,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Exactness;
@@ -74,11 +74,7 @@ pub(crate) fn project_offset_plane(
             let normal = parse_vector3(feature.properties.get("Normal")?)?;
             Some(DatumPlaneReference::Face {
                 face: FaceSelection::Native(feature.properties.get("ReferenceFaceNative")?.clone()),
-                origin: Point3::new(
-                    origin.x + normal.x * distance.0,
-                    origin.y + normal.y * distance.0,
-                    origin.z + normal.z * distance.0,
-                ),
+                origin,
                 normal,
                 u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
             })

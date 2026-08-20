@@ -1098,11 +1098,7 @@ pub(crate) fn project_compact_surface_selections(
         }) else {
             continue;
         };
-        if let FeatureDefinition::DatumOffsetPlane {
-            reference,
-            distance,
-        } = &mut feature.definition
-        {
+        if let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition {
             let native = compact_surface_selection_value(&selection.components);
             let generated = selection
                 .terminal_feature_ref
@@ -1153,11 +1149,7 @@ pub(crate) fn project_compact_surface_selections(
                     };
                     *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
                         face,
-                        origin: Point3::new(
-                            origin.x + normal.x * distance.0,
-                            origin.y + normal.y * distance.0,
-                            origin.z + normal.z * distance.0,
-                        ),
+                        origin,
                         normal,
                         u_axis,
                     });
@@ -1303,11 +1295,7 @@ pub(crate) fn project_compact_surface_selections(
         let Some(face) = face_aliases.get(target.as_str()).cloned() else {
             continue;
         };
-        let FeatureDefinition::DatumOffsetPlane {
-            reference,
-            distance,
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut feature.definition else {
             continue;
         };
         if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
@@ -1349,11 +1337,7 @@ pub(crate) fn project_compact_surface_selections(
         };
         *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
             face,
-            origin: Point3::new(
-                origin.x + normal.x * distance.0,
-                origin.y + normal.y * distance.0,
-                origin.z + normal.z * distance.0,
-            ),
+            origin,
             normal,
             u_axis,
         });
