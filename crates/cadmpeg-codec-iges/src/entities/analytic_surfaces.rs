@@ -148,7 +148,6 @@ fn surface_transform(
 }
 
 pub(super) struct AnalyticSurfaceProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -168,14 +167,12 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
     for entry in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
     }) {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -492,11 +489,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    AnalyticSurfaceProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    AnalyticSurfaceProjection { decoded, losses }
 }
 
 #[cfg(test)]

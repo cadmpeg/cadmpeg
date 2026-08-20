@@ -239,7 +239,6 @@ fn indicator_orientation(
 }
 
 pub(super) struct SurfaceProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -259,7 +258,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -267,7 +265,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -373,7 +370,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -510,7 +506,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 122 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -610,7 +605,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -821,7 +815,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1126,7 +1119,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1244,11 +1236,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(SurfaceProjection {
-        handled,
-        decoded,
-        losses,
-    })
+    Ok(SurfaceProjection { decoded, losses })
 }
 
 #[cfg(test)]

@@ -25,7 +25,6 @@ const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
 pub(super) struct CompositeProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
@@ -896,7 +895,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -907,7 +905,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1137,7 +1134,6 @@ pub(super) fn project(
     }
 
     Ok(CompositeProjection {
-        handled,
         decoded,
         losses,
         wire_edges,

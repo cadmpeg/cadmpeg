@@ -715,7 +715,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -723,7 +722,6 @@ pub(super) fn project(
         .iter()
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
-        handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
             let transform_valid = resolve_transform(
                 entry.transform,
@@ -789,7 +787,6 @@ pub(super) fn project(
     }
 
     Projection {
-        handled,
         decoded,
         consumed: BTreeSet::default(),
         losses,

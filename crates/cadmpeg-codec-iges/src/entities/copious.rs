@@ -19,7 +19,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
 pub(super) struct CopiousProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
@@ -221,7 +220,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -231,7 +229,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -476,7 +473,6 @@ pub(super) fn project(
     }
 
     Ok(CopiousProjection {
-        handled,
         decoded,
         losses,
         wire_edges,

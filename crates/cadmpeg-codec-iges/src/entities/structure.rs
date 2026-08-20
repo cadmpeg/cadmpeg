@@ -872,7 +872,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
@@ -890,7 +889,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1096,7 +1094,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1171,7 +1168,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1223,7 +1219,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1265,7 +1260,6 @@ pub(super) fn project(
     }
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1314,7 +1308,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1351,7 +1344,6 @@ pub(super) fn project(
     for entry in directory.iter().filter(|entry| {
         entry.entity_type == 402 && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 21)
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1372,7 +1364,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
     {
-        handled.insert(entry.sequence);
         let flow = flows.get(&entry.sequence);
         let flow_targets_valid = flow.is_some_and(|flow| {
             flow.form == entry.form
@@ -1412,7 +1403,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1449,7 +1439,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1518,7 +1507,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1596,7 +1584,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1653,7 +1640,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1760,7 +1746,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1798,7 +1783,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1844,7 +1828,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1934,7 +1917,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -2118,7 +2100,6 @@ pub(super) fn project(
     }
 
     Projection {
-        handled,
         decoded,
         consumed: BTreeSet::default(),
         losses,

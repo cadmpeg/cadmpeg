@@ -47,7 +47,6 @@ fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
 }
 
 pub(super) struct OffsetProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
@@ -175,7 +174,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -184,7 +182,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 130 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -735,7 +732,6 @@ pub(super) fn project(
     }
 
     OffsetProjection {
-        handled,
         decoded,
         losses,
         wire_edges,

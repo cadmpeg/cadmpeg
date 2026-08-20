@@ -127,7 +127,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -135,7 +134,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -168,7 +166,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -233,7 +230,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -324,7 +320,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -416,7 +411,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -493,7 +487,6 @@ pub(super) fn project(
     }
 
     Projection {
-        handled,
         decoded,
         consumed: BTreeSet::default(),
         losses,

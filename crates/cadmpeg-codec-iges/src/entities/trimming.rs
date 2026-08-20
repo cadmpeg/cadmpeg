@@ -704,7 +704,6 @@ fn select_boundary_edge(
 }
 
 pub(super) struct TrimmingProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -724,7 +723,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut boundaries = BTreeMap::new();
@@ -744,7 +742,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -817,7 +814,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -919,7 +915,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -1382,11 +1377,7 @@ pub(super) fn project(
         decoded.insert(sequence);
     }
 
-    TrimmingProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    TrimmingProjection { decoded, losses }
 }
 
 #[cfg(test)]

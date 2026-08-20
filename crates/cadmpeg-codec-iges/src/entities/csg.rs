@@ -137,14 +137,12 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
     for entry in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -281,7 +279,6 @@ pub(super) fn project(
         (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -362,7 +359,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -462,7 +458,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -512,7 +507,6 @@ pub(super) fn project(
     }
 
     Projection {
-        handled,
         decoded,
         consumed: BTreeSet::default(),
         losses,

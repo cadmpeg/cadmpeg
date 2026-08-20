@@ -521,7 +521,6 @@ pub(crate) fn enforce_transform_depth(
 }
 
 pub(crate) struct Projection {
-    pub(crate) handled: BTreeSet<u32>,
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
     /// neutral entity.
@@ -681,16 +680,9 @@ pub(crate) fn project_geometry(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let consumed = consumed_support_sequences(directory, &records);
     let mut losses = Vec::new();
-    handled.extend(
-        directory
-            .iter()
-            .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
-            .map(|entry| entry.sequence),
-    );
     let analytic_surface_locations = directory
         .iter()
         .filter(|entry| {
@@ -709,7 +701,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -742,7 +733,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -896,7 +886,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -948,7 +937,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1053,7 +1041,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1397,39 +1384,33 @@ pub(crate) fn project_geometry(
     let mut admitted_entities = 0;
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_primitives")?;
     let conics = super::conics::project(ir, directory, parameters, global, ctx);
-    handled.extend(conics.handled);
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
     let copious = super::copious::project(ir, directory, parameters, global, ctx)?;
-    handled.extend(copious.handled);
     decoded.extend(copious.decoded);
     losses.extend(copious.losses);
     wire_edges.extend(copious.wire_edges);
     free_vertices.extend(copious.free_vertices);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
     let splines = super::splines::project(ir, directory, parameters, global, ctx)?;
-    handled.extend(splines.handled);
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
     let composites = super::composite::project(ir, directory, parameters, global, ctx)?;
-    handled.extend(composites.handled);
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);
     wire_edges.extend(composites.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
     let offsets = super::offsets::project(ir, directory, parameters, global, ctx);
-    handled.extend(offsets.handled);
     decoded.extend(offsets.decoded);
     losses.extend(offsets.losses);
     wire_edges.extend(offsets.wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
     let analytic_surfaces =
         super::analytic_surfaces::project(ir, directory, parameters, global, ctx);
-    handled.extend(analytic_surfaces.handled);
     decoded.extend(analytic_surfaces.decoded);
     losses.extend(analytic_surfaces.losses);
     admit_projected_entities(
@@ -1439,7 +1420,6 @@ pub(crate) fn project_geometry(
         "iges_geometry_analytic_surfaces",
     )?;
     let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx)?;
-    handled.extend(surfaces.handled);
     decoded.extend(surfaces.decoded);
     losses.extend(surfaces.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
@@ -1476,27 +1456,22 @@ pub(crate) fn project_geometry(
         "iges_geometry_wire_topology",
     )?;
     let trimming = super::trimming::project(ir, directory, parameters, global, ctx);
-    handled.extend(trimming.handled);
     decoded.extend(trimming.decoded);
     losses.extend(trimming.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
     let brep = super::brep::project(ir, directory, parameters, global, ctx);
-    handled.extend(brep.handled);
     decoded.extend(brep.decoded);
     losses.extend(brep.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
     let csg = super::csg::project(ir, directory, parameters, global, ctx);
-    handled.extend(csg.handled);
     decoded.extend(csg.decoded);
     losses.extend(csg.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
     let structure = super::structure::project(ir, directory, parameters, global, ctx);
-    handled.extend(structure.handled);
     decoded.extend(structure.decoded);
     losses.extend(structure.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
     let presentation = super::presentation::project(ir, directory, parameters, global, ctx);
-    handled.extend(presentation.handled);
     decoded.extend(presentation.decoded);
     losses.extend(presentation.losses);
     admit_projected_entities(
@@ -1506,12 +1481,10 @@ pub(crate) fn project_geometry(
         "iges_geometry_presentation",
     )?;
     let drawing = super::drawing::project(ir, directory, parameters, global, ctx);
-    handled.extend(drawing.handled);
     decoded.extend(drawing.decoded);
     losses.extend(drawing.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
     let annotation = super::annotation::project(ir, directory, parameters, global, ctx);
-    handled.extend(annotation.handled);
     decoded.extend(annotation.decoded);
     losses.extend(annotation.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
@@ -1529,7 +1502,6 @@ pub(crate) fn project_geometry(
         !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
     });
     Ok(Projection {
-        handled,
         decoded,
         consumed,
         losses,

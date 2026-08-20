@@ -14,7 +14,6 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct PresentationProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -200,7 +199,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
@@ -219,7 +217,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
             text_fonts
                 .get(&sequence)
@@ -245,7 +242,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -291,7 +287,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -319,7 +314,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -378,7 +372,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -555,11 +548,7 @@ pub(super) fn project(
         });
     }
 
-    PresentationProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    PresentationProjection { decoded, losses }
 }
 
 #[cfg(test)]

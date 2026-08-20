@@ -289,7 +289,6 @@ fn decode_with_occurrence_limits(
             )?
         }
         None => entities::geometry::Projection {
-            handled: BTreeSet::default(),
             decoded: BTreeSet::default(),
             consumed: BTreeSet::default(),
             losses: Vec::new(),

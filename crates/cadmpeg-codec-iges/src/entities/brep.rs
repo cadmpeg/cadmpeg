@@ -239,7 +239,6 @@ fn pcurves_agree(
 }
 
 pub(super) struct BrepProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -259,7 +258,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
@@ -273,7 +271,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -321,7 +318,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(
                 entry,
@@ -384,7 +380,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "loops cannot carry a transformation"));
             continue;
@@ -500,7 +495,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "faces cannot carry a transformation"));
             continue;
@@ -554,7 +548,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "shells cannot carry a transformation"));
             continue;
@@ -620,7 +613,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1128,11 +1120,7 @@ pub(super) fn project(
         decoded.extend(vertex_ids.keys().map(|key| key.0));
     }
 
-    BrepProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    BrepProjection { decoded, losses }
 }
 
 #[cfg(test)]

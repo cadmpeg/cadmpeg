@@ -18,7 +18,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = 1.0e-12;
 
 pub(super) struct ConicProjection {
-    pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
@@ -104,7 +103,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -113,7 +111,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -419,7 +416,6 @@ pub(super) fn project(
     }
 
     ConicProjection {
-        handled,
         decoded,
         losses,
         wire_edges,
