@@ -170,25 +170,6 @@ pub(super) enum NativeAnnotation {
     },
 }
 
-fn counted_tail_items(
-    sequence: u32,
-    verdict: DefaultTailCount,
-    overdeclared: &mut Vec<OverdeclaredCount>,
-) -> usize {
-    match verdict {
-        DefaultTailCount::Held(count) => count,
-        DefaultTailCount::Overdeclared { declared, present } => {
-            overdeclared.push(OverdeclaredCount {
-                sequence,
-                declared,
-                present,
-            });
-            0
-        }
-        DefaultTailCount::Unreadable => 0,
-    }
-}
-
 struct Subject<'a> {
     sequence: u32,
     form: i64,
@@ -224,7 +205,18 @@ impl Subject<'_> {
         let verdict = self.record.map_or(DefaultTailCount::Unreadable, |record| {
             record.count_with_stride_before_default_tail(count_index, stride, self.primary_end)
         });
-        counted_tail_items(self.sequence, verdict, overdeclared)
+        match verdict {
+            DefaultTailCount::Held(count) => count,
+            DefaultTailCount::Overdeclared { declared, present } => {
+                overdeclared.push(OverdeclaredCount {
+                    sequence: self.sequence,
+                    declared,
+                    present,
+                });
+                0
+            }
+            DefaultTailCount::Unreadable => 0,
+        }
     }
 
     fn text_run(&self, start: usize) -> NativeTextRun {
@@ -267,7 +259,6 @@ impl Subject<'_> {
     fn note_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver
                     .resolve_type(self.sequence, index, sequence, 212, &[0])
@@ -278,7 +269,6 @@ impl Subject<'_> {
     fn leader_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver.resolve(
                     self.sequence,
@@ -300,7 +290,6 @@ impl Subject<'_> {
     fn witness_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver
                     .resolve_type(self.sequence, index, sequence, 106, &[40])
@@ -311,7 +300,6 @@ impl Subject<'_> {
     fn curve_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver.resolve(
                     self.sequence,
@@ -331,7 +319,6 @@ impl Subject<'_> {
     fn ordinate_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver.resolve(
                     self.sequence,
@@ -358,7 +345,6 @@ impl Subject<'_> {
     fn enclosure_link(&self, index: usize) -> Option<String> {
         self.record
             .and_then(|record| record.integer(index))
-            .filter(|sequence| *sequence != 0)
             .and_then(|sequence| {
                 self.parameter_resolver.resolve(
                     self.sequence,
@@ -544,7 +530,7 @@ fn general_label(subject: &Subject<'_>, transformation: Option<String>) -> Nativ
 fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
     let end = subject.primary_end;
-    let counts = record
+    let (geometry_count, leader_count_index, leader_count) = record
         .and_then(|record| record.count_with_stride_before(2, 1, end))
         .and_then(|geometry_count| {
             let leader_count_index = 3_usize.checked_add(geometry_count)?;
@@ -553,11 +539,9 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
             let finish = leader_count_index
                 .checked_add(1)?
                 .checked_add(leader_count)?;
-            (finish <= end).then_some((geometry_count, leader_count))
+            (finish <= end).then_some((geometry_count, leader_count_index, leader_count))
         })
         .unwrap_or_default();
-    let (geometry_count, leader_count) = counts;
-    let leader_count_index = 3 + geometry_count;
     NativeAnnotation::GeneralSymbol {
         id: subject.id(),
         source_entity: subject.source_entity(),

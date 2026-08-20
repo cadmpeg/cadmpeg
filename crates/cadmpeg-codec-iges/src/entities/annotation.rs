@@ -762,13 +762,27 @@ pub(super) fn project(
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            let message = match entry.entity_type {
-                202 | 204 | 206 | 216 | 218 | 220 | 222 => {
+            let message = match kind {
+                AnnotationKind::AngularDimension
+                | AnnotationKind::CurveDimension
+                | AnnotationKind::DiameterDimension
+                | AnnotationKind::LinearDimension
+                | AnnotationKind::OrdinateDimension
+                | AnnotationKind::PointDimension
+                | AnnotationKind::RadiusDimension => {
                     "dimension components, role types, transforms, or Directory status are invalid"
                 }
-                228 => "symbol note, defining geometry, or leader list is invalid",
-                230 => "section boundary, fill pattern, hatch geometry, or island list is invalid",
-                _ => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
+                AnnotationKind::GeneralSymbol => {
+                    "symbol note, defining geometry, or leader list is invalid"
+                }
+                AnnotationKind::SectionedArea => {
+                    "section boundary, fill pattern, hatch geometry, or island list is invalid"
+                }
+                AnnotationKind::FlagNote
+                | AnnotationKind::GeneralLabel
+                | AnnotationKind::GeneralNote
+                | AnnotationKind::NewGeneralNote
+                | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
             losses.push(entity_loss(entry, message));
         }

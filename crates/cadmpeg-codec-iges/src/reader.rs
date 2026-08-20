@@ -448,7 +448,11 @@ fn decode_with_occurrence_limits(
         )?;
         reject_invalid_semantic_ir(&ir)?;
     }
-    let attributed = attributed_sequences(&losses);
+    let attributed = if options.container_only {
+        BTreeSet::new()
+    } else {
+        attributed_sequences(&losses)
+    };
     let mut transfer_ledger = TransferLedger::default();
     for entry in parse
         .directory
@@ -468,10 +472,8 @@ fn decode_with_occurrence_limits(
             "native record retained; semantic projection omitted with an attributed loss"
         } else if projection.consumed.contains(&entry.sequence) {
             "native record retained; record was consumed as construction support"
-        } else if projection.handled.contains(&entry.sequence) {
-            "native record retained; no standalone neutral projection was required"
         } else {
-            "native record retained; semantic projection omitted with an attributed loss"
+            "native record retained; no standalone neutral projection was required"
         };
         transfer_ledger.record(
             format!("D{}", entry.sequence),
