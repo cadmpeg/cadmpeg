@@ -340,7 +340,7 @@ pub fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3
         })
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct TopologicalVertexSolveDiagnostics {
     pub topological_vertices: usize,
     pub carrier_incident_vertices: usize,

@@ -53,7 +53,7 @@ pub(super) use pcurves::{
     pcurve_edge_endpoint_evidence_with_diagnostics, pcurve_edge_endpoints, planar_curve_pcurve,
     solve_pcurve_vertex_domains, transfer_analytic_pcurve_carriers, unique_oriented_native_pcurve,
     NativePcurveCandidates, PcurveEndpointDiagnostics, PcurveEndpointEvidence,
-    PcurveVertexConstraint,
+    PcurveMismatchDetail, PcurveVertexConstraint,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

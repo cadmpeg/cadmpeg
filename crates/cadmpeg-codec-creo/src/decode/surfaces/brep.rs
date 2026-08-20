@@ -155,7 +155,7 @@ pub(in super::super) struct FaceAdmissionEvidence {
     pub(in super::super) sample_details: Vec<FaceAdmissionDetail>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) candidate_face_count: usize,
     pub(in super::super) admitted_face_count: usize,
@@ -349,7 +349,7 @@ impl BrepTransferDiagnostics {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct NativeBrepTransferSummary {
     pub(in super::super) topological_point_count: usize,
     pub(in super::super) native_topological_edge_count: usize,

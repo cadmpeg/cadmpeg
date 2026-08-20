@@ -25,6 +25,7 @@ use super::vertices::model_points_agree;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_ORTHO: f64 = 1e-10;
 const EPS_NEAR_ZERO: f64 = 1e-12;
+const PCURVE_MISMATCH_SAMPLE_LIMIT: usize = 4;
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
     let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
@@ -84,7 +85,15 @@ pub struct PcurveEndpointEvidence {
     pub complete: bool,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PcurveMismatchDetail {
+    pub curve_id: u32,
+    pub faces: [u32; 2],
+    pub same_order_error: f64,
+    pub reverse_order_error: f64,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct PcurveEndpointDiagnostics {
     pub records: usize,
     pub paths: usize,
@@ -98,10 +107,17 @@ pub struct PcurveEndpointDiagnostics {
     pub conflicting_curves: usize,
     pub evidence: usize,
     pub complete_evidence: usize,
+    pub mismatch_samples: Vec<PcurveMismatchDetail>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MappedPcurvePath {
+    face_id: u32,
+    endpoints: [[f64; 3]; 2],
 }
 
 struct MappedPcurvePaths {
-    mapped: Vec<[[f64; 3]; 2]>,
+    mapped: Vec<MappedPcurvePath>,
     paths: usize,
     missing_surfaces: usize,
     unevaluable_paths: usize,
@@ -131,24 +147,73 @@ fn map_pcurve_paths(
             result.unevaluable_paths += 1;
             continue;
         };
-        result.mapped.push([first, second]);
+        result.mapped.push(MappedPcurvePath {
+            face_id,
+            endpoints: [first, second],
+        });
     }
     result
 }
 
 fn pcurve_endpoint_evidence_from_mapped(
-    mapped: &[[[f64; 3]; 2]],
+    mapped: &[MappedPcurvePath],
 ) -> Option<PcurveEndpointEvidence> {
-    let first = *mapped.first()?;
+    let first = mapped.first()?.endpoints;
     mapped
         .iter()
         .all(|candidate| {
-            model_points_agree(first[0], candidate[0]) && model_points_agree(first[1], candidate[1])
+            model_points_agree(first[0], candidate.endpoints[0])
+                && model_points_agree(first[1], candidate.endpoints[1])
         })
         .then_some(PcurveEndpointEvidence {
             points: first,
             complete: mapped.len() == 2,
         })
+}
+
+fn point_coordinate_error(first: [f64; 3], second: [f64; 3]) -> f64 {
+    first
+        .into_iter()
+        .zip(second)
+        .map(|(first, second)| {
+            let error = (first - second).abs();
+            if error.is_finite() {
+                error
+            } else {
+                f64::INFINITY
+            }
+        })
+        .fold(0.0, f64::max)
+}
+
+fn endpoint_pair_error(first: [[f64; 3]; 2], second: [[f64; 3]; 2], reverse: bool) -> f64 {
+    if reverse {
+        point_coordinate_error(first[0], second[1]).max(point_coordinate_error(first[1], second[0]))
+    } else {
+        point_coordinate_error(first[0], second[0]).max(point_coordinate_error(first[1], second[1]))
+    }
+}
+
+fn pcurve_mismatch_detail(
+    curve_id: u32,
+    mapped: &[MappedPcurvePath],
+) -> Option<PcurveMismatchDetail> {
+    let first = mapped.first()?.endpoints;
+    let second = mapped.get(1)?;
+    (mapped.len() > 1).then(|| PcurveMismatchDetail {
+        curve_id,
+        faces: [mapped[0].face_id, second.face_id],
+        same_order_error: mapped
+            .iter()
+            .skip(1)
+            .map(|candidate| endpoint_pair_error(first, candidate.endpoints, false))
+            .fold(0.0, f64::max),
+        reverse_order_error: mapped
+            .iter()
+            .skip(1)
+            .map(|candidate| endpoint_pair_error(first, candidate.endpoints, true))
+            .fold(0.0, f64::max),
+    })
 }
 
 fn mapped_pcurve_endpoint_evidence(
@@ -225,7 +290,14 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 candidates.entry(curve_id).or_default().push(evidence);
             }
             None if mapped.mapped.is_empty() => diagnostics.unmapped_records += 1,
-            None => diagnostics.inconsistent_records += 1,
+            None => {
+                diagnostics.inconsistent_records += 1;
+                if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
+                    if let Some(detail) = pcurve_mismatch_detail(curve_id, &mapped.mapped) {
+                        diagnostics.mismatch_samples.push(detail);
+                    }
+                }
+            }
         }
     }
     let mut evidence = BTreeMap::new();
@@ -1065,5 +1137,26 @@ mod tests {
             [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [1.0, 0.0]]],
         )
         .is_none());
+    }
+
+    #[test]
+    fn pcurve_mismatch_diagnostics_measure_both_endpoint_orders() {
+        const EPS_TEST_ERROR: f64 = 1e-12;
+        let mapped = vec![
+            MappedPcurvePath {
+                face_id: 7,
+                endpoints: [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            },
+            MappedPcurvePath {
+                face_id: 8,
+                endpoints: [[1.0, 0.0, 0.0], [3.0, 0.0, 0.0]],
+            },
+        ];
+
+        let detail = pcurve_mismatch_detail(11, &mapped).expect("two mapped paths");
+        assert_eq!(detail.curve_id, 11);
+        assert_eq!(detail.faces, [7, 8]);
+        assert!((detail.same_order_error - 1.0).abs() < EPS_TEST_ERROR);
+        assert!((detail.reverse_order_error - 3.0).abs() < EPS_TEST_ERROR);
     }
 }

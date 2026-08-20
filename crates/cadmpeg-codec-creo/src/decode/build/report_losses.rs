@@ -218,6 +218,28 @@ pub(super) fn push_brep_transfer_note(
     } else {
         component_gate
     };
+    let pcurve_mismatch_samples = diagnostics
+        .vertex_solve
+        .pcurve
+        .mismatch_samples
+        .iter()
+        .map(|detail| {
+            format!(
+                "{}[faces:{}|{};same:{:.3e};reverse:{:.3e}]",
+                detail.curve_id,
+                detail.faces[0],
+                detail.faces[1],
+                detail.same_order_error,
+                detail.reverse_order_error,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let pcurve_mismatch_evidence = if pcurve_mismatch_samples.is_empty() {
+        String::new()
+    } else {
+        format!(" Pcurve mismatch samples: {pcurve_mismatch_samples}.")
+    };
     let vertex_evidence = format!(
         "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
@@ -227,7 +249,7 @@ pub(super) fn push_brep_transfer_note(
          a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
-         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.",
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -258,6 +280,7 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.vertex_solve.nurbs_endpoint_constraints,
         diagnostics.vertex_solve.directed_endpoint_conflicts,
         diagnostics.vertex_solve.solved_vertices,
+        pcurve_mismatch_evidence,
     );
 
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
