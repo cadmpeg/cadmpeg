@@ -894,16 +894,6 @@ unresolved.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:141-191` makes the selection before geometry construction, `build.rs:1283-1304` maps the selected identities to stream ordinals, and `build.rs:233-247` omits each other stream and keeps its bytes as opaque data. The commit that added the rule also changed two golden documents in the same change: one partition stream and fifty analytic surface carriers left the decoded output.
 
-### OM-41. Operation output body without a transferred output relation
-
-**Question.** Which serialized field names the output body of an operation that has no transferred output relation?
-
-**Known.** `siemens_nx.md` §7.1 "The owning `BLOCK` feature links the complete typed dimension set and construction independently." states that the placement body is the feature's one transferred solid output, or, without that relation, the document's one connected solid body, and that a complete unique placement proof then identifies that body as the block output. `siemens_nx.md` §7.1 "One complete construction-identity group projects hole diameters when its operation set equals the complete typed through-hole template set." applies the same fallback to hole diameter and output ownership. Neither statement names a field, and neither carries a `CADIR decision` marker.
-
-**Need.** We must know the field. Both rules take the output of an operation from the count of connected solid bodies in the document and from a dimension or radius match inside the document linear tolerance. A part that holds one solid body gives every such operation that body as its output. The same serialized operation in a part that holds two solid bodies gets no output relation. The output relation supplies the Boolean role of the feature and its lineage, so the count of unrelated bodies in the document changes both.
-
-**Conflict.** `block_placement` in `crates/cadmpeg-codec-nx/src/native/attach.rs:5039-5125` selects the unique connected solid body when the operation has no output, and `attach_feature_operations` at `crates/cadmpeg-codec-nx/src/native/attach.rs:3007-3012` records that body as a proven output and admits the Boolean role from it. The specification states the fallback as the format rule, so no open item and no decision marker reports that the output comes from a body count and a tolerance match.
-
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
