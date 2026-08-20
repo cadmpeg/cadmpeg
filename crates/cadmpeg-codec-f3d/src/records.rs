@@ -3156,6 +3156,18 @@ pub enum DesignEdgeWidthMode {
     TwoSidesPerEdge,
 }
 
+/// Parameter source used by a typed `EdgeFlange` width law.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignEdgeFlangeWidthParameterSource {
+    /// Width parameters use the ordinary positive `EdgeWidth` source kinds.
+    #[default]
+    EdgeWidth,
+    /// Legacy edge-end parameters use signed `EdgeOffset` source kinds.
+    EdgeOffset,
+}
+
 #[cfg(test)]
 impl DesignParameterScope {
     /// Build a scope carrying only its identity, kind, and record index.
@@ -3300,6 +3312,13 @@ pub struct DesignEdgeFlangeOperation {
     /// width law.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub width_distance_owner_record_indices_by_edge: Vec<[u32; 2]>,
+    /// Scope references retained by a classed layout after typed roles and
+    /// width owners have been claimed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_reference_record_indices: Vec<u32>,
+    /// Source-kind convention used by the width owners.
+    #[serde(default)]
+    pub width_parameter_source: DesignEdgeFlangeWidthParameterSource,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.

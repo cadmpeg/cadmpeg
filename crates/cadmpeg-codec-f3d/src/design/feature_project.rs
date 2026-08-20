@@ -3310,8 +3310,8 @@ pub(crate) fn project_edge_flange(
     inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use crate::records::{
-        DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeWidthMode,
-        DesignSheetMetalHeightDatum,
+        DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
+        DesignEdgeWidthMode, DesignSheetMetalHeightDatum,
     };
     use cadmpeg_ir::features::{
         FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeHeight,
@@ -3411,6 +3411,27 @@ pub(crate) fn project_edge_flange(
         "FlangeAngle",
     )?)?;
 
+    let width_parameter = |owner_record_index, kind| match (operation.width_parameter_source, kind)
+    {
+        (DesignEdgeFlangeWidthParameterSource::EdgeOffset, "EdgeWidth_1") => {
+            parameter(owner_record_index, "EdgeOffset_1")
+        }
+        (DesignEdgeFlangeWidthParameterSource::EdgeOffset, "EdgeWidth_2") => {
+            parameter(owner_record_index, "EdgeOffset_2")
+        }
+        (DesignEdgeFlangeWidthParameterSource::EdgeWidth, kind) => {
+            parameter(owner_record_index, kind)
+        }
+        _ => None,
+    };
+    let width_length = |owner_record_index, kind| {
+        let length = design_length(width_parameter(owner_record_index, kind)?)?;
+        Some(match operation.width_parameter_source {
+            DesignEdgeFlangeWidthParameterSource::EdgeWidth => length,
+            DesignEdgeFlangeWidthParameterSource::EdgeOffset => Length(length.0.abs()),
+        })
+    };
+
     // The width owners are ordered, and their parameter kinds name the mode
     // independently of the owner count, so both must agree.
     let width = match operation.edge_width_mode() {
@@ -3460,8 +3481,8 @@ pub(crate) fn project_edge_flange(
                 .iter()
                 .map(|[first_owner, second_owner]| {
                     Some(SheetMetalFlangeTwoSidedWidth {
-                        first: design_length(parameter(*first_owner, "EdgeWidth_1")?)?,
-                        second: design_length(parameter(*second_owner, "EdgeWidth_2")?)?,
+                        first: width_length(*first_owner, "EdgeWidth_1")?,
+                        second: width_length(*second_owner, "EdgeWidth_2")?,
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -3472,8 +3493,8 @@ pub(crate) fn project_edge_flange(
                 return None;
             };
             SheetMetalFlangeWidth::TwoSides {
-                first: design_length(parameter(*first, "EdgeWidth_1")?)?,
-                second: design_length(parameter(*second, "EdgeWidth_2")?)?,
+                first: width_length(*first, "EdgeWidth_1")?,
+                second: width_length(*second, "EdgeWidth_2")?,
             }
         }
         _ => return None,

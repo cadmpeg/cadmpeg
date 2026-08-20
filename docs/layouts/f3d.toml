@@ -9423,6 +9423,204 @@ source = "spec"
 anchor = "at `283` and `294`"
 
 [[record]]
+name = "edge_flange_class286_two_sided_per_edge_fixed_operation"
+kind = "byte"
+section = "3.1"
+anchor = "The extended class-`286`/`258` two-edge distance form uses an 801-byte primary frame"
+size = 305
+note = "Offsets are relative to the primary scope header. The fixed operation fields close at the second marked role-0x08 group reference; the paired header follows the 801-byte primary frame."
+
+[[record.gap]]
+offset = 0
+size = 96
+note = "The indexed header and variable scope envelope precede the fixed operation section."
+
+[[record.field]]
+name = "bend_position"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "bend position at `96`"
+
+[[record.field]]
+name = "edge_count"
+offset = 100
+type = "u32"
+source = "spec"
+anchor = "edge count `2` at `100`"
+
+[[record.field]]
+name = "edge_wrapper_one_reference"
+offset = 104
+type = "bytes[11]"
+source = "spec"
+anchor = "wrapper references at `104` and `115`"
+
+[[record.field]]
+name = "edge_wrapper_two_reference"
+offset = 115
+type = "bytes[11]"
+source = "spec"
+anchor = "wrapper references at `104` and `115`"
+
+[[record.field]]
+name = "settings_reference"
+offset = 126
+type = "bytes[11]"
+source = "spec"
+anchor = "settings at `126`"
+
+[[record.field]]
+name = "height_datum"
+offset = 137
+type = "u32"
+source = "spec"
+anchor = "height datum at `137`"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 141
+type = "bytes[11]"
+source = "spec"
+anchor = "angle owner at `141`"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 152
+type = "bytes[11]"
+source = "spec"
+anchor = "height owner at `152`"
+
+[[record.field]]
+name = "reference_side"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "reference side at `163`"
+
+[[record.gap]]
+offset = 167
+size = 2
+note = "Two bytes separate the side discriminator from the radius."
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 169
+type = "f64"
+source = "spec"
+anchor = "positive finite f64 inside bend radius in centimetres at `169`"
+
+[[record.field]]
+name = "result_count"
+offset = 177
+type = "u32"
+source = "spec"
+anchor = "Result count `5` is at `177`"
+
+[[record.field]]
+name = "result_one_reference"
+offset = 181
+type = "bytes[11]"
+source = "spec"
+anchor = "five 15-byte result records start at `181`"
+
+[[record.field]]
+name = "result_one_trailer"
+offset = 192
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`, `207`, `222`, `237`, and `0` at `252`"
+
+[[record.field]]
+name = "result_two_reference"
+offset = 196
+type = "bytes[11]"
+source = "spec"
+anchor = "five 15-byte result records start at `181`"
+
+[[record.field]]
+name = "result_two_trailer"
+offset = 207
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`, `207`, `222`, `237`, and `0` at `252`"
+
+[[record.field]]
+name = "result_three_reference"
+offset = 211
+type = "bytes[11]"
+source = "spec"
+anchor = "five 15-byte result records start at `181`"
+
+[[record.field]]
+name = "result_three_trailer"
+offset = 222
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`, `207`, `222`, `237`, and `0` at `252`"
+
+[[record.field]]
+name = "result_four_reference"
+offset = 226
+type = "bytes[11]"
+source = "spec"
+anchor = "five 15-byte result records start at `181`"
+
+[[record.field]]
+name = "result_four_trailer"
+offset = 237
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`, `207`, `222`, `237`, and `0` at `252`"
+
+[[record.field]]
+name = "result_five_reference"
+offset = 241
+type = "bytes[11]"
+source = "spec"
+anchor = "five 15-byte result records start at `181`"
+
+[[record.field]]
+name = "result_five_trailer"
+offset = 252
+type = "u32"
+source = "spec"
+anchor = "trailers `1` at `192`, `207`, `222`, `237`, and `0` at `252`"
+
+[[record.field]]
+name = "result_separator"
+offset = 256
+type = "u32"
+source = "spec"
+anchor = "A u32 value `1` at `256` precedes the aggregate-group reference at `260`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 260
+type = "bytes[11]"
+source = "spec"
+anchor = "aggregate-group reference at `260`"
+
+[[record.gap]]
+offset = 271
+size = 12
+note = "Twelve bytes separate the aggregate-group reference from the first edge-group reference."
+
+[[record.field]]
+name = "edge_group_one_reference"
+offset = 283
+type = "bytes[11]"
+source = "spec"
+anchor = "group references start at `283` and `294`"
+
+[[record.field]]
+name = "edge_group_two_reference"
+offset = 294
+type = "bytes[11]"
+source = "spec"
+anchor = "group references start at `283` and `294`"
+
+[[record]]
 name = "edge_flange_class364_per_edge_width_fixed_operation"
 kind = "byte"
 section = "3.1"
@@ -9993,7 +10191,7 @@ anchor = "its rule-derived inside bend radius starts"
 name = "move_transform_frame_253"
 kind = "byte"
 section = "3.1"
-anchor = "Class `296`, `362`, `433`, `447`, `293`, `393`, `442`, and `451` transform records are 253 bytes"
+anchor = "Class `296`, `362`, `433`, `447`, `293`, `393`, `442`, `451`, and `456` transform records are 253 bytes"
 size = 253
 note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263; the same-index paired header follows at offset 253."
 

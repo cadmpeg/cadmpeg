@@ -39,6 +39,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         width_mode: None,
         width_distance_owner_record_indices: vec![393, 396],
         width_distance_owner_record_indices_by_edge: Vec::new(),
+        auxiliary_reference_record_indices: Vec::new(),
+        width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 411,
         bend_radius: 0.25,
         bend_radius_offset: 156,
@@ -178,6 +180,55 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     assert!((first.0 - 30.0).abs() < 1e-12);
     assert!((second.0 - 15.0).abs() < 1e-12);
+
+    let mut offset_scope = scope.clone();
+    let mut offset_operation = offset_scope
+        .edge_flange_operation
+        .clone()
+        .expect("single-edge operation fixture");
+    offset_operation.width_mode = Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
+    offset_operation.width_distance_owner_record_indices = vec![393, 396];
+    offset_operation.width_distance_owner_record_indices_by_edge = vec![[393, 396]];
+    offset_operation.width_parameter_source =
+        crate::records::DesignEdgeFlangeWidthParameterSource::EdgeOffset;
+    offset_scope.edge_flange_operation = Some(offset_operation);
+    let mut offset_parameters = parameters.clone();
+    offset_parameters[0].source_kind = "EdgeOffset_1".into();
+    offset_parameters[0].evaluated_value = -3.0;
+    offset_parameters[1].source_kind = "EdgeOffset_2".into();
+    offset_parameters[1].evaluated_value = -1.5;
+    let offset_inputs = crate::design::feature_project::ProjectInputs {
+        native: &offset_parameters,
+        owners: &owners,
+        scopes: &[],
+        timelines: &[],
+        construction_groups: std::slice::from_ref(&group),
+        fillet_radius_groups: &[],
+        edge_operands: &[],
+        edge_identity_operands: &[],
+        entity_selection_operands: &[],
+        curve_identities: &[],
+        face_operands: &[],
+        body_recipe_operands: &[],
+        placements: &[],
+        body_bindings: &[],
+        histories: &[],
+    };
+    let offset_definition =
+        crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs)
+            .expect("typed signed-offset EdgeFlange definition");
+    let FeatureDefinition::SheetMetalEdgeFlange { width, .. } = offset_definition else {
+        panic!("expected a sheet-metal edge flange");
+    };
+    assert_eq!(
+        width,
+        SheetMetalFlangeWidth::TwoSidesPerEdge {
+            widths: vec![SheetMetalFlangeTwoSidedWidth {
+                first: cadmpeg_ir::features::Length(30.0),
+                second: cadmpeg_ir::features::Length(15.0),
+            }],
+        }
+    );
 
     let mut multi_scope = scope.clone();
     let mut multi_operation = multi_scope
@@ -371,6 +422,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         width_mode: None,
         width_distance_owner_record_indices: Vec::new(),
         width_distance_owner_record_indices_by_edge: Vec::new(),
+        auxiliary_reference_record_indices: Vec::new(),
+        width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 411,
         bend_radius: 0.25,
         bend_radius_offset: 156,
@@ -565,6 +618,8 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         width_mode: None,
         width_distance_owner_record_indices: vec![328],
         width_distance_owner_record_indices_by_edge: Vec::new(),
+        auxiliary_reference_record_indices: Vec::new(),
+        width_parameter_source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index: 343,
         bend_radius: 0.25,
         bend_radius_offset: 156,

@@ -63,6 +63,7 @@ use crate::layout::design_mirror_scope_class413_tail as mirror_413;
 use crate::layout::design_mirror_scope_class440_tail as mirror_440;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
 use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as edge_flange_325_per_edge;
 use crate::layout::edge_flange_class364_per_edge_width_fixed_operation as edge_flange_364_width;
 use crate::layout::edge_flange_fixed_operation_section as edge_flange;
@@ -109,15 +110,15 @@ use crate::records::{
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeWidthMode,
-    DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
-    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction,
-    DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource,
+    DesignEdgeWidthMode, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
+    DesignExtrudeTargetOrdinal, DesignFixedChamferDistance, DesignFixedChamferParameters,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
+    DesignHemParameterOwners, DesignHoleConstruction, DesignHoleFaceSelection,
+    DesignMirrorConstruction, DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
@@ -9603,9 +9604,15 @@ pub(crate) fn exact_edge_flange_operation(
                 start,
                 paired_at,
                 references,
+                LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT,
+            ),
+            legacy_edge_flange_operation_at(
+                bytes,
+                start,
+                paired_at,
+                references,
                 LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT,
             ),
-            None,
             None,
             None,
         ],
@@ -9658,7 +9665,9 @@ struct LegacyEdgeFlangeLayout {
     aggregate_group_offset: usize,
     aggregate_operand_count: usize,
     width_owner_count: usize,
+    auxiliary_reference_count: usize,
     width_mode: DesignEdgeWidthMode,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource,
     result_trailers: &'static [u32],
 }
 
@@ -9682,7 +9691,9 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
     aggregate_group_offset: edge_flange_legacy::AGGREGATE_GROUP_REFERENCE,
     aggregate_operand_count: 1,
     width_owner_count: 0,
+    auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
     result_trailers: &[1, 0],
 };
 
@@ -9712,7 +9723,9 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     aggregate_group_offset: edge_flange_multi::AGGREGATE_GROUP_REFERENCE,
     aggregate_operand_count: 2,
     width_owner_count: 0,
+    auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
     result_trailers: &[1, 1, 0],
 };
 
@@ -9742,7 +9755,9 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     aggregate_group_offset: edge_flange_325_per_edge::AGGREGATE_GROUP_REFERENCE,
     aggregate_operand_count: 2,
     width_owner_count: 4,
+    auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
     result_trailers: &[1, 1, 1, 1, 0],
 };
 
@@ -9772,7 +9787,41 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
     aggregate_group_offset: edge_flange_364_width::AGGREGATE_GROUP_REFERENCE,
     aggregate_operand_count: 2,
     width_owner_count: 2,
+    auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::SymmetricPerEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+    result_trailers: &[1, 1, 1, 1, 0],
+};
+
+const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlangeLayout {
+    frame_length: 801,
+    reference_count: 28,
+    bend_position_offset: edge_flange_286_per_edge::BEND_POSITION,
+    edge_count_offset: edge_flange_286_per_edge::EDGE_COUNT,
+    edge_wrapper_offsets: &[
+        edge_flange_286_per_edge::EDGE_WRAPPER_ONE_REFERENCE,
+        edge_flange_286_per_edge::EDGE_WRAPPER_TWO_REFERENCE,
+    ],
+    edge_group_offsets: &[
+        edge_flange_286_per_edge::EDGE_GROUP_ONE_REFERENCE,
+        edge_flange_286_per_edge::EDGE_GROUP_TWO_REFERENCE,
+    ],
+    settings_offset: edge_flange_286_per_edge::SETTINGS_REFERENCE,
+    height_datum_offset: edge_flange_286_per_edge::HEIGHT_DATUM,
+    angle_owner_offset: edge_flange_286_per_edge::ANGLE_OWNER_REFERENCE,
+    height_owner_offset: edge_flange_286_per_edge::HEIGHT_OWNER_REFERENCE,
+    reference_side_offset: edge_flange_286_per_edge::REFERENCE_SIDE,
+    bend_radius_offset: edge_flange_286_per_edge::INSIDE_BEND_RADIUS,
+    result_count_offset: edge_flange_286_per_edge::RESULT_COUNT,
+    result_reference_start: edge_flange_286_per_edge::RESULT_ONE_REFERENCE,
+    result_trailer_start: edge_flange_286_per_edge::RESULT_ONE_TRAILER,
+    result_separator_offset: edge_flange_286_per_edge::RESULT_SEPARATOR,
+    aggregate_group_offset: edge_flange_286_per_edge::AGGREGATE_GROUP_REFERENCE,
+    aggregate_operand_count: 2,
+    width_owner_count: 4,
+    auxiliary_reference_count: 12,
+    width_mode: DesignEdgeWidthMode::TwoSidesPerEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeOffset,
     result_trailers: &[1, 1, 1, 1, 0],
 };
 
@@ -9796,7 +9845,9 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     aggregate_group_offset: 173,
     aggregate_operand_count: 1,
     width_owner_count: 0,
+    auxiliary_reference_count: 0,
     width_mode: DesignEdgeWidthMode::FullEdge,
+    width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
     result_trailers: &[0],
 };
 
@@ -9899,14 +9950,21 @@ fn legacy_edge_flange_operation_at(
         .iter()
         .map(|record_index| claim(record_index.checked_add(3)?, &mut unclaimed))
         .collect::<Option<Vec<_>>>()?;
-    if unclaimed.len() != layout.aggregate_operand_count + layout.width_owner_count {
+    if unclaimed.len()
+        != layout.aggregate_operand_count
+            + layout.width_owner_count
+            + layout.auxiliary_reference_count
+    {
         return None;
     }
-    let width_owner_start = unclaimed
+    let aggregate_operand_start = unclaimed
         .len()
         .checked_sub(layout.aggregate_operand_count)?;
-    let aggregate_operand_record_indices = unclaimed.split_off(width_owner_start);
-    let width_distance_owner_record_indices = unclaimed;
+    let aggregate_operand_record_indices = unclaimed.split_off(aggregate_operand_start);
+    let width_distance_owner_record_indices = unclaimed
+        .drain(..layout.width_owner_count)
+        .collect::<Vec<_>>();
+    let auxiliary_reference_record_indices = unclaimed;
     let width_distance_owner_record_indices_by_edge =
         if layout.width_mode == DesignEdgeWidthMode::TwoSidesPerEdge {
             if width_distance_owner_record_indices.len() != edge_count.checked_mul(2)? {
@@ -9931,6 +9989,8 @@ fn legacy_edge_flange_operation_at(
         width_mode: Some(layout.width_mode),
         width_distance_owner_record_indices,
         width_distance_owner_record_indices_by_edge,
+        auxiliary_reference_record_indices,
+        width_parameter_source: layout.width_parameter_source,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -10046,6 +10106,8 @@ fn edge_flange_operation_at(
         width_mode: None,
         width_distance_owner_record_indices,
         width_distance_owner_record_indices_by_edge: Vec::new(),
+        auxiliary_reference_record_indices: Vec::new(),
+        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
@@ -10212,6 +10274,8 @@ fn edge_flange_to_object_operation_at(
         width_mode: None,
         width_distance_owner_record_indices: Vec::new(),
         width_distance_owner_record_indices_by_edge: Vec::new(),
+        auxiliary_reference_record_indices: Vec::new(),
+        width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,

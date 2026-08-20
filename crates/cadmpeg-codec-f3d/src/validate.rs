@@ -2172,6 +2172,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // the entries no role claims are exactly the width owners.
                 let edge_count = operation.edge_wrapper_record_indices.len();
                 let width_owner_count = operation.width_distance_owner_record_indices.len();
+                let width_source_valid = match operation.width_parameter_source {
+                    records::DesignEdgeFlangeWidthParameterSource::EdgeWidth => true,
+                    records::DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
+                        operation.edge_width_mode() == records::DesignEdgeWidthMode::TwoSidesPerEdge
+                    }
+                };
                 let grouped_width_owners = operation
                     .width_distance_owner_record_indices_by_edge
                     .iter()
@@ -2185,6 +2191,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .chain(&operation.edge_operand_record_indices)
                     .chain(&operation.aggregate_operand_record_indices)
                     .chain(&operation.width_distance_owner_record_indices)
+                    .chain(&operation.auxiliary_reference_record_indices)
                     .chain([
                         &operation.aggregate_group_record_index,
                         &operation.height_owner_record_index,
@@ -2208,6 +2215,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ]);
                 }
                 edge_count > 0
+                    && width_source_valid
                     && operation.edge_group_record_indices.len() == edge_count
                     && operation.edge_operand_record_indices.len() == edge_count
                     && operation.aggregate_operand_record_indices.len() == edge_count
