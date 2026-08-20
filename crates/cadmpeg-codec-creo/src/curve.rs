@@ -5351,14 +5351,26 @@ pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressio
     })
 }
 
-/// Decode positional `crv_array` rows whose terminal
-/// `<four canonical reference IDs> 00 00 e3 e1 e3` suffix has exactly one
-/// possible boundary. Rows with ambiguous or malformed suffixes are not
-/// returned; callers must preserve their enclosing section as unknown data.
+/// Decode positional `crv_array` rows whose terminal suffix has one
+/// syntactically valid boundary. Callers that have decoded the enclosing
+/// `srf_array` should use [`topology_rows_with_face_ids`] so an ambiguous
+/// reference boundary can be resolved by its face roles.
+#[cfg(test)]
 pub fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
-    let mut rows = framed_rows(payload)
+    topology_rows_with_face_ids(payload, None)
+}
+
+/// Decode standard topology rows using the enclosing `srf_array` identifier
+/// set to resolve variable-width reference boundaries.
+pub fn topology_rows_with_face_ids(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<CurveTopologyRow> {
+    let mut rows = framed_rows_with_face_ids(payload, face_ids)
         .into_iter()
-        .filter_map(|row| parse_topology_row(&payload[row.start..row.end], row.start))
+        .filter_map(|row| {
+            parse_topology_row_with_face_ids(&payload[row.start..row.end], row.start, face_ids)
+        })
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.offset);
     rows.dedup_by_key(|row| row.offset);
@@ -5527,50 +5539,7 @@ fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, us
     }
 }
 
-fn framed_segment(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    boundary_anchored: bool,
-) -> Option<FramedRow> {
-    let segment = payload.get(start..end)?;
-    let mut prefixes = (0..segment.len())
-        .filter_map(|row_start| {
-            topology_prefix_fields(segment, row_start).map(|prefix| (row_start, prefix.end))
-        })
-        .collect::<Vec<_>>();
-    prefixes.sort_unstable_by_key(|(_, end)| *end);
-    let closes = segment
-        .windows(3)
-        .enumerate()
-        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
-        .map(|(offset, _)| offset)
-        .collect::<Vec<_>>();
-    for close in closes.into_iter().rev() {
-        let row_end = close + 3;
-        let Some((suffix_start, _)) = topology_suffix(&segment[..row_end]) else {
-            continue;
-        };
-        if boundary_anchored
-            && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
-        {
-            return Some(FramedRow {
-                start,
-                end: start + row_end,
-            });
-        }
-        let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
-        if eligible == 1 {
-            return Some(FramedRow {
-                start: start + prefixes[0].0,
-                end: start + row_end,
-            });
-        }
-    }
-    None
-}
-
-fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
+fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -> Vec<FramedRow> {
     let mut result = Vec::new();
     let mut arrays = Vec::new();
     let mut search = 0;
@@ -5592,7 +5561,13 @@ fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
         let mut cursor = label + b"topol_ref_data\0".len();
         let mut boundary_anchored = false;
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
-            if let Some(row) = framed_segment(payload, cursor, terminator, boundary_anchored) {
+            if let Some(row) = framed_segment_with_face_ids(
+                payload,
+                cursor,
+                terminator,
+                boundary_anchored,
+                face_ids,
+            ) {
                 result.push(row);
             }
             cursor = terminator + length;
@@ -5602,6 +5577,51 @@ fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
     result.sort_by_key(|row| row.start);
     result.dedup_by_key(|row| row.start);
     result
+}
+
+fn framed_segment_with_face_ids(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    boundary_anchored: bool,
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Option<FramedRow> {
+    let segment = payload.get(start..end)?;
+    let mut prefixes = (0..segment.len())
+        .filter_map(|row_start| {
+            topology_prefix_fields(segment, row_start).map(|prefix| (row_start, prefix.end))
+        })
+        .collect::<Vec<_>>();
+    prefixes.sort_unstable_by_key(|(_, end)| *end);
+    let closes = segment
+        .windows(3)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    for close in closes.into_iter().rev() {
+        let row_end = close + 3;
+        let Some((suffix_start, _)) = topology_suffix_with_face_ids(&segment[..row_end], face_ids)
+        else {
+            continue;
+        };
+        if boundary_anchored
+            && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
+        {
+            return Some(FramedRow {
+                start,
+                end: start + row_end,
+            });
+        }
+        let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
+        if eligible == 1 {
+            return Some(FramedRow {
+                start: start + prefixes[0].0,
+                end: start + row_end,
+            });
+        }
+    }
+    None
 }
 
 fn curve_scalar_lane(
@@ -5679,11 +5699,22 @@ fn curve_scalar_lane(
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
-/// topology suffix. Rows without a unique suffix are not typed.
+/// topology suffix. Use [`parameter_records_with_face_ids`] when the enclosing
+/// `srf_array` identifiers are available.
+#[cfg(test)]
 pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
+    parameter_records_with_face_ids(payload, None)
+}
+
+/// Decode analytic bodies using the enclosing `srf_array` identifier set to
+/// resolve variable-width reference boundaries.
+pub fn parameter_records_with_face_ids(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<CurveParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
-    for framed in framed_rows(payload) {
+    for framed in framed_rows_with_face_ids(payload, face_ids) {
         let row = &payload[framed.start..framed.end];
         let (curve_id, after_id) = compact_int(row, 0);
         let Some(&type_byte) = row.get(after_id) else {
@@ -5697,7 +5728,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
         if row.get(close..) != Some(&[0, 0, 0xe3]) || body_start > close {
             continue;
         }
-        let Some((suffix_start, _)) = topology_suffix(row) else {
+        let Some((suffix_start, _)) = topology_suffix_with_face_ids(row, face_ids) else {
             continue;
         };
         if suffix_start < body_start {
@@ -6254,8 +6285,12 @@ pub fn bind_prototype_pcurves(
     result
 }
 
-fn parse_topology_row(row: &[u8], absolute_offset: usize) -> Option<CurveTopologyRow> {
-    let (suffix_start, [f0, f1, e0, e1]) = topology_suffix(row)?;
+fn parse_topology_row_with_face_ids(
+    row: &[u8],
+    absolute_offset: usize,
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Option<CurveTopologyRow> {
+    let (suffix_start, [f0, f1, e0, e1]) = topology_suffix_with_face_ids(row, face_ids)?;
     let prefix = topology_prefix(row, 0, suffix_start)?;
     Some(CurveTopologyRow {
         id: prefix.id,
@@ -6292,7 +6327,10 @@ fn topology_prefix_fields(row: &[u8], start: usize) -> Option<TopologyPrefix> {
         })
 }
 
-fn topology_suffix(row: &[u8]) -> Option<(usize, [u32; 4])> {
+fn topology_suffix_with_face_ids(
+    row: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Option<(usize, [u32; 4])> {
     let close = row.len().checked_sub(3)?;
     (row.get(close..)? == [0, 0, 0xe3]).then_some(())?;
     let mut candidates = Vec::new();
@@ -6316,10 +6354,17 @@ fn topology_suffix(row: &[u8]) -> Option<(usize, [u32; 4])> {
             candidates.push((start, [f0, f1, e0, e1]));
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+    let ids = face_ids.filter(|ids| !ids.is_empty())?;
+    let mut role_matches = candidates.into_iter().filter(|(_, references)| {
+        references[..2]
+            .iter()
+            .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+    });
+    let candidate = role_matches.next()?;
+    role_matches.next().is_none().then_some(candidate)
 }
 
 fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {

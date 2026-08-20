@@ -15,7 +15,7 @@
 //! converts that scan into the codec-neutral container summary.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
@@ -1436,12 +1436,16 @@ fn curve_expressions(
     records
 }
 
-fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterRecord> {
+fn curve_parameters(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<CurveParameterRecord> {
     let mut records = Vec::new();
     for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
-            curve::parameter_records(&data[section.offset..end])
+            curve::parameter_records_with_face_ids(&data[section.offset..end], Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1489,12 +1493,16 @@ fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurveProto
     records
 }
 
-fn curve_topology_rows(data: &[u8], sections: &[Section]) -> Vec<CurveTopologyRow> {
+fn curve_topology_rows(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<CurveTopologyRow> {
     let mut rows = Vec::new();
     for section in sections {
         let end = (section.offset + section.length).min(data.len());
         rows.extend(
-            curve::topology_rows(&data[section.offset..end])
+            curve::topology_rows_with_face_ids(&data[section.offset..end], Some(face_ids))
                 .into_iter()
                 .map(|mut row| {
                     row.offset += section.offset;
@@ -2319,10 +2327,18 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &sections,
         model_name.as_deref().and_then(relation_model_name),
     );
-    let nonvisible_curve_parameters = curve_parameters(&data, &nonvisible_geometry_sections);
-    let curve_parameters = curve_parameters(&data, &model_geometry_sections);
-    let nonvisible_curve_topology_rows = curve_topology_rows(&data, &nonvisible_geometry_sections);
-    let mut curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
+    let topology_face_ids = nonvisible_surface_rows
+        .iter()
+        .chain(surface_rows.iter())
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let nonvisible_curve_parameters =
+        curve_parameters(&data, &nonvisible_geometry_sections, &topology_face_ids);
+    let curve_parameters = curve_parameters(&data, &model_geometry_sections, &topology_face_ids);
+    let nonvisible_curve_topology_rows =
+        curve_topology_rows(&data, &nonvisible_geometry_sections, &topology_face_ids);
+    let mut curve_topology_rows =
+        curve_topology_rows(&data, &model_geometry_sections, &topology_face_ids);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     if layout == Layout::LegacyAscii {

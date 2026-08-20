@@ -1589,10 +1589,14 @@ carrier incidence is not limited to the stored side of each edge.
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before
-the unique four-reference suffix. The suffix is valid only when exactly one
-canonical four-reference parse reaches `00 00 e3`; zero or multiple parses
-withhold the complete row from typed parameter records. Its scalar walk
-retains each decoded token with body-relative offset, length, and exact bytes.
+the four-reference suffix. A suffix candidate is a sequence of four canonical
+reference identifiers that reaches `00 00 e3`. A unique candidate is valid
+without namespace qualification. When multiple candidates exist, retain only
+candidates whose `F0` and `F1` are zero or identify rows in the enclosing
+`srf_array`; exactly one such candidate is valid. Zero or multiple candidates
+after that qualification withhold the complete row from typed parameter
+records. The same rule frames the topology row. Its scalar walk retains each
+decoded token with body-relative offset, length, and exact bytes.
 Canonical `f7` entity references retain the same span data. Maximal bytes
 claimed by neither class form opaque spans, so the three span sets partition
 the complete body.
