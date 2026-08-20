@@ -163,7 +163,11 @@ pub(crate) fn decode_recipe_references(
     match View::u32_le_at(prefix, 14) {
         Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
         Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
-        Some(5) => decode_grouped_recipe_references(prefix, prefix_offset),
+        Some(group_count) if group_count >= 4 => usize::try_from(group_count)
+            .ok()
+            .map_or_else(Vec::new, |group_count| {
+                decode_grouped_recipe_references(prefix, prefix_offset, group_count)
+            }),
         _ => Vec::new(),
     }
 }
@@ -259,13 +263,23 @@ fn decode_paired_recipe_references(
 fn decode_grouped_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
+    group_count: usize,
 ) -> Vec<crate::records::DesignRecipeReference> {
     const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
-    const GROUP_COUNT: usize = 5;
+    const GROUP_COUNT_WORD_SIZE: usize = 4;
 
     let mut references = Vec::new();
     let mut at = grouped_recipe::LEN;
-    for _ in 0..GROUP_COUNT {
+    if group_count
+        > prefix
+            .len()
+            .saturating_sub(at)
+            .checked_div(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
+            .unwrap_or_default()
+    {
+        return Vec::new();
+    }
+    for _ in 0..group_count {
         let Some(operand_count) = usize::try_from(View::u32_le_at(prefix, at).unwrap_or(0)).ok()
         else {
             return Vec::new();
@@ -306,7 +320,7 @@ pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
 }
 
 pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
-    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) == Some(5)
+    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT).is_some_and(|group_count| group_count >= 4)
         && !decode_recipe_references(prefix, 0).is_empty()
 }
 

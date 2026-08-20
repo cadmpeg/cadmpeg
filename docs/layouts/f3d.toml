@@ -3024,9 +3024,9 @@ anchor = "the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID"
 name = "grouped_recipe_reference_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "A grouped selector-bearing prefix stores ten zero bytes, `u32 1`, `u32 5`, and exactly five groups."
+anchor = "A grouped selector-bearing prefix stores ten zero bytes, `u32 1`, a `u32 N` with `N >= 4`, and exactly `N` groups."
 size = 18
-note = "Offsets are relative to the recipe prefix. Five variable-length counted operand groups and one final u32 zero follow this fixed header."
+note = "Offsets are relative to the recipe prefix. N variable-length counted operand groups and one final u32 zero follow this fixed header."
 
 [[record.field]]
 name = "zero_run_10"
@@ -3047,7 +3047,7 @@ name = "group_count"
 offset = 14
 type = "u32"
 source = "spec"
-anchor = "`u32 5`, and exactly five groups"
+anchor = "a `u32 N` with `N >= 4`, and exactly `N` groups"
 
 [[record]]
 name = "combine_standard_operation_prefix"

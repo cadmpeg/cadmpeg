@@ -1295,7 +1295,7 @@ pub(crate) mod assembly_axial_role_prefix {
 /// Spec §3.1. Record length 18 B.
 ///
 /// ```text
-/// Offsets are relative to the recipe prefix. Five variable-length counted operand groups and one final u32 zero follow this fixed header.
+/// Offsets are relative to the recipe prefix. N variable-length counted operand groups and one final u32 zero follow this fixed header.
 /// ```
 pub(crate) mod grouped_recipe_reference_prefix {
     /// Record length in bytes. Spec §3.1.

@@ -475,6 +475,51 @@ fn face_recipe_decodes_five_group_reference_sequence() {
 }
 
 #[test]
+fn face_recipe_decodes_dynamic_group_reference_sequence() {
+    fn operand(prefix: &mut Vec<u8>, selector: u32, token: &str, reference: u32) {
+        prefix.extend_from_slice(&selector.to_le_bytes());
+        prefix.extend_from_slice(token.as_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+    }
+
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&4u32.to_le_bytes());
+    for (selector, token, reference) in [
+        (1, "97", 302),
+        (2, "88", 302),
+        (3, "10", 302),
+        (1, "8", 302),
+    ] {
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        operand(&mut prefix, selector, token, reference);
+    }
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| (
+                reference.selector,
+                reference.token.as_str(),
+                reference.design_reference
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (1, "97", 302),
+            (2, "88", 302),
+            (3, "10", 302),
+            (1, "8", 302)
+        ]
+    );
+}
+
+#[test]
 fn dimension_recipe_rejects_non_decimal_reference_tokens() {
     for token in [b"-".as_slice(), b"+1", b"1-"] {
         let mut prefix = vec![0; 10];

@@ -1007,13 +1007,13 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 18 B
 
-Offsets are relative to the recipe prefix. Five variable-length counted operand groups and one final u32 zero follow this fixed header.
+Offsets are relative to the recipe prefix. N variable-length counted operand groups and one final u32 zero follow this fixed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 10 | `zero_run_10` | `bytes[10]` | little | spec | stores ten zero bytes |
 | 10 | 4 | `constant_one` | `u32` | little | spec | `u32 1` |
-| 14 | 4 | `group_count` | `u32` | little | spec | `u32 5`, and exactly five groups |
+| 14 | 4 | `group_count` | `u32` | little | spec | a `u32 N` with `N >= 4`, and exactly `N` groups |
 
 ## `combine_standard_operation_prefix`
 
