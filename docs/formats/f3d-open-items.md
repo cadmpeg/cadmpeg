@@ -178,7 +178,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** What do the two u64 values around the fixed `u32 48` in a cross-document `Combine` body-selector tail mean?
 
-**Known.** `f3d.md` §3.1 "A tool body-selection record" gives the complete selector grammar and the independent occurrence, external-body, segment, asset, link, property, and version fields. The first u64 follows u32 `9` and u16 `2`. The second follows u32 `48`. The two values are retained in source order and can differ between selectors that share the same owning scope.
+**Known.** `f3d.md` §3.1 "A tool body-selection record" gives the complete selector grammar and the independent occurrence, external-body, segment, asset, link, property, and version fields. The first u64 follows u32 `9` and u16 `2`. The second follows u32 `48`. The two values are retained in source order and can differ between selectors that share the same owning scope. The exact class-`329` forms already admitted by the decoder show the first value repeated by selectors in one operation and zero in the observed operation without the optional property/version tail. The second value differs between selectors and reads as a finite little-endian f64 in the four observed selectors. The first value's byte sequence also occurs in other fixed reference records, so it is not a unique external-body identity token.
 
 **Need.** Their meanings determine whether they participate in persistent body identity and how a writer derives them from a cross-document body selection.
 
