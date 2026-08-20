@@ -498,7 +498,7 @@ impl<'a> Container<'a> {
             .collect()
     }
 
-    /// Decode indexed EXTREFSTREAM record prefixes and sorted handle sets.
+    /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
     pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
         self.entries
             .iter()
@@ -672,7 +672,7 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         let unique_count = handle_token_count - usize::from(closing_duplicate);
         handles[..unique_count]
             .windows(2)
-            .all(|pair| pair[0] < pair[1])
+            .all(|pair| pair[0] <= pair[1])
             .then_some(())?;
         if closing_duplicate {
             handles.pop();

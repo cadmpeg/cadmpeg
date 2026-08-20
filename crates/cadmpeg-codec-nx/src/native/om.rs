@@ -1176,7 +1176,7 @@ pub struct ExternalReferenceRecord {
     pub declared_count: u16,
     /// Four uninterpreted little-endian ID slots.
     pub id_slots: [u32; 4],
-    /// Strictly ascending persistent handles; the serialized closing duplicate is omitted.
+    /// Non-decreasing persistent handles; only the serialized closing duplicate is omitted.
     pub handles: Vec<u32>,
     /// Whether the final serialized handle repeats the preceding handle.
     pub closing_duplicate: bool,

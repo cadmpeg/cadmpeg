@@ -838,6 +838,18 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 
+**Conflict.** A complete external-reference record now provides a child name,
+child directory, ordered handle lane, and record identity. The FastLoad roster
+provides prototype and UUID indices for its occurrence lane. No serialized
+field joins an external-reference record or handle to one FastLoad occurrence
+ordinal. Equal child names, repeated handles, and equal UUID groups do not
+establish that instance-level relation.
+
+**Note.** Preserve the complete child binding and the FastLoad occurrence lane
+as separate native relations. Do not construct neutral occurrences or assign
+placements until a unique child-to-occurrence join and a transform owner are
+decoded.
+
 ### AM-08. Residual `EXTREFSTREAM` tail fields
 
 **Question.** What are the field boundaries and roles of the residual bytes in an indexed `EXTREFSTREAM` record tail?
