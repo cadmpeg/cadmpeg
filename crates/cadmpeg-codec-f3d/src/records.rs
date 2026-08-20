@@ -5893,6 +5893,11 @@ pub enum SketchPointRecordForm {
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
     },
+    /// Class version 11 with inline target-type GUIDs on its references and eight flags.
+    Version11InlineTyped {
+        /// Final inline-typed reference following the repeated companion reference.
+        trailing_reference: u32,
+    },
 }
 
 impl Default for SketchPointRecordForm {
@@ -5909,7 +5914,7 @@ impl SketchPointRecordForm {
             Self::Version0 => 0,
             Self::Version8 => 8,
             Self::Version10 | Self::Version10InlineTyped { .. } => 10,
-            Self::Version11 { .. } => 11,
+            Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 11,
         }
     }
 
@@ -5917,12 +5922,15 @@ impl SketchPointRecordForm {
         match self {
             Self::Version0 => 1,
             Self::Version8 | Self::Version10 | Self::Version10InlineTyped { .. } => 7,
-            Self::Version11 { .. } => 8,
+            Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 8,
         }
     }
 
     pub(crate) fn uses_inline_typed_references(&self) -> bool {
-        matches!(self, Self::Version10InlineTyped { .. })
+        matches!(
+            self,
+            Self::Version10InlineTyped { .. } | Self::Version11InlineTyped { .. }
+        )
     }
 
     pub(crate) fn closure_is_valid(&self, closure: Option<&SketchPointClosure>) -> bool {
@@ -5938,7 +5946,10 @@ impl SketchPointRecordForm {
                     Some((0, 0 | 1))
                 )
                 | (Self::Version10InlineTyped { .. }, Some((2, 1)))
-                | (Self::Version11 { .. }, Some((0 | 1 | 4, 0) | (0 | 2, 1)))
+                | (
+                    Self::Version11 { .. } | Self::Version11InlineTyped { .. },
+                    Some((0 | 1 | 4, 0) | (0 | 2, 1)),
+                )
         )
     }
 }

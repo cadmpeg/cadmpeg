@@ -109,6 +109,16 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
                 trailing_reference: OWNER,
             },
         ),
+        (
+            11,
+            true,
+            0,
+            0,
+            false,
+            SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference: OWNER,
+            },
+        ),
     ];
     for (version, inline_typed, selector, state, padded, expected_form) in cases {
         let decoded = decode_sketch_point_record(

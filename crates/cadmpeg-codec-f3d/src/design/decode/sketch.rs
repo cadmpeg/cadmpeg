@@ -1553,7 +1553,11 @@ pub(crate) fn decode_sketch_points_from_stream(
                     &bytes[companion_frame.start..companion_frame.end],
                     record_index,
                     companion_encoding,
-                    matches!(decoded.record_form, SketchPointRecordForm::Version11 { .. }),
+                    matches!(
+                        decoded.record_form,
+                        SketchPointRecordForm::Version11 { .. }
+                            | SketchPointRecordForm::Version11InlineTyped { .. }
+                    ),
                     &types_by_entity,
                 )
             })
@@ -2344,7 +2348,8 @@ struct DecodedSketchPoint {
 impl DecodedSketchPoint {
     fn trailing_reference(&self) -> Option<u32> {
         match self.record_form {
-            SketchPointRecordForm::Version10InlineTyped { trailing_reference } => {
+            SketchPointRecordForm::Version10InlineTyped { trailing_reference }
+            | SketchPointRecordForm::Version11InlineTyped { trailing_reference } => {
                 Some(trailing_reference)
             }
             _ => self.owner_reference,
@@ -2448,7 +2453,9 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
     let inline_typed = match (class_version, paired_type_guid.as_deref()) {
         (8 | 10 | 11, None) => false,
-        (10, Some(type_guid)) if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) => {
+        (10 | 11, Some(type_guid))
+            if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) =>
+        {
             true
         }
         _ => return None,
@@ -2496,48 +2503,61 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         return None;
     }
     let closure = SketchPointClosure { selector, state };
-    let (record_form, owner_reference) = match (class_version, inline_typed) {
-        (8, false) => {
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (SketchPointRecordForm::Version8, Some(owner))
-        }
-        (10, false) => {
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (SketchPointRecordForm::Version10, Some(owner))
-        }
-        (10, true) => {
-            let (trailing_reference, type_guid) =
-                take_local_sketch_reference(payload, &mut cursor)?;
-            if type_guid
-                .as_deref()
-                .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
-            {
-                return None;
+    let (record_form, owner_reference) =
+        match (class_version, inline_typed) {
+            (8, false) => {
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (SketchPointRecordForm::Version8, Some(owner))
             }
-            (
-                SketchPointRecordForm::Version10InlineTyped { trailing_reference },
-                None,
-            )
-        }
-        (11, false) => {
-            let padded_paired_reference = match payload.len().checked_sub(cursor)? {
-                11 => false,
-                15 if payload.get(cursor..cursor + 4) == Some(&[0; 4][..]) => {
-                    cursor += 4;
-                    true
+            (10, false) => {
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (SketchPointRecordForm::Version10, Some(owner))
+            }
+            (10, true) => {
+                let (trailing_reference, type_guid) =
+                    take_local_sketch_reference(payload, &mut cursor)?;
+                if type_guid.as_deref().is_none_or(|type_guid| {
+                    !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                }) {
+                    return None;
                 }
-                _ => return None,
-            };
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (
-                SketchPointRecordForm::Version11 {
-                    padded_paired_reference,
-                },
-                Some(owner),
-            )
-        }
-        _ => return None,
-    };
+                (
+                    SketchPointRecordForm::Version10InlineTyped { trailing_reference },
+                    None,
+                )
+            }
+            (11, true) => {
+                let (trailing_reference, type_guid) =
+                    take_local_sketch_reference(payload, &mut cursor)?;
+                if type_guid.as_deref().is_none_or(|type_guid| {
+                    !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                }) {
+                    return None;
+                }
+                (
+                    SketchPointRecordForm::Version11InlineTyped { trailing_reference },
+                    None,
+                )
+            }
+            (11, false) => {
+                let padded_paired_reference = match payload.len().checked_sub(cursor)? {
+                    11 => false,
+                    15 if payload.get(cursor..cursor + 4) == Some(&[0; 4][..]) => {
+                        cursor += 4;
+                        true
+                    }
+                    _ => return None,
+                };
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (
+                    SketchPointRecordForm::Version11 {
+                        padded_paired_reference,
+                    },
+                    Some(owner),
+                )
+            }
+            _ => return None,
+        };
     if cursor != payload.len() || !record_form.closure_is_valid(Some(&closure)) {
         return None;
     }
