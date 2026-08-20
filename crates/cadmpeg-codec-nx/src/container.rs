@@ -7,6 +7,7 @@
 //! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_core::bytes::find;
@@ -355,27 +356,63 @@ impl<'a> Container<'a> {
                     }
                 }
             }
-            let materialized = if let Cow::Borrowed(bytes) = &self.data {
-                let bytes: &'a [u8] = bytes;
-                Some(
-                    layouts
-                        .iter()
-                        .filter_map(|(entry_index, layout)| {
-                            let entry = self.entries.get(*entry_index)?;
-                            let (offset, size) = entry.file_span?;
-                            let (offset, size) =
-                                (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                            let payload = bytes.get(offset..offset.saturating_add(size))?;
-                            Some((*entry_index, layout.materialize(payload)))
-                        })
-                        .collect(),
-                )
-            } else {
-                None
-            };
+            let materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>> =
+                if let Cow::Borrowed(bytes) = &self.data {
+                    let bytes: &'a [u8] = bytes;
+                    Some(
+                        layouts
+                            .iter()
+                            .filter_map(|(entry_index, layout)| {
+                                let entry = self.entries.get(*entry_index)?;
+                                let (offset, size) = entry.file_span?;
+                                let (offset, size) =
+                                    (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                                let payload = bytes.get(offset..offset.saturating_add(size))?;
+                                Some((*entry_index, layout.materialize(payload)))
+                            })
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+            let offset_data_block_bytes = materialized.as_ref().map(|sections| {
+                let mut blocks = BTreeMap::new();
+                for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
+                    if section
+                        .records
+                        .first()
+                        .is_none_or(|record| record.object_id.is_some())
+                    {
+                        continue;
+                    }
+                    let entry_offset = self
+                        .entries
+                        .get(*entry_index)
+                        .and_then(|entry| entry.file_span)
+                        .map_or(0, |(offset, _)| offset);
+                    let first_record_ordinal = usize::from(section.control.is_some());
+                    if let Some(control) = section.control.as_ref() {
+                        blocks.insert(
+                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                            (control.bytes, entry_offset + control.offset as u64),
+                        );
+                    }
+                    for (record_ordinal, block) in section.records.iter().enumerate() {
+                        blocks.insert(
+                            format!(
+                                "nx:om-data-blocks-{section_ordinal}:block#{}",
+                                record_ordinal + first_record_ordinal
+                            ),
+                            (block.bytes, entry_offset + block.offset as u64),
+                        );
+                    }
+                }
+                blocks
+            });
             IndexedSectionCache {
                 layouts,
                 materialized,
+                offset_data_block_bytes,
             }
         });
         if let Some(materialized) = cache.materialized.as_ref() {
@@ -399,6 +436,18 @@ impl<'a> Container<'a> {
                 Some((entry, layout.materialize(payload)))
             })
             .collect()
+    }
+
+    /// Return the cached bytes and source offsets of every borrowed offset-store block.
+    ///
+    /// Owned test containers keep the layout-only fallback because their data is
+    /// self-owned and cannot be stored as a borrow in this cache.
+    pub(crate) fn cached_offset_data_block_bytes(
+        &self,
+    ) -> Option<&BTreeMap<String, (&'a [u8], u64)>> {
+        self.indexed_section_layouts
+            .get()
+            .and_then(|cache| cache.offset_data_block_bytes.as_ref())
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
@@ -741,6 +790,7 @@ pub struct Container<'a> {
 pub(crate) struct IndexedSectionCache<'a> {
     layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
     materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>>,
+    offset_data_block_bytes: Option<BTreeMap<String, (&'a [u8], u64)>>,
 }
 
 /// Parsed size-framed sections retained when their source bytes are borrowed

@@ -148,6 +148,24 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
 }
 
 #[test]
+fn container_reuses_borrowed_offset_store_block_index() {
+    let section = offset_only_indexed_om_section_with_index_values();
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let _ = container.indexed_om_sections();
+    let first = container
+        .cached_offset_data_block_bytes()
+        .expect("borrowed indexed sections cache their offset-store blocks");
+    let second = container
+        .cached_offset_data_block_bytes()
+        .expect("cached offset-store blocks remain available");
+
+    assert!(!first.is_empty());
+    assert!(first.contains_key("nx:om-data-blocks-0:block#0"));
+    assert!(std::ptr::eq(first, second));
+}
+
+#[test]
 fn container_rejects_incomplete_counted_directories() {
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());

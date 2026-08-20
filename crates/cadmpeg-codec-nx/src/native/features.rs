@@ -9,6 +9,7 @@ use crate::native::om::{
     OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
+use std::borrow::Cow;
 
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -5127,11 +5128,18 @@ pub(crate) fn offset_data_block_bytes_for_section<'a>(
     blocks
 }
 
-fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String, (&'a [u8], u64)> {
+fn offset_data_block_bytes<'a>(
+    container: &'a Container<'_>,
+) -> Cow<'a, BTreeMap<String, (&'a [u8], u64)>> {
+    if let Some(blocks) = container.cached_offset_data_block_bytes() {
+        return Cow::Borrowed(blocks);
+    }
+    let indexed = container.indexed_om_sections();
+    if let Some(blocks) = container.cached_offset_data_block_bytes() {
+        return Cow::Borrowed(blocks);
+    }
     let mut blocks = BTreeMap::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
-    {
+    for (section_ordinal, (entry, section)) in indexed.into_iter().enumerate() {
         if section
             .records
             .first()
@@ -5147,7 +5155,7 @@ fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String,
             &section.records,
         ));
     }
-    blocks
+    Cow::Owned(blocks)
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
@@ -8522,13 +8530,13 @@ pub fn feature_block_dimensions(
 pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFrame> {
     let blocks = offset_data_block_bytes(container);
     blocks
-        .into_iter()
+        .iter()
         .flat_map(|(data_block, (bytes, source_offset))| {
             crate::om::data_block_object_frames(bytes)
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, frame)| DataBlockObjectFrame {
-                    id: data_block_object_frame_id(&data_block, ordinal),
+                    id: data_block_object_frame_id(data_block, ordinal),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
                     object_id: frame.object_id,
