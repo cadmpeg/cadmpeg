@@ -809,6 +809,16 @@ reference plane, direction, angle, and result controls.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
+**Conflict.** The common envelope preserves fourteen references in order, and
+the branch groups preserve family, mode, members, and terminal references.
+These fields use shared reference grammars and provide no relation assigning
+sections, guides, continuity, or terminal controls. Scalar pairs and strings
+are payload-owned and do not add those roles.
+
+**Note.** Preserve the envelope, reconstructed payload, scalar pairs, strings,
+and branch groups as native loft data. Neutral surface construction requires
+independent section, guide, and control-role relations.
+
 ### OM-27. `Studio Surface` construction roles
 
 **Question.** Which ordered `Studio Surface` references and branch groups select control geometry, continuity, and terminal controls?
@@ -816,6 +826,15 @@ reference plane, direction, angle, and result controls.
 **Known.** `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." and `siemens_nx.md` §7.1 "The `Studio Surface` operation label identifies a freeform-surface construction." define the surface construction envelope, ordered references, logical payload, and feature family.
 
 **Need.** We must know the roles to construct the neutral freeform surface.
+
+**Conflict.** `Studio Surface` shares the fourteen-reference envelope and
+counted branch grammar with `SKIN`; the operation label selects the family but
+does not label individual references or branch members. No serialized field
+assigns control geometry, continuity, or terminal semantics.
+
+**Note.** Preserve the complete surface envelope and branch payload as native
+freeform-surface data. Neutral projection requires a unique role relation for
+each control-geometry and continuity field.
 
 ### OM-28. Plain cached-body ownership
 
