@@ -736,28 +736,13 @@
         &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
-    let SketchConstraintDefinition::Native {
-        native_kind,
-        native_state,
-        native_flags,
-        entities,
-        operands,
-        ..
-    } = &type_33_constraints[0].0.definition
-    else {
-        panic!("native type-33 incidence");
-    };
-    assert_eq!(native_kind, "creo:skamp:33");
-    assert_eq!(*native_state, Some(35));
-    assert_eq!(*native_flags, Some(34));
-    assert_eq!(
-        entities,
-        &[SketchEntityId(
-            "creo:featdefs:sketch_entity#917:18".to_string()
-        )]
-    );
-    assert_eq!(operands.len(), 1);
-    assert_eq!(operands[0].native_role, Some(10));
+    assert!(matches!(
+        &type_33_constraints[0].0.definition,
+        SketchConstraintDefinition::Fixed { entity }
+            if entity == &SketchEntityId(
+                "creo:featdefs:sketch_entity#917:18".to_string()
+            )
+    ));
     assert_eq!(type_33_constraints[0].0.active, Some(true));
     type_33_bounded_curve
         .relations
@@ -771,11 +756,7 @@
     );
     assert!(matches!(
         inactive_type_33[0].0.definition,
-        SketchConstraintDefinition::Native {
-            native_state: Some(34),
-            native_flags: Some(34),
-            ..
-        }
+        SketchConstraintDefinition::Fixed { .. }
     ));
     assert_eq!(inactive_type_33[0].0.active, Some(false));
     type_33_bounded_curve
@@ -825,7 +806,8 @@
         .skamps[0]
         .items[0]
         .sense = 10;
-    type_33_bounded_curve
+    let mut missing_bounded_curve = type_33_bounded_curve.clone();
+    missing_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -833,7 +815,7 @@
         .clear();
     assert!(matches!(
         section_skamp_constraints(
-            &type_33_bounded_curve,
+            &missing_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
@@ -853,10 +835,10 @@
     );
     assert!(matches!(
         &emitted_type_33_constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+        SketchConstraintDefinition::Fixed { entity }
+            if entity == &SketchEntityId(
                 "creo:featdefs:sketch_entity#917:18".to_string()
-            )]
+            )
     ));
 
     let mut type_33_line = definition.clone();

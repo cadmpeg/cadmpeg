@@ -9,7 +9,7 @@ use super::{
     section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair,
     section_skamp_locus, section_skamp_midpoint, section_skamp_oriented_line,
     section_skamp_point_locus, section_skamp_same_coordinate, section_skamp_same_coordinate_axis,
-    section_skamp_tangent_loci,
+    section_skamp_tangent_loci, unique_bounded_curve_segment,
 };
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
@@ -378,6 +378,16 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::ProjectedCopy { source, result }
                         } else {
                             native_constraint()?
+                        }
+                    }
+                    (33, [item])
+                        if skamp.flags == 34
+                            && item.sense == 10
+                            && unique_bounded_curve_segment(definition, item.entity_id)
+                                .is_some() =>
+                    {
+                        SketchConstraintDefinition::Fixed {
+                            entity: sketch_entity_id(sketch, item.entity_id),
                         }
                     }
                     (14, [axis, first, second])

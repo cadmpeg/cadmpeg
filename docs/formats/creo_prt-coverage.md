@@ -577,6 +577,9 @@ fixtures, scores above L1 remain blocked.
   affine solver; inactive forms retain the neutral constraint without adding
   an equation. Solver activity controls constraint activity, not the stored
   arc role or endpoint selection.
+- A unary type-thirty-three incidence transfers as a fixed-entity constraint
+  when its flags are `34`, its sole operand has sense `10`, and that operand is
+  a unique bounded curve. Other type-thirty-three shapes remain native.
 - Two-locus type-fifteen incidences transfer the same flag-selected
   same-coordinate constraint as type seventeen. Disabled forms retain
   endpoint-selected loci on emitted solver-only carriers without requiring a

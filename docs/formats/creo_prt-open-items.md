@@ -481,14 +481,6 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
 
-### SP-15. Unary type-33 incidence
-
-**Question.** What neutral constraint does a unary type-33 `skamp_ptr` incidence with flags 34 and a sense-10 bounded-curve operand represent?
-
-**Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
-
-**Need.** We must know the constraint to transfer its design intent.
-
 ### SP-16. Other `skamp_ptr` geometry families
 
 **Question.** What geometry family does each `skamp_ptr` entity code outside the defined point, endpoint-bearing curve, line, arc, and circle roles identify?
