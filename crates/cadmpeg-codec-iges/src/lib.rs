@@ -15,7 +15,6 @@ mod global;
 mod graph;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
 pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod native;
 mod parameter;
@@ -117,31 +116,49 @@ impl CodecBackend for IgesCodec {
             None,
         )?;
         let scan = card::scan_with_context(root.window(), Some(ctx))?;
-        let (global, _) = global::parse(&scan)?;
+        let (global, global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) = directory::parse(&scan);
         ctx.charge_entities(
             (directory.len() + quarantined_directory.len()) as u64,
             "iges_inspect_directory_entries",
         )?;
-        let parameters = parameter::assemble_with_context(
+        let assembly = parameter::assemble_with_context(
             &scan,
             &directory,
             &quarantined_directory,
             &global,
             Some(ctx),
-        )?
-        .records;
+        )?;
+        let parameters = assembly.records;
         let parameter_tokens = parameters
             .iter()
             .map(|record| record.tokens.len() as u64)
             .sum();
         ctx.charge_work(parameter_tokens, "iges_inspect_parameter_parse")?;
         let references = graph::build(&directory);
+        let mut framing_recoveries = scan.recoveries.clone();
+        framing_recoveries.merge(assembly.recoveries);
+        let mut losses = Vec::new();
+        losses.extend(global.dialect_loss());
+        losses.extend(global_losses);
+        losses.extend(framing_recoveries.notes());
+        losses.extend(
+            quarantined_directory
+                .iter()
+                .map(directory::QuarantinedDirectoryRecord::loss_note),
+        );
+        losses.extend(
+            assembly
+                .quarantined
+                .iter()
+                .map(parameter::QuarantinedParameterRecord::loss_note),
+        );
         let mut summary = card::summarize(&scan);
         summary.notes.extend(global.summary_notes());
         summary.notes.extend(directory::summary_notes(&directory));
         summary.notes.extend(parameter::summary_notes(&parameters));
         summary.notes.extend(graph::summary_notes(&references));
+        summary.notes.extend(loss::census(&losses));
         Ok(summary)
     }
 

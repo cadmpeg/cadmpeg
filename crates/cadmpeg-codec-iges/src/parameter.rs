@@ -1519,28 +1519,6 @@ fn non_integer_prefix(record: &ParameterRecord) -> Vec<usize> {
     prefix
 }
 
-fn pointer_is_valid(
-    record: &ParameterRecord,
-    index: usize,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-    association: bool,
-) -> bool {
-    let Some(sequence) = record
-        .raw_integer(index)
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|sequence| sequence % 2 == 1)
-    else {
-        return false;
-    };
-    directory.get(&sequence).is_some_and(|entry| {
-        if association {
-            matches!(entry.entity_type, 212 | 312 | 402)
-        } else {
-            matches!(entry.entity_type, 316 | 322 | 406 | 422)
-        }
-    })
-}
-
 fn groups_for_candidate(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
@@ -1564,7 +1542,7 @@ fn groups_for_candidate(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let associations = association_pointers
+    let associations: Vec<u32> = association_pointers
         .iter()
         .filter_map(|pointer| {
             u32::try_from(pointer.raw_pointer)
@@ -1577,7 +1555,7 @@ fn groups_for_candidate(
                 })
         })
         .collect();
-    let properties = property_pointers
+    let properties: Vec<u32> = property_pointers
         .iter()
         .filter_map(|pointer| {
             u32::try_from(pointer.raw_pointer)
@@ -1590,12 +1568,8 @@ fn groups_for_candidate(
                 })
         })
         .collect();
-    let fully_valid = association_pointers
-        .iter()
-        .all(|pointer| pointer_is_valid(record, pointer.token_index, directory, true))
-        && property_pointers
-            .iter()
-            .all(|pointer| pointer_is_valid(record, pointer.token_index, directory, false));
+    let fully_valid = associations.len() == association_pointers.len()
+        && properties.len() == property_pointers.len();
     Some(TrailingPointerGroups {
         token_start: candidate.token_start,
         associations,

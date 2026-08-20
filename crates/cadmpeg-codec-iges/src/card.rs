@@ -61,7 +61,7 @@ impl LineEnding {
         }
     }
 
-    pub(crate) fn bytes(self) -> &'static [u8] {
+    fn bytes(self) -> &'static [u8] {
         match self {
             Self::Lf => b"\n",
             Self::CrLf => b"\r\n",
@@ -260,16 +260,29 @@ fn detect_card_stride(prefix: &[u8]) -> Confidence {
     Confidence::High
 }
 
+/// The second card image of a stream whose first line is `first`.
+///
+/// [IGES 5.3 §2.2](https://paulbourke.net/dataformats/iges/IGES.pdf) makes the
+/// line terminator a media convention that separates card images, so the second
+/// card image is the second card of the first line when that line divides into
+/// cards, and the first card of the next line otherwise.
+fn second_card_image<'a>(first: &'a [u8], rest: &'a [u8]) -> Option<&'a [u8]> {
+    if fused_card_count(first).is_some_and(|count| count > 1) {
+        return first.get(CARD_WIDTH..CARD_WIDTH * 2);
+    }
+    take_line(rest).map(|(second, _)| second)
+}
+
 pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
     let Some((first, rest)) = take_line(prefix) else {
         return detect_card_stride(prefix);
     };
-    let Some((second, _)) = take_line(rest) else {
-        return Confidence::No;
-    };
     if header(first) != Some((b'S', 1)) {
         return Confidence::No;
     }
+    let Some(second) = second_card_image(first, rest) else {
+        return Confidence::No;
+    };
     match header(second) {
         Some((b'S', 2) | (b'G', 1)) => Confidence::High,
         _ => Confidence::No,
@@ -548,12 +561,10 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
                     .join(","),
             );
             let size = lines.iter().fold(0_u64, |size, line| {
-                let ending = match line.ending {
-                    LineEnding::CrLf => 2,
-                    LineEnding::Lf | LineEnding::Cr => 1,
-                    LineEnding::None => 0,
-                };
-                size.saturating_add(u64::try_from(line.payload.len()).unwrap_or(u64::MAX) + ending)
+                size.saturating_add(
+                    u64::try_from(line.payload.len() + line.ending.bytes().len())
+                        .unwrap_or(u64::MAX),
+                )
             });
             Some(ContainerEntry {
                 name: section.name().into(),
@@ -574,12 +585,9 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         .unwrap_or_default();
     if !post_terminate.is_empty() {
         let size = post_terminate.iter().fold(0_u64, |size, line| {
-            let ending = match line.ending {
-                LineEnding::CrLf => 2,
-                LineEnding::Lf | LineEnding::Cr => 1,
-                LineEnding::None => 0,
-            };
-            size.saturating_add(u64::try_from(line.payload.len()).unwrap_or(u64::MAX) + ending)
+            size.saturating_add(
+                u64::try_from(line.payload.len() + line.ending.bytes().len()).unwrap_or(u64::MAX),
+            )
         });
         entries.push(ContainerEntry {
             name: "post-terminate".into(),

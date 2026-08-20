@@ -62,36 +62,6 @@ fn occurrence_loss(
     }
 }
 
-const VERIFIED_VERSIONS: [&str; 3] = ["5.1", "5.2", "5.3"];
-
-fn source_dialect_loss(global: &global::ResolvedGlobal) -> Option<LossNote> {
-    let declared = global.declared_version_flag();
-    let effective = global.effective_version_flag();
-    let version = global.version();
-    let clamped = declared != effective;
-    let unreadable = global.unreadable_version_declaration();
-    if !clamped && unreadable.is_none() && VERIFIED_VERSIONS.contains(&version) {
-        return None;
-    }
-    let declaration = match unreadable {
-        Some(text) => format!(
-            "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
-        ),
-        None => format!("IGES Global version flag {declared}"),
-    };
-    let clamp = if clamped {
-        format!(
-            " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
-        )
-    } else {
-        String::new()
-    };
-    Some(IgesLossCode::SourceDialectUnverified.note(format!(
-        "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
-        VERIFIED_VERSIONS.join(", ")
-    )))
-}
-
 fn loss_is_attributed_to(losses: &[LossNote], source_sequence: u32) -> bool {
     let directory_tag = format!("directory_entry:D{source_sequence}");
     let parameter_prefix = format!("D{source_sequence}:");
@@ -244,7 +214,7 @@ fn decode_with_occurrence_limits(
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = Vec::new();
-    losses.extend(source_dialect_loss(&global));
+    losses.extend(global.dialect_loss());
     losses.extend(global_losses);
     losses.extend(projection.losses);
     losses.extend(graph::losses(&references, &scan, &parameters));
@@ -339,7 +309,7 @@ fn decode_with_occurrence_limits(
             ir.model.entity_count() as u64,
             "iges_semantic_validation",
         )?;
-        reject_invalid_semantic_ir(&ir, &losses)?;
+        reject_invalid_semantic_ir(&ir)?;
     }
     let mut transfer_ledger = TransferLedger::default();
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
@@ -415,11 +385,8 @@ fn decode_with_occurrence_limits(
 /// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
 /// outcomes match full validation on every IGES golden fixture, so the route
 /// stays on the full validator.
-pub(crate) fn reject_invalid_semantic_ir(
-    ir: &CadIr,
-    losses: &[LossNote],
-) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate_neutral(ir, losses.to_vec());
+pub(crate) fn reject_invalid_semantic_ir(ir: &CadIr) -> Result<(), CodecError> {
+    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new());
     let Some(finding) = validation
         .findings
         .iter()

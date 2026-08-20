@@ -217,3 +217,26 @@ fn terminate_card_remainder_is_retained_after_terminate() {
         8
     );
 }
+
+#[test]
+fn decode_accepts_carriage_return_only_line_endings() {
+    let bytes = point_file()
+        .into_iter()
+        .map(|byte| if byte == b'\n' { b'\r' } else { byte })
+        .collect::<Vec<_>>();
+
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}

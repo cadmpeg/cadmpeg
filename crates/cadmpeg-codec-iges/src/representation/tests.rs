@@ -158,3 +158,44 @@ fn representation_detection_rejects_malformed_flag_constants() {
     malformed_tail[75] = b'X';
     assert_eq!(IgesCodec.detect(&malformed_tail), Confidence::No);
 }
+
+#[test]
+fn detection_reads_the_second_card_image_from_a_fused_first_line() {
+    let base = point_file();
+    let mut fused = base[..80].to_vec();
+    fused.extend_from_slice(&base[81..161]);
+    fused.extend_from_slice(&base[161..]);
+
+    assert_eq!(IgesCodec.detect(&fused), Confidence::High);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(fused), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::CardFramingRecovered.kind())
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn detection_refuses_a_start_card_with_no_readable_sequence() {
+    let mut bytes = point_file();
+    bytes[73..80].fill(b' ');
+
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not the expected format: unrecognized IGES representation"
+    );
+}

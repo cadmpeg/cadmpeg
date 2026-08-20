@@ -141,6 +141,7 @@ const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
 
 const FALLBACK_SIGNIFICANCE: u32 = 17;
 const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
+const VERIFIED_VERSIONS: [&str; 3] = ["5.1", "5.2", "5.3"];
 
 const METADATA_CONSEQUENCE: &str = "its value was not transferred";
 const SIGNIFICANCE_CONSEQUENCE: &str =
@@ -833,17 +834,49 @@ impl ResolvedGlobal {
     }
 
     /// The declaration text of a field 23 that does not read as an integer.
-    pub(crate) fn unreadable_version_declaration(&self) -> Option<&str> {
+    fn unreadable_version_declaration(&self) -> Option<&str> {
         self.unreadable_version_declaration.as_deref()
     }
 
     /// The declared version flag after the specification's postprocessor clamp.
-    pub(crate) fn effective_version_flag(&self) -> i64 {
+    fn effective_version_flag(&self) -> i64 {
         effective_version(self.declared_version_flag).0
     }
 
     pub(crate) fn version(&self) -> &'static str {
         effective_version(self.declared_version_flag).1
+    }
+
+    /// The loss charged when field 23 does not name a verified specification version.
+    ///
+    /// It is `None` only for a readable, unclamped flag whose effective version
+    /// is one this codec verified against that version's own specification.
+    pub(crate) fn dialect_loss(&self) -> Option<LossNote> {
+        let declared = self.declared_version_flag;
+        let effective = self.effective_version_flag();
+        let version = self.version();
+        let clamped = declared != effective;
+        let unreadable = self.unreadable_version_declaration();
+        if !clamped && unreadable.is_none() && VERIFIED_VERSIONS.contains(&version) {
+            return None;
+        }
+        let declaration = match unreadable {
+            Some(text) => format!(
+                "IGES Global field 23 (version flag) is malformed: the declaration {text} does not read as an integer, so the specification default {declared}"
+            ),
+            None => format!("IGES Global version flag {declared}"),
+        };
+        let clamp = if clamped {
+            format!(
+                " after the clamp to {effective} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor"
+            )
+        } else {
+            String::new()
+        };
+        Some(IgesLossCode::SourceDialectUnverified.note(format!(
+            "{declaration} names effective specification version {version}{clamp}; this decode interpreted the file with the semantics verified for versions {}",
+            VERIFIED_VERSIONS.join(", ")
+        )))
     }
 
     pub(crate) fn summary_notes(&self) -> Vec<String> {
@@ -861,6 +894,9 @@ impl ResolvedGlobal {
             notes.push(format!("units={units}"));
         }
         notes.push(format!("iges_version={}", self.version()));
+        if self.declared_version_flag != self.effective_version_flag() {
+            notes.push(format!("iges_version_flag={}", self.declared_version_flag));
+        }
         notes
     }
 }
