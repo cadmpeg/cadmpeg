@@ -52,7 +52,10 @@ use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::compact_shifted_extrude_extent_and_table_prefix as compact_extrude_extent;
 use crate::layout::compact_shifted_extrude_mixed_extent_and_table_prefix as compact_extrude_mixed;
 use crate::layout::compact_shifted_extrude_prologue as compact_extrude;
+use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
 use crate::layout::component_insert_identity_scope_296_263 as component_identity_scope;
+use crate::layout::component_insert_scope_283_262_257 as component_scope_283_257;
+use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385;
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
@@ -1574,6 +1577,12 @@ pub(crate) fn exact_component_insert_construction(
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
+            (257, "262") if scope.class_tag == "283" => {
+                exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
+            }
+            (385, "262") if scope.class_tag == "283" => {
+                exact_component_insert_scope_283_262_385(bytes, start, relation_record_index)?
+            }
             _ => return None,
         };
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
@@ -1633,7 +1642,15 @@ pub(crate) fn exact_component_insert_construction(
         }
         let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-        if scope.class_tag == "296" && scope.paired_class_tag == "263" {
+        if scope.class_tag == "283" && scope.paired_class_tag == "262" {
+            let (role, role_offset) = exact_component_insert_carrier_334(
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+            )?;
+            (carrier_record_index, vec![(role, role_offset, None)])
+        } else if scope.class_tag == "296" && scope.paired_class_tag == "263" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity(
                 bytes,
                 carrier_at,
@@ -1685,6 +1702,174 @@ pub(crate) fn exact_component_insert_construction(
             .and_then(|offset| u64::try_from(offset).ok()),
     })
 }
+
+fn exact_component_insert_carrier_334(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    if class_tag != "334"
+        || after_tag != carrier_at + 7
+        || View::u32_le_at(bytes, after_tag)? != carrier_record_index
+    {
+        return None;
+    }
+    let (component_identity, _) = lp_utf16_bounded(
+        bytes,
+        carrier_at + component_carrier_334::COMPONENT_IDENTITY,
+        36..=36,
+    )?;
+    if !crate::bytes::is_guid_relaxed(&component_identity) {
+        return None;
+    }
+
+    let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
+    let (role, role_end) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?;
+    if !crate::bytes::is_guid_prefix(&role)
+        || role.as_bytes().get(36) != Some(&b'_')
+        || !role.get(37..)?.starts_with("urn:")
+        || bytes.get(role_end)? != &0
+        || bytes.get(role_end + 1)? == &0
+        || bytes.get(role_end + 2..role_end + 6)? != [0; 4]
+        || View::u32_le_at(bytes, role_end + 6)? == 0
+    {
+        return None;
+    }
+    let (following_identity, _) =
+        lp_utf16_bounded(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES, 36..=36)?;
+    crate::bytes::is_guid_relaxed(&following_identity).then_some((role, role_start))
+}
+
+const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
+
+fn direct_utf16_role_until_tail(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+) -> Option<(String, usize)> {
+    let mut role = String::new();
+    let mut at = start;
+    while at.checked_add(COMPONENT_CARRIER_ROLE_TAIL_BYTES)? <= limit {
+        if bytes.get(at)? == &0
+            && bytes.get(at + 2..at + 6)? == [0; 4]
+            && View::u32_le_at(bytes, at + 6).is_some_and(|value| value != 0)
+        {
+            return Some((role, at));
+        }
+        let code_unit = View::u16_le_at(bytes, at)?;
+        let byte = u8::try_from(code_unit).ok()?;
+        if !byte.is_ascii_graphic() {
+            return None;
+        }
+        role.push(char::from(byte));
+        at = at.checked_add(2)?;
+    }
+    None
+}
+
+fn exact_component_insert_scope_283_262_257(
+    bytes: &[u8],
+    start: usize,
+    relation_record_index: u32,
+) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(
+            start + component_scope_283_257::RELATION_MARKER
+                ..start + component_scope_283_257::RELATION_MARKER + 1,
+        )? != [1]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_257::RELATION_RECORD_INDEX,
+        )? != relation_record_index
+        || bytes.get(start + 38..start + 44)? != [0; 6]
+        || bytes.get(start + 44..start + 46)? != [1, 1]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_257::NULL_GUID_CODE_UNIT_COUNT,
+        )? != 36
+    {
+        return None;
+    }
+    let (null_guid, after_null_guid) = lp_utf16_bounded(
+        bytes,
+        start + component_scope_283_257::NULL_GUID_CODE_UNIT_COUNT,
+        36..=36,
+    )?;
+    if null_guid != NULL_COMPONENT_INSERT_GUID
+        || after_null_guid != start + component_scope_283_257::REFERENCE_COUNT - 3
+        || View::u32_le_at(bytes, start + component_scope_283_257::REFERENCE_COUNT)? != 1
+        || bytes.get(start + component_scope_283_257::REFERENCE_MARKER) != Some(&1)
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_257::REFERENCE_RECORD_INDEX,
+        )? != relation_record_index
+        || bytes.get(start + 134..start + 140)? != [0; 6]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_257::PREVIOUS_HISTORY_STATE_ID,
+        )? != u32::MAX
+    {
+        return None;
+    }
+    Some((
+        identity_matrix(),
+        None,
+        View::u64_le_at(bytes, start + component_scope_283_257::OCCURRENCE_IDENTITY)?,
+    ))
+}
+
+fn exact_component_insert_scope_283_262_385(
+    bytes: &[u8],
+    start: usize,
+    relation_record_index: u32,
+) -> Option<([[f64; 4]; 4], Option<usize>, u64)> {
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 44..start + 52)? != [1, 0, 0, 0, 0, 0, 0, 0]
+        || bytes.get(start + 38..start + 44)? != [0; 6]
+        || bytes.get(
+            start + component_scope_283_385::RELATION_MARKER
+                ..start + component_scope_283_385::RELATION_MARKER + 1,
+        )? != [1]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_385::RELATION_RECORD_INDEX,
+        )? != relation_record_index
+    {
+        return None;
+    }
+    let transform_at = start + component_scope_283_385::TRANSFORM;
+    let transform = rigid_transform_at(bytes, transform_at)?;
+    let (null_guid, after_null_guid) = lp_utf16_bounded(
+        bytes,
+        start + component_scope_283_385::NULL_GUID_CODE_UNIT_COUNT,
+        36..=36,
+    )?;
+    if null_guid != NULL_COMPONENT_INSERT_GUID
+        || after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3
+        || View::u32_le_at(bytes, start + component_scope_283_385::REFERENCE_COUNT)? != 1
+        || bytes.get(start + component_scope_283_385::REFERENCE_MARKER) != Some(&1)
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_385::REFERENCE_RECORD_INDEX,
+        )? != relation_record_index
+        || bytes.get(start + 262..start + 268)? != [0; 6]
+        || View::u32_le_at(
+            bytes,
+            start + component_scope_283_385::PREVIOUS_HISTORY_STATE_ID,
+        )? != u32::MAX
+    {
+        return None;
+    }
+    Some((
+        transform,
+        Some(transform_at),
+        View::u64_le_at(bytes, start + component_scope_283_385::OCCURRENCE_IDENTITY)?,
+    ))
+}
+
+const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn exact_component_insert_identity_scope(
     bytes: &[u8],

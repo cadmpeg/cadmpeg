@@ -17,7 +17,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, and the grouped identity `Component Insert` frames. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -10167,6 +10167,372 @@ anchor = "the 36-code-unit null GUID `00000000-0000-0000-0000-000000000000` at o
 offset = 126
 size = 135
 note = "The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame."
+
+[[record]]
+name = "component_insert_scope_283_262_257"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`283` / class-`262` generation has two exact scope frames"
+size = 257
+note = "Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 257. The final fixed tail contains generation state bytes between the typed lanes and the paired header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`byte_offset` is the primary class-`283` indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "an occurrence identity u64 at offset 21"
+
+[[record.gap]]
+offset = 29
+size = 4
+note = "Four zero bytes occupy offsets 29 through 32."
+
+[[record.field]]
+name = "relation_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "a marked relation reference at offset 33"
+value = 1
+
+[[record.field]]
+name = "relation_record_index"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "its u32 value at offset 34"
+
+[[record.gap]]
+offset = 38
+size = 6
+note = "Six zero bytes occupy offsets 38 through 43."
+
+[[record.field]]
+name = "identity_markers"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "The 257-byte form stores `01 01` at offsets 44 and 45"
+value = [1, 1]
+
+[[record.field]]
+name = "null_guid_code_unit_count"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "an LP-UTF16 null component GUID with code-unit count 36 at offset 46"
+value = 36
+
+[[record.field]]
+name = "null_guid_utf16_payload"
+offset = 50
+type = "bytes[72]"
+source = "spec"
+anchor = "payload at offset 50"
+
+[[record.gap]]
+offset = 122
+size = 3
+note = "Three zero bytes occupy offsets 122 through 124."
+
+[[record.field]]
+name = "reference_count"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "one ordered reference at offset 125"
+value = 1
+
+[[record.field]]
+name = "reference_marker"
+offset = 129
+type = "u8"
+source = "spec"
+anchor = "marker 1 at offset 129"
+value = 1
+
+[[record.field]]
+name = "reference_record_index"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "the relation index at offset 130"
+
+[[record.gap]]
+offset = 134
+size = 6
+note = "Six zero bytes occupy offsets 134 through 139."
+
+[[record.field]]
+name = "history_state_id"
+offset = 140
+type = "u32"
+source = "spec"
+anchor = "the current history-state identity `0xffffffff` at offset 140"
+value = 4294967295
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 144
+type = "u32"
+source = "spec"
+anchor = "Its kind count is 16 at offset 144"
+value = 16
+
+[[record.field]]
+name = "kind_utf16_payload"
+offset = 148
+type = "bytes[32]"
+source = "spec"
+anchor = "its `Component Insert` payload starts at offset 148"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 180
+type = "u32"
+source = "spec"
+anchor = "The feature ordinal is at offset 180"
+
+[[record.gap]]
+offset = 184
+size = 27
+note = "The fixed generation tail precedes the preceding history-state identity."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 211
+type = "u32"
+source = "spec"
+anchor = "the preceding history-state identity is at offset 211"
+
+[[record.gap]]
+offset = 215
+size = 42
+note = "The remaining fixed generation tail ends at the paired class-262 header."
+
+[[record]]
+name = "component_insert_scope_283_262_385"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`283` / class-`262` generation has two exact scope frames"
+size = 385
+note = "Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 385. The final fixed tail contains generation state bytes between the typed lanes and the paired header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`byte_offset` is the primary class-`283` indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "an occurrence identity u64 at offset 21"
+
+[[record.gap]]
+offset = 29
+size = 4
+note = "Four zero bytes occupy offsets 29 through 32."
+
+[[record.field]]
+name = "relation_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "a marked relation reference at offset 33"
+value = 1
+
+[[record.field]]
+name = "relation_record_index"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "its u32 value at offset 34"
+
+[[record.gap]]
+offset = 38
+size = 6
+note = "Six zero bytes occupy offsets 38 through 43."
+
+[[record.field]]
+name = "transform_markers"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "The 385-byte form stores `01 00` at offsets 44 and 45"
+value = [1, 0]
+
+[[record.field]]
+name = "transform"
+offset = 46
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform of 16 little-endian f64 values at offset 46"
+
+[[record.field]]
+name = "null_guid_code_unit_count"
+offset = 174
+type = "u32"
+source = "spec"
+anchor = "the null component GUID count at offset 174"
+value = 36
+
+[[record.field]]
+name = "null_guid_utf16_payload"
+offset = 178
+type = "bytes[72]"
+source = "spec"
+anchor = "payload at offset 178"
+
+[[record.gap]]
+offset = 250
+size = 3
+note = "Three zero bytes occupy offsets 250 through 252."
+
+[[record.field]]
+name = "reference_count"
+offset = 253
+type = "u32"
+source = "spec"
+anchor = "one ordered reference at offset 253"
+value = 1
+
+[[record.field]]
+name = "reference_marker"
+offset = 257
+type = "u8"
+source = "spec"
+anchor = "marker 1 at offset 257"
+value = 1
+
+[[record.field]]
+name = "reference_record_index"
+offset = 258
+type = "u32"
+source = "spec"
+anchor = "the relation index at offset 258"
+
+[[record.gap]]
+offset = 262
+size = 6
+note = "Six zero bytes occupy offsets 262 through 267."
+
+[[record.field]]
+name = "history_state_id"
+offset = 268
+type = "u32"
+source = "spec"
+anchor = "the current history-state identity `0xffffffff` at offset 268"
+value = 4294967295
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 272
+type = "u32"
+source = "spec"
+anchor = "Its kind count is 16 at offset 272"
+value = 16
+
+[[record.field]]
+name = "kind_utf16_payload"
+offset = 276
+type = "bytes[32]"
+source = "spec"
+anchor = "its `Component Insert` payload starts at offset 276"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 308
+type = "u32"
+source = "spec"
+anchor = "The feature ordinal is at offset 308"
+
+[[record.gap]]
+offset = 312
+size = 27
+note = "The fixed generation tail precedes the preceding history-state identity."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 339
+type = "u32"
+source = "spec"
+anchor = "the preceding history-state identity is at offset 339"
+
+[[record.gap]]
+offset = 343
+size = 42
+note = "The remaining fixed generation tail ends at the paired class-262 header."
+
+[[record]]
+name = "component_insert_carrier_334_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`334` carrier stores a 36-code-unit component identity"
+note = "This size-less byte record describes the fixed carrier prefix through the first direct role code unit. The direct role, discriminator tail, and following identity are variable-length suffix fields."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-`334` carrier stores"
+
+[[record.gap]]
+offset = 11
+size = 27
+note = "The fixed prefix reaches the component identity count at offset 38."
+
+[[record.field]]
+name = "component_identity"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "a 36-code-unit component identity as an LP-UTF16 field at offset 38"
+value = 36
+
+[[record.field]]
+name = "component_identity_utf16"
+offset = 42
+type = "bytes[72]"
+source = "spec"
+anchor = "a 36-code-unit component identity as an LP-UTF16 field at offset 38"
+
+[[record.gap]]
+offset = 114
+size = 45
+note = "The fixed prefix ends immediately before the direct neutron-role payload."
+
+[[record.field]]
+name = "neutron_role"
+offset = 159
+type = "u16"
+source = "spec"
+anchor = "a direct UTF-16LE neutron-role payload at offset 159"
 
 [[record]]
 name = "component_insert_grouped_identity_carrier_382"

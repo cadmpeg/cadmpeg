@@ -4180,6 +4180,140 @@ pub(crate) mod component_insert_identity_scope_296_263 {
     pub(crate) const OPAQUE_UTF16_PAYLOAD: usize = 54;
 }
 
+/// Byte offsets for the `component_insert_scope_283_262_257` record.
+///
+/// Spec §3.1. Record length 257 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 257. The final fixed tail contains generation state bytes between the typed lanes and the paired header.
+/// ```
+pub(crate) mod component_insert_scope_283_262_257 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 257;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 21;
+    /// Offset of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER: usize = 33;
+    /// Stated value of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER_VALUE: u8 = 1;
+    /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RELATION_RECORD_INDEX: usize = 34;
+    /// Offset of `identity_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const IDENTITY_MARKERS: usize = 44;
+    /// Stated value of `identity_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const IDENTITY_MARKERS_VALUE: [u8; 2] = [0x01, 0x01];
+    /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT: usize = 46;
+    /// Stated value of `null_guid_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Offset of `null_guid_utf16_payload` (`bytes[72]`). Spec §3.1.
+    pub(crate) const NULL_GUID_UTF16_PAYLOAD: usize = 50;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 125;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 129;
+    /// Stated value of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_RECORD_INDEX: usize = 130;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 140;
+    /// Stated value of `history_state_id` (`u32`). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID_VALUE: u32 = 0xffff_ffff;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 144;
+    /// Stated value of `kind_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0010;
+    /// Offset of `kind_utf16_payload` (`bytes[32]`). Spec §3.1.
+    pub(crate) const KIND_UTF16_PAYLOAD: usize = 148;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 180;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 211;
+}
+
+/// Byte offsets for the `component_insert_scope_283_262_385` record.
+///
+/// Spec §3.1. Record length 385 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 385. The final fixed tail contains generation state bytes between the typed lanes and the paired header.
+/// ```
+pub(crate) mod component_insert_scope_283_262_385 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 385;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 21;
+    /// Offset of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER: usize = 33;
+    /// Stated value of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER_VALUE: u8 = 1;
+    /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RELATION_RECORD_INDEX: usize = 34;
+    /// Offset of `transform_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRANSFORM_MARKERS: usize = 44;
+    /// Stated value of `transform_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRANSFORM_MARKERS_VALUE: [u8; 2] = [0x01, 0x00];
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 46;
+    /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT: usize = 174;
+    /// Stated value of `null_guid_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0024;
+    /// Offset of `null_guid_utf16_payload` (`bytes[72]`). Spec §3.1.
+    pub(crate) const NULL_GUID_UTF16_PAYLOAD: usize = 178;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 253;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 257;
+    /// Stated value of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_RECORD_INDEX: usize = 258;
+    /// Offset of `history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID: usize = 268;
+    /// Stated value of `history_state_id` (`u32`). Spec §3.1.
+    pub(crate) const HISTORY_STATE_ID_VALUE: u32 = 0xffff_ffff;
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 272;
+    /// Stated value of `kind_code_unit_count` (`u32`). Spec §3.1.
+    pub(crate) const KIND_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0010;
+    /// Offset of `kind_utf16_payload` (`bytes[32]`). Spec §3.1.
+    pub(crate) const KIND_UTF16_PAYLOAD: usize = 276;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 308;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 339;
+}
+
+/// Byte offsets for the `component_insert_carrier_334_prefix` record.
+///
+/// Spec §3.1.
+///
+/// ```text
+/// This size-less byte record describes the fixed carrier prefix through the first direct role code unit. The direct role, discriminator tail, and following identity are variable-length suffix fields.
+/// ```
+pub(crate) mod component_insert_carrier_334_prefix {
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `component_identity` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPONENT_IDENTITY: usize = 38;
+    /// Stated value of `component_identity` (`u32`). Spec §3.1.
+    pub(crate) const COMPONENT_IDENTITY_VALUE: u32 = 0x0000_0024;
+    /// Offset of `component_identity_utf16` (`bytes[72]`). Spec §3.1.
+    pub(crate) const COMPONENT_IDENTITY_UTF16: usize = 42;
+    /// Offset of `neutron_role` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const NEUTRON_ROLE: usize = 159;
+}
+
 /// Byte offsets for the `component_insert_grouped_identity_carrier_382` record.
 ///
 /// Spec §3.1. Record length 695 B.

@@ -2955,11 +2955,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && construction.transform
                                     == design::decode::sketch::identity_matrix()
                         }
+                        (257, "262") if scope.class_tag == "283" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
+                        }
+                        (385, "262") if scope.class_tag == "283" => {
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(46))
+                        }
                         _ => false,
                     };
                 let placement_field_order =
                     match (scope.frame_length, scope.paired_class_tag.as_str()) {
                         (261, "263") if scope.class_tag == "296" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (257 | 385, "262") if scope.class_tag == "283" => {
                             construction.carrier_transform_offset.is_none()
                         }
                         (404, _) => construction
@@ -2969,10 +2981,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .carrier_transform_offset
                             .is_some_and(|offset| construction.neutron_role_offset < offset),
                     };
+                let role_valid = crate::bytes::is_guid_relaxed(&construction.neutron_role)
+                    || (crate::bytes::is_guid_prefix(&construction.neutron_role)
+                        && construction.neutron_role.as_bytes().get(36) == Some(&b'_')
+                        && construction
+                            .neutron_role
+                            .get(37..)
+                            .is_some_and(|suffix| suffix.starts_with("urn:")));
                 scope.kind == "Component Insert"
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
-                    && crate::bytes::is_guid_relaxed(&construction.neutron_role)
+                    && role_valid
                     && design::decode::sketch::valid_sketch_transform(&construction.transform)
                     && frame_matches_transform
                     && placement_field_order

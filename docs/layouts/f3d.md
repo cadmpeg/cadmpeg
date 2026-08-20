@@ -18,7 +18,7 @@ compact `Loft` prefix and nested profile-region frames, the class-418
 operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, and the grouped identity `Component Insert` frames. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
+(§3.1), plus the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, and the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -3065,6 +3065,102 @@ Unstated regions:
 - `33..37` (4 B): Four zero bytes occupy offsets 33 through 36.
 - `42..48` (6 B): Six zero bytes occupy offsets 42 through 47.
 - `126..261` (135 B): The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame.
+
+## `component_insert_scope_283_262_257`
+
+Spec §3.1 · layout: byte offsets · size: 257 B
+
+Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 257. The final fixed tail contains generation state bytes between the typed lanes and the paired header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | `byte_offset` is the primary class-`283` indexed header |
+| 21 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 21 |
+| 33 | 1 | `relation_marker` | `u8` | little | spec | a marked relation reference at offset 33 · value `1` |
+| 34 | 4 | `relation_record_index` | `u32` | little | spec | its u32 value at offset 34 |
+| 44 | 2 | `identity_markers` | `bytes[2]` | little | spec | The 257-byte form stores `01 01` at offsets 44 and 45 · value `[1, 1]` |
+| 46 | 4 | `null_guid_code_unit_count` | `u32` | little | spec | an LP-UTF16 null component GUID with code-unit count 36 at offset 46 · value `36` |
+| 50 | 72 | `null_guid_utf16_payload` | `bytes[72]` | little | spec | payload at offset 50 |
+| 125 | 4 | `reference_count` | `u32` | little | spec | one ordered reference at offset 125 · value `1` |
+| 129 | 1 | `reference_marker` | `u8` | little | spec | marker 1 at offset 129 · value `1` |
+| 130 | 4 | `reference_record_index` | `u32` | little | spec | the relation index at offset 130 |
+| 140 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity `0xffffffff` at offset 140 · value `4294967295` |
+| 144 | 4 | `kind_code_unit_count` | `u32` | little | spec | Its kind count is 16 at offset 144 · value `16` |
+| 148 | 32 | `kind_utf16_payload` | `bytes[32]` | little | spec | its `Component Insert` payload starts at offset 148 |
+| 180 | 4 | `feature_ordinal` | `u32` | little | spec | The feature ordinal is at offset 180 |
+| 211 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 211 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `29..33` (4 B): Four zero bytes occupy offsets 29 through 32.
+- `38..44` (6 B): Six zero bytes occupy offsets 38 through 43.
+- `122..125` (3 B): Three zero bytes occupy offsets 122 through 124.
+- `134..140` (6 B): Six zero bytes occupy offsets 134 through 139.
+- `184..211` (27 B): The fixed generation tail precedes the preceding history-state identity.
+- `215..257` (42 B): The remaining fixed generation tail ends at the paired class-262 header.
+
+## `component_insert_scope_283_262_385`
+
+Spec §3.1 · layout: byte offsets · size: 385 B
+
+Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 385. The final fixed tail contains generation state bytes between the typed lanes and the paired header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | `byte_offset` is the primary class-`283` indexed header |
+| 21 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 21 |
+| 33 | 1 | `relation_marker` | `u8` | little | spec | a marked relation reference at offset 33 · value `1` |
+| 34 | 4 | `relation_record_index` | `u32` | little | spec | its u32 value at offset 34 |
+| 44 | 2 | `transform_markers` | `bytes[2]` | little | spec | The 385-byte form stores `01 00` at offsets 44 and 45 · value `[1, 0]` |
+| 46 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform of 16 little-endian f64 values at offset 46 |
+| 174 | 4 | `null_guid_code_unit_count` | `u32` | little | spec | the null component GUID count at offset 174 · value `36` |
+| 178 | 72 | `null_guid_utf16_payload` | `bytes[72]` | little | spec | payload at offset 178 |
+| 253 | 4 | `reference_count` | `u32` | little | spec | one ordered reference at offset 253 · value `1` |
+| 257 | 1 | `reference_marker` | `u8` | little | spec | marker 1 at offset 257 · value `1` |
+| 258 | 4 | `reference_record_index` | `u32` | little | spec | the relation index at offset 258 |
+| 268 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity `0xffffffff` at offset 268 · value `4294967295` |
+| 272 | 4 | `kind_code_unit_count` | `u32` | little | spec | Its kind count is 16 at offset 272 · value `16` |
+| 276 | 32 | `kind_utf16_payload` | `bytes[32]` | little | spec | its `Component Insert` payload starts at offset 276 |
+| 308 | 4 | `feature_ordinal` | `u32` | little | spec | The feature ordinal is at offset 308 |
+| 339 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 339 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `29..33` (4 B): Four zero bytes occupy offsets 29 through 32.
+- `38..44` (6 B): Six zero bytes occupy offsets 38 through 43.
+- `250..253` (3 B): Three zero bytes occupy offsets 250 through 252.
+- `262..268` (6 B): Six zero bytes occupy offsets 262 through 267.
+- `312..339` (27 B): The fixed generation tail precedes the preceding history-state identity.
+- `343..385` (42 B): The remaining fixed generation tail ends at the paired class-262 header.
+
+## `component_insert_carrier_334_prefix`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+This size-less byte record describes the fixed carrier prefix through the first direct role code unit. The direct role, discriminator tail, and following identity are variable-length suffix fields.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A class-`334` carrier stores |
+| 38 | 4 | `component_identity` | `u32` | little | spec | a 36-code-unit component identity as an LP-UTF16 field at offset 38 · value `36` |
+| 42 | 72 | `component_identity_utf16` | `bytes[72]` | little | spec | a 36-code-unit component identity as an LP-UTF16 field at offset 38 |
+| 159 | 2 | `neutron_role` | `u16` | little | spec | a direct UTF-16LE neutron-role payload at offset 159 |
+
+Unstated regions:
+
+- `11..38` (27 B): The fixed prefix reaches the component identity count at offset 38.
+- `114..159` (45 B): The fixed prefix ends immediately before the direct neutron-role payload.
 
 ## `component_insert_grouped_identity_carrier_382`
 

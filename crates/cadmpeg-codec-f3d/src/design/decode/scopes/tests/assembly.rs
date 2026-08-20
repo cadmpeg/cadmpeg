@@ -1353,6 +1353,136 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.carrier_transform_offset, None);
 }
 
+#[test]
+fn class_283_component_insert_admits_compact_and_transformed_scopes() {
+    let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    };
+    let role = "b2231f72-46dc-40fa-b8e8-10cd208d7df8_urn:adsk.test:asset";
+    let null_guid = "00000000-0000-0000-0000-000000000000";
+    let component_guid = "11111111-2222-3333-4444-555555555555";
+
+    let make_fixture = |frame_length: usize, transform: [[f64; 4]; 4]| {
+        let mut bytes = Vec::new();
+        let carrier_at = bytes.len();
+        header(&mut bytes, b"334", 10);
+        bytes.resize(
+            carrier_at + crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE,
+            0,
+        );
+        bytes[carrier_at + crate::layout::component_insert_carrier_334_prefix::COMPONENT_IDENTITY
+            ..carrier_at
+                + crate::layout::component_insert_carrier_334_prefix::COMPONENT_IDENTITY
+                + 76]
+            .copy_from_slice(&crate::bytes::lp_utf16_bytes(component_guid));
+        let role_at = carrier_at + crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE;
+        bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes.extend_from_slice(&[0, 0x21, 0, 0, 0, 0, 1, 0, 0, 0]);
+        bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(component_guid));
+        assert_eq!(
+            role_at
+                + role.encode_utf16().count() * 2
+                + 10
+                + crate::bytes::lp_utf16_bytes(component_guid).len(),
+            bytes.len()
+        );
+
+        let relation_at = bytes.len();
+        header(&mut bytes, b"365", 20);
+        bytes.extend_from_slice(&[0; 10]);
+        for (reference, zero_count) in [(10_u32, 8), (99, 7), (30, 6)] {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend(std::iter::repeat_n(0, zero_count));
+        }
+        assert_eq!(bytes.len(), relation_at + 57);
+        header(&mut bytes, b"262", 20);
+
+        let scope_at = bytes.len();
+        header(&mut bytes, b"283", 30);
+        bytes.resize(scope_at + frame_length, 0);
+        bytes[scope_at + 21..scope_at + 29].copy_from_slice(&17_u64.to_le_bytes());
+        bytes[scope_at + 33] = 1;
+        bytes[scope_at + 34..scope_at + 38].copy_from_slice(&20_u32.to_le_bytes());
+        if frame_length == 257 {
+            bytes[scope_at + 44..scope_at + 46].copy_from_slice(&[1, 1]);
+            bytes[scope_at + 46..scope_at + 122]
+                .copy_from_slice(&crate::bytes::lp_utf16_bytes(null_guid));
+            bytes[scope_at + 125..scope_at + 129].copy_from_slice(&1_u32.to_le_bytes());
+            bytes[scope_at + 129] = 1;
+            bytes[scope_at + 130..scope_at + 134].copy_from_slice(&20_u32.to_le_bytes());
+            bytes[scope_at + 140..scope_at + 144].copy_from_slice(&u32::MAX.to_le_bytes());
+            bytes[scope_at + 211..scope_at + 215].copy_from_slice(&u32::MAX.to_le_bytes());
+        } else {
+            bytes[scope_at + 44..scope_at + 46].copy_from_slice(&[1, 0]);
+            for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+                let at = scope_at + 46 + ordinal * 8;
+                bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            bytes[scope_at + 174..scope_at + 250]
+                .copy_from_slice(&crate::bytes::lp_utf16_bytes(null_guid));
+            bytes[scope_at + 253..scope_at + 257].copy_from_slice(&1_u32.to_le_bytes());
+            bytes[scope_at + 257] = 1;
+            bytes[scope_at + 258..scope_at + 262].copy_from_slice(&20_u32.to_le_bytes());
+            bytes[scope_at + 268..scope_at + 272].copy_from_slice(&u32::MAX.to_le_bytes());
+            bytes[scope_at + 339..scope_at + 343].copy_from_slice(&u32::MAX.to_le_bytes());
+        }
+        header(&mut bytes, b"262", 30);
+
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#30",
+            "Component Insert",
+            30,
+        );
+        scope.byte_offset = scope_at as u64;
+        scope.class_tag = "283".into();
+        scope.frame_length = frame_length as u64;
+        scope.reference_members = vec![20];
+        scope.reference_member_offsets = vec![(scope_at + 34) as u64];
+        scope.paired_class_tag = "262".into();
+        scope.paired_byte_offset = (scope_at + frame_length) as u64;
+        (bytes, scope, scope_at)
+    };
+
+    let identity = identity_matrix();
+    let (bytes, scope, _) = make_fixture(257, identity);
+    let records = IndexedRecordOffsets::build(&bytes);
+    let construction = exact_component_insert_construction(&bytes, &records, &scope)
+        .expect("class-283 compact component insert construction");
+    assert_eq!(construction.carrier_record_index, 10);
+    assert_eq!(construction.occurrence_identity, Some(17));
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(
+        construction.neutron_role_offset,
+        crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
+    );
+    assert_eq!(construction.transform, identity);
+    assert_eq!(construction.transform_offset, None);
+    assert_eq!(construction.carrier_transform_offset, None);
+
+    let transformed = [
+        [1.0, 0.0, 0.0, -2.1],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let (bytes, scope, scope_at) = make_fixture(385, transformed);
+    let construction =
+        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("class-283 transformed component insert construction");
+    assert_eq!(construction.occurrence_identity, Some(17));
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(
+        construction.neutron_role_offset,
+        crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
+    );
+    assert_eq!(construction.transform, transformed);
+    assert_eq!(construction.transform_offset, Some((scope_at + 46) as u64));
+    assert_eq!(construction.carrier_transform_offset, None);
+}
+
 pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
     let mut bytes = vec![0_u8; 648];
     bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
