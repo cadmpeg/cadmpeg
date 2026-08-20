@@ -274,16 +274,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The closure replaces the shift scan with direct and escaped frame candidates and a parser-derived boundary check. No serialized field establishes the choice, and the successor boundary is itself recognized by the same candidate parser. If both candidates end at recognized tags, or neither does because of a trailer, a valid record is omitted; a false recognized successor can select the wrong reading.
 
-### PS-31. `OFFSET_SURF` discriminator and true-offset roles
-
-**Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?
-
-**Known.** `siemens_nx.md` §6.1 "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref" defines the layout and the evaluation `P = base(u,v) + offset_distance * unit_normal(u,v)`. It assigns no role to the discriminator or to `true_offset`.
-
-**Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
-
-**Note.** The closure changes the specification to say that `V`, `I`, and `U` are status values and that neither field affects parameter direction. The tests only mutate synthetic bytes and assert that the decoder leaves senses unset. No serialized comparison establishes either field's meaning or rules out an orientation role.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

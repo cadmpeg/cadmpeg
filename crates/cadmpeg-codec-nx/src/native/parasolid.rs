@@ -4097,70 +4097,74 @@ mod tests {
 
     #[test]
     fn decode_preserves_offset_status_without_assigning_parameter_sense() {
-        for (discriminator, true_offset) in [('V', true), ('I', false), ('U', true)] {
-            let mut stream = offset_surface_topology_partition_stream();
-            let offset_record = stream.len() - 31;
-            stream[offset_record + 19] = discriminator as u8;
-            stream[offset_record + 20] = u8::from(true_offset);
-            let mut cur = Cursor::new(prt_with_partition(&stream));
-            let result = NxCodec
-                .decode(&mut cur, &DecodeOptions::default())
-                .expect("required invariant");
+        for discriminator in ['V', 'I', 'U'] {
+            for true_offset in [false, true] {
+                let mut stream = offset_surface_topology_partition_stream();
+                let offset_record = stream.len() - 31;
+                stream[offset_record + 19] = discriminator as u8;
+                stream[offset_record + 20] = u8::from(true_offset);
+                let mut cur = Cursor::new(prt_with_partition(&stream));
+                let result = NxCodec
+                    .decode(&mut cur, &DecodeOptions::default())
+                    .expect("required invariant");
 
-            let procedural = result
-                .ir()
-                .model
-                .procedural_surfaces
-                .first()
-                .expect("offset surface");
-            let ProceduralSurfaceDefinition::Offset {
-                support,
-                distance,
-                u_sense,
-                v_sense,
-                extension_flags,
-                ..
-            } = &procedural.definition
-            else {
-                panic!("offset definition");
-            };
-            assert_eq!(*distance, 2.5);
-            assert_eq!(*u_sense, None);
-            assert_eq!(*v_sense, None);
-            assert!(extension_flags.is_empty());
-            assert_ne!(procedural.surface, *support);
-            assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
-            let records = result
-                .ir()
-                .native
-                .namespace("nx")
-                .expect("required invariant")
-                .arena_as::<super::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
-                .expect("required invariant");
-            assert_eq!(records.len(), 1);
-            assert_eq!(records[0].discriminator, discriminator);
-            assert_eq!(records[0].true_offset, true_offset);
-            assert_eq!(records[0].support_xmt, 6);
-            assert_eq!(records[0].distance, 2.5);
-            let carrier = result
-                .ir()
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == procedural.surface)
-                .expect("offset carrier");
-            assert_eq!(
-                carrier
-                    .source_object
-                    .as_ref()
-                    .map(|source| &source.object_id),
-                Some(&records[0].id)
-            );
-            assert!(matches!(
-                &carrier.geometry,
-                SurfaceGeometry::Procedural { construction } if construction == &procedural.id
-            ));
-            assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+                let procedural = result
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .first()
+                    .expect("offset surface");
+                let ProceduralSurfaceDefinition::Offset {
+                    support,
+                    distance,
+                    u_sense,
+                    v_sense,
+                    extension_flags,
+                    ..
+                } = &procedural.definition
+                else {
+                    panic!("offset definition");
+                };
+                assert_eq!(*distance, 2.5);
+                assert_eq!(*u_sense, None);
+                assert_eq!(*v_sense, None);
+                assert!(extension_flags.is_empty());
+                assert_ne!(procedural.surface, *support);
+                assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+                let records = result
+                    .ir()
+                    .native
+                    .namespace("nx")
+                    .expect("required invariant")
+                    .arena_as::<super::ParasolidOffsetSurfaceRecord>(
+                        "parasolid_offset_surface_records",
+                    )
+                    .expect("required invariant");
+                assert_eq!(records.len(), 1);
+                assert_eq!(records[0].discriminator, discriminator);
+                assert_eq!(records[0].true_offset, true_offset);
+                assert_eq!(records[0].support_xmt, 6);
+                assert_eq!(records[0].distance, 2.5);
+                let carrier = result
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == procedural.surface)
+                    .expect("offset carrier");
+                assert_eq!(
+                    carrier
+                        .source_object
+                        .as_ref()
+                        .map(|source| &source.object_id),
+                    Some(&records[0].id)
+                );
+                assert!(matches!(
+                    &carrier.geometry,
+                    SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+                ));
+                assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+            }
         }
     }
 
