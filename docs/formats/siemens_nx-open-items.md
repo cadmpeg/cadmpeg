@@ -866,16 +866,6 @@ unresolved.
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-32. All-terminal body-lineage mappings
-
-**Question.** Which serialized state separates a complete body mapping in which every emitted body is terminal from a mapping whose terminal status is unresolved?
-
-**Known.** `siemens_nx.md` §7.1 "Bodies named by validated segment binding tuples exist at the start of retained feature history." and `siemens_nx.md` §7.1 "A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection." define writer and consumption ordering and admit the all-terminal case as resolved. Both a file whose operations supersede no body and a file whose lineage evidence is absent produce the same all-terminal set.
-
-**Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
-
-**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1948-2001` treats `mapped == emitted` as the resolved all-terminal case. A synthetic empty-lineage case produces the same set as a valid all-terminal file, and a serialized discriminator has not yet been found in corpus records. This is a promotion of output compatibility to lineage evidence, so the item is reopened.
-
 ### OM-33. Decisive active-body membership
 
 **Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
