@@ -323,6 +323,8 @@ impl Node {
 pub struct Graph {
     nodes: BTreeMap<(u8, u32), Node>,
     by_pos: BTreeMap<usize, (u8, u32)>,
+    /// Record keys grouped by kind in their physical stream order.
+    by_kind: BTreeMap<u8, Vec<(u8, u32)>>,
 }
 
 /// A type-133 parameter restriction over a basis curve.
@@ -696,6 +698,9 @@ impl Graph {
             graph.by_pos.insert(node.pos, key);
             graph.nodes.insert(key, node);
         }
+        for &key in graph.by_pos.values() {
+            graph.by_kind.entry(key.0).or_default().push(key);
+        }
         graph
     }
 
@@ -837,10 +842,11 @@ impl Graph {
 
     /// Iterate nodes of one record type in physical record order.
     pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
-        self.by_pos.values().filter_map(move |key| {
-            let node = self.nodes.get(key)?;
-            (node.kind == kind).then_some(node)
-        })
+        self.by_kind
+            .get(&kind)
+            .into_iter()
+            .flat_map(|keys| keys.iter())
+            .filter_map(|key| self.nodes.get(key))
     }
 
     /// Curve identities occupying typed curve-reference slots in the fixed
