@@ -798,14 +798,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
-### E5-12. E5 occurrence-side fallback
-
-**Question.** Which intersection side is authoritative when an E5 edge has zero, one, or conflicting occurrence-side candidates?
-
-**Known.** An exact two-side intersection context requires exactly two sides with matching parameter ranges. When no such context exists, the decoder retains a surface curve only for exactly one resolved side. Multiple sides with no exact context remain unbound; source order does not select one.
-
-**Need.** We must distinguish a valid one-sided construction from multiple or conflicting sides before selecting an edge carrier.
-
 ## 7. FBB-only and float-packed variants
 
 ### FV-01. `u24be` endpoint quotient binding

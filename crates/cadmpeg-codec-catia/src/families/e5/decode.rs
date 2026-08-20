@@ -33,6 +33,7 @@ use crate::solve::UnionFind;
 
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
 const EPS_AXIS_ALIGN: f64 = 1e-8;
+const E5_PARAMETER_RELATIVE_TOLERANCE: f64 = 1e-9;
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -789,6 +790,14 @@ pub(crate) struct E5IntersectionSidePlan {
     curve_range: [f64; 2],
 }
 
+#[derive(Clone)]
+struct E5OccurrenceIntersectionSide {
+    surface: SurfaceId,
+    pcurve: PcurveGeometry,
+    pcurve_range: [f64; 2],
+    curve: Option<(CurveGeometry, [f64; 2])>,
+}
+
 /// Boundary lowering plan built by [`plan_e5_boundary`].
 #[allow(clippy::struct_field_names)]
 struct E5BoundaryPlan {
@@ -924,7 +933,7 @@ fn plan_e5_boundary(
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
     let mut surface_curve_plan = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     let mut occurrence_intersection_sides =
-        BTreeMap::<u32, Vec<(SurfaceId, PcurveGeometry, [f64; 2])>>::new();
+        BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
     for face in &topology.faces {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return None;
@@ -945,7 +954,6 @@ fn plan_e5_boundary(
                 let Some(support) = topology.curve_supports.get(&edge.support) else {
                     return None;
                 };
-                let _ = support;
                 let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else {
                     return None;
                 };
@@ -993,18 +1001,7 @@ fn plan_e5_boundary(
                 } else {
                     geometry.clone()
                 };
-                if support.intersection {
-                    let side = (
-                        surface_for_ref[&face.surface].0.clone(),
-                        oriented_pcurve.clone(),
-                        range,
-                    );
-                    let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
-                    if !sides.contains(&side) {
-                        sides.push(side);
-                    }
-                }
-                if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                let lifted_curve = if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
                     &decoded_surface.geometry,
                     pcurve,
                     &geometry,
@@ -1020,6 +1017,27 @@ fn plan_e5_boundary(
                         };
                         (curve, curve_range) = reversed_curve;
                     }
+                    Some((curve, curve_range))
+                } else {
+                    None
+                };
+                if support.intersection {
+                    let side = E5OccurrenceIntersectionSide {
+                        surface: surface_for_ref[&face.surface].0.clone(),
+                        pcurve: oriented_pcurve.clone(),
+                        pcurve_range: range,
+                        curve: lifted_curve.clone(),
+                    };
+                    let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
+                    if !sides.iter().any(|existing| {
+                        existing.surface == side.surface
+                            && existing.pcurve == side.pcurve
+                            && existing.pcurve_range == side.pcurve_range
+                    }) {
+                        sides.push(side);
+                    }
+                }
+                if let Some((curve, curve_range)) = lifted_curve {
                     if !support.intersection {
                         if let Some(existing) = edge_curve_plan.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
@@ -1168,20 +1186,27 @@ fn plan_e5_boundary(
         if intersection_plan.contains_key(&edge_ref) {
             continue;
         }
-        let Some(context) = e5_occurrence_intersection_context(sides) else {
+        let Some(edge) = topology.edges.get(&edge_ref) else {
+            return None;
+        };
+        let Some(support) = topology.curve_supports.get(&edge.support) else {
+            return None;
+        };
+        let cache = e5_occurrence_intersection_cache(sides);
+        let solved_range = cache.as_ref().map_or(support.range, |(_, range)| *range);
+        let Some(context) =
+            e5_support_occurrence_intersection_context(support.range, solved_range, sides)
+        else {
             if let [side] = sides.as_slice() {
-                surface_curve_plan
-                    .entry(edge_ref)
-                    .or_insert_with(|| side.clone());
+                surface_curve_plan.entry(edge_ref).or_insert_with(|| {
+                    (side.surface.clone(), side.pcurve.clone(), side.pcurve_range)
+                });
             }
             continue;
         };
         edge_curve_plan.insert(
             edge_ref,
-            (
-                CurveGeometry::Unknown { record: None },
-                context.parameter_range,
-            ),
+            cache.unwrap_or((CurveGeometry::Unknown { record: None }, solved_range)),
         );
         intersection_plan.insert(edge_ref, context);
     }
@@ -2077,6 +2102,7 @@ pub(crate) fn e5_boundary_curve(
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn e5_occurrence_intersection_context(
     sides: &[(SurfaceId, PcurveGeometry, [f64; 2])],
 ) -> Option<IntcurveSupportContext> {
@@ -2098,6 +2124,96 @@ pub(crate) fn e5_occurrence_intersection_context(
     })
 }
 
+fn e5_support_occurrence_intersection_context(
+    support_range: [f64; 2],
+    solved_range: [f64; 2],
+    sides: &[E5OccurrenceIntersectionSide],
+) -> Option<IntcurveSupportContext> {
+    let [left, right] = sides else {
+        return None;
+    };
+    if left.surface == right.surface {
+        return None;
+    }
+    if !e5_parameter_range_is_valid(support_range)
+        || !e5_parameter_range_is_valid(solved_range)
+        || !e5_parameter_range_is_valid(left.pcurve_range)
+        || !e5_parameter_range_is_valid(right.pcurve_range)
+    {
+        return None;
+    }
+    Some(IntcurveSupportContext {
+        sides: [left, right].map(|side| IntcurveSupportSide {
+            surface: Some(side.surface.clone()),
+            pcurve: Some(side.pcurve.clone()),
+            pcurve_parameter_range: Some(side.pcurve_range),
+        }),
+        parameter_range: solved_range,
+        discontinuities: std::array::from_fn(|_| Vec::new()),
+    })
+}
+
+fn e5_occurrence_intersection_cache(
+    sides: &[E5OccurrenceIntersectionSide],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    let [left, right] = sides else {
+        return None;
+    };
+    let (Some((left_curve, left_range)), Some((right_curve, right_range))) =
+        (&left.curve, &right.curve)
+    else {
+        return None;
+    };
+    if equivalent_e5_curve_carriers(left_curve, right_curve)
+        && parameter_span_agreement(*left_range, *right_range).is_some()
+    {
+        return Some((left_curve.clone(), *left_range));
+    }
+    match (
+        is_exact_e5_analytic_curve(left_curve),
+        is_exact_e5_analytic_curve(right_curve),
+        is_e5_nurbs_curve(right_curve),
+        is_e5_nurbs_curve(left_curve),
+    ) {
+        (true, false, true, _) => Some((left_curve.clone(), *left_range)),
+        (false, true, _, true) => Some((right_curve.clone(), *right_range)),
+        _ => None,
+    }
+}
+
+fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {
+    matches!(
+        curve,
+        CurveGeometry::Line { .. } | CurveGeometry::Circle { .. }
+    )
+}
+
+fn is_e5_nurbs_curve(curve: &CurveGeometry) -> bool {
+    matches!(curve, CurveGeometry::Nurbs(_))
+}
+
+fn e5_parameter_range_is_valid(range: [f64; 2]) -> bool {
+    range.into_iter().all(f64::is_finite)
+        && range[0] != range[1]
+        && (range[1] - range[0]).is_finite()
+}
+
+fn parameter_span_agreement(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
+    if !e5_parameter_range_is_valid(left) || !e5_parameter_range_is_valid(right) {
+        return None;
+    }
+    let left_span = (left[1] - left[0]).abs();
+    let right_span = (right[1] - right[0]).abs();
+    let parameter_scale = left_span.max(right_span);
+    if !parameter_scale.is_finite()
+        || parameter_scale == 0.0
+        || (left_span - right_span).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
+    {
+        return None;
+    }
+    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale)
+}
+
 fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
     if !left.into_iter().chain(right).all(f64::is_finite) {
         return None;
@@ -2107,13 +2223,13 @@ fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Optio
     let parameter_scale = left_span.max(right_span);
     if !parameter_scale.is_finite()
         || parameter_scale == 0.0
-        || (left_span - right_span).abs() > 1e-9 * parameter_scale
-        || (left[0] - right[0]).abs() > 1e-9 * parameter_scale
-        || (left[1] - right[1]).abs() > 1e-9 * parameter_scale
+        || (left_span - right_span).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
+        || (left[0] - right[0]).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
+        || (left[1] - right[1]).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
     {
         return None;
     }
-    Some(1e-9 * parameter_scale)
+    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale)
 }
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
@@ -2352,11 +2468,12 @@ pub(crate) fn e5_ownership_plan(
 mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
-        e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_context,
-        e5_ownership_plan, e5_pcurve_on_surface, e5_stored_pcurve_reversed,
+        e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_cache,
+        e5_occurrence_intersection_context, e5_ownership_plan, e5_pcurve_on_surface,
+        e5_stored_pcurve_reversed, e5_support_occurrence_intersection_context,
         equivalent_e5_curve_carriers, fit_e5_plane_axes, fit_rank_one_e5_plane_axes,
         parameter_range_agreement_tolerance, parameter_ranges_reversed, plan_e5_boundary,
-        solve_e5_plane_frame,
+        solve_e5_plane_frame, E5OccurrenceIntersectionSide,
     };
 
     use crate::families::e5::graph::{
@@ -2367,7 +2484,7 @@ mod route_tests {
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SurfaceGeometry};
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
@@ -3886,6 +4003,107 @@ mod route_tests {
     fn support_range_agreement_requires_matching_endpoints() {
         assert!(parameter_range_agreement_tolerance([0.0, 5.0], [0.0, 5.0]).is_some());
         assert!(parameter_range_agreement_tolerance([0.0, 5.0], [1.0, 6.0]).is_none());
+    }
+
+    #[test]
+    fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
+        let sides = vec![
+            E5OccurrenceIntersectionSide {
+                surface: SurfaceId("left".to_string()),
+                pcurve: PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                pcurve_range: [100.0, 200.0],
+                curve: None,
+            },
+            E5OccurrenceIntersectionSide {
+                surface: SurfaceId("right".to_string()),
+                pcurve: PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 1.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                pcurve_range: [-5.0, 5.0],
+                curve: None,
+            },
+        ];
+        let context =
+            e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
+                .expect("support intersection context");
+        assert_eq!(context.parameter_range, [10.0, 20.0]);
+        assert_eq!(
+            context.sides[0]
+                .pcurve_parameter_range
+                .expect("left local range"),
+            [100.0, 200.0]
+        );
+        assert_eq!(
+            context.sides[1]
+                .pcurve_parameter_range
+                .expect("right local range"),
+            [-5.0, 5.0]
+        );
+        assert_eq!(
+            context.sides[0]
+                .pcurve_parameter([10.0, 20.0], 15.0)
+                .expect("left mapped parameter"),
+            150.0
+        );
+        assert_eq!(
+            context.sides[1]
+                .pcurve_parameter([10.0, 20.0], 15.0)
+                .expect("right mapped parameter"),
+            0.0
+        );
+    }
+
+    #[test]
+    fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let nurbs = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        let mut sides = vec![
+            E5OccurrenceIntersectionSide {
+                surface: SurfaceId("left".to_string()),
+                pcurve: PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                pcurve_range: [10.0, 20.0],
+                curve: Some((line.clone(), [0.0, 1.0])),
+            },
+            E5OccurrenceIntersectionSide {
+                surface: SurfaceId("right".to_string()),
+                pcurve: PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 1.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                pcurve_range: [-4.0, 6.0],
+                curve: Some((nurbs, [100.0, 110.0])),
+            },
+        ];
+        let (cache, range) = e5_occurrence_intersection_cache(&sides).expect("analytic cache");
+        assert_eq!(cache, line);
+        assert_eq!(range, [0.0, 1.0]);
+
+        sides[1].curve = Some((
+            CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            [0.0, 1.0],
+        ));
+        assert!(e5_occurrence_intersection_cache(&sides).is_none());
     }
 
     #[test]
