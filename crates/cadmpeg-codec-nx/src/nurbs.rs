@@ -60,8 +60,8 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
 
 fn decode_surfaces(
     graph: &Graph,
-    arrays: &Arrays,
-    payloads: &BTreeMap<u32, Payload>,
+    arrays: &Arrays<'_>,
+    payloads: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, SurfaceDescriptor>,
 ) -> Vec<Surface> {
     graph
@@ -75,39 +75,59 @@ fn decode_surfaces(
                 .then_some(())?;
             let payload = payloads.get(&refs[1])?;
             let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
-            let stride = payload.values.len().checked_div(poles)?;
+            let value_count = payload.value_count();
+            let stride = value_count.checked_div(poles)?;
             let expected_values = poles.checked_mul(stride)?;
-            if !(stride == 3 || stride == 4) || payload.values.len() != expected_values {
+            if !(stride == 3 || stride == 4) || value_count != expected_values {
                 return None;
             }
-            let u_mult = arrays.u16s.get(&descriptor.u_mult)?;
-            let v_mult = arrays.u16s.get(&descriptor.v_mult)?;
-            let u_knots = arrays.f64s.get(&descriptor.u_knots)?;
-            let v_knots = arrays.f64s.get(&descriptor.v_knots)?;
-            let u_mult = u_mult.get(..descriptor.u_distinct)?;
-            let v_mult = v_mult.get(..descriptor.v_distinct)?;
-            let u_knots = u_knots.get(..descriptor.u_distinct)?;
-            let v_knots = v_knots.get(..descriptor.v_distinct)?;
+            let u_mult = arrays
+                .u16s
+                .get(&descriptor.u_mult)?
+                .u16_prefix(descriptor.u_distinct)?;
+            let v_mult = arrays
+                .u16s
+                .get(&descriptor.v_mult)?
+                .u16_prefix(descriptor.v_distinct)?;
+            let u_knots = arrays
+                .f64s
+                .get(&descriptor.u_knots)?
+                .f64_prefix(descriptor.u_distinct)?;
+            let v_knots = arrays
+                .f64s
+                .get(&descriptor.v_knots)?
+                .f64_prefix(descriptor.v_distinct)?;
             let full_u = expand_knots(
-                u_knots,
-                u_mult,
+                &u_knots,
+                &u_mult,
                 required_knot_count(descriptor.u_degree, descriptor.u_count)?,
             )?;
             let full_v = expand_knots(
-                v_knots,
-                v_mult,
+                &v_knots,
+                &v_mult,
                 required_knot_count(descriptor.v_degree, descriptor.v_count)?,
             )?;
             valid_basis(descriptor.u_degree, descriptor.u_count, &full_u)?;
             valid_basis(descriptor.v_degree, descriptor.v_count, &full_v)?;
             let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
-            for pole in payload.values.chunks_exact(stride) {
-                let weight = if stride == 4 { pole[3] } else { 1.0 };
+            for pole_index in 0..poles {
+                let base = pole_index.checked_mul(stride)?;
+                let weight = if stride == 4 {
+                    payload.value_at(base.checked_add(3)?)?
+                } else {
+                    1.0
+                };
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(weighted_mm_point(pole, weight)?);
+                let pole = [
+                    payload.value_at(base)?,
+                    payload.value_at(base.checked_add(1)?)?,
+                    payload.value_at(base.checked_add(2)?)?,
+                    weight,
+                ];
+                control_points.push(weighted_mm_point(&pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -142,8 +162,8 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
 
 fn decode_pcurves(
     graph: &Graph,
-    arrays: &Arrays,
-    controls: &BTreeMap<u32, Payload>,
+    arrays: &Arrays<'_>,
+    controls: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Pcurve> {
     graph
@@ -153,33 +173,44 @@ fn decode_pcurves(
             let descriptor = descriptors.get(&refs[0])?;
             (descriptor.dimension == 2).then_some(())?;
             let control = controls.get(&refs[1])?;
-            let stride = control.values.len().checked_div(descriptor.poles)?;
+            let value_count = control.value_count();
+            let stride = value_count.checked_div(descriptor.poles)?;
             let expected_values = descriptor.poles.checked_mul(stride)?;
-            if !(stride == 2 || stride == 3) || control.values.len() != expected_values {
+            if !(stride == 2 || stride == 3) || value_count != expected_values {
                 return None;
             }
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
-                .get(..descriptor.distinct)?;
+                .u16_prefix(descriptor.distinct)?;
             let distinct = arrays
                 .f64s
                 .get(&descriptor.knots)?
-                .get(..descriptor.distinct)?;
+                .f64_prefix(descriptor.distinct)?;
             let knots = expand_knots(
-                distinct,
-                mult,
+                &distinct,
+                &mult,
                 required_knot_count(descriptor.degree, descriptor.poles)?,
             )?;
             valid_basis(descriptor.degree, descriptor.poles, &knots)?;
             let mut control_points = Vec::new();
             let mut weights = (stride == 3).then(Vec::new);
-            for pole in control.values.chunks_exact(stride) {
-                let weight = if stride == 3 { pole[2] } else { 1.0 };
+            for pole_index in 0..descriptor.poles {
+                let base = pole_index.checked_mul(stride)?;
+                let weight = if stride == 3 {
+                    control.value_at(base.checked_add(2)?)?
+                } else {
+                    1.0
+                };
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(weighted_point2(pole, weight)?);
+                let pole = [
+                    control.value_at(base)?,
+                    control.value_at(base.checked_add(1)?)?,
+                    weight,
+                ];
+                control_points.push(weighted_point2(&pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -212,8 +243,8 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
 
 fn decode_curves(
     graph: &Graph,
-    arrays: &Arrays,
-    controls: &BTreeMap<u32, Payload>,
+    arrays: &Arrays<'_>,
+    controls: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, CurveDescriptor>,
 ) -> Vec<Curve> {
     graph
@@ -223,35 +254,47 @@ fn decode_curves(
             let descriptor = descriptors.get(&refs[0])?;
             matches!(descriptor.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?;
-            let stride = control.values.len().checked_div(descriptor.poles)?;
+            let value_count = control.value_count();
+            let stride = value_count.checked_div(descriptor.poles)?;
             let expected_values = descriptor.poles.checked_mul(stride)?;
             if !matches!((descriptor.dimension, stride), (3, 3 | 4) | (4, 4))
-                || control.values.len() != expected_values
+                || value_count != expected_values
             {
                 return None;
             }
             let mult = arrays
                 .u16s
                 .get(&descriptor.mult)?
-                .get(..descriptor.distinct)?;
+                .u16_prefix(descriptor.distinct)?;
             let distinct = arrays
                 .f64s
                 .get(&descriptor.knots)?
-                .get(..descriptor.distinct)?;
+                .f64_prefix(descriptor.distinct)?;
             let knots = expand_knots(
-                distinct,
-                mult,
+                &distinct,
+                &mult,
                 required_knot_count(descriptor.degree, descriptor.poles)?,
             )?;
             valid_basis(descriptor.degree, descriptor.poles, &knots)?;
             let mut control_points = Vec::new();
             let mut weights = (stride == 4).then(Vec::new);
-            for pole in control.values.chunks_exact(stride) {
-                let weight = if stride == 4 { pole[3] } else { 1.0 };
+            for pole_index in 0..descriptor.poles {
+                let base = pole_index.checked_mul(stride)?;
+                let weight = if stride == 4 {
+                    control.value_at(base.checked_add(3)?)?
+                } else {
+                    1.0
+                };
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(weighted_mm_point(pole, weight)?);
+                let pole = [
+                    control.value_at(base)?,
+                    control.value_at(base.checked_add(1)?)?,
+                    control.value_at(base.checked_add(2)?)?,
+                    weight,
+                ];
+                control_points.push(weighted_mm_point(&pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -312,23 +355,51 @@ fn weighted_point2(pole: &[f64], weight: f64) -> Option<Point2> {
 }
 
 #[derive(Default)]
-struct Arrays {
-    u16s: BTreeMap<u32, Vec<u16>>,
-    f64s: BTreeMap<u32, Vec<f64>>,
+struct Arrays<'a> {
+    u16s: BTreeMap<u32, ArrayValues<'a>>,
+    f64s: BTreeMap<u32, ArrayValues<'a>>,
 }
 
-enum ArrayValues {
-    U16(Vec<u16>),
-    F64(Vec<f64>),
+#[derive(Clone, Copy)]
+enum ArrayValues<'a> {
+    U16(&'a [u8]),
+    F64(&'a [u8]),
 }
 
-struct ArrayRecord {
+struct ArrayRecord<'a> {
     reference: u32,
     end: usize,
-    values: ArrayValues,
+    values: ArrayValues<'a>,
 }
 
-fn arrays(bytes: &[u8]) -> Arrays {
+impl ArrayValues<'_> {
+    fn u16_prefix(&self, count: usize) -> Option<Vec<u16>> {
+        let ArrayValues::U16(raw) = self else {
+            return None;
+        };
+        let end = count.checked_mul(2)?;
+        let raw = raw.get(..end)?;
+        (0..count)
+            .map(|index| View::u16_be_at(raw, index.checked_mul(2)?))
+            .collect()
+    }
+
+    fn f64_prefix(&self, count: usize) -> Option<Vec<f64>> {
+        let ArrayValues::F64(raw) = self else {
+            return None;
+        };
+        let end = count.checked_mul(8)?;
+        let raw = raw.get(..end)?;
+        (0..count)
+            .map(|index| {
+                let value = View::f64_be_at(raw, index.checked_mul(8)?)?;
+                value.is_finite().then_some(value)
+            })
+            .collect()
+    }
+}
+
+fn arrays(bytes: &[u8]) -> Arrays<'_> {
     let mut out = Arrays::default();
     let mut duplicate_u16s = BTreeSet::new();
     let mut duplicate_f64s = BTreeSet::new();
@@ -336,10 +407,20 @@ fn arrays(bytes: &[u8]) -> Arrays {
         if let Some(record) = array_record_at(bytes, pos) {
             match record.values {
                 ArrayValues::U16(values) => {
-                    insert_unique(&mut out.u16s, &mut duplicate_u16s, record.reference, values);
+                    insert_unique(
+                        &mut out.u16s,
+                        &mut duplicate_u16s,
+                        record.reference,
+                        ArrayValues::U16(values),
+                    );
                 }
                 ArrayValues::F64(values) => {
-                    insert_unique(&mut out.f64s, &mut duplicate_f64s, record.reference, values);
+                    insert_unique(
+                        &mut out.f64s,
+                        &mut duplicate_f64s,
+                        record.reference,
+                        ArrayValues::F64(values),
+                    );
                 }
             }
         }
@@ -347,7 +428,7 @@ fn arrays(bytes: &[u8]) -> Arrays {
     out
 }
 
-fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
+fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
     let tag = *bytes.get(pos + 1)?;
     let width = match bytes.get(pos..pos + 2)? {
         [0, 127] => 2,
@@ -364,17 +445,10 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
     let end = data.checked_add(count.checked_mul(width)?)?;
     let raw = bytes.get(data..end)?;
     let values = if tag == 127 {
-        ArrayValues::U16(
-            (0..count)
-                .map(|i| View::u16_be_at(raw, i * 2))
-                .collect::<Option<Vec<_>>>()?,
-        )
+        ArrayValues::U16(raw)
     } else {
-        let values = (0..count)
-            .map(|i| View::f64_be_at(raw, i * 8))
-            .collect::<Option<Vec<_>>>()?;
-        values.iter().all(|value| value.is_finite()).then_some(())?;
-        ArrayValues::F64(values)
+        finite_f64_bytes(raw)?;
+        ArrayValues::F64(raw)
     };
     Some(ArrayRecord {
         reference,
@@ -383,18 +457,28 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord> {
     })
 }
 
-#[derive(Clone)]
-struct Payload {
-    values: Vec<f64>,
+#[derive(Clone, Copy)]
+struct Payload<'a> {
+    raw: &'a [u8],
 }
 
-fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
+impl Payload<'_> {
+    fn value_count(self) -> usize {
+        self.raw.len() / 8
+    }
+
+    fn value_at(self, index: usize) -> Option<f64> {
+        View::f64_be_at(self.raw, index.checked_mul(8)?)
+    }
+}
+
+fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload<'_>> {
     let records = (0..bytes.len().saturating_sub(96))
         .filter_map(|pos| surface_payload_at(bytes, pos).map(|(xmt, payload, _)| (xmt, payload)));
     unique_records(records)
 }
 
-fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
+fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
@@ -416,8 +500,9 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)>
     let (_, first_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + first_len;
     let end = data.checked_add(count.checked_mul(8)?)?;
-    let values = finite_f64_values(bytes.get(data..end)?)?;
-    Some((xmt, Payload { values }, end))
+    let raw = bytes.get(data..end)?;
+    finite_f64_bytes(raw)?;
+    Some((xmt, Payload { raw }, end))
 }
 
 fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
@@ -455,13 +540,13 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     Some((xmt, at))
 }
 
-fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
+fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload<'_>> {
     let records = (0..bytes.len().saturating_sub(14))
         .filter_map(|pos| curve_payload_at(bytes, pos).map(|(xmt, payload, _)| (xmt, payload)));
     unique_records(records)
 }
 
-fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
+fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
     (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
     let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
@@ -474,8 +559,9 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload, usize)> {
     let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
     let data = count_at + 4 + control_ref_len;
     let end = data.checked_add(count.checked_mul(8)?)?;
-    let values = finite_f64_values(bytes.get(data..end)?)?;
-    Some((xmt, Payload { values }, end))
+    let raw = bytes.get(data..end)?;
+    finite_f64_bytes(raw)?;
+    Some((xmt, Payload { raw }, end))
 }
 
 fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
@@ -492,14 +578,13 @@ fn curve_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
     Some((xmt, at + 1))
 }
 
-fn finite_f64_values(raw: &[u8]) -> Option<Vec<f64>> {
-    let values = (0..raw.len() / 8)
-        .map(|i| View::f64_be_at(raw, i * 8))
-        .collect::<Option<Vec<_>>>()?;
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(values)
+fn finite_f64_bytes(raw: &[u8]) -> Option<()> {
+    raw.len().is_multiple_of(8).then_some(())?;
+    for index in 0..raw.len() / 8 {
+        let value = View::f64_be_at(raw, index.checked_mul(8)?)?;
+        value.is_finite().then_some(())?;
+    }
+    Some(())
 }
 
 #[derive(Clone, PartialEq, Eq)]

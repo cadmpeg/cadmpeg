@@ -271,6 +271,38 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
 }
 
 #[test]
+fn nurbs_scanners_defer_unreferenced_lane_materialization() {
+    const ARRAY_CANDIDATES: usize = 128;
+    const ARRAY_COUNT: usize = u16::MAX as usize;
+    const PAYLOAD_CANDIDATES: usize = 64;
+    const PAYLOAD_COUNT: usize = 32_768;
+    let mut arrays = vec![0; ARRAY_CANDIDATES * 8 + 8 + ARRAY_COUNT * 2];
+    for index in 0..ARRAY_CANDIDATES {
+        let pos = index * 8;
+        let reference = (index + 11) as u16;
+        arrays[pos..pos + 2].copy_from_slice(&[0, 127]);
+        arrays[pos + 4..pos + 6].copy_from_slice(&(ARRAY_COUNT as u16).to_be_bytes());
+        arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
+    }
+    let parsed_arrays = crate::nurbs::arrays(&arrays);
+    assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
+    assert!(crate::nurbs::curves(&arrays).is_empty());
+
+    let mut payloads = vec![0; PAYLOAD_CANDIDATES * 16 + 15 + PAYLOAD_COUNT * 8];
+    for index in 0..PAYLOAD_CANDIDATES {
+        let pos = index * 16;
+        let reference = (index + 11) as u16;
+        payloads[pos..pos + 2].copy_from_slice(&[0, 135]);
+        payloads[pos + 2..pos + 4].copy_from_slice(&reference.to_be_bytes());
+        payloads[pos + 9..pos + 13].copy_from_slice(&(PAYLOAD_COUNT as u32).to_be_bytes());
+        payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
+    }
+    let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
+    assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
+    assert!(crate::nurbs::curves(&payloads).is_empty());
+}
+
+#[test]
 fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     fn curve_stream(degree: u16, poles: u16) -> Vec<u8> {
         assert!(poles > degree);
