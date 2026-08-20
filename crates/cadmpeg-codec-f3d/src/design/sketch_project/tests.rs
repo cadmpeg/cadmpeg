@@ -139,6 +139,28 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         curve(12, 12, (10.0, 10.0), (0.0, 10.0)),
         curve(13, 13, (0.0, 10.0), (0.0, 0.0)),
     ];
+    let point = SketchPoint {
+        id: "f3d:BulkStream.dat:point#14".into(),
+        record_index: 14,
+        owner_reference: Some(42),
+        class_tag: "413".into(),
+        byte_offset: 14,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        record_form: crate::records::SketchPointRecordForm::Version11 {
+            padded_paired_reference: false,
+        },
+        persistent_id: Some(14),
+        paired_reference: 15,
+        flags: [0; 8],
+        coordinates: Point2::new(0.0, 0.0),
+        depth: 0.0,
+        closure: Some(SketchPointClosure {
+            selector: 4,
+            state: 0,
+        }),
+        companion: None,
+    };
     let text = SketchText {
         id: "f3d:BulkStream.dat:text#20".into(),
         record_index: 20,
@@ -195,11 +217,17 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         raw_bytes: Vec::new(),
     };
 
-    let (sketches, entities) =
-        project_sketch_design(&[placement], &[], &curves, &[relation], &[text], 1.0e-6);
+    let (sketches, entities) = project_sketch_design(
+        &[placement],
+        &[point],
+        &curves,
+        &[relation],
+        &[text],
+        EPS_POINT_PROJECTION,
+    );
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
-    assert_eq!(entities.len(), 5);
+    assert_eq!(entities.len(), 6);
     assert!(entities
         .iter()
         .filter(|entity| entity
@@ -210,6 +238,9 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     assert!(entities.iter().any(
         |entity| matches!(entity.geometry, SketchGeometry::Text { .. }) && !entity.construction
     ));
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some("f3d:BulkStream.dat:point#14") && !entity.construction
+    }));
 }
 
 #[test]
