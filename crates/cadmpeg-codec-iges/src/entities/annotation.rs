@@ -7,7 +7,7 @@ use super::presentation::{
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use crate::parameter::{trailing_pointer_groups, DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,11 +45,9 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
     let parameter_end = trailing_pointer_groups(record, entries)
         .map_or(record.parameter_end(), |groups| groups.token_start);
-    let Some(count) = record
-        .count_with_stride_before_default_tail(1, 12, parameter_end)
-        .filter(|count| *count > 0)
-    else {
-        return false;
+    let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
+        DefaultTailCount::Held(count) if count > 0 => count,
+        _ => return false,
     };
     parameter_end <= 2 + count * 12
         && (0..count).all(|index| {
@@ -89,11 +87,9 @@ fn new_general_note_valid(
 ) -> bool {
     let parameter_end = trailing_pointer_groups(record, entries)
         .map_or(record.parameter_end(), |groups| groups.token_start);
-    let Some(count) = record
-        .count_with_stride_before_default_tail(12, 20, parameter_end)
-        .filter(|count| *count > 0)
-    else {
-        return false;
+    let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
+        DefaultTailCount::Held(count) if count > 0 => count,
+        _ => return false,
     };
     parameter_end <= 13 + count * 20
         && (1..=2).all(|index| {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted fixed-width lists and the IGES 5.3 §2.2.3 defaulted final item.
 
-use super::{ParameterRecord, Token, TokenValue};
+use super::{DefaultTailCount, ParameterRecord, Token, TokenValue};
 
 fn integer_record(values: &[i64], parameter_end: usize) -> ParameterRecord {
     ParameterRecord {
@@ -55,7 +55,7 @@ fn a_list_that_runs_to_the_record_end_holds_its_final_item_in_whole_or_in_part()
                 );
                 assert_eq!(
                     record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-                    Some(present),
+                    DefaultTailCount::Held(present),
                     "stride {stride}, {complete} complete items, {partial} trailing tokens"
                 );
             }
@@ -74,7 +74,7 @@ fn a_complete_item_before_a_partial_item_admits_both() {
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-        Some(2)
+        DefaultTailCount::Held(2)
     );
 }
 
@@ -93,7 +93,10 @@ fn a_declared_count_above_the_items_present_in_whole_or_in_part_is_not_admitted(
                 );
                 assert_eq!(
                     record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-                    None,
+                    DefaultTailCount::Overdeclared {
+                        declared: present + 1,
+                        present
+                    },
                     "stride {stride}, {complete} complete items, {partial} trailing tokens"
                 );
             }
@@ -112,22 +115,27 @@ fn a_count_below_the_items_present_leaves_the_surplus_tokens_unread() {
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-        Some(1)
+        DefaultTailCount::Held(1)
     );
 }
 
 #[test]
 fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
     let stride = 20;
-    let (record, list_end) = counted_record_with_suffix(2, stride + 9, 2);
+    let declared = 2;
+    let (record, list_end) = counted_record_with_suffix(declared, stride + 9, 2);
+    let complete = (stride + 9) / stride;
 
     assert_eq!(
         record.items_before_default_tail(1, stride, list_end),
-        Some(1)
+        Some(complete)
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, list_end),
-        None
+        DefaultTailCount::Overdeclared {
+            declared,
+            present: complete
+        }
     );
 
     let (exact, exact_end) = counted_record_with_suffix(1, stride, 2);
@@ -137,7 +145,7 @@ fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
     );
     assert_eq!(
         exact.count_with_stride_before_default_tail(1, stride, exact_end),
-        Some(1)
+        DefaultTailCount::Held(1)
     );
 }
 
@@ -152,13 +160,17 @@ fn an_empty_list_admits_a_zero_count_and_no_item() {
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, stride, record.parameter_end()),
-        Some(0)
+        DefaultTailCount::Held(0)
     );
 
-    let overdeclared = counted_record(1, 0);
+    let declared = 1;
+    let overdeclared = counted_record(declared, 0);
     assert_eq!(
         overdeclared.count_with_stride_before_default_tail(1, stride, overdeclared.parameter_end()),
-        None
+        DefaultTailCount::Overdeclared {
+            declared,
+            present: 0
+        }
     );
 }
 
@@ -172,7 +184,7 @@ fn a_zero_stride_has_no_item_count_and_admits_no_declared_count() {
     );
     assert_eq!(
         record.count_with_stride_before_default_tail(1, 0, record.parameter_end()),
-        None
+        DefaultTailCount::Unreadable
     );
 }
 
@@ -182,13 +194,13 @@ fn a_negative_or_missing_count_admits_no_list() {
     let negative = integer_record(&[0, -1, 0, 0], 4);
     assert_eq!(
         negative.count_with_stride_before_default_tail(1, stride, negative.parameter_end()),
-        None
+        DefaultTailCount::Unreadable
     );
 
     let absent = integer_record(&[0], 1);
     assert_eq!(
         absent.count_with_stride_before_default_tail(1, stride, absent.parameter_end()),
-        None
+        DefaultTailCount::Unreadable
     );
     assert_eq!(
         absent.items_before_default_tail(1, stride, absent.parameter_end()),

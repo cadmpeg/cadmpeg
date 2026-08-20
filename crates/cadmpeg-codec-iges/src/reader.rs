@@ -299,8 +299,8 @@ fn decode_with_occurrence_limits(
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
-        ambiguous_parameter_sequences,
-        overdeclared_count_sequences,
+        ambiguous_parameter_boundaries,
+        overdeclared_counts,
     } = native::store(
         &mut ir,
         &parse.scan,
@@ -376,7 +376,12 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
-    for (source_sequence, candidate_count, equally_valid) in ambiguous_parameter_sequences {
+    for native::AmbiguousParameterBoundary {
+        sequence: source_sequence,
+        candidate_count,
+        equally_valid,
+    } in ambiguous_parameter_boundaries
+    {
         losses.push(occurrence_loss(
             IgesLossCode::ParameterBoundaryAmbiguous,
             format!(
@@ -391,7 +396,12 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
-    for (source_sequence, declared, present) in overdeclared_count_sequences {
+    for native::OverdeclaredCount {
+        sequence: source_sequence,
+        declared,
+        present,
+    } in overdeclared_counts
+    {
         losses.push(occurrence_loss(
             IgesLossCode::ParameterCountOverdeclared,
             format!(

@@ -221,6 +221,35 @@ fn decode_new_general_note_defaulted_final_string_agrees_with_the_neutral_projec
 }
 
 #[test]
+fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_projection() {
+    let declared = 1;
+    let complete = ["ALPHA"];
+    let bytes = note_file(212, general_note_parameters(declared, &complete, 2));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let fields = annotation.fields();
+    let strings = fields["strings"].as_array().unwrap();
+
+    assert_eq!(fields["declared_string_count"], declared);
+    assert_eq!(strings.len(), complete.len());
+    assert_eq!(strings[0]["text"][0], u64::from(b'A'));
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
+        0
+    );
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterBoundaryAmbiguous),
+        0
+    );
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::EntityNotProjected),
+        1
+    );
+}
+
+#[test]
 fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_loss() {
     let bytes = note_file(213, new_general_note_parameters(2, &["TOL!"], 0));
 

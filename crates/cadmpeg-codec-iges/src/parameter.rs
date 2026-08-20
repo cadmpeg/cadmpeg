@@ -67,6 +67,13 @@ pub(crate) struct TrailingPointer {
     pub(crate) raw_pointer: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DefaultTailCount {
+    Held(usize),
+    Overdeclared { declared: usize, present: usize },
+    Unreadable,
+}
+
 impl ParameterRecord {
     pub(crate) fn parameter_end(&self) -> usize {
         self.parameter_end.min(self.tokens.len())
@@ -227,19 +234,31 @@ impl ParameterRecord {
         (required <= end.saturating_sub(item_start)).then_some(count)
     }
 
-    /// Return a nonnegative declared count before the entity-specific end when
-    /// the final item may omit trailing defaulted fields at the record delimiter.
+    /// Report the declared count before the entity-specific end when the final
+    /// item may omit trailing defaulted fields at the record delimiter.
     pub(crate) fn count_with_stride_before_default_tail(
         &self,
         index: usize,
         stride: usize,
         end: usize,
-    ) -> Option<usize> {
-        let count = self
+    ) -> DefaultTailCount {
+        let Some(count) = self
             .integer(index)
-            .and_then(|value| usize::try_from(value).ok())?;
-        let max_count = self.items_before_default_tail(index, stride, end)?;
-        (count <= max_count).then_some(count)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return DefaultTailCount::Unreadable;
+        };
+        let Some(present) = self.items_before_default_tail(index, stride, end) else {
+            return DefaultTailCount::Unreadable;
+        };
+        if count <= present {
+            DefaultTailCount::Held(count)
+        } else {
+            DefaultTailCount::Overdeclared {
+                declared: count,
+                present,
+            }
+        }
     }
 
     /// Return the fixed-width items the record holds after the count at

@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
     analyze_trailing_pointer_groups, groups_for_candidate, structural_pointer_group_candidates,
-    trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+    trailing_pointer_groups, DefaultTailCount, ParameterRecord, Token, TokenValue,
 };
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -277,7 +277,7 @@ fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
     };
     assert_eq!(
         partial_final_item.count_with_stride_before_default_tail(1, 20, 21),
-        Some(1)
+        DefaultTailCount::Held(1)
     );
 
     let mut suffixed_tokens = vec![0, 2];
@@ -298,10 +298,10 @@ fn counted_lists_can_use_a_defaulted_final_item_without_crossing_a_suffix() {
         parameter_end: suffixed_parameter_end,
         comment: Vec::new(),
     };
-    assert_eq!(
+    assert!(matches!(
         suffixed.count_with_stride_before_default_tail(1, 20, 22),
-        None
-    );
+        DefaultTailCount::Overdeclared { .. }
+    ));
 }
 
 #[test]

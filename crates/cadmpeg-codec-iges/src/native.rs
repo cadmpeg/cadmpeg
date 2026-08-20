@@ -9,7 +9,8 @@ use crate::entities::structure::array_base_type;
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    trailing_pointer_groups, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
+    trailing_pointer_groups, DefaultTailCount, ParameterRecord, QuarantinedParameterRecord, Token,
+    TokenValue,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -860,10 +861,41 @@ pub(crate) struct QuarantinedRecords<'a> {
     pub(crate) parameters: &'a [QuarantinedParameterRecord],
 }
 
+pub(crate) struct AmbiguousParameterBoundary {
+    pub(crate) sequence: u32,
+    pub(crate) candidate_count: usize,
+    pub(crate) equally_valid: bool,
+}
+
+pub(crate) struct OverdeclaredCount {
+    pub(crate) sequence: u32,
+    pub(crate) declared: usize,
+    pub(crate) present: usize,
+}
+
 pub(crate) struct NativeStoreResult {
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
-    pub(crate) ambiguous_parameter_sequences: Vec<(u32, usize, bool)>,
-    pub(crate) overdeclared_count_sequences: Vec<(u32, usize, usize)>,
+    pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
+    pub(crate) overdeclared_counts: Vec<OverdeclaredCount>,
+}
+
+fn counted_tail_items(
+    sequence: u32,
+    verdict: DefaultTailCount,
+    overdeclared: &mut Vec<OverdeclaredCount>,
+) -> usize {
+    match verdict {
+        DefaultTailCount::Held(count) => count,
+        DefaultTailCount::Overdeclared { declared, present } => {
+            overdeclared.push(OverdeclaredCount {
+                sequence,
+                declared,
+                present,
+            });
+            0
+        }
+        DefaultTailCount::Unreadable => 0,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1577,7 +1609,7 @@ pub(crate) fn store(
             }
         }
     }
-    let ambiguous_parameter_sequences = by_directory
+    let ambiguous_parameter_boundaries = by_directory
         .iter()
         .filter_map(|(sequence, record)| {
             let analysis = crate::parameter::analyze_trailing_pointer_groups(record, &entries);
@@ -1585,15 +1617,17 @@ pub(crate) fn store(
             let required_back_pointer_ambiguity = required_back_pointer_members.contains(sequence)
                 && analysis.candidate_count > 1
                 && analysis.groups.is_none();
-            (equally_valid || required_back_pointer_ambiguity).then_some((
-                *sequence,
-                if equally_valid {
-                    analysis.valid_candidate_count
-                } else {
-                    analysis.candidate_count
+            (equally_valid || required_back_pointer_ambiguity).then_some(
+                AmbiguousParameterBoundary {
+                    sequence: *sequence,
+                    candidate_count: if equally_valid {
+                        analysis.valid_candidate_count
+                    } else {
+                        analysis.candidate_count
+                    },
+                    equally_valid,
                 },
-                equally_valid,
-            ))
+            )
         })
         .collect::<Vec<_>>();
     charge_native_entities(ctx, directory.len() as u64)?;
@@ -4292,24 +4326,7 @@ pub(crate) fn store(
             ],
         }
     };
-    let overdeclared_count_sequences = directory
-        .iter()
-        .filter(|entry| matches!(entry.entity_type, 212 | 213) && entry.form == 0)
-        .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
-            let (index, stride) = if entry.entity_type == 212 {
-                (1, 12)
-            } else {
-                (12, 20)
-            };
-            let end = primary_end(entry.sequence, record);
-            let declared = record
-                .integer(index)
-                .and_then(|value| usize::try_from(value).ok())?;
-            let present = record.items_before_default_tail(index, stride, end)?;
-            (declared > present).then_some((entry.sequence, declared, present))
-        })
-        .collect::<Vec<_>>();
+    let mut overdeclared_counts = Vec::new();
     let annotations = directory
         .iter()
         .filter(|entry| {
@@ -4327,15 +4344,14 @@ pub(crate) fn store(
             let transformation = (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
             Some(if entry.entity_type == 212 {
-                let count = record
-                    .and_then(|record| {
-                        record.count_with_stride_before_default_tail(
-                            1,
-                            12,
-                            primary_end(entry.sequence, record),
-                        )
-                    })
-                    .unwrap_or_default();
+                let verdict = record.map_or(DefaultTailCount::Unreadable, |record| {
+                    record.count_with_stride_before_default_tail(
+                        1,
+                        12,
+                        primary_end(entry.sequence, record),
+                    )
+                });
+                let count = counted_tail_items(entry.sequence, verdict, &mut overdeclared_counts);
                 NativeAnnotation::GeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -4346,15 +4362,14 @@ pub(crate) fn store(
                     transformation,
                 }
             } else if entry.entity_type == 213 {
-                let count = record
-                    .and_then(|record| {
-                        record.count_with_stride_before_default_tail(
-                            12,
-                            20,
-                            primary_end(entry.sequence, record),
-                        )
-                    })
-                    .unwrap_or_default();
+                let verdict = record.map_or(DefaultTailCount::Unreadable, |record| {
+                    record.count_with_stride_before_default_tail(
+                        12,
+                        20,
+                        primary_end(entry.sequence, record),
+                    )
+                });
+                let count = counted_tail_items(entry.sequence, verdict, &mut overdeclared_counts);
                 NativeAnnotation::NewGeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -5115,8 +5130,8 @@ pub(crate) fn store(
             malformed_definition_sequences,
             malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
         },
-        ambiguous_parameter_sequences,
-        overdeclared_count_sequences,
+        ambiguous_parameter_boundaries,
+        overdeclared_counts,
     })
 }
 
