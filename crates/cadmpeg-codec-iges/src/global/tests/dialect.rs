@@ -7,12 +7,16 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    dialect_losses, point_file_with_field, point_file_with_version_flag, report_code_count,
-    resolve_global_fields, strict_options, valid_global_fields,
+    point_file_with_field, point_file_with_version_flag, report_code_count, resolve_global_fields,
+    strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::IgesCodec;
+
+fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {
+    report_code_count(report, IgesLossCode::SourceDialectUnverified)
+}
 
 #[test]
 fn version_flags_clamp_unrecognized_values() {

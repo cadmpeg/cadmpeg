@@ -6,13 +6,59 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{
-    fixed_ascii_with_global_chunks, point_file_with_delimiters, report_code_count, strict_options,
-    valid_global_fields,
-};
+use super::{report_code_count, strict_options, valid_global_fields};
 use crate::loss::IgesLossCode;
-use crate::test_support::{fixed_ascii_with_global, point_file, point_file_with_global};
+use crate::test_support::{
+    card, directory_card, fixed_ascii_with_global, parameter_card, point_file,
+    point_file_with_global,
+};
 use crate::IgesCodec;
+
+fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
+    let mut fields = valid_global_fields();
+    fields[0] = format!("1H{parameter}");
+    fields[1] = format!("1H{record}");
+    let global = format!("{}{record}", fields.join(&parameter.to_string()));
+    let mut bytes = fixed_ascii_with_global(global.as_bytes());
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["116", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["116", "0", "0", "1", "0", "", "", "POINT", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(
+        format!("116{parameter}1.0{parameter}2.0{parameter}3.0{record}").as_bytes(),
+        1,
+        1,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
+    let mut bytes = card(b"original fixture", b'S', 1);
+    let cards = chunks
+        .iter()
+        .flat_map(|chunk| chunk.chunks(72))
+        .collect::<Vec<_>>();
+    for (index, chunk) in cards.iter().enumerate() {
+        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
+    }
+    bytes.extend(card(
+        format!("S0000001G{:07}D0000000P0000000", cards.len()).as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
 
 #[test]
 fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
