@@ -894,16 +894,6 @@ unresolved.
 
 **Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:141-191` makes the selection before geometry construction, `build.rs:1283-1304` maps the selected identities to stream ordinals, and `build.rs:233-247` omits each other stream and keeps its bytes as opaque data. The commit that added the rule also changed two golden documents in the same change: one partition stream and fifty analytic surface carriers left the decoded output.
 
-### OM-40. Object-index namespace precedence in a body selection
-
-**Question.** Which namespace owns an operation object index that resolves both as a segment body alias and as an offset-store data block?
-
-**Known.** `siemens_nx.md` §2 "A primary feature body field in the object namespace reuses a segment body" states that a primary feature body field reuses a segment body image when its index equals either alias of exactly one partition or plain cached-body tuple, and that a field which resolves to an offset-store block can reuse a segment image only under the exact unique alias join. It gives no precedence to one namespace against the other.
-
-**Need.** We must know the owner to attach the operation output and lineage to the correct body image.
-
-**Conflict.** `feature_body_selection_with_offset_blocks` in `crates/cadmpeg-codec-nx/src/native/attach.rs:7199-7260` takes the offset-store data block for each index that resolves in both namespaces. The selection stays native only when the same operation also has an index that resolves as a segment alias alone. An operation whose indices all resolve in both namespaces binds its bodies to offset-store blocks, and the presence of the same integer in the two maps is the only condition of that choice. The related cross-store join is open in OM-07.
-
 ### OM-41. Operation output body without a transferred output relation
 
 **Question.** Which serialized field names the output body of an operation that has no transferred output relation?

@@ -138,6 +138,14 @@ can reuse a segment image only under the exact unique alias join defined for
 offset-store body fields. No relation transfers when an object-namespace index
 matches zero or multiple segment bindings.
 
+A primary field with one complete offset-store data-block use in its operation's
+unique input store is owned by that offset-store namespace. A coincident segment
+alias does not override that field relation. A field uses the segment namespace
+when its exact field-to-segment binding is retained; that explicit bridge owns
+the field when both the offset-store and segment relations are present. A
+missing, duplicate, partial, or cross-store relation leaves the field in its
+native namespace and does not use integer equality as a cross-store identity.
+
 A deltas stream applies to the nearest preceding partition stream in segment
 order with the same Parasolid schema token. Non-history compressed streams do
 not break this relation. A later partition begins a distinct body-history unit;
@@ -251,6 +259,12 @@ integer values in the two namespaces do not establish a cross-store relation.
 Partial, duplicate, or cross-store offset-store participant evidence is also
 unresolved in the segment namespace and has no segment-image writer or
 consumption effect.
+
+For a complete Boolean offset-store participant set, that one-store relation
+owns every participant even when an integer also names a segment alias. A
+segment image enters the Boolean selection only through the complete segment
+body relation for the selected namespace; integer equality alone never changes
+the selected namespace.
 
 Every non-`DELETE` operation with an unambiguous primary-body writer declares
 one intermediate result body. The result body's feature-local identity is the
