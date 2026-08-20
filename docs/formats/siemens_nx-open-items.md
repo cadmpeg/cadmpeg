@@ -370,16 +370,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
 
-### PS-40. Completion scope across Parasolid streams
-
-**Question.** Which decoded entities does intersection support and support-UV chart completion use: the complete model, or only the entities that one Parasolid stream creates?
-
-**Known.** `siemens_nx.md` §6.3 "When exactly one serialized support is null, an edge using the construction" gives the support rule from an edge and its incident face surfaces. `siemens_nx.md` §6.3 "After support completion, an incident FIN supplies a missing support-UV chart" gives the chart rule from an incident FIN. Neither rule limits the incidence to one stream. `siemens_nx.md` §2 "A deltas stream applies to the nearest preceding partition stream in segment" shows that one part contains more than one Parasolid stream.
-
-**Need.** We must know the scope. The decoder must not leave a support or a chart unresolved when the model contains the incidence that completes it.
-
-**Conflict.** `IntersectionIncidenceIndex::complete_from_stream` in `crates/cadmpeg-codec-nx/src/decode/pcurves.rs:275-283` indexes the loops, faces, edges, coedges, pcurves, and procedural curves after the counts of the previous stream, and completes only the constructions of the curves in that set. Identities carry the stream ordinal, so a construction of an earlier stream is never in that set again. Two phases change the same entities after the completion of their stream: `invalidate_inconsistent_support_uv_with_budget` in `crates/cadmpeg-codec-nx/src/decode/support_uv.rs:574-588` sets a side pcurve to none, and `attach_completed_intersection_pcurves_for_stream_with_budget` in the same file adds pcurves to coedges. No later completion uses either result.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

@@ -1136,6 +1136,14 @@ when its coedge has a validated pcurve, its owning face uses that exact support
 surface, and no second distinct pcurve satisfies the same curve/surface pair.
 The pcurve geometry transfers into the matching construction side.
 
+Support and chart incidence is evaluated over the complete decoded model across
+all decoded Parasolid streams in the part. The loop, face, edge, coedge, pcurve, and
+intersection-construction identity joins are not limited by stream order. A
+relation completed by a later stream is admitted when the complete model is
+evaluated. A derived coedge pcurve retains the stream identity of its owning
+coedge and requires one unique construction chart plus the validated endpoint
+contract for that coedge; a chart from another stream does not supply ownership.
+
 **CHART_s (`0x28`):** branch selector and native-parameter certificate:
 
 ```text
