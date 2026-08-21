@@ -490,6 +490,10 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
 }
 
 /// Resolve one top-level Extrude profile group through its exact leaf operands.
+///
+/// A complete active bounded-face lane is represented directly when the
+/// operand has no historical lane. Otherwise the selected faces must be
+/// proven in the consuming feature's preceding topology.
 pub(crate) fn resolved_extrude_profile_face_group(
     scope: &DesignParameterScope,
     root: &DesignConstructionOperandGroup,
@@ -499,6 +503,9 @@ pub(crate) fn resolved_extrude_profile_face_group(
     use cadmpeg_ir::features::ProfileRef;
 
     let indices = extrude_profile_group_operand_indices(root, groups, operands)?;
+    if let Some(faces) = resolved_extrude_profile_active_faces(&indices, operands) {
+        return Some(ProfileRef::Faces(faces));
+    }
     let mut faces = Vec::new();
     for index in indices {
         let slots = &operands.get(index)?.resolved_face_slots;
@@ -525,6 +532,44 @@ pub(crate) fn resolved_extrude_profile_face_group(
         faces,
         native: vec![native],
     })
+}
+
+fn resolved_extrude_profile_active_faces(
+    indices: &[usize],
+    operands: &[DesignFaceOperand],
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    let mut faces = Vec::new();
+    for index in indices {
+        let operand = operands.get(*index)?;
+        if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+            || operand.candidate_faces.is_empty()
+            || !operand.unreferenced_candidate_faces.is_empty()
+            || !operand.alternate_selector_candidate_faces.is_empty()
+            || !operand.preceding_candidate_faces.is_empty()
+            || !operand.changed_candidate_faces.is_empty()
+            || !operand.historical_support_contexts.is_empty()
+            || !operand.resolved_face_slots.is_empty()
+            || operand.resolved_active_face.is_some()
+        {
+            return None;
+        }
+        let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
+            crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
+        else {
+            return None;
+        };
+        if operand.recipe_nodes.len() != header_value
+            || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
+        {
+            return None;
+        }
+        for face in &operand.candidate_faces {
+            if !faces.contains(face) {
+                faces.push(face.clone());
+            }
+        }
+    }
+    (!faces.is_empty()).then_some(faces)
 }
 
 /// Resolve a Loft section whose members use the edge-recipe envelope.
@@ -1836,7 +1881,7 @@ mod tests {
             reference(20, "selected-b", 201),
         ];
 
-        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        let mut group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:construction-group#150",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -1868,6 +1913,40 @@ mod tests {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })
+        );
+        group.extrude_role = Some(crate::records::DesignExtrudeOperandRole::Profile);
+        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope#100",
+            "byte_offset": 0,
+            "class_tag": "304",
+            "record_index": 100,
+            "frame_length": 300,
+            "kind": "Extrude",
+            "kind_offset": 0,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 0,
+            "history_state_id": 2,
+            "history_state_id_offset": 0,
+            "previous_history_state_id": 1,
+            "previous_history_state_id_offset": 0,
+            "reference_count_offset": 0,
+            "reference_members": [150],
+            "reference_member_offsets": [0],
+            "paired_class_tag": "258",
+            "paired_byte_offset": 300
+        }))
+        .expect("Extrude scope");
+        assert_eq!(
+            resolved_extrude_profile_face_group(
+                &scope,
+                &group,
+                std::slice::from_ref(&group),
+                &[operand.clone()],
+            ),
+            Some(cadmpeg_ir::features::ProfileRef::Faces(vec![
+                face(10),
+                face(20),
+            ]))
         );
         operand.resolved_active_face = Some(FaceId("f3d:brep/legacy/entity#30".into()));
         assert_eq!(
