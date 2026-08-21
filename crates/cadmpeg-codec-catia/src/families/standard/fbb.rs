@@ -857,6 +857,23 @@ pub(crate) fn parse_trim_chain(
     record_count: usize,
     width: usize,
 ) -> Option<Vec<TrimRecord>> {
+    let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false);
+    let wide_u16be = (width == 2)
+        .then(|| parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true));
+    match (compact, wide_u16be.flatten()) {
+        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(records), None) | (None, Some(records)) => Some(records),
+        (None, None) | (Some(_), Some(_)) => None,
+    }
+}
+
+fn parse_trim_chain_with_length_encoding(
+    bytes: &[u8],
+    end: usize,
+    record_count: usize,
+    width: usize,
+    wide_u16be: bool,
+) -> Option<Vec<TrimRecord>> {
     struct Frame {
         end: usize,
         remaining: usize,
@@ -877,7 +894,9 @@ pub(crate) fn parse_trim_chain(
         if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
             continue;
         }
-        if let Some(layout) = parse_trim_record_layout(prefix, start, width) {
+        if let Some(layout) =
+            parse_trim_record_layout_with_length_encoding(prefix, start, width, wide_u16be)
+        {
             predecessors.entry(layout.end).or_default().push(start);
         }
     }
@@ -907,7 +926,8 @@ pub(crate) fn parse_trim_chain(
             continue;
         };
         frames[frame].next_predecessor += 1;
-        let Some(record) = parse_trim_record(prefix, start, width) else {
+        let Some(record) = parse_trim_record_with_length_encoding(prefix, start, width, wide_u16be)
+        else {
             continue;
         };
         let remaining = frames[frame].remaining - 1;
@@ -923,6 +943,7 @@ pub(crate) fn parse_trim_chain(
         .map(|[records]| records)
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecordLayout {
     kind: u8,
     independent_count: usize,
@@ -936,11 +957,31 @@ pub(crate) struct TrimRecordLayout {
     pub(crate) end: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn parse_trim_record_layout(
     bytes: &[u8],
     start: usize,
     width: usize,
 ) -> Option<TrimRecordLayout> {
+    let compact = parse_trim_record_layout_with_length_encoding(bytes, start, width, false);
+    let wide_u16be = (width == 2)
+        .then(|| parse_trim_record_layout_with_length_encoding(bytes, start, width, true));
+    match (compact, wide_u16be.flatten()) {
+        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(layout), None) | (None, Some(layout)) => Some(layout),
+        (None, None) | (Some(_), Some(_)) => None,
+    }
+}
+
+fn parse_trim_record_layout_with_length_encoding(
+    bytes: &[u8],
+    start: usize,
+    width: usize,
+    wide_u16be: bool,
+) -> Option<TrimRecordLayout> {
+    if wide_u16be && width != 2 {
+        return None;
+    }
     if bytes.get(start) != Some(&0x01) {
         return None;
     }
@@ -1006,7 +1047,14 @@ pub(crate) fn parse_trim_record_layout(
     let mut lengths = Vec::with_capacity(primitive_count);
     if !packed_two_strip_lengths {
         for _ in 0..primitive_count {
-            lengths.push(parse_count(bytes, &mut position)?);
+            let length = if wide_u16be {
+                let value = View::u16_be_at(bytes, position)?;
+                position += 2;
+                usize::from(value)
+            } else {
+                parse_count(bytes, &mut position)?
+            };
+            lengths.push(length);
         }
         if 3usize.checked_mul(a)?.checked_add(lengths.iter().sum())? != handle_count {
             return None;
@@ -1035,8 +1083,25 @@ pub(crate) fn parse_trim_record_layout(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
-    let layout = parse_trim_record_layout(bytes, start, width)?;
+    let compact = parse_trim_record_with_length_encoding(bytes, start, width, false);
+    let wide_u16be =
+        (width == 2).then(|| parse_trim_record_with_length_encoding(bytes, start, width, true));
+    match (compact, wide_u16be.flatten()) {
+        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some(record), None) | (None, Some(record)) => Some(record),
+        (None, None) | (Some(_), Some(_)) => None,
+    }
+}
+
+fn parse_trim_record_with_length_encoding(
+    bytes: &[u8],
+    start: usize,
+    width: usize,
+    wide_u16be: bool,
+) -> Option<TrimRecord> {
+    let layout = parse_trim_record_layout_with_length_encoding(bytes, start, width, wide_u16be)?;
     let mut position = layout.handle_offset;
     let mut lengths = layout.lengths;
     if layout.packed_two_strip_lengths {

@@ -358,7 +358,7 @@ pub struct CoedgeUse {
     pub end_vertex: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) triangles: Vec<[u32; 3]>,
     pub(crate) frame_vector: Option<[f64; 3]>,

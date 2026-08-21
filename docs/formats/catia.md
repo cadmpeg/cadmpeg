@@ -188,6 +188,13 @@ K[0 : B+C]  each count()
 H[0 : N]    handles, BIG-ENDIAN, width family-dependent
 ```
 
+The `A`, `B`, and `C` counts always use `count()`. For a width-2 packet, the
+ordinary primitive-length lane may instead use one `u16be` value for each
+`K` entry. This width-matched lane is not used by the packed `0x42` two-strip
+form, which keeps its two `u8` lengths. A complete trim chain selects one
+length grammar. Equal parses that produce the same records are one parse; two
+different complete parses do not admit the chain.
+
 Invariant `N == 3*A + sum(K)`, with `N > 0`. The complete handle span must fit inside the containing input extent: `handle_offset + N·W` for ordinary packets, or `handle_offset + 2 + N·W` for the packed two-strip form. Handle **width is family-dependent** and is the only varying part: full-form standard meshing uses `u16be`; compact standard meshing uses the width selected by its one-table edge walk; FBB-only meshing uses the width selected by its two post-FBB edge tables. Under the correct width, packets chain end-to-end with zero leftover and land exactly on the FBB spine offset, one packet per face; a wrong width desyncs at the first packet.
 
 The trim handle lane is ordered as the `A` independent-triangle triples, then the `B` triangle-strip lists in `K[0:B]` order, then the `C` triangle-fan lists in `K[B:B+C]` order.

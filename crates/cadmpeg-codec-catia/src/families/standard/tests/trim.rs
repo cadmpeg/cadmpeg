@@ -145,6 +145,31 @@ fn trim_packet_retains_primitive_partition_lengths() {
 }
 
 #[test]
+fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
+    let mut bytes = vec![0x01, 0x4b, 0x01, 0x01, 0xff];
+    bytes.extend_from_slice(&6u32.to_le_bytes());
+    for value in [1.0f32, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u16.to_be_bytes());
+    for handle in 10u16..16 {
+        bytes.extend_from_slice(&handle.to_be_bytes());
+    }
+
+    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
+        .expect("width-matched primitive packet")
+        .try_into()
+        .expect("one packet");
+    assert_eq!(record.independent_count, 1);
+    assert_eq!(record.strip_lengths, [3]);
+    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.frame_vector, Some([1.0, 0.0, 0.0]));
+
+    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
+    assert_eq!(layout.end, bytes.len());
+}
+
+#[test]
 fn standard_edge_row_arity_uses_widened_count_form() {
     let mut bytes = Vec::new();
     for (kind, handles) in [(1, [10u16, 11]), (2, [20, 21])] {
