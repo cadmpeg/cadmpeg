@@ -118,9 +118,9 @@ pub(crate) use build::{
     classify_body_kinds, finalize_point_topology, ordered_curve_candidates,
     ordered_fixed_candidates, ordered_point_candidates, ordered_surface_candidates,
     prune_inactive_geometry, prune_inactive_topology, prune_unreferenced_unknown_carriers,
-    retain_live_annotations, retain_live_unknown_links, rmfastload_selected_bodies,
-    rmfastload_stream_indices, select_active_body, select_terminal_feature_bodies,
-    topology_body_node_ids, try_decode_geometry, GeometryDecode,
+    retain_live_annotations, retain_live_unknown_links, rmfastload_allows_terminal_lineage,
+    rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
+    select_terminal_feature_bodies, topology_body_node_ids, try_decode_geometry, GeometryDecode,
 };
 
 mod support_uv;

@@ -3,9 +3,10 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use std::io::Cursor;
+use std::{collections::BTreeSet, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
@@ -720,6 +721,23 @@ fn decode_retains_every_rmfastload_active_body() {
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn rmfastload_membership_precedes_terminal_lineage_for_any_complete_match() {
+    let first = BodyId("nx:s3:body#first".into());
+    let second = BodyId("nx:s8:body#second".into());
+    let selected = BTreeSet::from([first.clone()]);
+    assert!(!super::rmfastload_allows_terminal_lineage(2, &selected));
+    assert!(!super::rmfastload_allows_terminal_lineage(
+        2,
+        &BTreeSet::from([first, second]),
+    ));
+    assert!(super::rmfastload_allows_terminal_lineage(
+        2,
+        &BTreeSet::new()
+    ));
+    assert!(!super::rmfastload_allows_terminal_lineage(1, &selected));
 }
 
 #[test]

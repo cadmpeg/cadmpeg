@@ -741,16 +741,6 @@ unresolved.
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-33. Decisive active-body membership
-
-**Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
-
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, the order-independent witness for a unique table value, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
-
-**Need.** We must know the condition to select the active bodies. The current decoder retains every image whose complete nonempty FACE, EDGE, and VERTEX node-ID set is a subset of the active set, but the format does not establish whether that subset relation is decisive, whether active IDs may be stale or unioned, or how multiple matching images should be handled. The selection deletes other bodies and their complete topology and geometry from the model, so an unsupported membership rule removes a current body permanently. The exact feature-history rule runs only when this condition declines, so membership semantics take precedence over it.
-
-**Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:1306-1340` requires every participating FACE node ID and every EDGE or VERTEX identity referenced by a retained FIN to resolve before applying the subset relation. The subset rule, active-set authority, and union/stale behavior remain unresolved; a membership match is not promoted beyond that admission boundary.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
@@ -758,16 +748,6 @@ unresolved.
 **Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. A section-relative `u32 LE` word after the type registry is a record-area pointer only when its forward target remains inside the section, starts with the three control words and product record, and is unique. When valid, that pointer bounds the complete field registry.
 
 **Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
-
-### OM-39. Stream-level omission of unselected body images
-
-**Question.** Which serialized state permits the geometry decode to omit a complete Parasolid stream?
-
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the active object-id set, the independent assignment to each body image, and the retention rule for an image that has no active membership. `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" gives the reversed record order that supplies the terminal status of a body. Neither statement relates membership or terminal status to the contents of a stream, and neither permits the omission of a stream.
-
-**Need.** We must know the state. The decoder reads the stream ordinal from the text of each selected body identity and decodes only those streams. The carriers, topology, and intersections of every other Parasolid stream are then absent from the model, and no loss code reports the omission. The rule that selects the images remains open in OM-33.
-
-**Note.** `crates/cadmpeg-codec-nx/src/decode/build.rs:141-191` makes the selection before geometry construction, `build.rs:1283-1304` maps the selected identities to stream ordinals, and `build.rs:233-247` omits each other stream and keeps its bytes as opaque data. The commit that added the rule also changed two golden documents in the same change: one partition stream and fifty analytic surface carriers left the decoded output.
 
 ## 3. Assembly and material data
 

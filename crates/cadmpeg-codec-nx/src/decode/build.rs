@@ -173,8 +173,9 @@ pub(crate) fn try_decode_geometry(
         })
     })
     .flatten();
-    let terminal_lineage = (body_node_ids.len() > 1 && rmfastload_preselection.is_none())
-        .then(|| crate::native::extract_segment_lineage(&scan.container, &scan.streams));
+    let terminal_lineage =
+        rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
+            .then(|| crate::native::extract_segment_lineage(&scan.container, &scan.streams));
     let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
     let terminal_preselection = terminal_lineage
         .as_ref()
@@ -1358,6 +1359,13 @@ pub(crate) fn rmfastload_selected_bodies(
         .filter(|(_, ids)| !ids.is_empty() && ids.is_subset(&active))
         .map(|(body, _)| body.clone())
         .collect()
+}
+
+pub(crate) fn rmfastload_allows_terminal_lineage(
+    body_count: usize,
+    rmfastload_selected: &BTreeSet<BodyId>,
+) -> bool {
+    body_count > 1 && rmfastload_selected.is_empty()
 }
 
 /// Return the stream ordinals that can contain selected body images. A
