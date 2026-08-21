@@ -118,6 +118,11 @@ pub struct PcurveEndpointDiagnostics {
     pub carrier_validated_paths: usize,
     pub carrier_rejected_paths: usize,
     pub carrier_unknown_paths: usize,
+    pub carrier_unknown_missing_surface_paths: usize,
+    pub carrier_unknown_missing_carrier_paths: usize,
+    pub carrier_unknown_unsupported_pair_paths: usize,
+    pub carrier_unknown_parallel_plane_paths: usize,
+    pub carrier_unknown_unsupported_path_paths: usize,
     pub carrier_rejected_records: usize,
     pub mismatch_samples: Vec<PcurveMismatchDetail>,
 }
@@ -190,44 +195,63 @@ struct MappedPcurvePaths {
     unevaluable_paths: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PcurveCarrierUnknownReason {
+    MissingSurface,
+    MissingCarrier,
+    UnsupportedPair,
+    ParallelPlanePair,
+    UnsupportedPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PcurveCarrierStatus {
+    Validated,
+    Rejected,
+    Unknown(PcurveCarrierUnknownReason),
+}
+
 fn pcurve_plane_carrier_status(
     surface: &SurfaceGeometry,
     face_carrier: CarrierEquation,
     other_carrier: CarrierEquation,
     endpoints: [[f64; 2]; 2],
-) -> Option<bool> {
+) -> PcurveCarrierStatus {
     let (CarrierEquation::Plane(face_plane), CarrierEquation::Plane(other_plane)) =
         (face_carrier, other_carrier)
     else {
-        return None;
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPair);
     };
     if dot(
         cross(face_plane.normal, other_plane.normal),
         cross(face_plane.normal, other_plane.normal),
     ) <= PCURVE_CARRIER_PARALLEL_EPS_SQUARED
     {
-        return None;
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair);
     }
     if !matches!(surface, SurfaceGeometry::Plane { .. })
         || linear_pcurve_carrier(surface, endpoints).is_none()
     {
-        return None;
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPath);
     }
-    Some(
-        PCURVE_CARRIER_SAMPLE_PARAMETERS
-            .into_iter()
-            .all(|fraction| {
-                let uv = [
-                    endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
-                    endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
-                ];
-                let Some(point) = cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) else {
-                    return false;
-                };
-                let point = [point.x, point.y, point.z];
-                point_on_carrier(point, face_carrier) && point_on_carrier(point, other_carrier)
-            }),
-    )
+    let valid = PCURVE_CARRIER_SAMPLE_PARAMETERS
+        .into_iter()
+        .all(|fraction| {
+            let uv = [
+                endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
+                endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
+            ];
+            let Some(point) = cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) else {
+                return false;
+            };
+            let point = [point.x, point.y, point.z];
+            point_on_carrier(point, face_carrier) && point_on_carrier(point, other_carrier)
+        });
+    if valid {
+        PcurveCarrierStatus::Validated
+    } else {
+        PcurveCarrierStatus::Rejected
+    }
 }
 
 fn pcurve_path_carrier_status(
@@ -236,12 +260,18 @@ fn pcurve_path_carrier_status(
     faces: [u32; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
-) -> Option<bool> {
+) -> PcurveCarrierStatus {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
-    let surface = unique_model_surface(&ir.model.surfaces, face_id)?;
-    let face_carrier = carriers.get(&face_id).copied()?;
-    let other_carrier = carriers.get(&other_id).copied()?;
+    let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface);
+    };
+    let Some(face_carrier) = carriers.get(&face_id).copied() else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+    };
+    let Some(other_carrier) = carriers.get(&other_id).copied() else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+    };
     pcurve_plane_carrier_status(&surface.geometry, face_carrier, other_carrier, endpoints)
 }
 
@@ -426,16 +456,35 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
             diagnostics.mapped_paths += mapped.mapped.len();
             mapped_paths.extend(mapped.mapped.iter().copied());
             match pcurve_path_carrier_status(ir, &carriers, faces, face_index, endpoints) {
-                Some(true) => {
+                PcurveCarrierStatus::Validated => {
                     carrier_proof_available = true;
                     diagnostics.carrier_validated_paths += 1;
                     carrier_mapped_paths.extend(mapped.mapped);
                 }
-                Some(false) => {
+                PcurveCarrierStatus::Rejected => {
                     carrier_proof_available = true;
                     diagnostics.carrier_rejected_paths += 1;
                 }
-                None => diagnostics.carrier_unknown_paths += 1,
+                PcurveCarrierStatus::Unknown(reason) => {
+                    diagnostics.carrier_unknown_paths += 1;
+                    match reason {
+                        PcurveCarrierUnknownReason::MissingSurface => {
+                            diagnostics.carrier_unknown_missing_surface_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::MissingCarrier => {
+                            diagnostics.carrier_unknown_missing_carrier_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::UnsupportedPair => {
+                            diagnostics.carrier_unknown_unsupported_pair_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::ParallelPlanePair => {
+                            diagnostics.carrier_unknown_parallel_plane_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::UnsupportedPath => {
+                            diagnostics.carrier_unknown_unsupported_path_paths += 1;
+                        }
+                    }
+                }
             }
         }
         let selected_paths = if carrier_proof_available {
@@ -1413,7 +1462,7 @@ mod tests {
                 crossing_carrier,
                 [[0.0, 0.0], [0.0, 1.0]],
             ),
-            Some(true),
+            PcurveCarrierStatus::Validated,
         );
         assert_eq!(
             pcurve_plane_carrier_status(
@@ -1422,7 +1471,7 @@ mod tests {
                 crossing_carrier,
                 [[0.0, 0.0], [1.0, 0.0]],
             ),
-            Some(false),
+            PcurveCarrierStatus::Rejected,
         );
         assert_eq!(
             pcurve_plane_carrier_status(
@@ -1434,7 +1483,7 @@ mod tests {
                 }),
                 [[0.0, 0.0], [0.0, 1.0]],
             ),
-            None,
+            PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair),
         );
     }
 

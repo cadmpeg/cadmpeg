@@ -320,6 +320,26 @@ impl BrepTransferDiagnostics {
                 pcurve.carrier_unknown_paths,
             );
             coverage.insert(
+                "brep_pcurve_carrier_unknown_missing_surface_path_count".to_string(),
+                pcurve.carrier_unknown_missing_surface_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_unknown_missing_carrier_path_count".to_string(),
+                pcurve.carrier_unknown_missing_carrier_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_unknown_unsupported_pair_path_count".to_string(),
+                pcurve.carrier_unknown_unsupported_pair_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_unknown_parallel_plane_path_count".to_string(),
+                pcurve.carrier_unknown_parallel_plane_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_unknown_unsupported_path_count".to_string(),
+                pcurve.carrier_unknown_unsupported_path_paths,
+            );
+            coverage.insert(
                 "brep_pcurve_carrier_rejected_record_count".to_string(),
                 pcurve.carrier_rejected_records,
             );

@@ -265,16 +265,24 @@ pub(super) fn push_brep_transfer_note(
             diagnostics.vertex_solve.pcurve_ambiguous_endpoint_vertices;
         if pcurve.carrier_validated_paths > 0
             || pcurve.carrier_rejected_paths > 0
+            || pcurve.carrier_unknown_paths > 0
             || pcurve.carrier_rejected_records > 0
             || fixed_endpoint_conflicts > 0
             || ambiguous_endpoint_vertices > 0
         {
             format!(
-                " Pcurve carrier join: validated paths={}, rejected paths={}, unknown paths={}, \
-                 rejected records={}, fixed endpoint conflicts={}, ambiguous endpoint vertices={}.",
+                " Pcurve carrier join: validated paths={}, rejected paths={}, unknown paths={} \
+                 (missing surface={}, missing carrier={}, unsupported pair={}, parallel plane={}, \
+                 unsupported path={}), rejected records={}, fixed endpoint conflicts={}, ambiguous \
+                 endpoint vertices={}.",
                 pcurve.carrier_validated_paths,
                 pcurve.carrier_rejected_paths,
                 pcurve.carrier_unknown_paths,
+                pcurve.carrier_unknown_missing_surface_paths,
+                pcurve.carrier_unknown_missing_carrier_paths,
+                pcurve.carrier_unknown_unsupported_pair_paths,
+                pcurve.carrier_unknown_parallel_plane_paths,
+                pcurve.carrier_unknown_unsupported_path_paths,
                 pcurve.carrier_rejected_records,
                 fixed_endpoint_conflicts,
                 ambiguous_endpoint_vertices,
