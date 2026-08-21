@@ -3743,19 +3743,34 @@ pub fn feature_body_reference_occurrences(
     references
 }
 
-/// Join object-index primary body fields to exactly one segment body alias pair.
+/// Join primary body fields to exactly one segment body alias pair.
 ///
 /// A field resolved in an offset store enters the segment namespace only when
 /// its operation has one resolved offset store, the field has one retained
-/// data-block use, and that field's identity matches one unique segment alias.
-/// A primary-index match, a missing or duplicate data-block use, a missing or
-/// ambiguous store, or a duplicate segment alias remains unresolved.
+/// data-block use, and that block contains one object frame carrying the
+/// field's persistent identity. A primary-index match, a missing or duplicate
+/// data-block use, a missing or ambiguous store, a missing or duplicate object
+/// frame, or a duplicate segment alias remains unresolved.
+fn unique_offset_store_body_frame<'a>(
+    reference: &FeatureBodyReference,
+    data_block_use: &FeatureBodyDataBlockUse,
+    object_frames: &'a [DataBlockObjectFrame],
+) -> Option<&'a DataBlockObjectFrame> {
+    let mut matches = object_frames.iter().filter(|frame| {
+        frame.data_block == data_block_use.data_block
+            && frame.object_id == reference.body_object_index
+    });
+    let frame = matches.next()?;
+    matches.next().is_none().then_some(frame)
+}
+
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
+    object_frames: &[DataBlockObjectFrame],
 ) -> Vec<FeatureBodySegmentUse> {
     let unique_references = unique_feature_body_references(references);
     let offset_store_reference_counts =
@@ -3796,6 +3811,10 @@ pub fn feature_body_segment_uses(
                 return None;
             }
             let binding = if has_offset_store_reference {
+                let data_block_use = data_block_uses
+                    .iter()
+                    .find(|use_| use_.feature_body_reference == reference.id)?;
+                unique_offset_store_body_frame(reference, data_block_use, object_frames)?;
                 crate::native::segments::unique_segment_body_alias_binding(
                     reference.body_object_index,
                     bindings,

@@ -145,6 +145,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         &[],
         &[],
         std::slice::from_ref(&binding),
+        &[],
     );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].feature_body_reference, reference.id);
@@ -154,7 +155,8 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         &[],
         &[],
         &[],
-        &[binding.clone(), binding.clone()]
+        &[binding.clone(), binding.clone()],
+        &[]
     )
     .is_empty());
     let duplicate_reference = FeatureBodyReference {
@@ -170,13 +172,17 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         &[],
         &[],
         std::slice::from_ref(&binding),
+        &[],
     )
     .is_empty());
 }
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
-    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+    use super::{
+        feature_body_segment_uses, DataBlockObjectFrame, FeatureBodyDataBlockUse,
+        FeatureBodyReference,
+    };
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -237,15 +243,79 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         stream_role: 19,
         source_offset: 40,
     };
+    let discriminator = [
+        0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
+        0x02, 0x80, 0xa4,
+    ];
+    let mut block_bytes = Vec::new();
+    let object_id_offset = block_bytes.len();
+    block_bytes.push(reference.body_object_index as u8);
+    block_bytes.extend_from_slice(&discriminator);
+    let parsed_frames = crate::om::data_block_object_frames(&block_bytes);
+    assert_eq!(parsed_frames.len(), 1);
+    assert_eq!(parsed_frames[0].offset, object_id_offset);
+    let object_frame = DataBlockObjectFrame {
+        id: "frame#0".into(),
+        data_block: "block#11".into(),
+        ordinal: 0,
+        object_id: parsed_frames[0].object_id,
+        raw_object_id: parsed_frames[0].raw_object_id.clone(),
+        source_offset: 100,
+    };
     let uses = feature_body_segment_uses(
         std::slice::from_ref(&reference),
         std::slice::from_ref(&data_block_use),
         std::slice::from_ref(&input),
         &blocks,
         std::slice::from_ref(&binding),
+        std::slice::from_ref(&object_frame),
     );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].segment_body_binding, "binding#0");
+
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        &[],
+    )
+    .is_empty());
+
+    let mut mismatched_frame = object_frame.clone();
+    mismatched_frame.object_id = 12;
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&mismatched_frame),
+    )
+    .is_empty());
+
+    let mut wrong_block_frame = object_frame.clone();
+    wrong_block_frame.data_block = "block#other".into();
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&wrong_block_frame),
+    )
+    .is_empty());
+
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        &[object_frame.clone(), object_frame.clone()],
+    )
+    .is_empty());
 
     assert!(feature_body_segment_uses(
         std::slice::from_ref(&reference),
@@ -253,6 +323,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         std::slice::from_ref(&input),
         &blocks,
         std::slice::from_ref(&binding),
+        std::slice::from_ref(&object_frame),
     )
     .is_empty());
 
@@ -283,6 +354,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         &[input.clone(), second_input],
         &[blocks[0].clone(), blocks[1].clone(), second_block],
         std::slice::from_ref(&binding),
+        std::slice::from_ref(&object_frame),
     )
     .is_empty());
 
@@ -295,6 +367,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         std::slice::from_ref(&input),
         &blocks,
         &[binding.clone(), duplicate_alias],
+        std::slice::from_ref(&object_frame),
     )
     .is_empty());
 
@@ -308,6 +381,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         std::slice::from_ref(&input),
         &blocks,
         &[binding, primary_collision],
+        std::slice::from_ref(&object_frame),
     )
     .is_empty());
 }
@@ -340,7 +414,7 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         source_offset: 40,
     };
     assert!(
-        feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding],)
+        feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding], &[])
             .is_empty()
     );
 }
@@ -391,7 +465,8 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
     };
 
     assert!(
-        feature_body_segment_uses(&[reference], &[], &[input], &[block], &[binding]).is_empty()
+        feature_body_segment_uses(&[reference], &[], &[input], &[block], &[binding], &[])
+            .is_empty()
     );
 }
 
@@ -446,6 +521,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         &[input(0, 3, "block#3"), input(1, 4, "block#4"),],
         &[block("block#3", 2, 3), block("block#4", 3, 4)],
         &[binding],
+        &[],
     )
     .is_empty());
 }

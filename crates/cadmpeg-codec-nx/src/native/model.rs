@@ -430,6 +430,7 @@ impl NativeModel {
             booleans: feature_boolean_operations,
             statuses: segment_body_lineage_statuses,
         } = precomputed_lineage.unwrap_or_else(|| extract_segment_lineage(container, streams));
+        let data_block_object_frames = data_block_object_frames(container);
         let segment_index_rows = segment_index_rows(container);
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
@@ -533,6 +534,7 @@ impl NativeModel {
             &feature_input_blocks,
             &data_blocks,
             &segment_body_bindings,
+            &data_block_object_frames,
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
@@ -851,7 +853,6 @@ impl NativeModel {
             &feature_datum_csys_payload_scalars,
         );
         let expression_declarations = expression_declarations(container);
-        let data_block_object_frames = data_block_object_frames(container);
         let expressions = expressions(container);
         let classes = class_definitions(container);
         let fields = field_definitions(container);

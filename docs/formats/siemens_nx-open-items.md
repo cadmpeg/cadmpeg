@@ -376,16 +376,6 @@ ownership, or access role.
 each declaration. No OM field schema is constructed from those bytes until a
 semantic role relation is serialized.
 
-### OM-07. Offset-store body to segment-image relation
-
-**Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
-
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field in the object namespace reuses a segment body" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
-
-**Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
-
-**Note.** `crates/cadmpeg-codec-nx/src/native/features.rs:3686-3746` requires one offset store, one data-block use, and one unique segment alias, while `native/segments.rs:137-173` supplies the alias-equality join. The closure test constructs `FeatureBodySegmentUse` inputs and verifies uniqueness; it does not provide an NX record that makes an offset-store block and a segment alias the same object. The integer equality remains a promoted cross-store relation, so this item is reopened.
-
 ### OM-08. Other feature-history object relations
 
 **Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
