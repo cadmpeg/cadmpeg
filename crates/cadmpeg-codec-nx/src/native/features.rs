@@ -5,8 +5,8 @@
 use super::*;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
-    DataBlockReference, DataBlockTargetIndexRow, Expression, ExpressionDeclaration, ExpressionUnit,
-    OmSchemaRole,
+    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
+    ExpressionUnit, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
@@ -26,8 +26,9 @@ pub struct FeatureOperationLabel {
     pub object_indices: [Option<u32>; 4],
     /// Exact serialized object-index tokens in header order.
     pub raw_object_indices: [Vec<u8>; 4],
-    /// Record-order-independent header identity when one non-null tuple is
-    /// unique across the feature-history sections.
+    /// Record-order-independent header identity when every non-null slot
+    /// resolves to a unique content-backed offset-store block and the tuple
+    /// is unique across the feature-history sections.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
     /// Absolute file offset of the `03` label tag.
@@ -86,7 +87,8 @@ pub struct FeatureOperationRecord {
     pub payload_byte_len: u64,
     /// SHA-256 of the post-label serialized operation payload.
     pub payload_sha256: String,
-    /// Record-order-independent header identity when the owning label has one.
+    /// Record-order-independent header identity when the owning label has one
+    /// after content-backed offset-store resolution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable_identity: Option<String>,
     /// Absolute file offset of the first post-label payload byte.
@@ -2883,41 +2885,82 @@ pub(crate) fn canonical_feature_history_links(
     links
 }
 
-/// Return the identity witness encoded by one operation header.
+/// Return unique content-backed identities for the offset-store ordinals used
+/// by operation-header slots.
 ///
-/// The tuple is useful only when it contains a non-null slot. An all-null
-/// header has no serialized operation witness; duplicate tuples are rejected
-/// by `assign_operation_header_identities` rather than being given an
-/// ambiguous identity.
-fn operation_header_identity_key(object_indices: [Option<u32>; 4]) -> Option<String> {
-    object_indices.iter().any(Option::is_some).then(|| {
-        let slots = object_indices
-            .iter()
-            .map(|index| index.map_or_else(|| "null".to_string(), |value| value.to_string()))
-            .collect::<Vec<_>>();
-        format!(
-            "nx:feature-history:operation-header-identity#{}",
-            slots.join("-")
-        )
-    })
-}
-
-fn assign_operation_header_identities(labels: &mut [FeatureOperationLabel]) {
-    let mut counts = BTreeMap::<String, usize>::new();
-    for label in labels.iter() {
-        if let Some(key) = operation_header_identity_key(label.object_indices) {
-            *counts.entry(key).or_default() += 1;
+/// A slot ordinal is local to one offset store and can drift when a record is
+/// inserted. The map is usable only when the ordinal resolves to exactly one
+/// column block across all offset stores and that block has a unique
+/// content-backed identity. An ambiguous or duplicate block remains absent.
+fn operation_header_block_identities(container: &Container) -> BTreeMap<u32, Option<String>> {
+    let mut candidates = BTreeMap::<u32, Vec<Option<String>>>::new();
+    for block in data_blocks(container) {
+        if block.role == DataBlockRole::Column {
+            candidates
+                .entry(block.block_ordinal)
+                .or_default()
+                .push(block.stable_identity);
         }
     }
-    for label in labels.iter_mut() {
-        label.stable_identity = operation_header_identity_key(label.object_indices)
-            .filter(|key| counts.get(key) == Some(&1));
+    candidates
+        .into_iter()
+        .map(|(ordinal, identities)| {
+            let identity = match identities.as_slice() {
+                [Some(identity)] => Some(identity.clone()),
+                _ => None,
+            };
+            (ordinal, identity)
+        })
+        .collect()
+}
+
+/// Return the record-order-independent identity encoded by one operation
+/// header.
+///
+/// Every non-null slot must resolve through the complete offset-store map.
+/// An all-null tuple, an unresolved slot, or a duplicated content identity has
+/// no operation identity witness.
+fn operation_header_identity_key(
+    object_indices: [Option<u32>; 4],
+    block_identities: &BTreeMap<u32, Option<String>>,
+) -> Option<String> {
+    if !object_indices.iter().any(Option::is_some) {
+        return None;
+    }
+    let slots = object_indices
+        .iter()
+        .map(|index| match index {
+            None => Some("null".to_string()),
+            Some(index) => block_identities.get(index)?.clone(),
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(format!(
+        "nx:feature-history:operation-header-identity#content:{}",
+        slots.join("-")
+    ))
+}
+
+fn assign_operation_header_identities(
+    labels: &mut [FeatureOperationLabel],
+    block_identities: &BTreeMap<u32, Option<String>>,
+) {
+    let keys = labels
+        .iter()
+        .map(|label| operation_header_identity_key(label.object_indices, block_identities))
+        .collect::<Vec<_>>();
+    let mut counts = BTreeMap::<String, usize>::new();
+    for key in keys.iter().flatten() {
+        *counts.entry(key.clone()).or_default() += 1;
+    }
+    for (label, key) in labels.iter_mut().zip(keys) {
+        label.stable_identity = key.filter(|key| counts.get(key) == Some(&1));
     }
 }
 
 /// Decode ordered operation labels from feature-history record areas.
 pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
+    let block_identities = operation_header_block_identities(container);
     let mut labels = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
@@ -2973,7 +3016,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                 }),
         );
     }
-    assign_operation_header_identities(&mut labels);
+    assign_operation_header_identities(&mut labels, &block_identities);
     labels
 }
 
@@ -3020,6 +3063,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 
 /// Decode exact feature-operation record boundaries and byte identities.
 pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
+    let block_identities = operation_header_block_identities(container);
     let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
     visit_feature_history_operation_records(
@@ -3027,7 +3071,8 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let stable_identity = operation_header_identity_key(record.label.object_indices);
+            let stable_identity =
+                operation_header_identity_key(record.label.object_indices, &block_identities);
             if let Some(key) = &stable_identity {
                 *identity_counts.entry(key.clone()).or_default() += 1;
             }

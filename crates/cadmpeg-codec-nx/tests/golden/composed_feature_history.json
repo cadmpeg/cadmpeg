@@ -33,7 +33,7 @@
               "object_index.2": "null",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "operation_stable_identity": "nx:feature-history:operation-header-identity#1-null-null-null",
+              "operation_stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null",
               "sketch_construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000000",
               "sketch_construction_payload.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000000",
               "sketch_named_point_block_use.0": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000000-0-0-1-0",
@@ -4123,7 +4123,7 @@
                 ],
                 "section_link": "nx:segment-om-links:link#0",
                 "source_offset": 308,
-                "stable_identity": "nx:feature-history:operation-header-identity#1-null-null-null",
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null",
                 "value": "SKETCH"
               },
               {
@@ -4516,7 +4516,7 @@
                 "payload_source_offset": 317,
                 "sha256": "c76134d5e55ad7b33d52bb3b1f063af9839876a9aa2c20cdceea312836df6d79",
                 "source_offset": 289,
-                "stable_identity": "nx:feature-history:operation-header-identity#1-null-null-null"
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null"
               },
               {
                 "byte_len": 42,

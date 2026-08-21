@@ -189,11 +189,15 @@ offset-only OM store. The addressed record retains its external index boundary
 as the operation's ordered input block. The input binding retains the exact
 object-index token and its offset. A slot binds only when exactly one offset-only
 store contains that ordinal.
-Within the feature-history namespace, the ordered four-slot tuple is an
-operation identity witness when at least one slot is non-null and no other
-operation has the same tuple. An all-null or duplicated tuple has no operation
-identity witness. This witness identifies the operation header only; it does
-not assign a body, operand, input, output, or other semantic role.
+Within the feature-history namespace, a non-null slot contributes the unique
+content-backed identity of its addressed offset-store column block. The
+record-order-independent ordered tuple of those block identities and the
+literal `null` slots is an operation identity witness when every non-null slot
+resolves uniquely and no other operation has the same tuple. An all-null tuple,
+an unresolved or duplicate block identity, or a duplicated tuple has no
+operation identity witness. This witness identifies the operation header only;
+it does not replace the ordinal slot, or assign a body, operand, input, output,
+or other semantic role.
 Input bindings from two or more distinct operation headers form an identity
 group when they resolve to the same bounded data block. Group members retain
 their input-binding identity, operation-label identity, header slot, and

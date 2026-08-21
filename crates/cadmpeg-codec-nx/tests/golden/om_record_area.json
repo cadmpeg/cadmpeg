@@ -50,7 +50,6 @@
               "object_index.2": "6099",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "operation_stable_identity": "nx:feature-history:operation-header-identity#1-576-6099-null",
               "primary_body_object_index": "6466",
               "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
             },
@@ -224,7 +223,6 @@
                 ],
                 "section_link": "nx:segment-om-links:link#0",
                 "source_offset": 326,
-                "stable_identity": "nx:feature-history:operation-header-identity#1-576-6099-null",
                 "value": "UNITE"
               }
             ],
@@ -238,8 +236,7 @@
                 "payload_sha256": "8dcac36cfa89e13867f6a565d4a239e5060db8e233dbcb7e4e9a729b3c074e48",
                 "payload_source_offset": 334,
                 "sha256": "26a7a1d0e2f7a5acc210e257a6154daa72a5107465f06075c7b610c43755b0ba",
-                "source_offset": 304,
-                "stable_identity": "nx:feature-history:operation-header-identity#1-576-6099-null"
+                "source_offset": 304
               }
             ],
             "field_definitions": [
