@@ -354,13 +354,26 @@ pub(super) fn typed_relation_definition(
         })
     };
     let dynamic = relation_uses_dynamic_operands(relation);
+    let dynamic_angle_pair = if dynamic && relation.family == Angle {
+        unique_dynamic_marker_line_angle_pair(
+            relation,
+            sketch,
+            parameter,
+            sketch_entities,
+            markers_by_id,
+            loci_by_marker,
+        )
+    } else {
+        None
+    };
     if dynamic {
         let witnessed = match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
                 point(0).is_some() && point(1).is_some()
             }
             PointLineDistance => point(0).is_some() && curve(1).is_some(),
-            LineLineDistance | Angle => curve(0).is_some() && curve(1).is_some(),
+            LineLineDistance => curve(0).is_some() && curve(1).is_some(),
+            Angle => dynamic_angle_pair.is_some() || (curve(0).is_some() && curve(1).is_some()),
             CircleDiameter => true,
         };
         if !witnessed {
@@ -719,17 +732,32 @@ pub(super) fn typed_relation_definition(
             let first = curve(0);
             let second = curve(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match (first, second) {
-                (Some(first), Some(second)) => (first, second),
-                (Some(known), None) => (
-                    known.clone(),
-                    unique_profile_line_angle_entity(sketch, &known, parameter, sketch_entities)?,
-                ),
-                (None, Some(known)) => (
-                    unique_profile_line_angle_entity(sketch, &known, parameter, sketch_entities)?,
-                    known,
-                ),
-                (None, None) => unique_profile_line_angle_pair(sketch, parameter, sketch_entities)?,
+            let (mut first, mut second) = match dynamic_angle_pair {
+                Some(pair) => pair,
+                None => match (first, second) {
+                    (Some(first), Some(second)) => (first, second),
+                    (Some(known), None) => (
+                        known.clone(),
+                        unique_profile_line_angle_entity(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                        )?,
+                    ),
+                    (None, Some(known)) => (
+                        unique_profile_line_angle_entity(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                        )?,
+                        known,
+                    ),
+                    (None, None) => {
+                        unique_profile_line_angle_pair(sketch, parameter, sketch_entities)?
+                    }
+                },
             };
             if first == second {
                 return None;
@@ -1407,6 +1435,134 @@ pub(super) fn unique_profile_line_angle_entity(
         line_line_angle(known, candidate)
             .is_some_and(|measured| same_dimension_angle(measured, angle.0))
     })
+}
+
+fn unique_dynamic_marker_line_angle_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let cadmpeg_ir::features::ParameterValue::Angle(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let candidates = |index: usize| {
+        let entities = solver_line_entity(relation, index, sketch, sketch_entities)
+            .map(|entity| vec![entity])
+            .or_else(|| {
+                let marker = relation_operand_marker(relation, index, sketch, markers_by_id)?;
+                Some(dynamic_marker_line_candidates(
+                    marker,
+                    markers_by_id,
+                    loci_by_marker,
+                    sketch_entities,
+                ))
+            })
+            .unwrap_or_default();
+        let mut entities = entities
+            .into_iter()
+            .filter(|id| {
+                sketch_entities.iter().any(|entity| {
+                    entity.id == *id
+                        && entity.sketch == *sketch
+                        && matches!(entity.geometry, SketchGeometry::Line { .. })
+                })
+            })
+            .collect::<Vec<_>>();
+        entities.sort();
+        entities.dedup();
+        entities
+    };
+    let first_candidates = candidates(0);
+    let second_candidates = candidates(1);
+    if first_candidates.is_empty() || second_candidates.is_empty() {
+        return None;
+    }
+    let mut pairs = Vec::new();
+    for first in &first_candidates {
+        let first_entity = sketch_entities.iter().find(|entity| entity.id == *first)?;
+        for second in &second_candidates {
+            if first == second {
+                continue;
+            }
+            let second_entity = sketch_entities.iter().find(|entity| entity.id == *second)?;
+            if unoriented_line_line_angle(first_entity, second_entity)
+                .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+            {
+                pairs.push((first.clone(), second.clone()));
+            }
+        }
+    }
+    sole_sorted(pairs)
+}
+
+fn dynamic_marker_line_candidates(
+    marker: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Vec<SketchEntityId> {
+    let mut marker_ids = HashSet::new();
+    collect_marker_identity_ids(marker, markers_by_id, &mut marker_ids, &mut HashSet::new());
+    let mut candidates = marker_line_entities_inner(
+        marker,
+        markers_by_id,
+        loci_by_marker,
+        sketch_entities,
+        &mut HashSet::new(),
+    );
+    candidates.extend(sketch_entities.iter().filter_map(|entity| {
+        if !matches!(entity.geometry, SketchGeometry::Line { .. }) {
+            return None;
+        }
+        let identity = entity
+            .native_ref
+            .as_deref()
+            .is_some_and(|reference| marker_ids.contains(reference))
+            || entity
+                .geometry_ref
+                .as_deref()
+                .is_some_and(|reference| marker_ids.contains(reference));
+        let endpoint = entity
+            .endpoint_refs
+            .iter()
+            .any(|reference| marker_ids.contains(reference.as_str()));
+        (identity || endpoint).then(|| entity.id.clone())
+    }));
+    if candidates.is_empty() {
+        if let Some(entity) =
+            single_marker_line_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+        {
+            candidates.push(entity);
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn collect_marker_identity_ids(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    marker_ids: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
+) {
+    if !visited.insert(marker_id.to_owned()) {
+        return;
+    }
+    marker_ids.insert(marker_id.to_owned());
+    let Some(marker) = markers_by_id.get(marker_id) else {
+        return;
+    };
+    for link in marker.links.iter().filter(|link| {
+        link.entity_ref != marker_id
+            && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                || !relation_link_identifies_owner(marker, link))
+    }) {
+        collect_marker_identity_ids(&link.entity_ref, markers_by_id, marker_ids, visited);
+    }
 }
 
 pub(super) fn unique_profile_line_angle_pair(

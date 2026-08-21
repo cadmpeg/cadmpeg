@@ -6,7 +6,7 @@ use super::{
 };
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
+    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
 };
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
@@ -502,6 +502,86 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
             &loci_by_marker,
         ),
         None
+    );
+}
+
+#[test]
+fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
+    let sketch = SketchId("sketch".into());
+    let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
+    first_marker.links = vec![
+        SketchInputLink {
+            local_id: 0,
+            entity_ref: "first-start".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "first-end".into(),
+        },
+    ];
+    let second_marker = marker("second-marker", 1, 20, SketchInputKind::LineOrCircle, None);
+    let first_start = marker("first-start", 2, 30, SketchInputKind::Point, None);
+    let first_end = marker("first-end", 3, 40, SketchInputKind::Point, None);
+    let mut first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(1.0, 0.0),
+    );
+    first_line.endpoint_refs = vec!["first-start".into(), "first-end".into()];
+    let mut alternate_line = line_entity(
+        "alternate-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.5, 0.866_025_403_784_438_6),
+    );
+    alternate_line.endpoint_refs = vec!["first-start".into()];
+    let second_line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 1.0),
+    );
+    let markers = [first_marker, second_marker, first_start, first_end];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([(
+        "second-marker".into(),
+        vec![SketchLocus::Entity(second_line.id.clone())],
+    )]);
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    relation.operands[0].entity_ref = Some("first-marker".into());
+    relation.operands[1].entity_ref = Some("second-marker".into());
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "90deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first_line.clone(), alternate_line, second_line.clone()],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first: first_line.id,
+            second: second_line.id,
+            parameter: parameter.id,
+        })
     );
 }
 
