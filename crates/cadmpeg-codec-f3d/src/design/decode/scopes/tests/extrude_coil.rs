@@ -1291,6 +1291,262 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
 }
 
 #[test]
+fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
+    use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as scalar_54;
+    use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as scalar_70;
+    use crate::layout::class_296_261_legacy_one_sided_distance_tail as distance_tail;
+    use crate::layout::class_296_261_legacy_one_sided_to_face_tail as to_face_tail;
+
+    const RECORD_INDEX: u32 = 296515;
+    const TO_FACE_REFERENCES: [u32; 12] = [
+        296501, 296504, 296507, 296510, 296513, 296516, 296519, 296522, 296525, 296528, 296531,
+        296534,
+    ];
+    const DISTANCE_REFERENCES: [u32; 10] = [
+        296601, 296604, 296607, 296610, 296613, 296616, 296619, 296622, 296625, 296628,
+    ];
+
+    let build = |frame_length: usize,
+                 reference_count_offset: usize,
+                 reference_members: &[u32],
+                 slot_presence: [bool; 7],
+                 slot_references: [u32; 4],
+                 face_extend: u32,
+                 first_extent: u32,
+                 scalar_offset: usize,
+                 scalar_value: f64,
+                 direction_reversed: u8| {
+        let mut bytes = vec![0; reference_count_offset + 4];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"296");
+        bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
+        bytes[scalar_54::PREFIX_CONSTANT..scalar_54::PREFIX_CONSTANT + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        bytes[scalar_54::REFERENCE] = 1;
+        bytes[scalar_54::REFERENCE + 1..scalar_54::REFERENCE + 5]
+            .copy_from_slice(&reference_members[0].to_le_bytes());
+        bytes[scalar_54::OPERATION..scalar_54::OPERATION + 4].copy_from_slice(&2u32.to_le_bytes());
+        bytes[scalar_54::DIRECTION..scalar_54::DIRECTION + 4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[scalar_54::FACE_EXTEND..scalar_54::FACE_EXTEND + 4]
+            .copy_from_slice(&face_extend.to_le_bytes());
+        bytes[scalar_54::DIRECTION_REVERSED] = direction_reversed;
+        bytes[scalar_54::GEOMETRY_KIND] = 1;
+        bytes[scalar_54::START_SUPPORT] = 2;
+        bytes[scalar_54::PROFILE_SCALAR_AT_54..scalar_54::PROFILE_SCALAR_AT_54 + 8]
+            .copy_from_slice(&0.0f64.to_le_bytes());
+        bytes[scalar_70::PROFILE_SCALAR_AT_70..scalar_70::PROFILE_SCALAR_AT_70 + 8]
+            .copy_from_slice(&0.0f64.to_le_bytes());
+        bytes[scalar_offset..scalar_offset + 8].copy_from_slice(&scalar_value.to_le_bytes());
+
+        let mut slot_offset = scalar_54::REFERENCE_SLOTS;
+        let mut slot_reference = slot_references.into_iter();
+        for expected_present in slot_presence {
+            if expected_present {
+                bytes[slot_offset] = 1;
+                bytes[slot_offset + 1..slot_offset + 5]
+                    .copy_from_slice(&slot_reference.next().expect("slot reference").to_le_bytes());
+                slot_offset += 11;
+            } else {
+                slot_offset += 1;
+            }
+        }
+        assert_eq!(slot_offset, scalar_54::FIRST_SIDE_EXTENT);
+        bytes[scalar_54::FIRST_SIDE_EXTENT..scalar_54::FIRST_SIDE_EXTENT + 4]
+            .copy_from_slice(&first_extent.to_le_bytes());
+        bytes[reference_count_offset - 4..reference_count_offset]
+            .copy_from_slice(&0u32.to_le_bytes());
+        bytes[reference_count_offset..reference_count_offset + 4]
+            .copy_from_slice(&(reference_members.len() as u32).to_le_bytes());
+
+        for reference in reference_members {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "Extrude");
+        let mut tail = [0; 76];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[30..34].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"261");
+        bytes.extend_from_slice(&RECORD_INDEX.to_le_bytes());
+        assert_eq!(bytes.len(), frame_length + 11);
+        bytes
+    };
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#class-296-legacy-one-sided".into(),
+        record_index: RECORD_INDEX,
+        class_tag: "296".into(),
+        byte_offset: 0,
+    };
+    let prologue = |bytes: &[u8]| {
+        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .and_then(|scope| scope.extrude_prologue)
+    };
+    let assert_valid = |bytes: &[u8],
+                        frame_length: usize,
+                        reference_count_offset: usize,
+                        reference_members: &[u32],
+                        extent: DesignExtrudeExtent,
+                        face_extend: u32,
+                        direction_reversed: bool| {
+        let scope = parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .expect("class-296 legacy one-sided scope");
+        assert_eq!(scope.frame_length, frame_length as u64);
+        assert_eq!(scope.reference_count_offset, reference_count_offset as u64);
+        assert_eq!(scope.reference_members.as_slice(), reference_members);
+        assert_eq!(
+            scope.extrude_prologue,
+            Some(DesignExtrudePrologue::LegacyShifted {
+                operation_prefix_marker: None,
+                operation_prefix_marker_offset: None,
+                operation: DesignExtrudeOperation::Cut,
+                operation_offset: scalar_54::OPERATION as u64,
+                direction_face_extend_values: [1, face_extend],
+                side_extent_discriminators: [
+                    if matches!(extent, DesignExtrudeExtent::OneSidedToFace) {
+                        2
+                    } else {
+                        1
+                    },
+                    0,
+                ],
+                side_extent_discriminator_offsets: [
+                    scalar_54::FIRST_SIDE_EXTENT as u64,
+                    if matches!(extent, DesignExtrudeExtent::OneSidedToFace) {
+                        to_face_tail::SECOND_SIDE_EXTENT as u64
+                    } else {
+                        distance_tail::SECOND_SIDE_EXTENT as u64
+                    },
+                ],
+                extent: Some(extent),
+                direction_face_extend_offsets: [
+                    scalar_54::DIRECTION as u64,
+                    scalar_54::FACE_EXTEND as u64,
+                ],
+                direction_reversed,
+                direction_reversed_offset: scalar_54::DIRECTION_REVERSED as u64,
+                solid_operation: true,
+                solid_operation_offset: scalar_54::GEOMETRY_KIND as u64,
+                start: DesignExtrudeStart::FromFace,
+                start_offset: scalar_54::START_SUPPORT as u64,
+            })
+        );
+    };
+
+    let to_face_scalar_54 = build(
+        515,
+        to_face_tail::REFERENCE_COUNT,
+        &TO_FACE_REFERENCES,
+        [true, false, false, true, false, true, true],
+        [
+            TO_FACE_REFERENCES[0],
+            TO_FACE_REFERENCES[3],
+            TO_FACE_REFERENCES[5],
+            TO_FACE_REFERENCES[6],
+        ],
+        1,
+        2,
+        scalar_54::PROFILE_SCALAR_AT_54,
+        1.0,
+        1,
+    );
+    assert_valid(
+        &to_face_scalar_54,
+        515,
+        to_face_tail::REFERENCE_COUNT,
+        &TO_FACE_REFERENCES,
+        DesignExtrudeExtent::OneSidedToFace,
+        1,
+        true,
+    );
+
+    let to_face_scalar_70 = build(
+        515,
+        to_face_tail::REFERENCE_COUNT,
+        &TO_FACE_REFERENCES,
+        [true, false, false, true, false, true, true],
+        [
+            TO_FACE_REFERENCES[0],
+            TO_FACE_REFERENCES[3],
+            TO_FACE_REFERENCES[5],
+            TO_FACE_REFERENCES[6],
+        ],
+        1,
+        2,
+        scalar_70::PROFILE_SCALAR_AT_70,
+        1.0,
+        0,
+    );
+    assert_valid(
+        &to_face_scalar_70,
+        515,
+        to_face_tail::REFERENCE_COUNT,
+        &TO_FACE_REFERENCES,
+        DesignExtrudeExtent::OneSidedToFace,
+        1,
+        false,
+    );
+
+    let distance_scalar_70 = build(
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        [true, false, true, true, false, true, false],
+        [
+            DISTANCE_REFERENCES[0],
+            DISTANCE_REFERENCES[2],
+            DISTANCE_REFERENCES[3],
+            DISTANCE_REFERENCES[5],
+        ],
+        2,
+        1,
+        scalar_70::PROFILE_SCALAR_AT_70,
+        -1.0,
+        0,
+    );
+    assert_valid(
+        &distance_scalar_70,
+        483,
+        distance_tail::REFERENCE_COUNT,
+        &DISTANCE_REFERENCES,
+        DesignExtrudeExtent::OneSidedDistance,
+        2,
+        false,
+    );
+
+    let mut invalid_profile = to_face_scalar_54.clone();
+    invalid_profile[scalar_54::PROFILE_SCALAR_AT_54..scalar_54::PROFILE_SCALAR_AT_54 + 8]
+        .copy_from_slice(&2.0f64.to_le_bytes());
+    assert!(prologue(&invalid_profile).is_none());
+
+    let mut invalid_scalar_lane = to_face_scalar_54.clone();
+    invalid_scalar_lane[scalar_54::ZERO_AFTER_SCALAR_AT_54] = 1;
+    assert!(prologue(&invalid_scalar_lane).is_none());
+
+    let mut invalid_slot = to_face_scalar_54.clone();
+    invalid_slot[scalar_54::REFERENCE_SLOTS] = 0;
+    assert!(prologue(&invalid_slot).is_none());
+
+    let mut invalid_face_extend = to_face_scalar_54.clone();
+    invalid_face_extend[scalar_54::FACE_EXTEND..scalar_54::FACE_EXTEND + 4]
+        .copy_from_slice(&2u32.to_le_bytes());
+    assert!(prologue(&invalid_face_extend).is_none());
+
+    let mut invalid_reference_count = to_face_scalar_54.clone();
+    invalid_reference_count[to_face_tail::REFERENCE_COUNT..to_face_tail::REFERENCE_COUNT + 4]
+        .copy_from_slice(&11u32.to_le_bytes());
+    assert!(prologue(&invalid_reference_count).is_none());
+
+    let mut invalid_pair = to_face_scalar_54;
+    invalid_pair[515 + 4..515 + 7].copy_from_slice(b"260");
+    assert!(prologue(&invalid_pair).is_none());
+}
+
+#[test]
 fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

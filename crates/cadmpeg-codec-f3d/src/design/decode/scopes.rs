@@ -36,6 +36,10 @@ use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_scalar_54;
+use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as class_296_legacy_scalar_70;
+use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
+use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
 use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
@@ -8441,6 +8445,17 @@ fn exact_extrude_prologue(
             reference_members,
         )
     })
+    .or_else(|| {
+        exact_class_296_legacy_one_sided_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        )
+    })
     .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
 }
 
@@ -8484,6 +8499,32 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
         && paired_class_tag == "261"
         && reference_count_delta == class_296_two_faces::REFERENCE_COUNT as u64
         && (frame_length, reference_member_count) == (536, 13)
+}
+
+pub(crate) fn is_class_296_legacy_one_sided_to_face_layout(
+    class_tag: &str,
+    paired_class_tag: &str,
+    frame_length: u64,
+    reference_count_delta: u64,
+    reference_member_count: usize,
+) -> bool {
+    class_tag == "296"
+        && paired_class_tag == "261"
+        && reference_count_delta == class_296_legacy_to_face::REFERENCE_COUNT as u64
+        && (frame_length, reference_member_count) == (515, 12)
+}
+
+pub(crate) fn is_class_296_legacy_one_sided_distance_layout(
+    class_tag: &str,
+    paired_class_tag: &str,
+    frame_length: u64,
+    reference_count_delta: u64,
+    reference_member_count: usize,
+) -> bool {
+    class_tag == "296"
+        && paired_class_tag == "261"
+        && reference_count_delta == class_296_legacy_distance::REFERENCE_COUNT as u64
+        && (frame_length, reference_member_count) == (483, 10)
 }
 
 fn exact_compact_shifted_extrude_prologue(
@@ -9018,6 +9059,200 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
             u64::try_from(side_extent_discriminator_offsets[1]).ok()?,
         ],
         extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
+        direction_face_extend_offsets: [
+            u64::try_from(direction_face_extend_offsets[0]).ok()?,
+            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+        ],
+        direction_reversed,
+        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        solid_operation,
+        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        start: start_support,
+        start_offset: u64::try_from(start_offset).ok()?,
+    })
+}
+
+fn exact_class_296_legacy_one_sided_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    class_tag: &str,
+    paired_class_tag: &str,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+
+    let frame_length = paired_at.checked_sub(start)?;
+    let (is_to_face, face_extend, first_extent) = if is_class_296_legacy_one_sided_to_face_layout(
+        class_tag,
+        paired_class_tag,
+        u64::try_from(frame_length).ok()?,
+        u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
+        reference_members.len(),
+    ) {
+        (true, 1, 2)
+    } else if is_class_296_legacy_one_sided_distance_layout(
+        class_tag,
+        paired_class_tag,
+        u64::try_from(frame_length).ok()?,
+        u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
+        reference_members.len(),
+    ) {
+        (false, 2, 1)
+    } else {
+        return None;
+    };
+    if View::u32_le_at(
+        bytes,
+        start.checked_add(class_296_legacy_scalar_54::PREFIX_CONSTANT)?,
+    )? != 1
+        || bytes.get(
+            start.checked_add(class_296_legacy_scalar_54::ZERO_BEFORE_REFERENCE)?
+                ..start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+        )? != [0]
+        || !reference_members.contains(&marked_record_reference(
+            bytes,
+            start.checked_add(class_296_legacy_scalar_54::REFERENCE)?,
+        )?)
+        || bytes.get(
+            start
+                .checked_add(class_296_legacy_scalar_54::REFERENCE)?
+                .checked_add(5)?
+                ..start.checked_add(class_296_legacy_scalar_54::OPERATION)?,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(class_296_legacy_scalar_54::OPERATION)?;
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let direction_face_extend_offsets = [
+        start.checked_add(class_296_legacy_scalar_54::DIRECTION)?,
+        start.checked_add(class_296_legacy_scalar_54::FACE_EXTEND)?,
+    ];
+    let direction_face_extend_values = [
+        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+    ];
+    if direction_face_extend_values != [1, face_extend] {
+        return None;
+    }
+    let direction_reversed_offset =
+        start.checked_add(class_296_legacy_scalar_54::DIRECTION_REVERSED)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let solid_operation_offset = start.checked_add(class_296_legacy_scalar_54::GEOMETRY_KIND)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let start_offset = start.checked_add(class_296_legacy_scalar_54::START_SUPPORT)?;
+    let start_support = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    if bytes.get(
+        start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_START)?
+            ..start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
+    )? != [0; 3]
+    {
+        return None;
+    }
+    let profile_scalar_at_54 = f64s_at(
+        bytes,
+        start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
+        1,
+    )?
+    .into_iter()
+    .next()?;
+    let profile_scalar_at_70 = f64s_at(
+        bytes,
+        start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
+        1,
+    )?
+    .into_iter()
+    .next()?;
+    let scalar_at_54 = profile_scalar_at_54.is_finite()
+        && (profile_scalar_at_54.abs() - 1.0).abs() <= PROFILE_NORMAL_UNIT_EPS
+        && bytes.get(
+            start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_SCALAR_AT_54)?
+                ..start.checked_add(class_296_legacy_scalar_54::REFERENCE_SLOTS)?,
+        )? == [0; 16];
+    let scalar_at_70 = profile_scalar_at_70.is_finite()
+        && (profile_scalar_at_70.abs() - 1.0).abs() <= PROFILE_NORMAL_UNIT_EPS
+        && bytes.get(
+            start.checked_add(class_296_legacy_scalar_70::ZERO_BEFORE_SCALAR_AT_70)?
+                ..start.checked_add(class_296_legacy_scalar_70::PROFILE_SCALAR_AT_70)?,
+        )? == [0; 16];
+    if !scalar_at_54 && !scalar_at_70 {
+        return None;
+    }
+    let mut slot_offset = start.checked_add(class_296_legacy_scalar_54::REFERENCE_SLOTS)?;
+    let slot_presence = if is_to_face {
+        [true, false, false, true, false, true, true]
+    } else {
+        [true, false, true, true, false, true, false]
+    };
+    for expected_present in slot_presence {
+        let present = match bytes.get(slot_offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        if present != expected_present {
+            return None;
+        }
+        if present {
+            let record_index = marked_record_reference(bytes, slot_offset)?;
+            if !reference_members.contains(&record_index) {
+                return None;
+            }
+            slot_offset = slot_offset.checked_add(11)?;
+        } else {
+            slot_offset = slot_offset.checked_add(1)?;
+        }
+    }
+    let first_side_extent_offset =
+        start.checked_add(class_296_legacy_scalar_54::FIRST_SIDE_EXTENT)?;
+    if slot_offset != first_side_extent_offset
+        || View::u32_le_at(bytes, first_side_extent_offset)? != first_extent
+    {
+        return None;
+    }
+    let second_side_extent_offset = reference_count_at.checked_sub(4)?;
+    if View::u32_le_at(bytes, second_side_extent_offset)? != 0
+        || second_side_extent_offset.checked_add(4)? != reference_count_at
+    {
+        return None;
+    }
+    Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation,
+        operation_offset: u64::try_from(operation_offset).ok()?,
+        direction_face_extend_values,
+        side_extent_discriminators: [first_extent, 0],
+        side_extent_discriminator_offsets: [
+            u64::try_from(first_side_extent_offset).ok()?,
+            u64::try_from(second_side_extent_offset).ok()?,
+        ],
+        extent: Some(if is_to_face {
+            DesignExtrudeExtent::OneSidedToFace
+        } else {
+            DesignExtrudeExtent::OneSidedDistance
+        }),
         direction_face_extend_offsets: [
             u64::try_from(direction_face_extend_offsets[0]).ok()?,
             u64::try_from(direction_face_extend_offsets[1]).ok()?,

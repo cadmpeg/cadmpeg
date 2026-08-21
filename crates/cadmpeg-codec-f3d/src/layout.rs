@@ -3778,6 +3778,138 @@ pub(crate) mod class_296_261_two_sided_to_faces_extrude_prefix {
     pub(crate) const REFERENCE_COUNT: usize = 291;
 }
 
+/// Byte offsets for the `class_296_261_legacy_extrude_prefix_scalar_at_54` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the class-296 primary indexed header. This prefix is shared by the 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes; the scalar lane is at +54 in this variant.
+/// ```
+pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_54 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 129;
+    /// Offset of `prefix_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT: usize = 20;
+    /// Stated value of `prefix_constant` (`u32`). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_before_reference` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE: usize = 24;
+    /// Stated value of `zero_before_reference` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE_VALUE: u8 = 0;
+    /// Offset of `reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REFERENCE: usize = 25;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 36;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 40;
+    /// Stated value of `direction` (`u32`). Spec §3.1.
+    pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0001;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACE_EXTEND: usize = 44;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_REVERSED: usize = 48;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    pub(crate) const GEOMETRY_KIND: usize = 49;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    pub(crate) const START_SUPPORT: usize = 50;
+    /// Offset of `zero_after_start` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_START: usize = 51;
+    /// Offset of `profile_scalar_at_54` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_SCALAR_AT_54: usize = 54;
+    /// Offset of `zero_after_scalar_at_54` (`bytes[16]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_SCALAR_AT_54: usize = 62;
+    /// Offset of `reference_slots` (`bytes[47]`). Spec §3.1.
+    pub(crate) const REFERENCE_SLOTS: usize = 78;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 125;
+}
+
+/// Byte offsets for the `class_296_261_legacy_extrude_prefix_scalar_at_70` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple.
+/// ```
+pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_70 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 129;
+    /// Offset of `prefix_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT: usize = 20;
+    /// Stated value of `prefix_constant` (`u32`). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_before_reference` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE: usize = 24;
+    /// Stated value of `zero_before_reference` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE_VALUE: u8 = 0;
+    /// Offset of `reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REFERENCE: usize = 25;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 36;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 40;
+    /// Stated value of `direction` (`u32`). Spec §3.1.
+    pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0001;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACE_EXTEND: usize = 44;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_REVERSED: usize = 48;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    pub(crate) const GEOMETRY_KIND: usize = 49;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    pub(crate) const START_SUPPORT: usize = 50;
+    /// Offset of `zero_after_start` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_START: usize = 51;
+    /// Offset of `zero_before_scalar_at_70` (`bytes[16]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_SCALAR_AT_70: usize = 54;
+    /// Offset of `profile_scalar_at_70` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_SCALAR_AT_70: usize = 70;
+    /// Offset of `reference_slots` (`bytes[47]`). Spec §3.1.
+    pub(crate) const REFERENCE_SLOTS: usize = 78;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 125;
+}
+
+/// Byte offsets for the `class_296_261_legacy_one_sided_to_face_tail` record.
+///
+/// Spec §3.1. Record length 285 B.
+///
+/// ```text
+/// Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +515.
+/// ```
+pub(crate) mod class_296_261_legacy_one_sided_to_face_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 285;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 277;
+    /// Stated value of `second_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 281;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000c;
+}
+
+/// Byte offsets for the `class_296_261_legacy_one_sided_distance_tail` record.
+///
+/// Spec §3.1. Record length 275 B.
+///
+/// ```text
+/// Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +483.
+/// ```
+pub(crate) mod class_296_261_legacy_one_sided_distance_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 275;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 267;
+    /// Stated value of `second_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 271;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000a;
+}
+
 /// Byte offsets for the `marked_shifted_extrude_prologue` record.
 ///
 /// Spec §3.1. Record length 43 B.

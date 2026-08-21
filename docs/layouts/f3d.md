@@ -2727,6 +2727,102 @@ Unstated regions:
 - `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
 - `119..287` (168 B): The class-specific face-selection, parameter, and historical-reference lanes precede the second-side discriminator.
 
+## `class_296_261_legacy_extrude_prefix_scalar_at_54`
+
+Spec §3.1 · layout: byte offsets · size: 129 B
+
+Offsets are relative to the class-296 primary indexed header. This prefix is shared by the 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes; the scalar lane is at +54 in this variant.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | u32 `1` at `+20` · value `1` |
+| 24 | 1 | `zero_before_reference` | `u8` | little | spec | a zero byte at `+24` · value `0` |
+| 25 | 11 | `reference` | `bytes[11]` | little | spec | a marked reference at `+25` with six trailing zero bytes through `+35` |
+| 36 | 4 | `operation` | `u32` | little | spec | the result operation at `+36` |
+| 40 | 4 | `direction` | `u32` | little | spec | direction `1` at `+40` · value `1` |
+| 44 | 4 | `face_extend` | `u32` | little | spec | face-extend option `1` at `+44` |
+| 48 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal at `+48` |
+| 49 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind at `+49` |
+| 50 | 1 | `start_support` | `u8` | little | spec | start support at `+50` |
+| 51 | 3 | `zero_after_start` | `bytes[3]` | little | spec | three zero bytes at `+51..+53` |
+| 54 | 8 | `profile_scalar_at_54` | `f64` | little | spec | its profile scalar at `+54` |
+| 62 | 16 | `zero_after_scalar_at_54` | `bytes[16]` | little | spec | `+62..+77` are zero |
+| 78 | 47 | `reference_slots` | `bytes[47]` | little | spec | seven nullable slots at `+78` |
+| 125 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent discriminator is `u32 2` at `+125` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+
+## `class_296_261_legacy_extrude_prefix_scalar_at_70`
+
+Spec §3.1 · layout: byte offsets · size: 129 B
+
+Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | u32 `1` at `+20` · value `1` |
+| 24 | 1 | `zero_before_reference` | `u8` | little | spec | a zero byte at `+24` · value `0` |
+| 25 | 11 | `reference` | `bytes[11]` | little | spec | a marked reference at `+25` with six trailing zero bytes through `+35` |
+| 36 | 4 | `operation` | `u32` | little | spec | the result operation at `+36` |
+| 40 | 4 | `direction` | `u32` | little | spec | direction `1` at `+40` · value `1` |
+| 44 | 4 | `face_extend` | `u32` | little | spec | face-extend option `2` at `+44` |
+| 48 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal at `+48` |
+| 49 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind at `+49` |
+| 50 | 1 | `start_support` | `u8` | little | spec | start support at `+50` |
+| 51 | 3 | `zero_after_start` | `bytes[3]` | little | spec | three zero bytes at `+51..+53` |
+| 54 | 16 | `zero_before_scalar_at_70` | `bytes[16]` | little | spec | `+54..+69` are zero |
+| 70 | 8 | `profile_scalar_at_70` | `f64` | little | spec | its profile scalar at `+70` |
+| 78 | 47 | `reference_slots` | `bytes[47]` | little | spec | seven nullable slots at `+78` |
+| 125 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent discriminator is `u32 1` at `+125` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+
+## `class_296_261_legacy_one_sided_to_face_tail`
+
+Spec §3.1 · layout: byte offsets · size: 285 B
+
+Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +515.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 277 | 4 | `second_side_extent` | `u32` | little | spec | the second-side discriminator is `u32 0` at `+277 = reference_count - 4` · value `0` |
+| 281 | 4 | `reference_count` | `u32` | little | spec | the ordered reference count is `12` at `+281` · value `12` |
+
+Unstated regions:
+
+- `0..277` (277 B): The class-specific side-reference and history lanes precede the second-side extent and count.
+
+## `class_296_261_legacy_one_sided_distance_tail`
+
+Spec §3.1 · layout: byte offsets · size: 275 B
+
+Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +483.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 267 | 4 | `second_side_extent` | `u32` | little | spec | the second-side discriminator is `u32 0` at `+267 = reference_count - 4` · value `0` |
+| 271 | 4 | `reference_count` | `u32` | little | spec | the ordered reference count is `10` at `+271` · value `10` |
+
+Unstated regions:
+
+- `0..267` (267 B): The class-specific side-reference and history lanes precede the second-side extent and count.
+
 ## `marked_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 43 B

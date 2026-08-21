@@ -8928,6 +8928,296 @@ source = "spec"
 anchor = "ordered reference count is `13` at `+291`"
 
 [[record]]
+name = "class_296_261_legacy_extrude_prefix_scalar_at_54"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 515-byte class-`296`/`261` legacy one-sided-to-face frame stores its profile scalar at `+54`"
+size = 129
+note = "Offsets are relative to the class-296 primary indexed header. This prefix is shared by the 515-byte one-sided-to-face and 483-byte one-sided-distance legacy envelopes; the scalar lane is at +54 in this variant."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at `+20`"
+value = 1
+
+[[record.field]]
+name = "zero_before_reference"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at `+24`"
+value = 0
+
+[[record.field]]
+name = "reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference at `+25` with six trailing zero bytes through `+35`"
+
+[[record.field]]
+name = "operation"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the result operation at `+36`"
+
+[[record.field]]
+name = "direction"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "direction `1` at `+40`"
+value = 1
+
+[[record.field]]
+name = "face_extend"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "face-extend option `1` at `+44`"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "direction reversal at `+48`"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 49
+type = "u8"
+source = "spec"
+anchor = "geometry kind at `+49`"
+
+[[record.field]]
+name = "start_support"
+offset = 50
+type = "u8"
+source = "spec"
+anchor = "start support at `+50`"
+
+[[record.field]]
+name = "zero_after_start"
+offset = 51
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at `+51..+53`"
+
+[[record.field]]
+name = "profile_scalar_at_54"
+offset = 54
+type = "f64"
+source = "spec"
+anchor = "its profile scalar at `+54`"
+
+[[record.field]]
+name = "zero_after_scalar_at_54"
+offset = 62
+type = "bytes[16]"
+source = "spec"
+anchor = "`+62..+77` are zero"
+
+[[record.field]]
+name = "reference_slots"
+offset = 78
+type = "bytes[47]"
+source = "spec"
+anchor = "seven nullable slots at `+78`"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "first-side extent discriminator is `u32 2` at `+125`"
+
+[[record]]
+name = "class_296_261_legacy_extrude_prefix_scalar_at_70"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 483-byte class-`296`/`261` legacy one-sided-distance frame stores its profile scalar at `+70`"
+size = 129
+note = "Offsets are relative to the class-296 primary indexed header. This prefix uses the alternate scalar lane at +70 and is admitted only with the exact legacy class, frame, and reference-count tuple."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and preceding scope envelope are outside this fixed prefix."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at `+20`"
+value = 1
+
+[[record.field]]
+name = "zero_before_reference"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "a zero byte at `+24`"
+value = 0
+
+[[record.field]]
+name = "reference"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference at `+25` with six trailing zero bytes through `+35`"
+
+[[record.field]]
+name = "operation"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the result operation at `+36`"
+
+[[record.field]]
+name = "direction"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "direction `1` at `+40`"
+value = 1
+
+[[record.field]]
+name = "face_extend"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "face-extend option `2` at `+44`"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "direction reversal at `+48`"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 49
+type = "u8"
+source = "spec"
+anchor = "geometry kind at `+49`"
+
+[[record.field]]
+name = "start_support"
+offset = 50
+type = "u8"
+source = "spec"
+anchor = "start support at `+50`"
+
+[[record.field]]
+name = "zero_after_start"
+offset = 51
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at `+51..+53`"
+
+[[record.field]]
+name = "zero_before_scalar_at_70"
+offset = 54
+type = "bytes[16]"
+source = "spec"
+anchor = "`+54..+69` are zero"
+
+[[record.field]]
+name = "profile_scalar_at_70"
+offset = 70
+type = "f64"
+source = "spec"
+anchor = "its profile scalar at `+70`"
+
+[[record.field]]
+name = "reference_slots"
+offset = 78
+type = "bytes[47]"
+source = "spec"
+anchor = "seven nullable slots at `+78`"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "first-side extent discriminator is `u32 1` at `+125`"
+
+[[record]]
+name = "class_296_261_legacy_one_sided_to_face_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "the ordered reference count is `12` at `+281`"
+size = 285
+note = "Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +515."
+
+[[record.gap]]
+offset = 0
+size = 277
+note = "The class-specific side-reference and history lanes precede the second-side extent and count."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 277
+type = "u32"
+source = "spec"
+anchor = "the second-side discriminator is `u32 0` at `+277 = reference_count - 4`"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 281
+type = "u32"
+source = "spec"
+anchor = "the ordered reference count is `12` at `+281`"
+value = 12
+
+[[record]]
+name = "class_296_261_legacy_one_sided_distance_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "the ordered reference count is `10` at `+271`"
+size = 275
+note = "Offsets are relative to the class-296 primary indexed header. The ordered references, history transition, and paired class-261 header follow this fixed tail; the paired header begins at +483."
+
+[[record.gap]]
+offset = 0
+size = 267
+note = "The class-specific side-reference and history lanes precede the second-side extent and count."
+
+[[record.field]]
+name = "second_side_extent"
+offset = 267
+type = "u32"
+source = "spec"
+anchor = "the second-side discriminator is `u32 0` at `+267 = reference_count - 4`"
+value = 0
+
+[[record.field]]
+name = "reference_count"
+offset = 271
+type = "u32"
+source = "spec"
+anchor = "the ordered reference count is `10` at `+271`"
+value = 10
+
+[[record]]
 name = "marked_shifted_extrude_prologue"
 kind = "byte"
 section = "3.1"
