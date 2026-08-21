@@ -740,16 +740,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Note.** Reopened by the 2026-08-10 closure audit. Commit `acb22c30f` adds a plane-digon orientation hint based on degree-5 jets, carrier classes, support ranges, and synthetic orientation tests, then promotes that relation to the spec. The test fixture is generated from the same rule; corpus CATIA bytes have not yet verified that these fields are the native global-sense anchor. Build a probe batch with plane caps of known sense and compare the orientation fields.
 
-### E5-04. Rank-deficient plane frame
-
-**Question.** How is a rank-deficient E5 plane frame completed?
-
-**Known.** The decoder retains the stored frame lanes. The general frame equation requires independent axes.
-
-**Need.** We must know the completion rule to construct the plane.
-
-**Note.** Reopened by the 2026-08-10 closure audit. Commit `66545be34` removes the item and records the rank-one normal/sign procedure only in coverage documentation. The documented normal and first-nonzero-component sign are decoder choices. Derive the completion rule from the rank-deficient plane frames in corpus and probe-batch parts.
-
 ### E5-05. Root orientation signs
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
