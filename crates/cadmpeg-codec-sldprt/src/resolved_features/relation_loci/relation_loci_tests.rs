@@ -350,6 +350,28 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
 }
 
 #[test]
+fn solver_point_relation_requires_materialized_positions() {
+    let sketch = SketchId("sketch".into());
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [12, 13]);
+    for operand in &mut relation.operands {
+        operand.kind = FeatureInputOperandKind::Native(0x8100);
+    }
+    let parameter = length_parameter(7.0);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
     let sketch = SketchId("sketch".into());
     let markers = [

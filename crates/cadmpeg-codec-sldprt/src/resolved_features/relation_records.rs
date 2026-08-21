@@ -565,6 +565,21 @@ mod relation_records_tests {
             FeatureInputRelationFamily::PointLineDistance,
             &point_tagged
         ));
+
+        for tag in [0x8100, 0x820f] {
+            let solver_point_tagged = operand_pair(FeatureInputOperandKind::Native(tag));
+            assert!(relation_signature(
+                FeatureInputRelationFamily::PointPointDistance,
+                &solver_point_tagged
+            ));
+            assert!(!relation_signature(
+                FeatureInputRelationFamily::PointPointHorizontalDistance,
+                &solver_point_tagged
+            ));
+            assert!(solver_point_tagged
+                .iter()
+                .all(|operand| is_solver_point_operand(operand.kind)));
+        }
     }
 
     #[test]
@@ -1578,6 +1593,8 @@ pub(super) fn relation_signature(
                 || (first.kind == Native(0x837b) && second.kind == Native(0x837b))
                 || (first.kind == Native(0xbc7c) && second.kind == Native(0xbc7c))
                 || (first.kind == Native(0x81dd) && second.kind == Native(0x81dd))
+                || (first.kind == Native(0x8100) && second.kind == Native(0x8100))
+                || (first.kind == Native(0x820f) && second.kind == Native(0x820f))
         }
         LineLineDistance => {
             (first.kind == E1 && second.kind == E1)
@@ -1603,6 +1620,19 @@ pub(super) fn relation_signature(
         }
         CircleDiameter => unreachable!("handled as a unary relation"),
     }
+}
+
+pub(super) fn is_solver_point_operand(kind: FeatureInputOperandKind) -> bool {
+    matches!(kind, FeatureInputOperandKind::Native(0x8100 | 0x820f))
+}
+
+pub(super) fn relation_uses_solver_points(relation: &FeatureInputRelationInstance) -> bool {
+    relation.family == FeatureInputRelationFamily::PointPointDistance
+        && relation.operands.len() == 2
+        && relation
+            .operands
+            .iter()
+            .all(|operand| is_solver_point_operand(operand.kind))
 }
 
 fn relation_signature_for_declaration(
@@ -2107,6 +2137,9 @@ fn bind_relation_geometry_operands(
             }
             continue;
         };
+        if relation_uses_solver_points(relation) {
+            continue;
+        }
         if !target.is_finite() || target < 0.0 {
             if dynamic {
                 clear_relation_operands(relation);

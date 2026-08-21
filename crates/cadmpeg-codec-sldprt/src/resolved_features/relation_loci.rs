@@ -4,7 +4,7 @@ use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{
     relation_operand_geometry_ref, relation_uses_solver_line_operand, solver_line_geometry_ref,
 };
-use super::relation_records::relation_uses_dynamic_operands;
+use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
     marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
@@ -362,6 +362,9 @@ pub(super) fn typed_relation_definition(
             })
         })
     };
+    if relation_uses_solver_points(relation) && (point(0).is_none() || point(1).is_none()) {
+        return None;
+    }
     let dynamic_point_pair = if dynamic {
         match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
