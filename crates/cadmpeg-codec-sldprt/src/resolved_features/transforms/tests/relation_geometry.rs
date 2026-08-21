@@ -918,6 +918,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let collision = marker("collision-marker", Some([8.0, 9.0]));
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(7);
     relation.object_index = Some(7);
     relation.links = vec![
         SketchInputLink {
@@ -979,6 +980,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
 fn fixed_relation_ignores_self_identifying_geometry_link() {
     let mut relation = marker("fixed", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+    relation.local_id = Some(7);
     relation.object_index = Some(7);
     relation.links = vec![
         SketchInputLink {
@@ -1059,6 +1061,7 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.local_id = Some(7);
     relation.object_index = Some(7);
     relation.links = vec![
         SketchInputLink {

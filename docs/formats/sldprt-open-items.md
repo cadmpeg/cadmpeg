@@ -612,14 +612,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know if two decoders can accept one record. If they cannot, the list order is not a rule and the comment invites an unsafe insertion. If they can, the order is an arbitration rule that the specification does not give, and the endpoints come from the wrong offsets with no recorded loss.
 
-### DI-41. Constraint-owner operand identifier
-
-**Question.** Which identifier does a marker constraint-owner operand carry, the feature-local object index or the marker local identifier?
-
-**Known.** `sldprt.md` §2 "`ResolvedFeatures` sketch entities begin with" gives the object index and the local identifier as independently scoped to the feature object, and gives `ff ff ff ff` as the null object index. `crates/cadmpeg-codec-sldprt/src/resolved_features/typed_relations.rs:133-139` puts the object index in the operand, or the local identifier when the object index is absent, or `ffffffff` when both are absent. One field therefore holds values from two independent spaces, and the null object index cannot be separated from an absent value. The sibling operand in the same function declares its space through the native kind `sldprt:marker-local-id`.
-
-**Need.** We must know which space the operand uses, so a reader of the retained native record can join the operand to a marker.
-
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content

@@ -1427,9 +1427,7 @@ pub(super) fn relation_link_identifies_owner(
     relation: &SketchInputEntity,
     link: &crate::records::SketchInputLink,
 ) -> bool {
-    link.entity_ref == relation.id
-        || relation.local_id == Some(u32::from(link.local_id))
-        || relation.object_index == Some(u32::from(link.local_id))
+    link.entity_ref == relation.id || relation.local_id == Some(u32::from(link.local_id))
 }
 
 pub(super) fn relation_link_is_geometric_operand(

@@ -107,7 +107,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
             entity_ref: collision.id.clone(),
         },
         SketchInputLink {
-            local_id: 8,
+            local_id: 7,
             entity_ref: collision.id.clone(),
         },
     ];
@@ -188,9 +188,37 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
 }
 
 #[test]
+fn object_index_collision_remains_a_forward_curve_operand() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(2);
+    relation.object_index = Some(1);
+    relation.links = vec![SketchInputLink {
+        local_id: 1,
+        entity_ref: "line".into(),
+    }];
+    let mut line = marker("line", None);
+    line.kind = SketchInputKind::LineOrCircle;
+    line.local_id = Some(1);
+    let markers = HashMap::from([(relation.id.as_str(), &relation), (line.id.as_str(), &line)]);
+    let loci = HashMap::from([(
+        line.id.clone(),
+        vec![SketchLocus::Entity(SketchEntityId("line-entity".into()))],
+    )]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("line-entity".into()),
+        })
+    );
+}
+
+#[test]
 fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+    relation.local_id = Some(7);
     relation.object_index = Some(7);
     relation.links = vec![
         SketchInputLink {
@@ -235,6 +263,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    relation.local_id = Some(1);
     relation.object_index = Some(1);
     relation.links = vec![SketchInputLink {
         local_id: 1,
