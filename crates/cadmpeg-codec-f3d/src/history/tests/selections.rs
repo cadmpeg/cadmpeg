@@ -1411,6 +1411,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         group(120, 3, vec![121]),
     ];
     let mut operands = vec![face_operand(111, 110, 1), face_operand(121, 120, 3)];
+    operands[0].candidate_faces = vec![cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10))];
+    operands[1].unreferenced_candidate_faces =
+        vec![cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(11))];
 
     let roots = crate::design::face_resolve::extrude_profile_group_roots(&scope, &groups)
         .expect("valid profile hierarchy");

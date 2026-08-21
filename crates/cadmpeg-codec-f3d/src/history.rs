@@ -4551,11 +4551,7 @@ fn bind_profile_face_group_cardinality(
                 || indices.iter().any(|index| {
                     let operand = &operands[*index];
                     !operand.resolved_face_slots.is_empty()
-                        || !crate::design::face_resolve::face_operand_candidates(operand).is_empty()
-                        || operand.recipe_references.iter().any(|reference| {
-                            !reference.candidate_faces.is_empty()
-                                || !reference.alternate_selector_faces.is_empty()
-                        })
+                        || operand.resolved_active_face.is_some()
                 })
             {
                 continue;
@@ -4576,40 +4572,40 @@ fn bind_profile_face_group_cardinality(
             ) else {
                 continue;
             };
-            let faces = profile_face_group_cardinality_candidates(
-                topology,
-                &changed_faces,
-                group.members.len(),
-            )
-            .or_else(|| {
-                if !crate::design::face_resolve::is_paired_extrude_profile_aggregate(
-                    group,
-                    operand_groups,
-                    operands,
-                ) {
-                    return None;
-                }
-                let transition = state
-                    .transition
-                    .as_ref()
-                    .filter(|transition| transition.previous_state_id == Some(previous_state_id))?;
-                let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-                let mut deleted = transition.topology.faces.deleted.clone();
-                deleted.sort_unstable();
-                deleted.dedup();
-                (deleted.len() == group.members.len()
-                    && deleted.len() == transition.topology.faces.deleted.len()
-                    && deleted.iter().all(|face| {
-                        preceding_faces.contains(face)
-                            && topology
-                                .face_surfaces
-                                .iter()
-                                .filter(|binding| binding.entity == *face)
-                                .count()
-                                == 1
-                    }))
-                .then_some(deleted)
-            });
+            let paired_aggregate = crate::design::face_resolve::is_paired_extrude_profile_aggregate(
+                group,
+                operand_groups,
+                operands,
+            );
+            let faces = if paired_aggregate {
+                (|| {
+                    let transition = state.transition.as_ref().filter(|transition| {
+                        transition.previous_state_id == Some(previous_state_id)
+                    })?;
+                    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+                    let mut deleted = transition.topology.faces.deleted.clone();
+                    deleted.sort_unstable();
+                    deleted.dedup();
+                    (deleted.len() == group.members.len()
+                        && deleted.len() == transition.topology.faces.deleted.len()
+                        && deleted.iter().all(|face| {
+                            preceding_faces.contains(face)
+                                && topology
+                                    .face_surfaces
+                                    .iter()
+                                    .filter(|binding| binding.entity == *face)
+                                    .count()
+                                    == 1
+                        }))
+                    .then_some(deleted)
+                })()
+            } else {
+                profile_face_group_cardinality_candidates(
+                    topology,
+                    &changed_faces,
+                    group.members.len(),
+                )
+            };
             let Some(faces) = faces else {
                 continue;
             };
