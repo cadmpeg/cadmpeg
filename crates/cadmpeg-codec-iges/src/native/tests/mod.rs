@@ -3,13 +3,99 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::DecodeReport;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 mod annotations;
 mod counted_lists;
+
+fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .count()
+}
+
+fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
+    let tag = format!("directory_entry:D{sequence}");
+    report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|source| source.tag.as_deref())
+                == Some(&tag)
+        })
+        .map(|loss| loss.code.code.clone())
+        .collect()
+}
+
+/// Run the overdeclared-count contract for one defective Directory Entry: the
+/// loss is charged once in both decode modes, it is the entry's only loss when
+/// no projection runs, a full decode also refuses that entry's projection, and
+/// a strict decode refuses the document on the count.
+fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
+    let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
+    for container_only in [false, true] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.to_vec()),
+                &DecodeOptions {
+                    container_only,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        let report = result.report();
+        assert_eq!(
+            code_count(report, IgesLossCode::ParameterCountOverdeclared),
+            1,
+            "container_only {container_only}"
+        );
+        let charged = codes_charged_to(report, sequence);
+        assert_eq!(
+            charged
+                .iter()
+                .filter(|code| **code == overdeclared.code)
+                .count(),
+            1,
+            "D{sequence} must carry the count loss once, got {charged:?}"
+        );
+        let refused = charged.iter().any(|code| {
+            matches!(
+                code.as_str(),
+                "entity.not-projected"
+                    | "entity.retained-unprojected"
+                    | "entity.outside-envelope"
+                    | "presentation.display-data-not-projected"
+            )
+        });
+        assert_eq!(
+            refused, !container_only,
+            "D{sequence} projection refusal, got {charged:?}"
+        );
+    }
+
+    let mut strict = DecodeOptions::default();
+    strict.policy.mode = DecodeMode::Strict;
+    match IgesCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &strict)
+        .unwrap_err()
+    {
+        CodecError::StrictRefusal { loss_code, .. } => {
+            assert_eq!(loss_code, overdeclared.as_str());
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
 
 #[test]
 fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss() {

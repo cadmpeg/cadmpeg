@@ -285,7 +285,7 @@ fn dimension_children_valid(
 
 fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
     let Some(count) = record
-        .count(2)
+        .count_with_stride_at(2, 4, 2, record.parameter_end())
         .filter(|count| *count >= 3 && *count % 2 == 1)
     else {
         return false;

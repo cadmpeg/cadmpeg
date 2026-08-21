@@ -5,6 +5,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use super::{assert_overdeclared_contract, code_count};
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
@@ -126,7 +128,7 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
             form: 1,
             label: "COPIOUS".into(),
             status: "00000000",
-            parameters: "106,1,2,0.5,1,2,3;".into(),
+            parameters: "106,1,3,0.5,1,2,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -165,7 +167,7 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
         .is_empty());
 
     let copious = &native.arenas["copious_data"][0];
-    assert_eq!(copious.fields()["declared_tuple_count"], 2);
+    assert_eq!(copious.fields()["declared_tuple_count"], 3);
     assert!(copious.fields()["common_z"].is_number());
     assert!(copious.fields()["tuples"].as_array().unwrap().is_empty());
 
@@ -277,7 +279,7 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
 }
 
 #[test]
-fn decode_label_display_truncated_count_rejects_trailing_property_group() {
+fn decode_label_display_defaulted_final_placement_rejects_trailing_property_group() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 402,
@@ -303,10 +305,14 @@ fn decode_label_display_truncated_count_rejects_trailing_property_group() {
 
     assert!(entity.fields()["property_links"][0].is_null());
     assert_eq!(associativity.fields()["declared_count"], 2);
-    assert!(associativity.fields()["placements"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    let fields = associativity.fields();
+    let placements = fields["placements"].as_array().unwrap();
+    assert_eq!(placements.len(), 2);
+    assert!(placements[1]["label_level"].is_null());
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
+        0
+    );
 }
 
 #[test]
@@ -1042,7 +1048,7 @@ fn decode_planar_entities_stop_at_the_transform_pointer() {
 }
 
 #[test]
-fn decode_recalculable_dimension_geometry_does_not_invent_a_partial_tuple() {
+fn decode_recalculable_dimension_reads_a_defaulted_final_tuple() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 202,
@@ -1066,10 +1072,15 @@ fn decode_recalculable_dimension_geometry_does_not_invent_a_partial_tuple() {
     let associativity = &native.arenas["associativities"][0];
 
     assert_eq!(associativity.fields()["declared_geometry_count"], 1);
-    assert!(associativity.fields()["geometry"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    let fields = associativity.fields();
+    let geometry = fields["geometry"].as_array().unwrap();
+    assert_eq!(geometry.len(), 1);
+    assert_eq!(geometry[0]["point"][0], 0.0);
+    assert!(geometry[0]["point"][1].is_null());
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
+        0
+    );
 }
 
 #[test]
@@ -1195,4 +1206,605 @@ fn decode_complete_leader_and_island_lists_keep_every_declared_item() {
             .len(),
         1
     );
+}
+
+fn salvage(bytes: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
+    IgesCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .unwrap()
+}
+
+fn overdeclared_site(
+    entities: &[OwnedTestEntity],
+    sequence: u32,
+    arena: &str,
+    declared_field: &str,
+    declared: i64,
+    list_field: &str,
+) {
+    let bytes = owned_test_file(entities);
+    assert_overdeclared_contract(&bytes, sequence);
+
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let record = native.arenas[arena]
+        .iter()
+        .find(|record| {
+            record.fields()["source_entity"] == format!("iges:entity:directory#{sequence}")
+        })
+        .expect("native record");
+    let fields = record.fields();
+    assert_eq!(fields[declared_field], declared, "{arena} declared count");
+    assert!(
+        fields[list_field].as_array().unwrap().is_empty(),
+        "{arena} {list_field} must not be read"
+    );
+}
+
+fn only(entity_type: i64, form: i64, label: &str, parameters: &str) -> Vec<OwnedTestEntity> {
+    vec![OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status: "00000200",
+        parameters: parameters.into(),
+    }]
+}
+
+fn point(label: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: label.into(),
+        status: "00010100",
+        parameters: "116,1,2,3;".into(),
+    }
+}
+
+fn entity(entity_type: i64, form: i64, label: &str, parameters: &str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status: "00000200",
+        parameters: parameters.into(),
+    }
+}
+
+#[test]
+fn decode_overdeclared_definition_levels_charge_the_loss_and_read_no_level() {
+    overdeclared_site(
+        &only(406, 1, "LEVELS", "406,3,10,20;"),
+        1,
+        "definition_levels",
+        "declared_count",
+        3,
+        "levels",
+    );
+}
+
+#[test]
+fn decode_overdeclared_boolean_tree_charges_the_loss_and_reads_no_term() {
+    overdeclared_site(
+        &only(180, 0, "TREE", "180,5,-1,-3,1;"),
+        1,
+        "boolean_trees",
+        "declared_length",
+        5,
+        "terms",
+    );
+}
+
+#[test]
+fn decode_overdeclared_subfigure_definition_charges_the_loss_and_reads_no_member() {
+    overdeclared_site(
+        &[point("MEMBER"), entity(308, 0, "SUB", "308,0,3HSUB,3,1;")],
+        3,
+        "subfigure_definitions",
+        "declared_member_count",
+        3,
+        "members",
+    );
+}
+
+#[test]
+fn decode_overdeclared_group_charges_the_loss_and_reads_no_member() {
+    overdeclared_site(
+        &[point("MEMBER"), entity(402, 1, "GROUP", "402,3,1;")],
+        3,
+        "groups",
+        "declared_member_count",
+        3,
+        "members",
+    );
+}
+
+#[test]
+fn decode_overdeclared_network_instance_charges_the_loss_and_reads_no_connect_point() {
+    overdeclared_site(
+        &only(420, 0, "NETINST", "420,0,0,0,0,1,1,1,0,2HR1,0,3,0;"),
+        1,
+        "network_instances",
+        "declared_connect_point_count",
+        3,
+        "connect_points",
+    );
+}
+
+#[test]
+fn decode_overdeclared_solid_assembly_charges_the_loss_and_reads_no_item() {
+    overdeclared_site(
+        &only(184, 0, "ASSEMBLY", "184,2,1,3;"),
+        1,
+        "solid_assemblies",
+        "declared_count",
+        2,
+        "items",
+    );
+}
+
+#[test]
+fn decode_overdeclared_units_data_charges_the_loss_and_reads_no_unit() {
+    overdeclared_site(
+        &only(316, 0, "UNITS", "316,3,2HIN,4HINCH,25.4,2HFT;"),
+        1,
+        "units_data",
+        "declared_count",
+        3,
+        "units",
+    );
+}
+
+#[test]
+fn decode_overdeclared_leader_charges_the_loss_and_reads_no_segment() {
+    overdeclared_site(
+        &only(214, 1, "LEADER", "214,3,1.0,1.0,0.0,0.0,0.0,5.0,5.0;"),
+        1,
+        "annotations",
+        "declared_segment_count",
+        3,
+        "segment_tails",
+    );
+}
+
+#[test]
+fn decode_overdeclared_line_font_pattern_reserves_the_hexadecimal_suffix() {
+    let bytes = owned_test_file(&only(304, 2, "PATTERN", "304,3,1.0,2.0,2H0F;"));
+    assert_overdeclared_contract(&bytes, 1);
+
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let font = &native.arenas["line_fonts"][0];
+
+    assert_eq!(font.fields()["segment_count"], 3);
+    assert!(font.fields()["lengths"].as_array().unwrap().is_empty());
+    assert!(font.fields()["hexadecimal_pattern"].is_null());
+}
+
+#[test]
+fn decode_overdeclared_line_font_pattern_claims_no_length_as_its_suffix() {
+    let bytes = owned_test_file(&only(304, 2, "PATTERN", "304,5,2HAB;"));
+    assert_overdeclared_contract(&bytes, 1);
+
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let font = &native.arenas["line_fonts"][0];
+
+    assert_eq!(font.fields()["segment_count"], 5);
+    assert!(font.fields()["lengths"].as_array().unwrap().is_empty());
+    assert!(font.fields()["hexadecimal_pattern"].is_null());
+}
+
+#[test]
+fn decode_overdeclared_copious_data_charges_the_loss_and_reads_no_tuple() {
+    overdeclared_site(
+        &[OwnedTestEntity {
+            entity_type: 106,
+            form: 1,
+            label: "COPIOUS".into(),
+            status: "00000000",
+            parameters: "106,1,3,0.5,1,2,3;".into(),
+        }],
+        1,
+        "copious_data",
+        "declared_tuple_count",
+        3,
+        "tuples",
+    );
+}
+
+#[test]
+fn decode_overdeclared_external_reference_index_charges_the_loss_and_reads_no_entry() {
+    overdeclared_site(
+        &[
+            point("TARGET"),
+            entity(402, 12, "INDEX", "402,3,1HA,1,1HB,1;"),
+        ],
+        3,
+        "associativities",
+        "declared_count",
+        3,
+        "entries",
+    );
+}
+
+#[test]
+fn decode_overdeclared_segmented_visibility_charges_the_loss_and_reads_no_block() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(402, 19, "SEGVIS", "402,2,1,0.5,1,0,0,0;"),
+    ]);
+    assert_overdeclared_contract(&bytes, 3);
+
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let visibility = &native.arenas["segmented_visibility"][0];
+    assert!(visibility.fields()["blocks"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn decode_overdeclared_view_list_charges_the_loss_and_reads_no_entity() {
+    overdeclared_site(
+        &[
+            entity(410, 0, "VIEW", "410,1,1,0,0,0,0,0,0,1,3,0;"),
+            entity(402, 6, "VIEWLST", "402,1,2,1,5;"),
+            point("VISIBLE"),
+        ],
+        3,
+        "associativities",
+        "declared_visible_count",
+        2,
+        "visible_entities",
+    );
+}
+
+#[test]
+fn decode_overdeclared_single_parent_charges_the_loss_and_reads_no_child() {
+    overdeclared_site(
+        &[point("CHILD"), entity(402, 9, "PARENT", "402,1,2,1,1;")],
+        3,
+        "associativities",
+        "declared_child_count",
+        2,
+        "children",
+    );
+}
+
+#[test]
+fn decode_overdeclared_dimensioned_geometry_charges_the_loss_and_reads_no_geometry() {
+    overdeclared_site(
+        &[
+            point("GEOM"),
+            entity(202, 0, "DIM", "202,0,0,0,0,0,0,0,0,0;"),
+            entity(402, 13, "DIMGEOM", "402,1,2,3,1;"),
+        ],
+        5,
+        "associativities",
+        "declared_geometry_count",
+        2,
+        "geometry",
+    );
+}
+
+#[test]
+fn decode_overdeclared_planar_charges_the_loss_and_reads_no_entity() {
+    overdeclared_site(
+        &[point("MEMBER"), entity(402, 16, "PLANAR", "402,1,2,0,1;")],
+        3,
+        "associativities",
+        "declared_entity_count",
+        2,
+        "entities",
+    );
+}
+
+#[test]
+fn decode_overdeclared_recalculable_dimension_charges_the_loss_and_reads_no_tuple() {
+    overdeclared_site(
+        &[
+            entity(202, 0, "DIM", "202,0,0,0,0,0,0,0,0,0;"),
+            entity(402, 21, "RECALC", "402,1,2,1,0,0.0,1,0,0.0,0.0,0.0;"),
+        ],
+        3,
+        "associativities",
+        "declared_geometry_count",
+        2,
+        "geometry",
+    );
+}
+
+#[test]
+fn decode_overdeclared_attribute_definition_charges_the_loss_and_reads_no_attribute() {
+    overdeclared_site(
+        &only(322, 0, "ATTRDEF", "322,4HATTR,0,3,1,1,0,2,1,0;"),
+        1,
+        "attribute_table_definitions",
+        "declared_attribute_count",
+        3,
+        "attributes",
+    );
+}
+
+#[test]
+fn decode_overdeclared_property_lists_charge_the_loss_and_read_no_value() {
+    for (form, parameters, list) in [
+        (12, "406,3,1HA,1HB;", "names"),
+        (14, "406,3,1HA,1HB;", "values"),
+        (24, "406,6,2,1,1HA,1,1HB;", "definitions"),
+        (25, "406,5,1HX,3,1,2;", "levels"),
+        (27, "406,6,1HN,3,1,5,1;", "values"),
+        (34, "406,7,3,1,1,2,1;", "ranges"),
+        (35, "406,7,3,1,1,2,1;", "ranges"),
+    ] {
+        let bytes = owned_test_file(&only(406, form, "PROP", parameters));
+        assert_overdeclared_contract(&bytes, 1);
+
+        let result = salvage(&bytes);
+        let native = result.ir().native.namespace("iges").unwrap();
+        let property = &native.arenas["properties"][0];
+        assert!(
+            property.fields()[list].as_array().unwrap().is_empty(),
+            "form {form} {list} must not be read"
+        );
+    }
+}
+
+#[test]
+fn decode_overdeclared_dimension_display_notes_charge_the_loss_and_read_no_note() {
+    overdeclared_site(
+        &only(
+            406,
+            30,
+            "DIMDISP",
+            "406,14,1,0,1,1HL,0,1.5707963267948966,0,0,0,0,0.0,2,1,1,2;",
+        ),
+        1,
+        "properties",
+        "declared_value_count",
+        14,
+        "supplemental_notes",
+    );
+}
+
+#[test]
+fn decode_overdeclared_flag_note_and_general_label_charge_the_loss_and_read_no_leader() {
+    for (entity_type, parameters, sequence) in [
+        (208, "208,0.0,0.0,0.0,0.0,1,2,3;", 5_u32),
+        (210, "210,1,2,3;", 5),
+    ] {
+        let bytes = owned_test_file(&[
+            entity(
+                212,
+                0,
+                "NOTE",
+                "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;",
+            ),
+            entity(214, 1, "LEADER", "214,1,1.0,1.0,0.0,0.0,0.0,5.0,5.0;"),
+            entity(entity_type, 0, "ANNO", parameters),
+        ]);
+        assert_overdeclared_contract(&bytes, sequence);
+
+        let result = salvage(&bytes);
+        let native = result.ir().native.namespace("iges").unwrap();
+        let annotation = native.arenas["annotations"]
+            .iter()
+            .find(|record| {
+                record.fields()["source_entity"] == format!("iges:entity:directory#{sequence}")
+            })
+            .expect("annotation");
+        assert!(
+            annotation.fields()["leaders"]
+                .as_array()
+                .unwrap()
+                .is_empty(),
+            "type {entity_type} leaders must not be read"
+        );
+    }
+}
+
+#[test]
+fn decode_overdeclared_sectioned_area_charges_the_loss_and_reads_no_island() {
+    let bytes = owned_test_file(&[
+        entity(100, 0, "BOUND", "100,0.0,0.0,0.0,1.0,0.0,1.0,0.0;"),
+        entity(230, 0, "SECTION", "230,1,0,0.0,0.0,0.0,0.0,0.0,2,1;"),
+    ]);
+    assert_overdeclared_contract(&bytes, 3);
+
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let section = &native.arenas["annotations"][0];
+    assert!(section.fields()["islands"].as_array().unwrap().is_empty());
+}
+
+fn assert_no_count_loss(result: &cadmpeg_ir::codec::DecodeResult) {
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
+        0,
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_units_data_reads_a_final_unit_present_in_part() {
+    let bytes = owned_test_file(&only(316, 0, "UNITS", "316,2,2HIN,4HINCH,25.4,2HFT;"));
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let units = &native.arenas["units_data"][0];
+    let fields = units.fields();
+    let list = fields["units"].as_array().unwrap();
+
+    assert_eq!(fields["declared_count"], 2);
+    assert_eq!(list.len(), 2);
+    assert!(list[1]["unit_value"].is_null());
+    assert!(list[1]["scale_factor"].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_external_reference_index_reads_a_final_pair_present_in_part() {
+    let bytes = owned_test_file(&[
+        point("TARGET"),
+        entity(402, 12, "INDEX", "402,2,1HA,1,1HB;"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let associativity = &native.arenas["associativities"][0];
+    let fields = associativity.fields();
+    let entries = fields["entries"].as_array().unwrap();
+
+    assert_eq!(fields["declared_count"], 2);
+    assert_eq!(entries.len(), 2);
+    assert!(entries[1]["entity"].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_segmented_visibility_reads_a_final_block_present_in_part() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(402, 19, "SEGVIS", "402,2,1,0.5,1,0,0,0,1,0.75;"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let visibility = &native.arenas["segmented_visibility"][0];
+    let fields = visibility.fields();
+    let blocks = fields["blocks"].as_array().unwrap();
+
+    assert_eq!(blocks.len(), 2);
+    assert!(blocks[1]["display_flag"].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_text_score_reads_a_final_range_present_in_part() {
+    let bytes = owned_test_file(&only(406, 34, "UNDER", "406,7,2,1,1,2,1,1;"));
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let property = &native.arenas["properties"][0];
+    let fields = property.fields();
+    let ranges = fields["ranges"].as_array().unwrap();
+
+    assert_eq!(ranges.len(), 2);
+    assert!(ranges[1]["last_character"].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_leader_reads_a_final_segment_present_in_part() {
+    let bytes = owned_test_file(&only(
+        214,
+        1,
+        "LEADER",
+        "214,2,1.0,1.0,0.0,0.0,0.0,5.0,5.0,7.0;",
+    ));
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let leader = &native.arenas["annotations"][0];
+    let fields = leader.fields();
+    let tails = fields["segment_tails"].as_array().unwrap();
+
+    assert_eq!(fields["declared_segment_count"], 2);
+    assert_eq!(tails.len(), 2);
+    assert_eq!(tails[1][0], 7.0);
+    assert!(tails[1][1].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_copious_data_reads_a_final_tuple_present_in_part() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 106,
+        form: 1,
+        label: "COPIOUS".into(),
+        status: "00000000",
+        parameters: "106,1,2,0.5,1,2,3;".into(),
+    }]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let copious = &native.arenas["copious_data"][0];
+    let fields = copious.fields();
+    let tuples = fields["tuples"].as_array().unwrap();
+
+    assert_eq!(fields["declared_tuple_count"], 2);
+    assert_eq!(tuples.len(), 2);
+    assert_eq!(tuples[1][0], 3.0);
+    assert!(tuples[1][1].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_line_font_pattern_holds_only_complete_lengths_before_its_suffix() {
+    let bytes = owned_test_file(&only(304, 2, "PATTERN", "304,2,1.0,2.0,2H0F;"));
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let font = &native.arenas["line_fonts"][0];
+    let fields = font.fields();
+
+    assert_eq!(fields["segment_count"], 2);
+    assert_eq!(fields["lengths"].as_array().unwrap().len(), 2);
+    assert!(fields["hexadecimal_pattern"].is_array());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_charges_one_count_loss_per_entry_in_directory_sequence_order() {
+    let bytes = owned_test_file(&[
+        entity(406, 1, "LEVELS", "406,3,10,20;"),
+        entity(316, 0, "UNITS", "316,3,2HIN,4HINCH,25.4,2HFT;"),
+        entity(
+            212,
+            0,
+            "NOTE",
+            "212,2,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;",
+        ),
+    ]);
+    let result = salvage(&bytes);
+    let charged = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::ParameterCountOverdeclared.kind())
+        .map(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|source| source.tag.clone())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        charged,
+        [
+            "directory_entry:D1".to_owned(),
+            "directory_entry:D3".to_owned(),
+            "directory_entry:D5".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn decode_charges_the_count_loss_once_for_an_entry_with_two_counted_lists() {
+    let bytes = owned_test_file(&only(
+        406,
+        30,
+        "DIMDISP",
+        "406,14,1,0,1,1HL,0,1.5707963267948966,0,0,0,0,0.0,2,1,1,2;",
+    ));
+    assert_overdeclared_contract(&bytes, 1);
+}
+
+#[test]
+fn decode_attribute_definition_holds_its_count_while_the_nested_triple_stays_empty() {
+    let bytes = owned_test_file(&only(322, 0, "ATTRDEF", "322,4HATTR,0,1,1,1;"));
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let definition = &native.arenas["attribute_table_definitions"][0];
+
+    assert_eq!(definition.fields()["declared_attribute_count"], 1);
+    assert!(definition.fields()["attributes"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_no_count_loss(&result);
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::OverdeclaredCount;
+use super::OverdeclaredCounts;
 use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
 use crate::graph::ParameterResolver;
-use crate::parameter::{DefaultTailCount, ParameterRecord};
+use crate::parameter::ParameterRecord;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -188,35 +188,36 @@ impl Subject<'_> {
         format!("iges:entity:directory#{}", self.sequence)
     }
 
-    fn counted(&self, count_index: usize, item_start: usize, stride: usize) -> usize {
-        self.record
-            .and_then(|record| {
-                record.count_with_stride_at(count_index, item_start, stride, self.primary_end)
-            })
-            .unwrap_or_default()
-    }
-
     fn counted_tail(
         &self,
         count_index: usize,
         stride: usize,
-        overdeclared: &mut Vec<OverdeclaredCount>,
+        overdeclared: &mut OverdeclaredCounts,
     ) -> usize {
-        let verdict = self.record.map_or(DefaultTailCount::Unreadable, |record| {
-            record.count_with_stride_before_default_tail(count_index, stride, self.primary_end)
-        });
-        match verdict {
-            DefaultTailCount::Held(count) => count,
-            DefaultTailCount::Overdeclared { declared, present } => {
-                overdeclared.push(OverdeclaredCount {
-                    sequence: self.sequence,
-                    declared,
-                    present,
-                });
-                0
-            }
-            DefaultTailCount::Unreadable => 0,
-        }
+        overdeclared.counted_tail(
+            self.sequence,
+            self.record,
+            self.primary_end,
+            count_index,
+            stride,
+        )
+    }
+
+    fn counted_tail_at(
+        &self,
+        count_index: usize,
+        item_start: usize,
+        stride: usize,
+        overdeclared: &mut OverdeclaredCounts,
+    ) -> usize {
+        overdeclared.counted_tail_at(
+            self.sequence,
+            self.record,
+            self.primary_end,
+            count_index,
+            item_start,
+            stride,
+        )
     }
 
     fn text_run(&self, start: usize) -> NativeTextRun {
@@ -281,8 +282,13 @@ impl Subject<'_> {
             .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
     }
 
-    fn leader_list(&self, count_index: usize, leader_start: usize) -> Vec<Option<String>> {
-        (0..self.counted(count_index, leader_start, 1))
+    fn leader_list(
+        &self,
+        count_index: usize,
+        leader_start: usize,
+        overdeclared: &mut OverdeclaredCounts,
+    ) -> Vec<Option<String>> {
+        (0..self.counted_tail_at(count_index, leader_start, 1, overdeclared))
             .map(|offset| self.leader_link(leader_start + offset))
             .collect()
     }
@@ -397,7 +403,7 @@ impl Subject<'_> {
 fn general_note(
     subject: &Subject<'_>,
     transformation: Option<String>,
-    overdeclared: &mut Vec<OverdeclaredCount>,
+    overdeclared: &mut OverdeclaredCounts,
 ) -> NativeAnnotation {
     let record = subject.record;
     let count = subject.counted_tail(1, 12, overdeclared);
@@ -415,7 +421,7 @@ fn general_note(
 fn new_general_note(
     subject: &Subject<'_>,
     transformation: Option<String>,
-    overdeclared: &mut Vec<OverdeclaredCount>,
+    overdeclared: &mut OverdeclaredCounts,
 ) -> NativeAnnotation {
     let record = subject.record;
     let count = subject.counted_tail(12, 20, overdeclared);
@@ -464,9 +470,13 @@ fn new_general_note(
     }
 }
 
-fn leader(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+fn leader(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut OverdeclaredCounts,
+) -> NativeAnnotation {
     let record = subject.record;
-    let count = subject.counted(1, 7, 2);
+    let count = subject.counted_tail_at(1, 7, 2, overdeclared);
     let z = record.and_then(|record| record.number(4));
     NativeAnnotation::Leader {
         id: subject.id(),
@@ -495,9 +505,13 @@ fn leader(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnota
     }
 }
 
-fn flag_note(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+fn flag_note(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut OverdeclaredCounts,
+) -> NativeAnnotation {
     let record = subject.record;
-    let leaders = subject.leader_list(6, 7);
+    let leaders = subject.leader_list(6, 7, overdeclared);
     NativeAnnotation::FlagNote {
         id: subject.id(),
         source_entity: subject.source_entity(),
@@ -514,9 +528,13 @@ fn flag_note(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnn
     }
 }
 
-fn general_label(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+fn general_label(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut OverdeclaredCounts,
+) -> NativeAnnotation {
     let record = subject.record;
-    let leaders = subject.leader_list(2, 3);
+    let leaders = subject.leader_list(2, 3, overdeclared);
     NativeAnnotation::GeneralLabel {
         id: subject.id(),
         source_entity: subject.source_entity(),
@@ -556,9 +574,13 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
     }
 }
 
-fn sectioned_area(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
+fn sectioned_area(
+    subject: &Subject<'_>,
+    transformation: Option<String>,
+    overdeclared: &mut OverdeclaredCounts,
+) -> NativeAnnotation {
     let record = subject.record;
-    let island_count = subject.counted(8, 9, 1);
+    let island_count = subject.counted_tail_at(8, 9, 1, overdeclared);
     NativeAnnotation::SectionedArea {
         id: subject.id(),
         source_entity: subject.source_entity(),
@@ -584,9 +606,9 @@ pub(super) fn build(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     parameter_resolver: &ParameterResolver<'_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
-) -> (Vec<NativeAnnotation>, Vec<OverdeclaredCount>) {
-    let mut overdeclared_counts = Vec::new();
-    let annotations = directory
+    overdeclared_counts: &mut OverdeclaredCounts,
+) -> Vec<NativeAnnotation> {
+    directory
         .iter()
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
         .map(|(entry, kind)| {
@@ -603,16 +625,22 @@ pub(super) fn build(
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
             match kind {
                 AnnotationKind::GeneralNote => {
-                    general_note(&subject, transformation, &mut overdeclared_counts)
+                    general_note(&subject, transformation, overdeclared_counts)
                 }
                 AnnotationKind::NewGeneralNote => {
-                    new_general_note(&subject, transformation, &mut overdeclared_counts)
+                    new_general_note(&subject, transformation, overdeclared_counts)
                 }
-                AnnotationKind::Leader => leader(&subject, transformation),
-                AnnotationKind::FlagNote => flag_note(&subject, transformation),
-                AnnotationKind::GeneralLabel => general_label(&subject, transformation),
+                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts),
+                AnnotationKind::FlagNote => {
+                    flag_note(&subject, transformation, overdeclared_counts)
+                }
+                AnnotationKind::GeneralLabel => {
+                    general_label(&subject, transformation, overdeclared_counts)
+                }
                 AnnotationKind::GeneralSymbol => general_symbol(&subject, transformation),
-                AnnotationKind::SectionedArea => sectioned_area(&subject, transformation),
+                AnnotationKind::SectionedArea => {
+                    sectioned_area(&subject, transformation, overdeclared_counts)
+                }
                 AnnotationKind::AngularDimension => NativeAnnotation::AngularDimension {
                     id: subject.id(),
                     source_entity: subject.source_entity(),
@@ -693,6 +721,5 @@ pub(super) fn build(
                 },
             }
         })
-        .collect::<Vec<_>>();
-    (annotations, overdeclared_counts)
+        .collect()
 }

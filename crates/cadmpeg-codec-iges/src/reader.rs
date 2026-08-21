@@ -395,12 +395,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
-    for native::OverdeclaredCount {
-        sequence: source_sequence,
-        declared,
-        present,
-    } in overdeclared_counts
-    {
+    for (source_sequence, native::OverdeclaredCount { declared, present }) in overdeclared_counts {
         losses.push(occurrence_loss(
             IgesLossCode::ParameterCountOverdeclared,
             format!(

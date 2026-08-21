@@ -250,6 +250,38 @@ impl ParameterRecord {
         }
     }
 
+    /// Report the declared count when the record delimiter defaults no field
+    /// of the list, so every declared item must be present whole.
+    pub(crate) fn count_with_stride_at_complete(
+        &self,
+        index: usize,
+        item_start: usize,
+        stride: usize,
+        end: usize,
+    ) -> DefaultTailCount {
+        if stride == 0 {
+            return DefaultTailCount::Unreadable;
+        }
+        let Some(count) = self
+            .integer(index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return DefaultTailCount::Unreadable;
+        };
+        let present = end
+            .min(self.parameter_end())
+            .saturating_sub(item_start)
+            .div_euclid(stride);
+        if count <= present {
+            DefaultTailCount::Held(count)
+        } else {
+            DefaultTailCount::Overdeclared {
+                declared: count,
+                present,
+            }
+        }
+    }
+
     /// Report the declared count before the entity-specific end from an
     /// explicit item start.
     pub(crate) fn count_with_stride_before_default_tail_at(

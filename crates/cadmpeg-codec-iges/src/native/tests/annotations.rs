@@ -6,19 +6,11 @@ use std::io::Cursor;
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::DecodeReport;
 
+use super::code_count;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
-
-fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
-}
 
 #[test]
 fn decode_general_note_defaulted_final_string_claims_no_trailing_property_group() {
