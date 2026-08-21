@@ -239,6 +239,18 @@ impl BrepTransferDiagnostics {
             "brep_vertex_carrier_zero_candidate_count".to_string(),
             self.vertex_solve.carrier_zero_candidate_vertices,
         );
+        if self.vertex_solve.carrier_no_geometric_candidate_vertices != 0 {
+            coverage.insert(
+                "brep_vertex_carrier_no_geometric_candidate_count".to_string(),
+                self.vertex_solve.carrier_no_geometric_candidate_vertices,
+            );
+        }
+        if self.vertex_solve.carrier_no_valid_candidate_vertices != 0 {
+            coverage.insert(
+                "brep_vertex_carrier_no_valid_candidate_count".to_string(),
+                self.vertex_solve.carrier_no_valid_candidate_vertices,
+            );
+        }
         coverage.insert(
             "brep_vertex_carrier_ambiguous_candidate_count".to_string(),
             self.vertex_solve.carrier_ambiguous_candidate_vertices,

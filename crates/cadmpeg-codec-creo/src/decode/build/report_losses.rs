@@ -258,6 +258,47 @@ pub(super) fn push_brep_transfer_note(
             String::new()
         }
     };
+    let carrier_rejection_samples = diagnostics
+        .vertex_solve
+        .carrier_rejection_samples
+        .iter()
+        .map(|sample| {
+            format!(
+                "{}[faces:{};carriers:{};pair:{};triple:{};valid:{};unique:{}]",
+                sample.vertex_id,
+                sample
+                    .incident_face_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("|"),
+                sample.carrier_kinds.join("|"),
+                sample.pair_intersections,
+                sample.triple_intersections,
+                sample.valid_candidates,
+                sample.unique_solutions,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let carrier_rejection_evidence = if diagnostics
+        .vertex_solve
+        .carrier_no_geometric_candidate_vertices
+        == 0
+        && diagnostics.vertex_solve.carrier_no_valid_candidate_vertices == 0
+        && carrier_rejection_samples.is_empty()
+    {
+        String::new()
+    } else {
+        format!(
+            " Carrier solver classification: no geometric candidate={}, no valid candidate={}; \
+             rejection samples: {carrier_rejection_samples}.",
+            diagnostics
+                .vertex_solve
+                .carrier_no_geometric_candidate_vertices,
+            diagnostics.vertex_solve.carrier_no_valid_candidate_vertices,
+        )
+    };
     let vertex_evidence = format!(
         "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
@@ -267,7 +308,7 @@ pub(super) fn push_brep_transfer_note(
          a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
-         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}",
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -300,6 +341,7 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.vertex_solve.solved_vertices,
         pcurve_mismatch_evidence,
         pcurve_activity_evidence,
+        carrier_rejection_evidence,
     );
 
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
