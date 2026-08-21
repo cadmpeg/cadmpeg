@@ -506,6 +506,177 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
 }
 
 #[test]
+fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
+    let sketch = SketchId("sketch".into());
+    let point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
+    let mut line_marker = marker("line-marker", 1, 20, SketchInputKind::LineOrCircle, None);
+    line_marker.object_index = Some(1);
+    line_marker.links = vec![
+        SketchInputLink {
+            local_id: 0,
+            entity_ref: "line-start".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "line-end".into(),
+        },
+    ];
+    let line_start = marker("line-start", 2, 30, SketchInputKind::Point, None);
+    let line_end = marker("line-end", 3, 40, SketchInputKind::Point, None);
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("point-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(5.0, 3.0),
+        },
+    };
+    let mut first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    first_line.endpoint_refs = vec!["line-start".into(), "line-end".into()];
+    let mut alternate_line = line_entity(
+        "alternate-line",
+        &sketch,
+        Point2::new(0.0, 1.0),
+        Point2::new(10.0, 1.0),
+    );
+    alternate_line.endpoint_refs = vec!["line-start".into()];
+    let markers = [point_marker, line_marker, line_start, line_end];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &[point.clone(), first_line, alternate_line.clone()],
+            &markers_by_id,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Entity(alternate_line.id),
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
+fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
+    let sketch = SketchId("sketch".into());
+    let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
+    first_marker.links = vec![
+        SketchInputLink {
+            local_id: 0,
+            entity_ref: "first-start".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "first-end".into(),
+        },
+    ];
+    let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::LineOrCircle, None);
+    second_marker.links = vec![
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "second-start".into(),
+        },
+        SketchInputLink {
+            local_id: 3,
+            entity_ref: "second-end".into(),
+        },
+    ];
+    let first_start = marker("first-start", 2, 30, SketchInputKind::Point, None);
+    let first_end = marker("first-end", 3, 40, SketchInputKind::Point, None);
+    let second_start = marker("second-start", 4, 50, SketchInputKind::Point, None);
+    let second_end = marker("second-end", 5, 60, SketchInputKind::Point, None);
+    let mut first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    first_line.endpoint_refs = vec!["first-start".into(), "first-end".into()];
+    let mut first_alternate = line_entity(
+        "first-alternate",
+        &sketch,
+        Point2::new(0.0, 1.0),
+        Point2::new(10.0, 1.0),
+    );
+    first_alternate.endpoint_refs = vec!["first-start".into()];
+    let mut second_line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 3.0),
+        Point2::new(10.0, 3.0),
+    );
+    second_line.endpoint_refs = vec!["second-start".into(), "second-end".into()];
+    let mut second_alternate = line_entity(
+        "second-alternate",
+        &sketch,
+        Point2::new(0.0, 4.0),
+        Point2::new(10.0, 4.0),
+    );
+    second_alternate.endpoint_refs = vec!["second-start".into()];
+    let markers = [
+        first_marker,
+        second_marker,
+        first_start,
+        first_end,
+        second_start,
+        second_end,
+    ];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [0, 1]);
+    let entities = vec![
+        first_line,
+        first_alternate.clone(),
+        second_line.clone(),
+        second_alternate,
+    ];
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities: vec![first_alternate.id, second_line.id],
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(3.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
