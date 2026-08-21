@@ -227,6 +227,31 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
 }
 
 #[test]
+fn edge_start_vertex_pair_survives_an_unresolved_successor() {
+    let incidence = vec![
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: 0,
+            },
+            start_vertex_id: 10,
+            end_vertex_id: None,
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: 1,
+            },
+            start_vertex_id: 20,
+            end_vertex_id: None,
+        },
+    ];
+
+    assert_eq!(edge_start_vertex_pairs(&incidence).get(&7), Some(&[10, 20]));
+    assert!(!edge_vertex_pairs(&incidence).contains_key(&7));
+}
+
+#[test]
 fn scan_groups_connected_nonzero_face_references() {
     let mut payload = visibgeom_payload(0, 2);
     payload.extend_from_slice(

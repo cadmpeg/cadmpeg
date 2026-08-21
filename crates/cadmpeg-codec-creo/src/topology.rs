@@ -87,6 +87,37 @@ pub struct HalfEdgeVertexIncidence {
     pub end_vertex_id: Option<u32>,
 }
 
+/// Return each uniquely identified curve's two half-edge start vertices.
+///
+/// Start vertices come from the vertex-orbit relation and remain available
+/// when one or both successor end relations are unresolved. Callers that need
+/// a complete oriented edge must use [`edge_vertex_pairs`] instead.
+pub fn edge_start_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
+    let mut by_curve = BTreeMap::<u32, [Vec<u32>; 2]>::new();
+    for binding in incidence {
+        let Some(side) = by_curve
+            .entry(binding.half_edge.curve_id)
+            .or_default()
+            .get_mut(usize::from(binding.half_edge.side))
+        else {
+            continue;
+        };
+        side.push(binding.start_vertex_id);
+    }
+    by_curve
+        .into_iter()
+        .filter_map(|(curve_id, sides)| {
+            let [first] = sides[0].as_slice() else {
+                return None;
+            };
+            let [second] = sides[1].as_slice() else {
+                return None;
+            };
+            Some((curve_id, [*first, *second]))
+        })
+        .collect()
+}
+
 /// Return every non-null face incident to a vertex orbit.
 ///
 /// Each orbit member identifies an edge endpoint. Both half-edge sides of that

@@ -513,8 +513,8 @@ pub fn solve_topological_vertices(
         }
     }
     diagnostics.carrier_points = carrier_points.len();
-    let edge_vertices =
-        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+    let edge_start_vertices =
+        crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
         .into_iter()
         .map(|(vertex, point)| (vertex, Some(point)))
@@ -533,7 +533,7 @@ pub fn solve_topological_vertices(
         let Some((points, complete)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
-        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
         if !pcurve_candidate_agrees_with_fixed_points(
@@ -587,7 +587,7 @@ pub fn solve_topological_vertices(
         }
     }
     for row in &topology_rows {
-        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
