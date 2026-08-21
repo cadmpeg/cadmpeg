@@ -1313,9 +1313,7 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
         .enumerate()
         .filter_map(|(index_ordinal, entry)| {
             let (source_offset, byte_len) = entry.file_span?;
-            let start = usize::try_from(source_offset).ok()?;
-            let byte_len = usize::try_from(byte_len).ok()?;
-            let payload = container.data.get(start..start.checked_add(byte_len)?)?;
+            let payload = container.bounded_entry_bytes(source_offset, byte_len)?;
             let version = View::u32_le_at(payload, 0)?;
             let declared_count = View::u32_le_at(payload, 4)?;
             let row_count = usize::try_from(declared_count).ok()?;
@@ -1378,16 +1376,7 @@ pub fn display_jt_documents(
     let Some((stream_source_offset, stream_byte_len)) = entry.file_span else {
         return Vec::new();
     };
-    let (Ok(stream_start), Ok(stream_byte_len)) = (
-        usize::try_from(stream_source_offset),
-        usize::try_from(stream_byte_len),
-    ) else {
-        return Vec::new();
-    };
-    let Some(stream) = container
-        .data
-        .get(stream_start..stream_start.saturating_add(stream_byte_len))
-    else {
+    let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
         return Vec::new();
     };
     let [index] = indices else {
@@ -1530,13 +1519,9 @@ pub fn display_jt_segments(
             .id
             .split_once('#')
             .map_or(document.id.as_str(), |(_, key)| key);
-        let (Ok(start), Ok(byte_len)) = (
-            usize::try_from(document.source_offset),
-            usize::try_from(document.physical_byte_len),
-        ) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+        let Some(bytes) =
+            container.bounded_entry_bytes(document.source_offset, document.physical_byte_len)
+        else {
             return Vec::new();
         };
         for entry in &document.toc_entries {
@@ -1623,12 +1608,8 @@ pub fn display_jt_shape_lod_elements(
     const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
     let mut elements = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -1673,12 +1654,11 @@ pub fn display_jt_tri_strip_lod_headers(
         .iter()
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
-        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+        let Some(body_start) = element.source_offset.checked_add(25) else {
             return Vec::new();
         };
-        let Some(body) = container
-            .data
-            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        let Some(body) =
+            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
             return Vec::new();
         };
@@ -1723,12 +1703,11 @@ pub fn display_jt_initial_face_degree_symbols(
         .iter()
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
-        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+        let Some(body_start) = element.source_offset.checked_add(25) else {
             return Vec::new();
         };
-        let Some(body) = container
-            .data
-            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        let Some(body) =
+            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
             return Vec::new();
         };
@@ -1799,12 +1778,11 @@ pub fn display_jt_topology_packet_sequences(
         .iter()
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
-        let Ok(body_start) = usize::try_from(element.source_offset + 25) else {
+        let Some(body_start) = element.source_offset.checked_add(25) else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
-        let Some(body) = container
-            .data
-            .get(body_start..body_start.saturating_add(element.body_byte_len as usize))
+        let Some(body) =
+            container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
             return (Vec::new(), Vec::new(), Vec::new());
         };
@@ -2005,13 +1983,12 @@ pub fn display_jt_vertex_coordinates(
 ) -> Vec<DisplayJtVertexCoordinates> {
     let mut arrays = Vec::new();
     for header in headers {
-        let Ok(start) = usize::try_from(header.source_offset + 32) else {
+        let Some(start) = header.source_offset.checked_add(32) else {
             return Vec::new();
         };
-        let Ok(byte_len) = usize::try_from(header.compressed_components_byte_len) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container.data.get(start..start.saturating_add(byte_len)) else {
+        let Some(bytes) =
+            container.bounded_entry_bytes(start, u64::from(header.compressed_components_byte_len))
+        else {
             return Vec::new();
         };
         let Some((points_m, coordinate_hash, consumed)) = crate::jt::decode_vertex_coordinates(
@@ -2471,12 +2448,8 @@ pub fn display_jt_compressed_element_sequences(
         .iter()
         .filter(|segment| segment.compression.is_some())
     {
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return (Vec::new(), Vec::new());
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return (Vec::new(), Vec::new());
         };
@@ -2540,12 +2513,8 @@ pub fn display_jt_string_property_atoms(
         if segment.compression.is_none() {
             return Vec::new();
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -2596,13 +2565,10 @@ pub fn display_jt_shape_lod_bindings(
     const SHAPE_IMPLEMENTATION_KEY: &str = "JT_LLPROP_SHAPEIMPL";
     let mut bindings = Vec::new();
     for scene_segment in segments.iter().filter(|segment| segment.segment_type == 1) {
-        let Ok(start) = usize::try_from(scene_segment.source_offset) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(scene_segment.segment_byte_len as usize))
-        else {
+        let Some(bytes) = container.bounded_entry_bytes(
+            scene_segment.source_offset,
+            u64::from(scene_segment.segment_byte_len),
+        ) else {
             return Vec::new();
         };
         let Some(compressed) = bytes.get(33..) else {
@@ -2757,12 +2723,8 @@ pub fn display_jt_base_node_data(
         if segment.compression.is_none() {
             return Vec::new();
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -2819,12 +2781,8 @@ pub fn display_jt_group_node_data(
         if document.format_major != 9 || segment.compression.is_none() {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -2886,12 +2844,8 @@ pub fn display_jt_instance_nodes(
         if document.format_major != 9 || segment.compression.is_none() {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -2950,12 +2904,8 @@ pub fn display_jt_geometric_transform_attributes(
         if document.format_major != 9 || segment.compression.is_none() {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -3017,12 +2967,8 @@ pub fn display_jt_material_attributes(
         if document.format_major != 9 || segment.compression.is_none() {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -3097,12 +3043,8 @@ pub fn display_jt_partition_nodes(
         if document.format_major >= 10 {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -3167,12 +3109,8 @@ pub fn display_jt_range_lod_nodes(
         if document.format_major >= 10 {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -3233,12 +3171,8 @@ pub fn display_jt_tri_strip_shape_nodes(
         if document.format_major != 9 || segment.compression.is_none() {
             continue;
         }
-        let Ok(start) = usize::try_from(segment.source_offset) else {
-            return Vec::new();
-        };
         let Some(bytes) = container
-            .data
-            .get(start..start.saturating_add(segment.segment_byte_len as usize))
+            .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
             return Vec::new();
         };
@@ -4005,6 +3939,7 @@ mod tests {
         data.push(2);
         data.extend_from_slice(&compressed);
         let physical_size = data.len() as u64;
+        let data_len = data.len() as u64;
         let container = Container {
             data: data.clone().into(),
             version: 6,
@@ -4018,7 +3953,7 @@ mod tests {
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
-                file_span: Some((0, data.len() as u64)),
+                file_span: Some((0, data_len)),
             }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
@@ -4065,6 +4000,16 @@ mod tests {
             compression.inflated_sha256,
             cadmpeg_ir::hash::sha256_hex(&inflated)
         );
+
+        let mut cross_entry = container.clone();
+        cross_entry.entries[0].file_span = Some((0, data_len - 1));
+        cross_entry.entries.push(DirEntry {
+            name: "/Root/other".to_string(),
+            region: Region::Header,
+            file_span: Some((data_len - 1, 1)),
+        });
+        assert!(super::display_jt_segments(None, &cross_entry, &documents).is_empty());
+
         let (compressed_elements, sequences) =
             super::display_jt_compressed_element_sequences(None, &container, &segments);
         assert_eq!(compressed_elements.len(), 1);
@@ -4090,7 +4035,7 @@ mod tests {
     #[test]
     fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
         use super::DisplayJtSegment;
-        use crate::container::Container;
+        use crate::container::{Container, DirEntry, Region};
 
         let object_type_id = [0x5a; 16];
         let body = [9, 8, 7];
@@ -4107,6 +4052,7 @@ mod tests {
         data.extend_from_slice(&[0xff; 16]);
         data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
         let physical_size = data.len() as u64;
+        let data_len = data.len() as u64;
         let container = Container {
             data: data.into(),
             version: 6,
@@ -4117,7 +4063,11 @@ mod tests {
             footer_fingerprint: [0; 4],
             physical_size,
             legacy_cfb: false,
-            entries: Vec::new(),
+            entries: vec![DirEntry {
+                name: "/Root/UG_PART/DisplayJT".to_string(),
+                region: Region::Header,
+                file_span: Some((0, data_len)),
+            }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -4153,7 +4103,7 @@ mod tests {
     #[test]
     fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         use super::DisplayJtSegment;
-        use crate::container::Container;
+        use crate::container::{Container, DirEntry, Region};
 
         let mut inflated = Vec::new();
         inflated.extend_from_slice(&16_u32.to_le_bytes());
@@ -4204,6 +4154,7 @@ mod tests {
         let mut data = vec![0; 33];
         data.extend_from_slice(&compressed);
         let physical_size = data.len() as u64;
+        let data_len = data.len() as u64;
         let container = Container {
             data: data.into(),
             version: 6,
@@ -4214,7 +4165,11 @@ mod tests {
             footer_fingerprint: [0; 4],
             physical_size,
             legacy_cfb: false,
-            entries: Vec::new(),
+            entries: vec![DirEntry {
+                name: "/Root/UG_PART/DisplayJT".to_string(),
+                region: Region::Header,
+                file_span: Some((0, data_len)),
+            }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
@@ -5108,6 +5063,7 @@ mod tests {
         let mut data = vec![0; source_offset as usize + 25];
         data.extend_from_slice(&body);
         let physical_size = data.len() as u64;
+        let data_len = data.len() as u64;
         let container = crate::container::Container {
             data: data.into(),
             version: 1,
@@ -5118,7 +5074,11 @@ mod tests {
             footer_fingerprint: [0; 4],
             physical_size,
             legacy_cfb: false,
-            entries: Vec::new(),
+            entries: vec![crate::container::DirEntry {
+                name: "/Root/UG_PART/DisplayJT".to_string(),
+                region: crate::container::Region::Header,
+                file_span: Some((0, data_len)),
+            }],
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
