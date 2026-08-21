@@ -5369,7 +5369,12 @@ pub fn topology_rows_with_face_ids(
     let mut rows = framed_rows_with_face_ids(payload, face_ids)
         .into_iter()
         .filter_map(|row| {
-            parse_topology_row_with_face_ids(&payload[row.start..row.end], row.start, face_ids)
+            parse_topology_row(
+                &payload[row.start..row.end],
+                row.start,
+                row.suffix_start,
+                row.suffix,
+            )
         })
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.offset);
@@ -5512,6 +5517,8 @@ fn parse_depdb_curve_segment(
 struct FramedRow {
     start: usize,
     end: usize,
+    suffix_start: usize,
+    suffix: [u32; 4],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5560,18 +5567,34 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         };
         let mut cursor = label + b"topol_ref_data\0".len();
         let mut boundary_anchored = false;
+        let mut segments = Vec::new();
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
+            segments.push((cursor, terminator, boundary_anchored));
+            cursor = terminator + length;
+            boundary_anchored = true;
+        }
+        let known_face_ids = face_ids.map(|face_ids| {
+            let mut known = face_ids.clone();
+            for &(start, end, _) in &segments {
+                let Some((_, suffix)) = unique_topology_suffix_in_segment(&payload[start..end])
+                else {
+                    continue;
+                };
+                known.extend(suffix[..2].iter().copied().filter(|id| *id != 0));
+            }
+            known
+        });
+        for &(start, end, boundary_anchored) in &segments {
             if let Some(row) = framed_segment_with_face_ids(
                 payload,
-                cursor,
-                terminator,
+                start,
+                end,
                 boundary_anchored,
                 face_ids,
+                known_face_ids.as_ref(),
             ) {
                 result.push(row);
             }
-            cursor = terminator + length;
-            boundary_anchored = true;
         }
     }
     result.sort_by_key(|row| row.start);
@@ -5584,7 +5607,8 @@ fn framed_segment_with_face_ids(
     start: usize,
     end: usize,
     boundary_anchored: bool,
-    face_ids: Option<&BTreeSet<u32>>,
+    materialized_face_ids: Option<&BTreeSet<u32>>,
+    known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Option<FramedRow> {
     let segment = payload.get(start..end)?;
     let mut prefixes = (0..segment.len())
@@ -5601,8 +5625,11 @@ fn framed_segment_with_face_ids(
         .collect::<Vec<_>>();
     for close in closes.into_iter().rev() {
         let row_end = close + 3;
-        let Some((suffix_start, _)) = topology_suffix_with_face_ids(&segment[..row_end], face_ids)
-        else {
+        let Some((suffix_start, suffix)) = topology_suffix_with_face_ids(
+            &segment[..row_end],
+            materialized_face_ids,
+            known_face_ids,
+        ) else {
             continue;
         };
         if boundary_anchored
@@ -5611,6 +5638,8 @@ fn framed_segment_with_face_ids(
             return Some(FramedRow {
                 start,
                 end: start + row_end,
+                suffix_start,
+                suffix,
             });
         }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
@@ -5618,6 +5647,8 @@ fn framed_segment_with_face_ids(
             return Some(FramedRow {
                 start: start + prefixes[0].0,
                 end: start + row_end,
+                suffix_start: suffix_start - prefixes[0].0,
+                suffix,
             });
         }
     }
@@ -5728,9 +5759,7 @@ pub fn parameter_records_with_face_ids(
         if row.get(close..) != Some(&[0, 0, 0xe3]) || body_start > close {
             continue;
         }
-        let Some((suffix_start, _)) = topology_suffix_with_face_ids(row, face_ids) else {
-            continue;
-        };
+        let suffix_start = framed.suffix_start;
         if suffix_start < body_start {
             continue;
         }
@@ -6285,12 +6314,12 @@ pub fn bind_prototype_pcurves(
     result
 }
 
-fn parse_topology_row_with_face_ids(
+fn parse_topology_row(
     row: &[u8],
     absolute_offset: usize,
-    face_ids: Option<&BTreeSet<u32>>,
+    suffix_start: usize,
+    [f0, f1, e0, e1]: [u32; 4],
 ) -> Option<CurveTopologyRow> {
-    let (suffix_start, [f0, f1, e0, e1]) = topology_suffix_with_face_ids(row, face_ids)?;
     let prefix = topology_prefix(row, 0, suffix_start)?;
     Some(CurveTopologyRow {
         id: prefix.id,
@@ -6329,8 +6358,58 @@ fn topology_prefix_fields(row: &[u8], start: usize) -> Option<TopologyPrefix> {
 
 fn topology_suffix_with_face_ids(
     row: &[u8],
-    face_ids: Option<&BTreeSet<u32>>,
+    materialized_face_ids: Option<&BTreeSet<u32>>,
+    known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Option<(usize, [u32; 4])> {
+    let candidates = topology_suffix_candidates(row)?;
+    if candidates.len() == 1 {
+        return candidates.first().copied();
+    }
+    if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
+        let role_matches = candidates
+            .iter()
+            .filter(|(_, references)| {
+                references[..2]
+                    .iter()
+                    .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        match role_matches.as_slice() {
+            [candidate] => return Some(*candidate),
+            [] => {}
+            _ => return None,
+        }
+    }
+    let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
+    let mut role_matches = candidates.into_iter().filter(|(_, references)| {
+        references[..2]
+            .iter()
+            .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+    });
+    let candidate = role_matches.next()?;
+    role_matches.next().is_none().then_some(candidate)
+}
+
+fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<(usize, [u32; 4])> {
+    let closes = segment
+        .windows(3)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
+        .map(|(offset, _)| offset);
+    for close in closes.rev() {
+        let row_end = close + 3;
+        let Some(candidates) = topology_suffix_candidates(&segment[..row_end]) else {
+            continue;
+        };
+        if let [candidate] = candidates.as_slice() {
+            return Some(*candidate);
+        }
+    }
+    None
+}
+
+fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<(usize, [u32; 4])>> {
     let close = row.len().checked_sub(3)?;
     (row.get(close..)? == [0, 0, 0xe3]).then_some(())?;
     let mut candidates = Vec::new();
@@ -6354,17 +6433,7 @@ fn topology_suffix_with_face_ids(
             candidates.push((start, [f0, f1, e0, e1]));
         }
     }
-    if candidates.len() == 1 {
-        return candidates.first().copied();
-    }
-    let ids = face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|(_, references)| {
-        references[..2]
-            .iter()
-            .all(|&face_id| face_id == 0 || ids.contains(&face_id))
-    });
-    let candidate = role_matches.next()?;
-    role_matches.next().is_none().then_some(candidate)
+    Some(candidates)
 }
 
 fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {

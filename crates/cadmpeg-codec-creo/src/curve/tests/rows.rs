@@ -244,6 +244,41 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
 }
 
 #[test]
+fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        7, 8, 4, 1, 0xf6, 10, 0x80, 0x8d, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+    ]);
+    payload.extend_from_slice(&[
+        0x80, 0x90, 0x00, 0x28, 0x01, 0xf6, 0xff, 0x80, 0x8f, 0x80, 0x8d, 0x81, 0x11, 0x2c, 0x00,
+        0x00, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3,
+    ]);
+
+    let face_ids = std::collections::BTreeSet::from([143]);
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].id, 144);
+    assert_eq!(rows[1].faces, [143, 141]);
+    assert_eq!(rows[1].next_edges, [273, 44]);
+}
+
+#[test]
+fn materialized_face_evidence_precedes_namespace_face_evidence() {
+    let row = [0x81, 0x73, 0x81, 0x71, 0x81, 0x4b, 0x81, 0x29, 0, 0, 0xe3];
+    let materialized_face_ids = std::collections::BTreeSet::from([369, 371]);
+    let namespace_face_ids = std::collections::BTreeSet::from([115, 369, 371]);
+
+    assert_eq!(
+        topology_suffix_with_face_ids(
+            &row,
+            Some(&materialized_face_ids),
+            Some(&namespace_face_ids),
+        ),
+        Some((0, [371, 369, 331, 297]))
+    );
+}
+
+#[test]
 fn parameter_records_withhold_rows_with_ambiguous_terminal_suffixes() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 8, 4, 1, 0xf6]);

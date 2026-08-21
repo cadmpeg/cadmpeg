@@ -1645,10 +1645,16 @@ the four-reference suffix. A suffix candidate is a sequence of four canonical
 reference identifiers that reaches `00 00 e3`. A unique candidate is valid
 without namespace qualification. When multiple candidates exist, retain only
 candidates whose `F0` and `F1` are zero or identify rows in the enclosing
-`srf_array`; exactly one such candidate is valid. Zero or multiple candidates
-after that qualification withhold the complete row from typed parameter
-records. The same rule frames the topology row. Its scalar walk retains each
-decoded token with body-relative offset, length, and exact bytes.
+`srf_array`. A face identifier absent from that array may qualify when it occurs
+as an `F0` or `F1` role in a uniquely delimited topology row in the same
+namespace. The enclosing `srf_array` qualification has precedence: when it
+selects exactly one candidate, namespace evidence cannot replace or invalidate
+that candidate. Namespace evidence is a fallback only when no candidate passes
+the enclosing `srf_array` qualification. Exactly one candidate after the
+applicable qualification is valid. Zero or multiple candidates withhold the
+complete row from typed parameter records. The same rule frames the topology
+row. Its scalar walk retains each decoded token with body-relative offset,
+length, and exact bytes.
 Canonical `f7` entity references retain the same span data. Maximal bytes
 claimed by neither class form opaque spans, so the three span sets partition
 the complete body.
