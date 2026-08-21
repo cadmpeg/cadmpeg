@@ -241,16 +241,72 @@ fn dimensioned_arc_native_geometry(
     }))
 }
 
-fn unique_unlinked_declared_entity_handle_circular_carrier<'a>(
+/// Resolve the duplicate-link arc carrier used by a declared entity handle.
+///
+/// The coordinate-less handle is a reference identity, not a second curve.
+/// Exactly two identical links to one earlier arc marker select that marker;
+/// the link local identifier and feature scope must agree.  The arc still
+/// needs the normal endpoint or radial-witness validation, so a duplicate
+/// link cannot turn an arbitrary relation handle into a circular carrier.
+fn unique_linked_declared_entity_handle_arc_carrier<'a>(
     lanes: &'a [FeatureInputLane],
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
 ) -> Option<(&'a SketchInputEntity, DimensionedCurveNative)> {
-    if !expected_radius.is_finite()
-        || expected_radius <= 0.0
-        || declared_entity_handle_has_resolved_pair(lanes, feature, operand)
+    if !expected_radius.is_finite() || expected_radius <= 0.0 {
+        return None;
+    }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let mut candidates = lane
+        .sketch_entities
+        .iter()
+        .filter(|handle| {
+            handle.feature_ref.as_deref() == Some(feature)
+                && handle.offset < operand.offset
+                && handle.coordinates_m.is_none()
+                && handle.kind == SketchInputKind::LineOrCircle
+        })
+        .filter_map(|handle| {
+            let [first, second] = handle.links.as_slice() else {
+                return None;
+            };
+            if first.entity_ref != second.entity_ref || first.local_id != second.local_id {
+                return None;
+            }
+            let arc = lane.sketch_entities.iter().find(|candidate| {
+                candidate.id == first.entity_ref
+                    && candidate.feature_ref.as_deref() == Some(feature)
+                    && candidate.offset < handle.offset
+                    && candidate.local_id == Some(u32::from(first.local_id))
+                    && candidate.coordinates_m.is_some()
+                    && candidate.kind == SketchInputKind::Arc
+            })?;
+            let curve = dimensioned_arc_native_geometry(lanes, arc, expected_radius)?;
+            Some((arc, curve))
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn unique_declared_entity_handle_circular_carrier<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<(&'a SketchInputEntity, DimensionedCurveNative)> {
+    if !expected_radius.is_finite() || expected_radius <= 0.0 {
+        return None;
+    }
+    if let Some(carrier) =
+        unique_linked_declared_entity_handle_arc_carrier(lanes, feature, operand, expected_radius)
     {
+        return Some(carrier);
+    }
+    if declared_entity_handle_has_resolved_pair(lanes, feature, operand) {
         return None;
     }
     let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
@@ -363,9 +419,9 @@ fn dimensioned_relation_carrier<'a>(
         (explicit?, None, None)
     } else if declared_entity_handle && !explicit_circular_marker {
         if explicit.is_none() || explicit_point_marker {
-            if let Some((marker, curve)) = unique_unlinked_declared_entity_handle_circular_carrier(
-                lanes, feature, operand, radius,
-            ) {
+            if let Some((marker, curve)) =
+                unique_declared_entity_handle_circular_carrier(lanes, feature, operand, radius)
+            {
                 (marker, None, Some(curve))
             } else if matches!(operand.kind, FeatureInputOperandKind::Native(_))
                 && explicit_point_marker
