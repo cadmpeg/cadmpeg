@@ -13,6 +13,7 @@ use crate::surface::{
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
 use crate::vecmath::{add, cross, dot, normalize, scale};
+use std::collections::BTreeSet;
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -176,6 +177,10 @@ fn generated_cylinder_section_transform(
                 .all(|(left, right)| close(*left, *right))
         })
         .then_some(())?;
+    let offset = definition.section_3d.as_ref().map_or_else(
+        || correspondences.iter().map(|item| item.3).min(),
+        |section| Some(section.offset),
+    )?;
     Some(FeatureSectionTransform {
         definition_id: definition.id,
         feature_id: Some(feature_id),
@@ -183,7 +188,7 @@ fn generated_cylinder_section_transform(
         u_axis: frame.1,
         v_axis: frame.2,
         normal,
-        offset: correspondences.iter().map(|item| item.3).min()?,
+        offset,
     })
 }
 
@@ -200,18 +205,7 @@ fn generated_planar_section_transform(
     let tables = entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .filter(|table| {
-            table.entries.len() >= 4
-                && table.entries[0].class_id == 204
-                && table.entries[1].class_id == 203
-                && table
-                    .entries
-                    .iter()
-                    .all(|entry| table.surface_ids.contains(&entry.entity_id))
-                && table.entries[2..]
-                    .iter()
-                    .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
-        })
+        .filter(|table| generated_planar_table_shape(table))
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -221,17 +215,43 @@ fn generated_planar_section_transform(
             .outline_planes
             .iter()
             .filter(|plane| plane.surface_id == entry.entity_id);
-        let plane = matches.next()?;
-        matches.next().is_none().then_some(())?;
-        Some((plane.normal, dot(plane.normal, plane.origin)))
+        if let Some(plane) = matches.next() {
+            return matches
+                .next()
+                .is_none()
+                .then_some((plane.normal, dot(plane.normal, plane.origin)));
+        }
+        let mut envelopes = sources
+            .plane_envelopes
+            .iter()
+            .filter(|record| record.surface_id == entry.entity_id);
+        let envelope = envelopes.next()?;
+        envelopes.next().is_none().then_some(())?;
+        let corners = match &envelope.envelope {
+            PlaneEnvelope::Standard { corners_3d, .. }
+            | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+        };
+        let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
+        let coordinate = corners[0][axis]?;
+        let mut normal = [0.0; 3];
+        normal[axis] = 1.0;
+        Some((normal, coordinate))
     };
     let caps = [
         generated_plane_equation(&table.entries[0])?,
         generated_plane_equation(&table.entries[1])?,
     ];
     let mut sides = Vec::new();
-    for entry in &table.entries[2..] {
-        let segment = segments.segment(entry.source_entity_id?)?;
+    for entry in table.entries[2..]
+        .iter()
+        .filter(|entry| table.surface_ids.contains(&entry.entity_id))
+    {
+        let Some(model_plane) = generated_plane_equation(entry) else {
+            continue;
+        };
+        let Some(segment) = entry.source_entity_id.and_then(|id| segments.segment(id)) else {
+            continue;
+        };
         (segment.kind == FeatureSegmentKind::Line).then_some(())?;
         let point = |point_id| {
             let point = points.get(&point_id)?;
@@ -244,7 +264,7 @@ fn generated_planar_section_transform(
         (length.is_finite() && length > 1e-12).then_some(())?;
         let local_normal = [direction[1] / length, -direction[0] / length];
         let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
-        let (model_normal, model_offset) = generated_plane_equation(entry)?;
+        let (model_normal, model_offset) = model_plane;
         let magnitude = dot(model_normal, model_normal).sqrt();
         (magnitude.is_finite() && magnitude > 1e-12).then_some(())?;
         sides.push((
@@ -364,6 +384,10 @@ fn generated_planar_section_transform(
     let [(origin, u_axis, v_axis, normal)] = candidates.as_slice() else {
         return None;
     };
+    let offset = definition
+        .section_3d
+        .as_ref()
+        .map_or(table.offset, |section| section.offset);
     Some(FeatureSectionTransform {
         definition_id: definition.id,
         feature_id: Some(feature_id),
@@ -371,8 +395,55 @@ fn generated_planar_section_transform(
         u_axis: *u_axis,
         v_axis: *v_axis,
         normal: *normal,
-        offset: table.offset,
+        offset,
     })
+}
+
+fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
+    let [first, second, rest @ ..] = table.entries.as_slice() else {
+        return false;
+    };
+    if first.class_id != 204
+        || second.class_id != 203
+        || rest.is_empty()
+        || !rest
+            .iter()
+            .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
+    {
+        return false;
+    }
+    let entry_ids = table
+        .entries
+        .iter()
+        .map(|entry| entry.entity_id)
+        .collect::<BTreeSet<_>>();
+    let roster = table
+        .surface_ids
+        .iter()
+        .chain(&table.non_surface_entity_ids)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    table.entry_ids.len() == entry_ids.len()
+        && table.entry_ids.iter().copied().collect::<BTreeSet<_>>() == entry_ids
+        && roster == entry_ids
+        && table.surface_ids.iter().all(|id| {
+            !table.non_surface_entity_ids.contains(id)
+                && table
+                    .surface_ids
+                    .iter()
+                    .filter(|candidate| *candidate == id)
+                    .count()
+                    == 1
+        })
+        && table.non_surface_entity_ids.iter().all(|id| {
+            !table.surface_ids.contains(id)
+                && table
+                    .non_surface_entity_ids
+                    .iter()
+                    .filter(|candidate| *candidate == id)
+                    .count()
+                    == 1
+        })
 }
 
 fn plane_equation(
@@ -467,9 +538,10 @@ fn definition_local_frame_transform(
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.owner_feature_id?;
     let values = unique_complete_local_system(definition)?;
-    let mut reference_axis = normalize(values[0..3].try_into().ok()?)?;
-    let mut normal = normalize(values[6..9].try_into().ok()?)?;
-    (dot(reference_axis, normal).abs() <= 1e-12).then_some(())?;
+    let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
+    let raw_normal = normalize(values[6..9].try_into().ok()?)?;
+    (dot(u_axis, raw_normal).abs() <= 1e-12).then_some(())?;
+    let mut normal = raw_normal;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         normal = scale(normal, -1.0);
@@ -478,15 +550,15 @@ fn definition_local_frame_transform(
         normal = scale(normal, -1.0);
     }
     if reference_flip_for_reference(section, None) == Some(BinaryFlag::Set) {
-        reference_axis = scale(reference_axis, -1.0);
+        u_axis = scale(u_axis, -1.0);
     }
-    let u_axis = cross(reference_axis, normal);
-    ((dot(u_axis, u_axis) - 1.0).abs() <= 1e-12).then_some(FeatureSectionTransform {
+    let v_axis = cross(normal, u_axis);
+    ((dot(v_axis, v_axis) - 1.0).abs() <= 1e-12).then_some(FeatureSectionTransform {
         definition_id: definition.id,
         feature_id: Some(feature_id),
         origin,
         u_axis,
-        v_axis: reference_axis,
+        v_axis,
         normal,
         offset: section.offset,
     })
@@ -920,6 +992,9 @@ pub(crate) fn resolve(
         let Some(sketch_id) = section.sketch_plane_entity_id else {
             continue;
         };
+        let carrier_transform =
+            generated_cylinder_section_transform(definition, sources, entity_tables)
+                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables));
         let mut reference_ids = section
             .reference_plane_datum_geometry_id
             .map_or_else(|| section.reference_plane_entity_ids.clone(), |id| vec![id]);
@@ -1003,7 +1078,9 @@ pub(crate) fn resolve(
             }
         }
         if candidates.len() != 1 {
-            if let Some(transform) = definition_local_frame_transform(definition, section) {
+            if let Some(transform) = carrier_transform {
+                result.push(transform);
+            } else if let Some(transform) = definition_local_frame_transform(definition, section) {
                 result.push(transform);
             }
             continue;
@@ -1070,7 +1147,7 @@ pub(crate) fn resolve(
                 )
             })
             .unwrap_or(intersection_origin);
-        result.push(FeatureSectionTransform {
+        let direct_transform = FeatureSectionTransform {
             definition_id: definition.id,
             feature_id: definition.owner_feature_id,
             origin,
@@ -1078,7 +1155,8 @@ pub(crate) fn resolve(
             v_axis: reference_axis,
             normal,
             offset: section.offset,
-        });
+        };
+        result.push(carrier_transform.unwrap_or(direct_transform));
     }
     for definition in definitions {
         if result

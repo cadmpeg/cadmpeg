@@ -6,7 +6,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition};
 use cadmpeg_ir::units::Units;
 
-use super::super::link_feature_sketch_history;
+use super::super::{link_feature_sketch_history, section_entity_is_generated_profile};
 
 fn section_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
@@ -94,4 +94,62 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
     link_feature_sketch_history(&scan, &mut ir);
 
     assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn rowless_generated_profile_requires_a_framed_side_table() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(7),
+        table_class_id: 29,
+        entry_ids: vec![29, 30, 31, 32],
+        entries: vec![
+            entry(29, 204, None),
+            entry(30, 203, None),
+            entry(31, 200, Some(11)),
+            entry(32, 200, Some(13)),
+        ],
+        surface_ids: vec![29, 30, 32],
+        non_surface_entity_ids: vec![31],
+        offset: 0,
+    };
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let rows = vec![row(29), row(30), row(32)];
+    assert!(section_entity_is_generated_profile(
+        true,
+        Some(7),
+        11,
+        &[crate::surface::SurfaceKind::Plane],
+        std::slice::from_ref(&table),
+        &rows,
+    ));
+
+    let mut malformed = table;
+    malformed.entry_ids.pop();
+    assert!(!section_entity_is_generated_profile(
+        true,
+        Some(7),
+        11,
+        &[crate::surface::SurfaceKind::Plane],
+        std::slice::from_ref(&malformed),
+        &rows,
+    ));
 }

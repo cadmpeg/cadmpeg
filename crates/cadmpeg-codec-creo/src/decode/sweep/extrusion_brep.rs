@@ -2,7 +2,9 @@
 //! Resolved extrusion B-rep transfer.
 
 use super::super::analytic::nurbs_intrinsic_parameter_range;
-use super::super::feature_history::feature_allows_additive_linear_extrusion;
+use super::super::feature_history::{
+    feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
+};
 use super::super::native::annotate;
 use super::super::sketch::{normalized, section_point_in_model};
 use super::super::sketch_ids::model_sketch_id;
@@ -36,53 +38,54 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::BTreeSet;
 
+const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
+    crate::surface::SurfaceKind::Plane,
+    crate::surface::SurfaceKind::Cylinder,
+    crate::surface::SurfaceKind::Extrusion,
+];
+
 pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
     feature_id: u32,
     sketch: &Sketch,
 ) -> bool {
-    let expected_entities = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| {
-            table.entries.iter().filter(move |entry| {
-                entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
-            })
-        })
-        .filter_map(|entry| {
-            let external_id = entry.source_entity_id?;
-            crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
-                .is_some_and(|row| {
-                    row.feature_id == feature_id
-                        && matches!(
-                            row.kind,
-                            crate::surface::SurfaceKind::Plane
-                                | crate::surface::SurfaceKind::Cylinder
-                                | crate::surface::SurfaceKind::Extrusion
-                        )
-                })
-                .then(|| {
-                    SketchEntityId(format!(
-                        "creo:featdefs:sketch_entity#{}:{external_id}",
-                        definition.id
-                    ))
-                })
-        })
-        .collect::<Vec<_>>();
-    let expected = expected_entities.iter().cloned().collect::<BTreeSet<_>>();
     let profile_entities = sketch
         .profiles
         .iter()
         .flatten()
         .map(|entity_use| entity_use.entity.clone())
         .collect::<Vec<_>>();
-    !expected.is_empty()
-        && expected_entities.len() == expected.len()
-        && profile_entities.len() == expected.len()
-        && profile_entities.into_iter().collect::<BTreeSet<_>>() == expected
+    let profile_entity_set = profile_entities.iter().cloned().collect::<BTreeSet<_>>();
+    let expected_entities = scan
+        .features
+        .entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| {
+            table.entries.iter().filter_map(|entry| {
+                let external_id = entry.source_entity_id?;
+                let entity = SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{external_id}",
+                    definition.id
+                ));
+                (profile_entity_set.contains(&entity)
+                    && generated_profile_entry_is_admissible(
+                        feature_id,
+                        table,
+                        entry,
+                        GENERATED_EXTRUSION_SIDE_KINDS,
+                        &scan.surfaces.rows,
+                    ))
+                .then_some(entity)
+            })
+        })
+        .collect::<Vec<_>>();
+    let expected_entity_set = expected_entities.iter().cloned().collect::<BTreeSet<_>>();
+    !expected_entities.is_empty()
+        && expected_entities.len() == expected_entity_set.len()
+        && profile_entities.len() == expected_entity_set.len()
+        && profile_entity_set == expected_entity_set
 }
 
 pub(in super::super) fn transfer_resolved_extrusion_breps(

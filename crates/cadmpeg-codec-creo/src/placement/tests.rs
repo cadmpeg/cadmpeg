@@ -393,8 +393,8 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             definition_id: 42,
             feature_id: Some(42),
             origin: [-3.0, -4.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
+            u_axis: [0.0, 0.0, 1.0],
+            v_axis: [0.0, -1.0, 0.0],
             normal: [1.0, 0.0, 0.0],
             offset: 100,
         }]
