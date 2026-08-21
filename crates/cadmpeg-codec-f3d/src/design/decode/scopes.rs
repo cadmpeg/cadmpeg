@@ -36,6 +36,7 @@ use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
 use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
@@ -8405,7 +8406,34 @@ fn exact_extrude_prologue(
             reference_members,
         )
     })
+    .or_else(|| {
+        exact_class_296_one_sided_to_face_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        )
+    })
     .or_else(|| exact_legacy_distance_extrude_prologue(bytes, start, reference_count_at))
+}
+
+pub(crate) fn is_class_296_one_sided_to_face_layout(
+    class_tag: &str,
+    paired_class_tag: &str,
+    frame_length: u64,
+    reference_count_delta: u64,
+    reference_member_count: usize,
+) -> bool {
+    class_tag == "296"
+        && paired_class_tag == "261"
+        && reference_count_delta == class_296_to_face::REFERENCE_COUNT as u64
+        && matches!(
+            (frame_length, reference_member_count),
+            (440, 7) | (462, 9) | (473, 10)
+        )
 }
 
 fn exact_compact_shifted_extrude_prologue(
@@ -8574,6 +8602,112 @@ fn exact_compact_shifted_extrude_mixed_prologue(
             u64::try_from(side_extent_discriminator_offsets[1]).ok()?,
         ],
         extent: Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
+        direction_face_extend_offsets: [
+            u64::try_from(direction_face_extend_offsets[0]).ok()?,
+            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+        ],
+        direction_reversed,
+        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        solid_operation,
+        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        start: start_support,
+        start_offset: u64::try_from(start_offset).ok()?,
+    })
+}
+
+fn exact_class_296_one_sided_to_face_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    class_tag: &str,
+    paired_class_tag: &str,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    let frame_length = paired_at.checked_sub(start)?;
+    if !is_class_296_one_sided_to_face_layout(
+        class_tag,
+        paired_class_tag,
+        u64::try_from(frame_length).ok()?,
+        u64::try_from(reference_count_at.checked_sub(start)?).ok()?,
+        reference_members.len(),
+    ) {
+        return None;
+    }
+    if View::u32_le_at(
+        bytes,
+        start.checked_add(class_296_to_face::PREFIX_CONSTANT)?,
+    )? != 1
+        || bytes.get(
+            start.checked_add(class_296_to_face::ZERO_RUN_2)?
+                ..start.checked_add(class_296_to_face::OPERATION)?,
+        )? != [0; 2]
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(class_296_to_face::OPERATION)?;
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let direction_face_extend_offsets = [
+        start.checked_add(class_296_to_face::DIRECTION)?,
+        start.checked_add(class_296_to_face::FACE_EXTEND)?,
+    ];
+    let direction_face_extend_values = [
+        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+    ];
+    if direction_face_extend_values[0] != 1 || !matches!(direction_face_extend_values[1], 1 | 2) {
+        return None;
+    }
+    let side_extent_discriminator_offsets = [
+        start.checked_add(class_296_to_face::FIRST_SIDE_EXTENT)?,
+        start.checked_add(class_296_to_face::SECOND_SIDE_EXTENT)?,
+    ];
+    let side_extent_discriminators = [
+        View::u32_le_at(bytes, side_extent_discriminator_offsets[0])?,
+        View::u32_le_at(bytes, side_extent_discriminator_offsets[1])?,
+    ];
+    if side_extent_discriminators != [2, 0]
+        || side_extent_discriminator_offsets[1].checked_add(4)? != reference_count_at
+    {
+        return None;
+    }
+    let direction_reversed_offset = start.checked_add(class_296_to_face::DIRECTION_REVERSED)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let solid_operation_offset = start.checked_add(class_296_to_face::GEOMETRY_KIND)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let start_offset = start.checked_add(class_296_to_face::START_SUPPORT)?;
+    let start_support = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation,
+        operation_offset: u64::try_from(operation_offset).ok()?,
+        direction_face_extend_values,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets: [
+            u64::try_from(side_extent_discriminator_offsets[0]).ok()?,
+            u64::try_from(side_extent_discriminator_offsets[1]).ok()?,
+        ],
+        extent: Some(DesignExtrudeExtent::OneSidedToFace),
         direction_face_extend_offsets: [
             u64::try_from(direction_face_extend_offsets[0]).ok()?,
             u64::try_from(direction_face_extend_offsets[1]).ok()?,

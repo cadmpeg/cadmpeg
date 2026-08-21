@@ -2638,6 +2638,35 @@ Unstated regions:
 - `0..124` (124 B): The compact prologue and its intervening reference envelope precede the mixed extent lane.
 - `132..281` (149 B): The mixed side-reference envelope precedes the ordered reference-count field.
 
+## `class_296_261_one_sided_to_face_extrude_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 265 B
+
+Offsets are relative to the class-296 primary indexed header. The paired header begins at +440, +462, or +473 for ordered reference counts 7, 9, or 10; the reference-count field is fixed at +261.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | common operation fields at offsets `+20` · value `1` |
+| 24 | 2 | `zero_run_2` | `bytes[2]` | little | spec | `+24..+25` |
+| 26 | 4 | `operation` | `u32` | little | spec | `+26` |
+| 30 | 4 | `direction` | `u32` | little | spec | travel direction is `1` · value `1` |
+| 34 | 4 | `face_extend` | `u32` | little | spec | face-extend option is `1` or `2` |
+| 38 | 1 | `direction_reversed` | `u8` | little | spec | direction-reversal |
+| 39 | 1 | `geometry_kind` | `u8` | little | spec | geometry-kind |
+| 40 | 1 | `start_support` | `u8` | little | spec | start-support |
+| 105 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent discriminator is `u32 2` at `+105` · value `2` |
+| 257 | 4 | `second_side_extent` | `u32` | little | spec | second-side discriminator is `u32 0` at `+257 = reference_count - 4` · value `0` |
+| 261 | 4 | `reference_count` | `u32` | little | spec | ordered reference count is at `+261` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding scope envelope are outside this fixed prefix.
+- `41..105` (64 B): The class-specific envelope between the prologue and first-side extent is retained as opaque bytes.
+- `109..257` (148 B): The side-reference and persistent-selection lanes precede the second-side discriminator.
+
 ## `marked_shifted_extrude_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 43 B
