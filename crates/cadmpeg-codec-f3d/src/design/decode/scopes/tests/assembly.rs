@@ -1015,6 +1015,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         copy_paste_bodies_operation: None,

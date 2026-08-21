@@ -1750,6 +1750,26 @@ pub struct DesignComponentInsertConstruction {
     pub carrier_transform_offset: Option<u64>,
 }
 
+/// Local component occurrence joined through a `DerivedInstance` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignDerivedInstanceConstruction {
+    /// Scope prologue record referenced by the fixed field at scope offset 22.
+    pub reference_record_index: u32,
+    /// Scope-owned class-310 relation record.
+    pub relation_record_index: u32,
+    /// Class-380 component-occurrence carrier named by the relation.
+    pub carrier_record_index: u32,
+    /// Component definition GUID carried by the joined occurrence.
+    pub component_guid: String,
+    /// Placed occurrence GUID carried by the joined occurrence.
+    pub occurrence_guid: String,
+    /// Row-major local-to-model placement in centimetres.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first scope-local transform scalar.
+    pub transform_offset: u64,
+}
+
 /// One exact local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2743,6 +2763,9 @@ pub struct DesignParameterScope {
     /// Exact external-occurrence construction carried by a `Component Insert` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_insert_construction: Option<DesignComponentInsertConstruction>,
+    /// Exact local-occurrence construction carried by a `DerivedInstance` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_instance_construction: Option<DesignDerivedInstanceConstruction>,
     /// Exact local-component construction carried by a legacy `CopyPaste` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
@@ -3227,6 +3250,7 @@ impl DesignParameterScope {
             rectangular_pattern_construction: None,
             assembly_alignment: None,
             component_insert_construction: None,
+            derived_instance_construction: None,
             copy_paste_component_operation: None,
             mirror_construction: None,
             copy_paste_bodies_operation: None,

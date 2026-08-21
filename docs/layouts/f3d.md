@@ -3732,6 +3732,57 @@ Unstated regions:
 - `11..19` (8 B): Eight zero bytes occupy offsets 11 through 18.
 - `34..38` (4 B): Four zero bytes occupy offsets 34 through 37.
 
+## `derived_instance_scope_279_261`
+
+Spec §3.1 · layout: byte offsets · size: 443 B
+
+Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 443; the frame carries one fixed prologue reference, one ordered relation reference, and a row-major rigid transform.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | `byte_offset` anchors its primary indexed header |
+| 21 | 1 | `reference_marker` | `u8` | little | spec | A marked reference at offset 21 · value `1` |
+| 22 | 4 | `reference_record_index` | `u32` | little | spec | carries `reference_record_index` at offset 22 |
+| 32 | 4 | `reference_count` | `u32` | little | spec | The scope stores u32 `1` at offset 32 · value `1` |
+| 36 | 11 | `relation_reference` | `bytes[11]` | little | spec | a marked relation reference at offset 36 |
+| 48 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform of sixteen little-endian f64 values at offset 48 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `26..32` (6 B): Six zero bytes follow the fixed prologue reference.
+- `47..48` (1 B): One zero byte separates the ordered relation reference from the transform.
+- `176..443` (267 B): The remaining fixed scope tail ends at the paired class-261 header.
+
+## `derived_instance_relation_310_57`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the class-310 relation's primary indexed header. The first member names the class-380 occurrence carrier and the third member names the DerivedInstance scope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Ten zero bytes follow its indexed header |
+| 21 | 1 | `carrier_marker` | `u8` | little | spec | its marked fields start at offsets 21, 34, and 46 · value `1` |
+| 22 | 4 | `carrier_record_index` | `u32` | little | spec | The first relation member names the earlier class-`380` component-occurrence carrier |
+| 34 | 1 | `middle_marker` | `u8` | little | spec | its marked fields start at offsets 21, 34, and 46 · value `1` |
+| 35 | 4 | `middle_record_index` | `u32` | little | spec | its marked fields start at offsets 21, 34, and 46 |
+| 46 | 1 | `scope_marker` | `u8` | little | spec | its marked fields start at offsets 21, 34, and 46 · value `1` |
+| 47 | 4 | `scope_record_index` | `u32` | little | spec | the third names the DerivedInstance scope |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `26..34` (8 B): Eight zero bytes follow the first relation member.
+- `39..46` (7 B): Seven zero bytes follow the middle relation member.
+- `51..57` (6 B): Six zero bytes follow the scope back-reference.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

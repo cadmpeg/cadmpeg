@@ -74,6 +74,16 @@ pub(crate) fn project_local_components(
                 operation.copied_transform,
             );
         }
+        if let Some(construction) = &scope.derived_instance_construction {
+            project_occurrence(
+                &mut components,
+                &mut occurrences,
+                &native_by_guid,
+                &construction.component_guid,
+                &construction.occurrence_guid,
+                construction.transform,
+            );
+        }
         let Some((instances, component_occurrences)) = scope
             .rectangular_pattern_construction
             .as_ref()
@@ -119,6 +129,30 @@ pub(crate) fn project_local_components(
         occurrence.ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
     }
     (components.into_values().collect(), occurrences)
+}
+
+/// Project a proven local occurrence into a `DerivedInstance` feature.
+pub(crate) fn project_derived_instance_features(
+    features: &mut [Feature],
+    scopes: &[DesignParameterScope],
+) {
+    for scope in scopes {
+        let Some(construction) = scope.derived_instance_construction.as_ref() else {
+            continue;
+        };
+        let Some(feature) = features
+            .iter_mut()
+            .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+        else {
+            continue;
+        };
+        if !matches!(feature.definition, FeatureDefinition::Native { .. }) {
+            continue;
+        }
+        feature.definition = FeatureDefinition::InsertComponent {
+            occurrence: crate::ids::neutral_component_occurrence_id(&construction.occurrence_guid),
+        };
+    }
 }
 
 /// Project the occurrence side of an external `Component Insert` when its
@@ -247,8 +281,10 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
 #[cfg(test)]
 mod tests {
     use crate::records::{
-        DesignComponentOccurrence, DesignCopyPasteComponentOperation, DesignParameterScope,
+        DesignComponentOccurrence, DesignCopyPasteComponentOperation,
+        DesignDerivedInstanceConstruction, DesignParameterScope,
     };
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::products::PrototypeReference;
 
     #[test]
@@ -320,6 +356,71 @@ mod tests {
             &occurrence.prototype,
             PrototypeReference::Local { definition: actual } if actual == &definition
         )));
+    }
+
+    #[test]
+    fn derived_instance_projects_its_joined_local_occurrence() {
+        const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
+        const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#385",
+            "DerivedInstance",
+            385,
+        );
+        scope.derived_instance_construction = Some(DesignDerivedInstanceConstruction {
+            reference_record_index: 305,
+            relation_record_index: 383,
+            carrier_record_index: 382,
+            component_guid: COMPONENT.into(),
+            occurrence_guid: OCCURRENCE.into(),
+            transform: identity_matrix(),
+            transform_offset: 473,
+        });
+        let native_occurrence = DesignComponentOccurrence {
+            id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
+            class_tag: "380".into(),
+            record_index: 382,
+            byte_offset: 0,
+            component_record_index: 305,
+            component_guid: COMPONENT.into(),
+            component_guid_offset: 0,
+            occurrence_guid: OCCURRENCE.into(),
+            occurrence_guid_offset: 0,
+            occurrence_ordinal: 1,
+            transform: Some(identity_matrix()),
+            transform_offset: Some(209),
+        };
+        let (definitions, occurrences) =
+            super::project_local_components(&[scope.clone()], &[native_occurrence]);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(
+            occurrences[0].id,
+            crate::ids::neutral_component_occurrence_id(OCCURRENCE)
+        );
+        assert!(matches!(
+            &occurrences[0].prototype,
+            PrototypeReference::Local { definition }
+                if definition == &crate::ids::neutral_component_id(COMPONENT)
+        ));
+
+        let mut feature = Feature::new(
+            FeatureId("f3d:model:feature#derived".into()),
+            1,
+            FeatureDefinition::Native {
+                kind: "DerivedInstance".into(),
+                parameters: std::collections::BTreeMap::new(),
+                properties: std::collections::BTreeMap::new(),
+            },
+        );
+        feature.native_ref = Some(scope.id.clone());
+        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope]);
+        assert_eq!(
+            feature.definition,
+            FeatureDefinition::InsertComponent {
+                occurrence: crate::ids::neutral_component_occurrence_id(OCCURRENCE),
+            }
+        );
     }
 
     fn identity_matrix() -> [[f64; 4]; 4] {

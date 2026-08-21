@@ -67,6 +67,8 @@ use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
+use crate::layout::derived_instance_relation_310_57 as derived_instance_relation_310;
+use crate::layout::derived_instance_scope_279_261 as derived_instance_279_261;
 use crate::layout::design_mirror_scope_class369_tail as mirror_369;
 use crate::layout::design_mirror_scope_class391_tail as mirror_391;
 use crate::layout::design_mirror_scope_class413_tail as mirror_413;
@@ -123,16 +125,17 @@ use crate::records::{
     DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
-    DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource,
-    DesignEdgeWidthMode, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignExtrudeTargetOrdinal, DesignFixedChamferDistance, DesignFixedChamferParameters,
-    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
-    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
-    DesignHemParameterOwners, DesignHoleConstruction, DesignHoleFaceSelection,
-    DesignMirrorConstruction, DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeHeightExtent,
+    DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode,
+    DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
+    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
+    DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
+    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction,
+    DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
@@ -295,6 +298,8 @@ pub fn decode_parameter_scopes(
             }
             scope.component_insert_construction =
                 exact_component_insert_construction(bytes, &records, &scope);
+            scope.derived_instance_construction =
+                exact_derived_instance_construction(bytes, &records, &scope, component_occurrences);
             scope.copy_paste_component_operation = exact_copy_paste_component_operation(
                 bytes,
                 &records,
@@ -1513,6 +1518,109 @@ pub(crate) fn exact_assembly_alignment(
         }
     }
     Some(alignment)
+}
+
+pub(crate) fn exact_derived_instance_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    occurrences: &[DesignComponentOccurrence],
+) -> Option<DesignDerivedInstanceConstruction> {
+    if scope.kind != "DerivedInstance"
+        || scope.class_tag != "279"
+        || scope.paired_class_tag != "261"
+        || scope.frame_length != derived_instance_279_261::LEN as u64
+        || scope.reference_members.len() != 1
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if bytes.get(
+        start + derived_instance_279_261::REFERENCE_MARKER
+            ..start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
+    )? != [derived_instance_279_261::REFERENCE_MARKER_VALUE]
+        || bytes.get(
+            start + derived_instance_279_261::REFERENCE_RECORD_INDEX + 4
+                ..start + derived_instance_279_261::REFERENCE_COUNT,
+        )? != [0; 6]
+        || View::u32_le_at(bytes, start + derived_instance_279_261::REFERENCE_COUNT)?
+            != derived_instance_279_261::REFERENCE_COUNT_VALUE
+        || marked_record_reference(bytes, start + derived_instance_279_261::RELATION_REFERENCE)?
+            != scope.reference_members[0]
+        || bytes.get(start + derived_instance_279_261::RELATION_REFERENCE + 11) != Some(&0)
+    {
+        return None;
+    }
+    let reference_record_index = View::u32_le_at(
+        bytes,
+        start + derived_instance_279_261::REFERENCE_RECORD_INDEX,
+    )?;
+    let transform_offset = start + derived_instance_279_261::TRANSFORM;
+    let transform = rigid_transform_at(bytes, transform_offset)?;
+
+    let relation_record_index = scope.reference_members[0];
+    let relation_at = records.first_at_or_after(0, relation_record_index)?;
+    let (relation_kind, _) = lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
+    if relation_at >= start
+        || relation_kind != "310"
+        || next_indexed_record_offset(bytes, relation_at + 1)?
+            != relation_at + derived_instance_relation_310::LEN
+        || bytes.get(
+            relation_at + derived_instance_relation_310::INDEXED_HEADER + 11
+                ..relation_at + derived_instance_relation_310::CARRIER_MARKER,
+        )? != [0; 10]
+        || bytes.get(relation_at + derived_instance_relation_310::CARRIER_MARKER)
+            != Some(&derived_instance_relation_310::CARRIER_MARKER_VALUE)
+        || bytes.get(
+            relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX + 4
+                ..relation_at + derived_instance_relation_310::MIDDLE_MARKER,
+        )? != [0; 8]
+        || bytes.get(relation_at + derived_instance_relation_310::MIDDLE_MARKER)
+            != Some(&derived_instance_relation_310::MIDDLE_MARKER_VALUE)
+        || bytes.get(
+            relation_at + derived_instance_relation_310::MIDDLE_RECORD_INDEX + 4
+                ..relation_at + derived_instance_relation_310::SCOPE_MARKER,
+        )? != [0; 7]
+        || bytes.get(relation_at + derived_instance_relation_310::SCOPE_MARKER)
+            != Some(&derived_instance_relation_310::SCOPE_MARKER_VALUE)
+        || View::u32_le_at(
+            bytes,
+            relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX,
+        )? != scope.record_index
+        || bytes.get(
+            relation_at + derived_instance_relation_310::SCOPE_RECORD_INDEX + 4
+                ..relation_at + derived_instance_relation_310::LEN,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    let carrier_record_index = View::u32_le_at(
+        bytes,
+        relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX,
+    )?;
+    let stream = native_stream(&scope.id)?;
+    let candidates = occurrences
+        .iter()
+        .filter(|occurrence| {
+            native_stream(&occurrence.id) == Some(stream)
+                && occurrence.class_tag == "380"
+                && occurrence.record_index == carrier_record_index
+                && occurrence.byte_offset < relation_at as u64
+                && occurrence.transform == Some(transform)
+        })
+        .collect::<Vec<_>>();
+    let [carrier] = candidates.as_slice() else {
+        return None;
+    };
+    Some(DesignDerivedInstanceConstruction {
+        reference_record_index,
+        relation_record_index,
+        carrier_record_index,
+        component_guid: carrier.component_guid.clone(),
+        occurrence_guid: carrier.occurrence_guid.clone(),
+        transform,
+        transform_offset: u64::try_from(transform_offset).ok()?,
+    })
 }
 
 pub(crate) fn exact_component_insert_construction(
@@ -7763,6 +7871,7 @@ pub(crate) fn parse_parameter_scope(
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,

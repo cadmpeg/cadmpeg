@@ -427,6 +427,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,

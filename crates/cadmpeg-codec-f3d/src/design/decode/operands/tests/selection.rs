@@ -520,6 +520,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,

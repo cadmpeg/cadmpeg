@@ -12617,3 +12617,157 @@ offset = 683
 type = "bytes[12]"
 source = "spec"
 anchor = "`00 01 04 00 00 00 00 00 00 00 00 00`"
+
+[[record]]
+name = "derived_instance_scope_279_261"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`279` / class-`261` `DerivedInstance` scope is a 443-byte frame."
+size = 443
+note = "Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 443; the frame carries one fixed prologue reference, one ordered relation reference, and a row-major rigid transform."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`byte_offset` anchors its primary indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "reference_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "A marked reference at offset 21"
+value = 1
+
+[[record.field]]
+name = "reference_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "carries `reference_record_index` at offset 22"
+
+[[record.gap]]
+offset = 26
+size = 6
+note = "Six zero bytes follow the fixed prologue reference."
+
+[[record.field]]
+name = "reference_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The scope stores u32 `1` at offset 32"
+value = 1
+
+[[record.field]]
+name = "relation_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked relation reference at offset 36"
+
+[[record.gap]]
+offset = 47
+size = 1
+note = "One zero byte separates the ordered relation reference from the transform."
+
+[[record.field]]
+name = "transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform of sixteen little-endian f64 values at offset 48"
+
+[[record.gap]]
+offset = 176
+size = 267
+note = "The remaining fixed scope tail ends at the paired class-261 header."
+
+[[record]]
+name = "derived_instance_relation_310_57"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Its class-`310` relation is a 57-byte three-reference frame."
+size = 57
+note = "Offsets are relative to the class-310 relation's primary indexed header. The first member names the class-380 occurrence carrier and the third member names the DerivedInstance scope."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Ten zero bytes follow its indexed header"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "carrier_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "its marked fields start at offsets 21, 34, and 46"
+value = 1
+
+[[record.field]]
+name = "carrier_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "The first relation member names the earlier class-`380` component-occurrence carrier"
+
+[[record.gap]]
+offset = 26
+size = 8
+note = "Eight zero bytes follow the first relation member."
+
+[[record.field]]
+name = "middle_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "its marked fields start at offsets 21, 34, and 46"
+value = 1
+
+[[record.field]]
+name = "middle_record_index"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "its marked fields start at offsets 21, 34, and 46"
+
+[[record.gap]]
+offset = 39
+size = 7
+note = "Seven zero bytes follow the middle relation member."
+
+[[record.field]]
+name = "scope_marker"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "its marked fields start at offsets 21, 34, and 46"
+value = 1
+
+[[record.field]]
+name = "scope_record_index"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "the third names the DerivedInstance scope"
+
+[[record.gap]]
+offset = 51
+size = 6
+note = "Six zero bytes follow the scope back-reference."

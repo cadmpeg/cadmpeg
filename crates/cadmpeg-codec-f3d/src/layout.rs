@@ -5165,3 +5165,63 @@ pub(crate) mod component_insert_grouped_identity_carrier {
     /// Offset of `closure` (`bytes[12]`). Spec §3.1.
     pub(crate) const CLOSURE: usize = 683;
 }
+
+/// Byte offsets for the `derived_instance_scope_279_261` record.
+///
+/// Spec §3.1. Record length 443 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 443; the frame carries one fixed prologue reference, one ordered relation reference, and a row-major rigid transform.
+/// ```
+pub(crate) mod derived_instance_scope_279_261 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 443;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 21;
+    /// Stated value of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER_VALUE: u8 = 1;
+    /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_RECORD_INDEX: usize = 22;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 32;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `relation_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 36;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 48;
+}
+
+/// Byte offsets for the `derived_instance_relation_310_57` record.
+///
+/// Spec §3.1. Record length 57 B.
+///
+/// ```text
+/// Offsets are relative to the class-310 relation's primary indexed header. The first member names the class-380 occurrence carrier and the third member names the DerivedInstance scope.
+/// ```
+pub(crate) mod derived_instance_relation_310_57 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `carrier_marker` (`u8`). Spec §3.1.
+    pub(crate) const CARRIER_MARKER: usize = 21;
+    /// Stated value of `carrier_marker` (`u8`). Spec §3.1.
+    pub(crate) const CARRIER_MARKER_VALUE: u8 = 1;
+    /// Offset of `carrier_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CARRIER_RECORD_INDEX: usize = 22;
+    /// Offset of `middle_marker` (`u8`). Spec §3.1.
+    pub(crate) const MIDDLE_MARKER: usize = 34;
+    /// Stated value of `middle_marker` (`u8`). Spec §3.1.
+    pub(crate) const MIDDLE_MARKER_VALUE: u8 = 1;
+    /// Offset of `middle_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MIDDLE_RECORD_INDEX: usize = 35;
+    /// Offset of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER: usize = 46;
+    /// Stated value of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
+}
