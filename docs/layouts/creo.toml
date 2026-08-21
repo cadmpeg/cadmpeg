@@ -389,7 +389,7 @@ note = "The parser reconstructs the eight-slot pcurve endpoint body as `[f64; 8]
 name = "local_sys_support_frame"
 kind = "slot"
 section = "3.4"
-anchor = "`local_sys` has twelve scalar slots:"
+anchor = "`local_sys` has twelve scalar slots. Plane rows use two storage forms."
 note = "Reused by plane, cylinder, cone, and torus prototypes, by curve-equation frames, and by coordinate-system records. Slot widths depend on each scalar's token prefix, so the record has no fixed byte size."
 
 [[record.field]]

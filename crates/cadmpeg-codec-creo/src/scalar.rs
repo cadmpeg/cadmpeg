@@ -619,18 +619,52 @@ pub fn decode_positional_torus_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
-    let (values, cursor) =
-        decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)?;
-    Some((finite_local_system_slots(values)?, cursor))
+    let prefix = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PositionalTorus)?;
+    Some((finite_local_system_slots(prefix.values)?, prefix.cursor))
+}
+
+/// Storage layout of a complete positional plane support frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaneSupportFrameLayout {
+    /// The decoder expanded a compact or specialized form into support triples.
+    SupportTriples,
+    /// The generic form stores a 3x3 frame in row-major bytes, so its columns
+    /// are the frame directions.
+    MatrixColumns,
+}
+
+/// Decode a positional plane support frame and retain its storage layout.
+pub(crate) fn decode_plane_support_local_system(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], PlaneSupportFrameLayout)> {
+    let (values, cursor, layout) =
+        if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
+            (values, cursor, PlaneSupportFrameLayout::SupportTriples)
+        } else {
+            let prefix =
+                decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)?;
+            let layout = if prefix.saw_zero_slot_prefix
+                && !matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18))
+            {
+                PlaneSupportFrameLayout::MatrixColumns
+            } else {
+                PlaneSupportFrameLayout::SupportTriples
+            };
+            (prefix.values, prefix.cursor, layout)
+        };
+    (cursor == body.len()).then_some(())?;
+    Some((finite_local_system_slots(values)?, layout))
 }
 
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
+#[cfg(test)]
 pub(crate) fn decode_plane_support_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, LocalSystemVariant::PlaneSupport)
+    decode_plane_support_local_system(body, cache).map(|(values, _)| values)
 }
 
 #[derive(Clone, Copy)]
@@ -648,52 +682,53 @@ fn decode_local_system_slots(
     cache: &ScalarCache,
     variant: LocalSystemVariant,
 ) -> Option<[f64; 12]> {
-    let (values, cursor) = decode_local_system_slot_prefix(body, cache, variant)?;
-    (cursor == body.len()).then(|| finite_local_system_slots(values))?
+    let prefix = decode_local_system_slot_prefix(body, cache, variant)?;
+    (prefix.cursor == body.len()).then(|| finite_local_system_slots(prefix.values))?
 }
 
 fn finite_local_system_slots(values: [f64; 12]) -> Option<[f64; 12]> {
     values.into_iter().all(f64::is_finite).then_some(values)
 }
 
+struct LocalSystemSlotPrefix {
+    values: [f64; 12],
+    cursor: usize,
+    saw_zero_slot_prefix: bool,
+}
+
 fn decode_local_system_slot_prefix(
     body: &[u8],
     cache: &ScalarCache,
     variant: LocalSystemVariant,
-) -> Option<([f64; 12], usize)> {
+) -> Option<LocalSystemSlotPrefix> {
     if matches!(variant, LocalSystemVariant::PlaneSupport) {
-        if let Some(frame) = decode_normal_x_plane_support(body, cache) {
-            return Some(frame);
-        }
-        if let Some(frame) = decode_compact_axis_plane_support(body, cache) {
-            return Some(frame);
-        }
-        if let Some(frame) = decode_prefixed_orthogonal_plane_support(body, cache) {
-            return Some(frame);
-        }
-        if let Some(frame) = decode_trailing_rank_orthogonal_plane_support(body, cache) {
-            return Some(frame);
-        }
-        if let Some(frame) = decode_reflected_component_plane_support(body, cache) {
-            return Some(frame);
-        }
-        if let Some(frame) = decode_trailing_rank_reflected_plane_support(body, cache) {
-            return Some(frame);
+        if let Some(frame) = decode_plane_support_special_prefix(body, cache) {
+            return Some(LocalSystemSlotPrefix {
+                values: frame.0,
+                cursor: frame.1,
+                saw_zero_slot_prefix: false,
+            });
         }
     }
     if matches!(variant, LocalSystemVariant::PositionalCylinder) {
         if let Some(frame) = decode_reflected_xy_cylinder_local_system(body, cache) {
-            return Some(frame);
+            return Some(LocalSystemSlotPrefix {
+                values: frame.0,
+                cursor: frame.1,
+                saw_zero_slot_prefix: false,
+            });
         }
     }
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
-        return Some((
-            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            body.len(),
-        ));
+        return Some(LocalSystemSlotPrefix {
+            values: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            cursor: body.len(),
+            saw_zero_slot_prefix: false,
+        });
     }
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
+    let mut saw_zero_slot_prefix = false;
     while cursor < body.len() && values.len() < 12 {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
             if matches!(variant, LocalSystemVariant::Feature) && values.len() == 4 {
@@ -709,6 +744,7 @@ fn decode_local_system_slot_prefix(
                 .get(cursor + 1)
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
         {
+            saw_zero_slot_prefix = true;
             values.push(0.0);
             cursor += 1;
             continue;
@@ -718,6 +754,7 @@ fn decode_local_system_slot_prefix(
             && values.len() < 11
             && decode_plane_support_coordinate(body, cursor + 1, values.len() + 1, cache).is_some()
         {
+            saw_zero_slot_prefix = true;
             values.push(0.0);
             cursor += 1;
             continue;
@@ -733,6 +770,7 @@ fn decode_local_system_slot_prefix(
             )
             .is_some()
         {
+            saw_zero_slot_prefix = true;
             values.push(0.0);
             cursor += 1;
             continue;
@@ -746,6 +784,7 @@ fn decode_local_system_slot_prefix(
             && body.get(cursor) == Some(&0x18)
             && cursor + 1 == body.len()
         {
+            saw_zero_slot_prefix = true;
             values.push(0.0);
             cursor += 1;
             continue;
@@ -784,14 +823,41 @@ fn decode_local_system_slot_prefix(
         values.push(value);
         cursor = next;
     }
-    (values.len() == 12).then(|| {
-        (
-            values
-                .try_into()
-                .expect("twelve bounded local-system slots"),
-            cursor,
-        )
+    (values.len() == 12).then(|| LocalSystemSlotPrefix {
+        values: values
+            .try_into()
+            .expect("twelve bounded local-system slots"),
+        cursor,
+        saw_zero_slot_prefix,
     })
+}
+
+fn decode_plane_support_special_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    if let Some(frame) = decode_normal_x_plane_support(body, cache) {
+        return Some(frame);
+    }
+    if let Some(frame) = decode_compact_axis_plane_support(body, cache) {
+        return Some(frame);
+    }
+    if let Some(frame) = decode_prefixed_orthogonal_plane_support(body, cache) {
+        return Some(frame);
+    }
+    if let Some(frame) = decode_trailing_rank_orthogonal_plane_support(body, cache) {
+        return Some(frame);
+    }
+    if let Some(frame) = decode_reflected_component_plane_support(body, cache) {
+        return Some(frame);
+    }
+    if let Some(frame) = decode_trailing_rank_reflected_plane_support(body, cache) {
+        return Some(frame);
+    }
+    (body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]).then_some((
+        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        body.len(),
+    ))
 }
 
 fn decode_reflected_xy_cylinder_local_system(
@@ -1324,6 +1390,24 @@ mod tests {
         assert_eq!(
             decode_plane_support_local_system_slots(&body, &cache),
             Some(expected)
+        );
+    }
+
+    #[test]
+    fn plane_support_layout_distinguishes_coordinate_first_matrix_body() {
+        let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+        let mut body = vec![0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        body.extend([0x10; 10]);
+        body.push(0x18);
+
+        assert_eq!(
+            decode_plane_support_local_system(&body, &cache).map(|(_, layout)| layout),
+            Some(PlaneSupportFrameLayout::MatrixColumns)
+        );
+        assert_eq!(
+            decode_plane_support_local_system(&[0x10; 12], &ScalarCache::default())
+                .map(|(_, layout)| layout),
+            Some(PlaneSupportFrameLayout::SupportTriples)
         );
     }
 

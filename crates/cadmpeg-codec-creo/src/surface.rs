@@ -18,6 +18,10 @@ const EPS_FRAME_UNIT: f64 = 1.0e-9;
 const EPS_FRAME_ORTHOGONAL: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_MIN: f64 = 1.0e-12;
+const EPS_PLANE_FRAME_NONZERO: f64 = 1.0e-6;
+const EPS_PLANE_FRAME_ZERO: f64 = 1.0e-9;
+const EPS_PLANE_FRAME_SCALE: f64 = 1.0e-9;
+const EPS_PLANE_FRAME_ORTHOGONAL: f64 = 1.0e-9;
 
 fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
     let norm = |vector: [f64; 3]| {
@@ -5759,8 +5763,8 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     });
     if magnitudes
         .into_iter()
-        .filter(|magnitude| *magnitude <= 1e-6)
-        .any(|magnitude| magnitude > 1e-9)
+        .filter(|magnitude| *magnitude <= EPS_PLANE_FRAME_NONZERO)
+        .any(|magnitude| magnitude > EPS_PLANE_FRAME_ZERO)
     {
         return PlaneFrame {
             origin,
@@ -5779,10 +5783,12 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
                 .zip(supports[*second])
                 .map(|(first, second)| first * second)
                 .sum::<f64>();
-            first_magnitude > 1e-6
-                && second_magnitude > 1e-6
-                && (first_magnitude - second_magnitude).abs() <= 1e-9 * scale.max(1.0)
-                && support_dot.abs() <= 1e-9 * first_magnitude * second_magnitude
+            first_magnitude > EPS_PLANE_FRAME_NONZERO
+                && second_magnitude > EPS_PLANE_FRAME_NONZERO
+                && (first_magnitude - second_magnitude).abs()
+                    <= EPS_PLANE_FRAME_SCALE * scale.max(1.0)
+                && support_dot.abs()
+                    <= EPS_PLANE_FRAME_ORTHOGONAL * first_magnitude * second_magnitude
         })
         .collect::<Vec<_>>();
     let [(first_index, second_index)] = pairs.as_slice() else {
@@ -5806,7 +5812,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         first[0].mul_add(second[1], -(first[1] * second[0])),
     ];
     let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let normal = (magnitude > 1e-6).then(|| {
+    let normal = (magnitude > EPS_PLANE_FRAME_NONZERO).then(|| {
         [
             cross[0] / magnitude,
             cross[1] / magnitude,
@@ -5820,18 +5826,85 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     }
 }
 
+fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
+    let triple = |indices: [usize; 3]| {
+        Some([
+            slots.get(indices[0]).copied()??,
+            slots.get(indices[1]).copied()??,
+            slots.get(indices[2]).copied()??,
+        ])
+    };
+    let origin = triple([9, 10, 11]);
+    let (Some(u_column), Some(rank_column), Some(normal_column)) =
+        (triple([0, 3, 6]), triple([1, 4, 7]), triple([2, 5, 8]))
+    else {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    };
+    if rank_column.into_iter().any(|value| value != 0.0) {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    }
+    let magnitudes = [u_column, normal_column].map(|direction| {
+        direction
+            .into_iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt()
+    });
+    let [u_magnitude, normal_magnitude] = magnitudes;
+    let scale = u_magnitude.max(normal_magnitude);
+    let dot = u_column
+        .into_iter()
+        .zip(normal_column)
+        .map(|(u, normal)| u * normal)
+        .sum::<f64>();
+    if !u_magnitude.is_finite()
+        || !normal_magnitude.is_finite()
+        || u_magnitude <= EPS_PLANE_FRAME_NONZERO
+        || normal_magnitude <= EPS_PLANE_FRAME_NONZERO
+        || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale.max(1.0)
+        || dot.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
+    {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    }
+    PlaneFrame {
+        origin,
+        u_axis: Some(u_column.map(|value| value / u_magnitude)),
+        normal: Some(normal_column.map(|value| value / normal_magnitude)),
+    }
+}
+
+#[cfg(test)]
 fn complete_plane_local_system_slots(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
+    complete_plane_local_system(body, cache).map(|(slots, _)| slots)
+}
+
+fn complete_plane_local_system(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<([f64; 12], scalar::PlaneSupportFrameLayout)> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::with_capacity(prefix.len() + 1);
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system_slots(&normalized, cache);
+        return scalar::decode_plane_support_local_system(&normalized, cache);
     }
-    scalar::decode_plane_support_local_system_slots(frame_body, cache)
+    scalar::decode_plane_support_local_system(frame_body, cache)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -5882,9 +5955,14 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
             continue;
         }
         let body = payload[chunk_start..chunk_end].to_vec();
-        let slots = complete_plane_local_system_slots(&body, &cache)
-            .map_or([None; 12], |slots| slots.map(Some));
-        let frame = plane_frame(&slots);
+        let decoded = complete_plane_local_system(&body, &cache);
+        let slots = decoded
+            .as_ref()
+            .map_or([None; 12], |(slots, _)| slots.map(Some));
+        let frame = match decoded.as_ref().map(|(_, layout)| *layout) {
+            Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&slots),
+            _ => plane_frame(&slots),
+        };
         let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
         let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
             && frame_body.len() <= 24

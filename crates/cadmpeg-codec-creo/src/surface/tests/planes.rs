@@ -934,6 +934,21 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
 }
 
 #[test]
+fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
+    let slots = [
+        1.0, 0.0, 0.0, // x components of the three columns
+        0.0, 0.0, 0.0, // zero-rank column
+        0.0, 0.0, 1.0, // z components of the three columns
+        2.0, 3.0, 4.0,
+    ];
+
+    let frame = plane_matrix_frame(&slots.map(Some));
+    assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
+    assert_eq!(frame.u_axis, Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal, Some([0.0, 0.0, 1.0]));
+}
+
+#[test]
 fn signed_surface_dict_slots_decode_as_mirrors() {
     let body = [
         0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,

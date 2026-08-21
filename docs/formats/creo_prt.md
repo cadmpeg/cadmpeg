@@ -1382,7 +1382,36 @@ consumes its complete compound-bounded body. A compact envelope can instead be
 the unique terminal nine-slot scalar frame after a nonempty structural prefix.
 Bytes outside these layouts do not form a plane envelope.
 
-`local_sys` has twelve scalar slots:
+`local_sys` has twelve scalar slots. Plane rows use two storage forms. Compact
+and specialized plane-support bodies expand their direction values into three
+support triples. A generic coordinate-first body starts with a coordinate
+scalar, not one of the control openers `0e`, `0f`, `10`, or `18`, and contains
+an `18` zero-slot prefix at a scalar-token boundary. Its slots 0 through 8
+store the first three rows of a 3x3 matrix in row-major order. In that form,
+columns zero, one, and two are the parameter direction, zero rank, and stored
+plane normal. The two forms use the same origin slots.
+
+```text
+support-triple form:
+slots 0..2    first support direction
+slots 3..5    second support direction or [0, 0, 0]
+slots 6..8    third support direction
+
+coordinate-first matrix form:
+slots 0, 3, 6    parameter direction column
+slots 1, 4, 7    zero-rank column
+slots 2, 5, 8    plane-normal column
+
+both forms:
+slots 9..11   support-frame origin
+```
+
+In a coordinate-first matrix body, the zero-rank column is exactly zero. The
+parameter and normal columns are finite, nonzero, equal-scale, and
+orthogonal. Normalize those two stored columns to obtain the plane chart. A
+body that does not meet these conditions does not establish a matrix chart.
+
+In a support-triple body, the slots are:
 
 ```text
 slots 0..2    support direction or [0, 0, 0]
@@ -1391,16 +1420,23 @@ slots 6..8    support direction or [0, 0, 0]
 slots 9..11   support-frame origin
 ```
 
-Within slots 0 through 8, the first component of each support triple uses the
-signed first-coordinate lane and the second and third components use the
-signed second-coordinate lane. These component lanes take precedence over the
-generic positional-row scalar lane. `18` immediately before a complete
-coordinate token occupies one zero slot; the coordinate begins the next slot.
+Within slots 0 through 8, slots whose ordinal is divisible by three use the
+signed first-coordinate lane and the other slots use the signed
+second-coordinate lane. These component lanes take precedence over the generic
+positional-row scalar lane. In support-triple storage, the first lane is the
+first component of each support triple. In coordinate-first matrix storage, it
+is the first matrix column. `18` immediately before a complete coordinate
+token occupies one zero slot; the coordinate begins the next slot.
 
 The twelve-slot macro language must consume the complete local-system body. A
 terminal `e1` after a complete frame is a null row-tail marker and is not a
 scalar slot. If any other bytes remain, none of the twelve slot positions is
 assigned a numeric value.
+
+In the coordinate-first matrix form, an `18` at a scalar-token boundary before
+the next decodable coordinate occupies one zero slot. A terminal `18` occupies
+one zero slot. The `18 e5` direction macro and the other compact support
+macros are support-triple forms, not matrix rows.
 
 The rank-two body `18 e4 0f e4 18 e5 0f 18 e6` expands to support triples
 `[0, 1, 0]`, `[0, 0, 0]`, and `[1, 0, 0]`, followed by origin `[0, 0, 0]`.
