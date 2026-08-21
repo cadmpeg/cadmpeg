@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -90,6 +90,10 @@ fn general_note_string_fields(text: &str) -> Vec<String> {
 }
 
 fn new_general_note_string_fields(text: &str) -> Vec<String> {
+    new_general_note_string_fields_with_font(text, "1")
+}
+
+fn new_general_note_string_fields_with_font(text: &str, font: &str) -> Vec<String> {
     vec![
         "0".into(),
         "2".into(),
@@ -102,7 +106,7 @@ fn new_general_note_string_fields(text: &str) -> Vec<String> {
         text.len().to_string(),
         "12".into(),
         "3".into(),
-        "1".into(),
+        font.to_owned(),
         std::f64::consts::FRAC_PI_2.to_string(),
         "0".into(),
         "0".into(),
@@ -127,12 +131,8 @@ fn general_note_parameters(declared: usize, complete: &[&str], partial_fields: u
     format!("{};", tokens.join(","))
 }
 
-fn new_general_note_parameters(
-    declared: usize,
-    complete: &[&str],
-    partial_fields: usize,
-) -> String {
-    let mut tokens = vec![
+fn new_general_note_header(declared: usize) -> Vec<String> {
+    vec![
         "213".to_string(),
         "40".into(),
         "20".into(),
@@ -146,7 +146,15 @@ fn new_general_note_parameters(
         "0".into(),
         "-5".into(),
         declared.to_string(),
-    ];
+    ]
+}
+
+fn new_general_note_parameters(
+    declared: usize,
+    complete: &[&str],
+    partial_fields: usize,
+) -> String {
+    let mut tokens = new_general_note_header(declared);
     for text in complete {
         tokens.extend(new_general_note_string_fields(text));
     }
@@ -180,7 +188,7 @@ fn decode_general_note_defaulted_final_string_keeps_every_declared_string() {
 
     assert_eq!(fields["declared_string_count"], 2);
     assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0]["text"][0], 65);
+    assert_eq!(strings[0]["text"][0], u64::from(b'A'));
     assert_eq!(strings[1]["declared_character_count"], 0);
     assert!(strings[1]["text"].is_null());
     assert!(
@@ -202,7 +210,7 @@ fn decode_new_general_note_defaulted_final_string_agrees_with_the_neutral_projec
 
     assert_eq!(fields["declared_string_count"], 2);
     assert_eq!(strings.len(), 2);
-    assert_eq!(strings[0]["text"]["text"][0], 84);
+    assert_eq!(strings[0]["text"]["text"][0], u64::from(b'T'));
     assert_eq!(strings[1]["text"]["declared_character_count"], 0);
     assert!(strings[1]["text"]["text"].is_null());
     assert!(
@@ -213,9 +221,10 @@ fn decode_new_general_note_defaulted_final_string_agrees_with_the_neutral_projec
 }
 
 #[test]
-fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_projection() {
-    let declared = 1;
+fn decode_general_note_surplus_tokens_read_the_declared_strings_and_refuse_the_semantic_projection()
+{
     let complete = ["ALPHA"];
+    let declared = complete.len();
     let bytes = note_file(212, general_note_parameters(declared, &complete, 2));
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -272,8 +281,13 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         );
     }
 
-    let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    let strict = DecodeOptions {
+        policy: DecodePolicy {
+            mode: DecodeMode::Strict,
+            ..DecodePolicy::default()
+        },
+        ..DecodeOptions::default()
+    };
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict)
         .unwrap_err();
@@ -284,4 +298,66 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn decode_new_general_note_resolves_only_the_text_font_pointer_that_names_a_type_310() {
+    let fonts = ["-1", "-5"];
+    let mut tokens = new_general_note_header(fonts.len());
+    for (index, font) in fonts.into_iter().enumerate() {
+        tokens.extend(new_general_note_string_fields_with_font(
+            &format!("RUN{index}"),
+            font,
+        ));
+    }
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 213,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00000100",
+            parameters: format!("{};", tokens.join(",")),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let annotation = &native.arenas["annotations"][0];
+    let fields = annotation.fields();
+    let strings = fields["strings"].as_array().unwrap();
+
+    assert_eq!(strings.len(), fonts.len());
+    assert_eq!(
+        strings[0]["text"]["font_definition"],
+        "iges:presentation:text-font#D1"
+    );
+    assert!(strings[1]["text"]["font_definition"].is_null());
+    assert_eq!(strings[0]["text"]["font_code"], -1);
+    assert_eq!(strings[1]["text"]["font_code"], -5);
+
+    let note = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    let note_fields = note.fields();
+    let pointers = note_fields["references"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|reference| reference["expected"] == "type-310-form-0")
+        .collect::<Vec<_>>();
+
+    assert_eq!(pointers.len(), fonts.len());
+    assert_eq!(pointers[0]["parameter_index"], 24);
+    assert_eq!(pointers[0]["resolution"], "resolved");
+    assert_eq!(pointers[1]["parameter_index"], 44);
+    assert_eq!(pointers[1]["resolution"], "dangling");
 }

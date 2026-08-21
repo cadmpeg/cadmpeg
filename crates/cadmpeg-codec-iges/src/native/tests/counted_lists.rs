@@ -488,6 +488,7 @@ fn decode_dimensioned_geometry_uses_counted_geometry_pointers() {
         result.report().losses
     );
 }
+
 #[test]
 fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
     let bytes = owned_test_file(&[
@@ -706,6 +707,7 @@ fn decode_bounds_declared_brep_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("vertex-list count")));
+    assert!(result.ir().model.vertices.is_empty());
 }
 
 #[test]

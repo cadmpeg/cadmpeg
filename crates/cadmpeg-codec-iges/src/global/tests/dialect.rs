@@ -11,7 +11,7 @@ use super::{
     strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::{point_file, point_file_with_global};
+use crate::test_support::point_file_with_global;
 use crate::IgesCodec;
 
 fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {
@@ -37,13 +37,8 @@ fn version_flags_clamp_unrecognized_values() {
 
 #[test]
 fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
-    for (encoded_version, version_name) in [(b"09", "5.1"), (b"10", "5.2")] {
-        let mut bytes = point_file();
-        let version = bytes
-            .windows(b",11,0,".len())
-            .position(|window| window == b",11,0,")
-            .unwrap();
-        bytes[version + 1..version + 3].copy_from_slice(encoded_version);
+    for (encoded_version, version_name) in [("09", "5.1"), ("10", "5.2")] {
+        let bytes = point_file_with_version_flag(encoded_version);
 
         let summary = IgesCodec
             .inspect(

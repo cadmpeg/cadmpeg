@@ -27,6 +27,9 @@ fn global_defaults_apply_only_to_omitted_fields() {
     assert_eq!(parsed.units_flag(), Some(1));
     assert_eq!(parsed.declared_version_flag(), 3);
     assert_eq!(context.minimum_resolution_mm(), 0.0);
+    assert_eq!(parsed.real_precision().single_significance, 6);
+    assert_eq!(parsed.real_precision().double_significance, 15);
+    assert_eq!(parsed.sender_product().as_deref(), Some("p"));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 

@@ -14,35 +14,37 @@ use crate::loss::IgesLossCode;
 use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
 use crate::IgesCodec;
 
+const DELEGATED_LENGTH_SYMBOLS: [(&str, f64); 25] = [
+    ("A", 0.000_000_1_f64),
+    ("in", 25.4),
+    ("ft", 304.8),
+    ("mi", 1_609_344.0),
+    ("mil", 0.0254),
+    ("uin", 0.000_025_4),
+    ("yd", 914.4),
+    ("nmi", 1_852_000.0),
+    ("dam", 10_000.0),
+    ("hm", 100_000.0),
+    ("km", 1_000_000.0),
+    ("Mm", 1_000_000_000.0),
+    ("Gm", 1_000_000_000_000.0),
+    ("Tm", 1_000_000_000_000_000.0),
+    ("Pm", 1_000_000_000_000_000_000.0),
+    ("Em", 1_000_000_000_000_000_000_000.0),
+    ("m", 1_000.0),
+    ("dm", 100.0),
+    ("cm", 10.0),
+    ("mm", 1.0),
+    ("um", 0.001),
+    ("nm", 0.000_001),
+    ("pm", 0.000_000_001),
+    ("fm", 0.000_000_000_001),
+    ("am", 0.000_000_000_000_001),
+];
+
 #[test]
 fn delegated_length_symbols_use_exact_case_sensitive_factors() {
-    for (name, expected) in [
-        ("A", 0.000_000_1_f64),
-        ("in", 25.4),
-        ("ft", 304.8),
-        ("mi", 1_609_344.0),
-        ("mil", 0.0254),
-        ("uin", 0.000_025_4),
-        ("yd", 914.4),
-        ("nmi", 1_852_000.0),
-        ("dam", 10_000.0),
-        ("hm", 100_000.0),
-        ("km", 1_000_000.0),
-        ("Mm", 1_000_000_000.0),
-        ("Gm", 1_000_000_000_000.0),
-        ("Tm", 1_000_000_000_000_000.0),
-        ("Pm", 1_000_000_000_000_000_000.0),
-        ("Em", 1_000_000_000_000_000_000_000.0),
-        ("m", 1_000.0),
-        ("dm", 100.0),
-        ("cm", 10.0),
-        ("mm", 1.0),
-        ("um", 0.001),
-        ("nm", 0.000_001),
-        ("pm", 0.000_000_001),
-        ("fm", 0.000_000_000_001),
-        ("am", 0.000_000_000_000_001),
-    ] {
+    for (name, expected) in DELEGATED_LENGTH_SYMBOLS {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
@@ -53,15 +55,27 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         assert!(losses.is_empty(), "{name}: {losses:#?}");
     }
 
-    for name in [
-        "IN", "INCH", "MM", "FT", "MI", "M", "KM", "MIL", "UM", "CM", "UIN", "NMI",
-    ] {
+    let uppercased = DELEGATED_LENGTH_SYMBOLS
+        .into_iter()
+        .map(|(name, _)| name.to_uppercase())
+        .filter(|name| {
+            DELEGATED_LENGTH_SYMBOLS
+                .into_iter()
+                .all(|(symbol, _)| symbol != name.as_str())
+        })
+        .chain(std::iter::once("INCH".to_owned()));
+    for name in uppercased {
         let mut fields = valid_global_fields();
         fields[13] = "3".into();
         fields[14] = format!("{}H{name}", name.len());
         let (parsed, losses) = resolve_global_fields(&fields);
         assert!(parsed.length_context().is_none(), "{name}");
-        assert_eq!(parsed.units_name().as_deref(), Some(name), "{name}");
+        assert_eq!(
+            parsed.units_name().as_deref(),
+            Some(name.as_str()),
+            "{name}"
+        );
+        assert_eq!(losses.len(), 1, "{name}: {losses:#?}");
         assert_eq!(
             code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
             1,
@@ -121,6 +135,7 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
             parsed.length_context().unwrap().minimum_resolution_mm(),
             0.0
         );
+        assert_eq!(losses.len(), expected, "{resolution:?}: {losses:#?}");
         assert_eq!(
             code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
             expected,

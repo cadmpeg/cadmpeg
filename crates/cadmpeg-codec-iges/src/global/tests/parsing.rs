@@ -9,8 +9,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use super::{report_code_count, strict_options, valid_global_fields};
 use crate::loss::IgesLossCode;
 use crate::test_support::{
-    card, directory_card, fixed_ascii_with_global, parameter_card, point_file,
-    point_file_with_global,
+    card, directory_card, fixed_ascii_with_global, fixed_ascii_with_global_cards, parameter_card,
+    point_file, point_file_with_global, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
 };
 use crate::IgesCodec;
 
@@ -20,7 +20,7 @@ fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
     fields[1] = format!("1H{record}");
     let global = format!("{}{record}", fields.join(&parameter.to_string()));
     let mut bytes = fixed_ascii_with_global(global.as_bytes());
-    bytes.truncate(bytes.len() - 81);
+    bytes.truncate(bytes.len() - CARD_LINE_BYTES);
     bytes.extend(directory_card(
         ["116", "1", "0", "0", "0", "0", "0", "0", "00000000"],
         1,
@@ -34,7 +34,7 @@ fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
         1,
         1,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global.len().div_ceil(CARD_DATA_COLUMNS);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -44,20 +44,12 @@ fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
 }
 
 fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
-    let mut bytes = card(b"original fixture", b'S', 1);
-    let cards = chunks
-        .iter()
-        .flat_map(|chunk| chunk.chunks(72))
-        .collect::<Vec<_>>();
-    for (index, chunk) in cards.iter().enumerate() {
-        bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
-    }
-    bytes.extend(card(
-        format!("S0000001G{:07}D0000000P0000000", cards.len()).as_bytes(),
-        b'T',
-        1,
-    ));
-    bytes
+    fixed_ascii_with_global_cards(
+        &chunks
+            .iter()
+            .flat_map(|chunk| chunk.chunks(CARD_DATA_COLUMNS))
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[test]
@@ -80,6 +72,20 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     assert!(summary.notes.contains(&format!("sender_product={product}")));
     assert!(summary.notes.contains(&"iges_version=5.3".into()));
     assert!(summary.notes.contains(&"units=MM".into()));
+}
+
+#[test]
+fn global_hollerith_count_digits_split_across_cards_open_the_payload() {
+    let product = "p".repeat(70);
+    let tail = format!(
+        "0H{product},8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    );
+    let bytes = fixed_ascii_with_global_chunks(&[b"1H,,1H;,7", tail.as_bytes()]);
+    let (parsed, losses) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+
+    assert_eq!(parsed.sender_product().as_deref(), Some(product.as_str()));
+    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
