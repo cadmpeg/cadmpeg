@@ -49,7 +49,7 @@ fn a_list_that_runs_to_the_record_end_holds_its_final_item_in_whole_or_in_part()
                 let present = complete + usize::from(partial > 0);
                 let record = counted_record(present, item_tokens);
                 assert_eq!(
-                    record.items_before_default_tail(1, stride, record.parameter_end()),
+                    record.items_before_default_tail_at(2, stride, record.parameter_end()),
                     Some(present),
                     "stride {stride}, {complete} complete items, {partial} trailing tokens"
                 );
@@ -69,7 +69,7 @@ fn a_complete_item_before_a_partial_item_admits_both() {
     let record = counted_record(2, stride + 9);
 
     assert_eq!(
-        record.items_before_default_tail(1, stride, record.parameter_end()),
+        record.items_before_default_tail_at(2, stride, record.parameter_end()),
         Some(2)
     );
     assert_eq!(
@@ -87,7 +87,7 @@ fn a_declared_count_above_the_items_present_in_whole_or_in_part_is_not_admitted(
                 let present = complete + usize::from(partial > 0);
                 let record = counted_record(present + 1, item_tokens);
                 assert_eq!(
-                    record.items_before_default_tail(1, stride, record.parameter_end()),
+                    record.items_before_default_tail_at(2, stride, record.parameter_end()),
                     Some(present),
                     "stride {stride}, {complete} complete items, {partial} trailing tokens"
                 );
@@ -110,7 +110,7 @@ fn a_count_below_the_items_present_leaves_the_surplus_tokens_unread() {
     let record = counted_record(1, 3 * stride);
 
     assert_eq!(
-        record.items_before_default_tail(1, stride, record.parameter_end()),
+        record.items_before_default_tail_at(2, stride, record.parameter_end()),
         Some(3)
     );
     assert_eq!(
@@ -127,7 +127,7 @@ fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
     let complete = (stride + 9) / stride;
 
     assert_eq!(
-        record.items_before_default_tail(1, stride, list_end),
+        record.items_before_default_tail_at(2, stride, list_end),
         Some(complete)
     );
     assert_eq!(
@@ -140,7 +140,7 @@ fn a_list_that_a_suffix_follows_holds_only_its_complete_items() {
 
     let (exact, exact_end) = counted_record_with_suffix(1, stride, 2);
     assert_eq!(
-        exact.items_before_default_tail(1, stride, exact_end),
+        exact.items_before_default_tail_at(2, stride, exact_end),
         Some(1)
     );
     assert_eq!(
@@ -155,7 +155,7 @@ fn an_empty_list_admits_a_zero_count_and_no_item() {
     let record = counted_record(0, 0);
 
     assert_eq!(
-        record.items_before_default_tail(1, stride, record.parameter_end()),
+        record.items_before_default_tail_at(2, stride, record.parameter_end()),
         Some(0)
     );
     assert_eq!(
@@ -175,11 +175,47 @@ fn an_empty_list_admits_a_zero_count_and_no_item() {
 }
 
 #[test]
+fn an_item_start_past_the_count_excludes_the_fields_that_precede_the_list() {
+    let stride = 2;
+    let record = integer_record(&[0, 3, 0, 0, 0, 0, 0, 0, 0], 9);
+
+    assert_eq!(record.items_before_default_tail_at(7, stride, 9), Some(1));
+    assert_eq!(
+        record.count_with_stride_before_default_tail_at(1, 7, stride, 9),
+        DefaultTailCount::Overdeclared {
+            declared: 3,
+            present: 1
+        }
+    );
+    assert_eq!(
+        record.count_with_stride_before_default_tail(1, stride, 9),
+        DefaultTailCount::Held(3)
+    );
+}
+
+#[test]
+fn an_item_start_of_index_plus_one_agrees_with_the_implicit_form() {
+    for stride in [1, 2, 12] {
+        for item_tokens in 0..3 * stride {
+            for declared in 0..4 {
+                let record = counted_record(declared, item_tokens);
+                let end = record.parameter_end();
+                assert_eq!(
+                    record.count_with_stride_before_default_tail(1, stride, end),
+                    record.count_with_stride_before_default_tail_at(1, 2, stride, end),
+                    "stride {stride}, {item_tokens} item tokens, declared {declared}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn a_zero_stride_has_no_item_count_and_admits_no_declared_count() {
     let record = counted_record(1, 20);
 
     assert_eq!(
-        record.items_before_default_tail(1, 0, record.parameter_end()),
+        record.items_before_default_tail_at(2, 0, record.parameter_end()),
         None
     );
     assert_eq!(
@@ -203,7 +239,7 @@ fn a_negative_or_missing_count_admits_no_list() {
         DefaultTailCount::Unreadable
     );
     assert_eq!(
-        absent.items_before_default_tail(1, stride, absent.parameter_end()),
+        absent.items_before_default_tail_at(2, stride, absent.parameter_end()),
         Some(0)
     );
 }

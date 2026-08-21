@@ -2527,8 +2527,9 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(
+                    record.count_with_stride_at(
                         11,
+                        13,
                         1,
                         clamped_primary_end(entry.sequence, record),
                     )
@@ -2576,8 +2577,9 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
                 .and_then(|record| {
-                    record.count_with_stride_before(
+                    record.count_with_stride_at(
                         9,
+                        11,
                         1,
                         clamped_primary_end(entry.sequence, record),
                     )
@@ -2825,8 +2827,9 @@ pub(crate) fn store(
                     6 => {
                         let count = record
                             .and_then(|record| {
-                                record.count_with_stride_before(
+                                record.count_with_stride_at(
                                     2,
+                                    4,
                                     1,
                                     clamped_primary_end(entry.sequence, record),
                                 )
@@ -2856,8 +2859,9 @@ pub(crate) fn store(
                     9 => {
                         let count = record
                             .and_then(|record| {
-                                record.count_with_stride_before(
+                                record.count_with_stride_at(
                                     2,
+                                    4,
                                     1,
                                     clamped_primary_end(entry.sequence, record),
                                 )
@@ -2901,8 +2905,9 @@ pub(crate) fn store(
                     13 => {
                         let count = record
                             .and_then(|record| {
-                                record.count_with_stride_before(
+                                record.count_with_stride_at(
                                     2,
+                                    4,
                                     1,
                                     clamped_primary_end(entry.sequence, record),
                                 )
@@ -2935,8 +2940,9 @@ pub(crate) fn store(
                     16 => {
                         let count = record
                             .and_then(|record| {
-                                record.count_with_stride_before(
+                                record.count_with_stride_at(
                                     2,
+                                    4,
                                     1,
                                     clamped_primary_end(entry.sequence, record),
                                 )
@@ -3148,8 +3154,9 @@ pub(crate) fn store(
                     21 => {
                         let count = record
                             .and_then(|record| {
-                                record.count_with_stride_before(
+                                record.count_with_stride_at(
                                     2,
+                                    6,
                                     5,
                                     clamped_primary_end(entry.sequence, record),
                                 )

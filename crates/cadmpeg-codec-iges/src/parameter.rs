@@ -242,13 +242,30 @@ impl ParameterRecord {
         stride: usize,
         end: usize,
     ) -> DefaultTailCount {
+        match index.checked_add(1) {
+            Some(item_start) => {
+                self.count_with_stride_before_default_tail_at(index, item_start, stride, end)
+            }
+            None => DefaultTailCount::Unreadable,
+        }
+    }
+
+    /// Report the declared count before the entity-specific end from an
+    /// explicit item start.
+    pub(crate) fn count_with_stride_before_default_tail_at(
+        &self,
+        index: usize,
+        item_start: usize,
+        stride: usize,
+        end: usize,
+    ) -> DefaultTailCount {
         let Some(count) = self
             .integer(index)
             .and_then(|value| usize::try_from(value).ok())
         else {
             return DefaultTailCount::Unreadable;
         };
-        let Some(present) = self.items_before_default_tail(index, stride, end) else {
+        let Some(present) = self.items_before_default_tail_at(item_start, stride, end) else {
             return DefaultTailCount::Unreadable;
         };
         if count <= present {
@@ -261,21 +278,20 @@ impl ParameterRecord {
         }
     }
 
-    /// Return the fixed-width items the record holds after the count at
-    /// `index` and before the entity-specific end. A list that runs to the
-    /// record end holds its final item in whole or in part, because the record
-    /// delimiter supplies every remaining field under IGES 5.3 §2.2.3. A list
-    /// that a trailing suffix follows holds only its complete items.
-    pub(crate) fn items_before_default_tail(
+    /// Return the fixed-width items the record holds from `item_start` and
+    /// before the entity-specific end. A list that runs to the record end
+    /// holds its final item in whole or in part, because the record delimiter
+    /// supplies every remaining field under IGES 5.3 §2.2.3. A list that a
+    /// trailing suffix follows holds only its complete items.
+    pub(crate) fn items_before_default_tail_at(
         &self,
-        index: usize,
+        item_start: usize,
         stride: usize,
         end: usize,
     ) -> Option<usize> {
         if stride == 0 {
             return None;
         }
-        let item_start = index.checked_add(1)?;
         let end = end.min(self.parameter_end());
         let available = end.saturating_sub(item_start);
         Some(if end < self.tokens.len() {

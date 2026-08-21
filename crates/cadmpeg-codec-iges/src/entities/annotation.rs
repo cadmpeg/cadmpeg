@@ -204,7 +204,10 @@ fn leader_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let Some(count) = record.count(1).filter(|count| *count > 0) else {
+    let Some(count) = record
+        .count_with_stride_at(1, 7, 2, record.parameter_end())
+        .filter(|count| *count > 0)
+    else {
         return false;
     };
     let dimensions_valid = record

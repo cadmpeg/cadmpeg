@@ -117,7 +117,9 @@ fn array_mask_valid(
     first_position_index: usize,
     total: usize,
 ) -> bool {
-    let Some(count) = record.count(count_index) else {
+    let Some(count) =
+        record.count_with_stride_at(count_index, first_position_index, 1, record.parameter_end())
+    else {
         return false;
     };
     let Some(flag) = record

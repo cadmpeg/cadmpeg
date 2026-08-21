@@ -188,10 +188,10 @@ impl Subject<'_> {
         format!("iges:entity:directory#{}", self.sequence)
     }
 
-    fn counted(&self, count_index: usize, stride: usize) -> usize {
+    fn counted(&self, count_index: usize, item_start: usize, stride: usize) -> usize {
         self.record
             .and_then(|record| {
-                record.count_with_stride_before(count_index, stride, self.primary_end)
+                record.count_with_stride_at(count_index, item_start, stride, self.primary_end)
             })
             .unwrap_or_default()
     }
@@ -282,7 +282,7 @@ impl Subject<'_> {
     }
 
     fn leader_list(&self, count_index: usize, leader_start: usize) -> Vec<Option<String>> {
-        (0..self.counted(count_index, 1))
+        (0..self.counted(count_index, leader_start, 1))
             .map(|offset| self.leader_link(leader_start + offset))
             .collect()
     }
@@ -466,7 +466,7 @@ fn new_general_note(
 
 fn leader(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
-    let count = subject.counted(1, 2);
+    let count = subject.counted(1, 7, 2);
     let z = record.and_then(|record| record.number(4));
     NativeAnnotation::Leader {
         id: subject.id(),
@@ -558,7 +558,7 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
 
 fn sectioned_area(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
-    let island_count = subject.counted(8, 1);
+    let island_count = subject.counted(8, 9, 1);
     NativeAnnotation::SectionedArea {
         id: subject.id(),
         source_entity: subject.source_entity(),
