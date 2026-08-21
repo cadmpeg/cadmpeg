@@ -1055,7 +1055,7 @@ pub(crate) fn try_decode_standard(
             )
         })
         .count();
-    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine);
+    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine, records.len());
     let mut curved_surfaces = records
         .iter()
         .map(|record| match record {

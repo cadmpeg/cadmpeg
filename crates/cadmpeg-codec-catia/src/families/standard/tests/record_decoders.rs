@@ -452,8 +452,31 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes),
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 1),
         [Some([0.0, 0.0, 1.0])]
+    );
+}
+
+#[test]
+fn fbb_frame_vectors_concatenate_unique_population_chains() {
+    let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
+    for value in [0.0f32, 0.0, 1.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    for handle in [0x10u16, 0x11, 0x12] {
+        bytes.extend_from_slice(&handle.to_be_bytes());
+    }
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    bytes.extend_from_slice(&[0x01, 0x49, 0x01, 0xff, 3, 0, 0, 0]);
+    for value in [0.0f32, 0.0, 1.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.extend_from_slice(&[0x20, 0x21, 0x22]);
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd3, 0xd3, 0xd3, 0xd3]);
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 2),
+        [Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, 1.0]),]
     );
 }
 

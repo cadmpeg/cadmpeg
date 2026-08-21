@@ -72,25 +72,52 @@ pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
         .collect()
 }
 
-/// Unit frame vector for each positional standard trim packet. The result is
-/// index-aligned with the FBB face population; packets without the optional
-/// vector retain an empty slot.
-#[must_use]
-pub fn standard_face_frame_vectors(bytes: &[u8]) -> Vec<Option<[f64; 3]>> {
-    let Some((face_start, face_count, _)) = selected_standard_run(bytes) else {
-        return Vec::new();
-    };
+fn trim_frame_vectors(
+    bytes: &[u8],
+    face_start: usize,
+    face_count: usize,
+) -> Option<Vec<Option<[f64; 3]>>> {
     let solutions = [1, 2, 3]
         .into_iter()
         .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
         .collect::<Vec<_>>();
-    let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
+    let [records] = <[Vec<TrimRecord>; 1]>::try_from(solutions).ok()?;
+    Some(
+        records
+            .into_iter()
+            .map(|record| record.frame_vector)
+            .collect(),
+    )
+}
+
+/// Unit frame vector for each positional standard trim packet. The result is
+/// index-aligned with the expected face-roster population; packets without the
+/// optional vector retain an empty slot. When every detected FBB population
+/// has one unique trim chain and their concatenated length equals
+/// `expected_face_count`, the result concatenates those population-local
+/// vectors in source order; otherwise it uses the established
+/// single-population selection.
+#[must_use]
+pub fn standard_face_frame_vectors(
+    bytes: &[u8],
+    expected_face_count: usize,
+) -> Vec<Option<[f64; 3]>> {
+    let runs = crate::container::fbb_run_ranges(bytes);
+    if runs.len() > 1 {
+        let combined = runs
+            .iter()
+            .map(|range| trim_frame_vectors(bytes, range.start, range.len() / fbb_row::LEN))
+            .collect::<Option<Vec<_>>>();
+        if let Some(vectors) = combined
+            .filter(|vectors| vectors.iter().map(Vec::len).sum::<usize>() == expected_face_count)
+        {
+            return vectors.into_iter().flatten().collect();
+        }
+    }
+    let Some((face_start, face_count, _)) = selected_standard_run(bytes) else {
         return Vec::new();
     };
-    records
-        .into_iter()
-        .map(|record| record.frame_vector)
-        .collect()
+    trim_frame_vectors(bytes, face_start, face_count).unwrap_or_default()
 }
 
 /// Return the counted vertex table of an admitted standard nested spine.
