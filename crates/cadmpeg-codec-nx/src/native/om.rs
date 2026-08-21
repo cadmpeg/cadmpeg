@@ -88,10 +88,41 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionUnit {
-    /// Canonical model length in millimeters.
+    /// Model length in millimeters as stored by NX.
     Millimeter,
+    /// Model length in inches as stored by NX.
+    Inch,
     /// Angular value in degrees as stored by NX.
     Degree,
+}
+
+const INCH_TO_MILLIMETERS: f64 = 25.4;
+
+impl ExpressionUnit {
+    pub(crate) const fn property_name(self) -> &'static str {
+        match self {
+            Self::Millimeter => "millimeter",
+            Self::Inch => "inch",
+            Self::Degree => "degree",
+        }
+    }
+}
+
+pub(crate) fn expression_length_in_millimeters(unit: ExpressionUnit, value: f64) -> Option<f64> {
+    match unit {
+        ExpressionUnit::Millimeter => Some(value),
+        ExpressionUnit::Inch => Some(value * INCH_TO_MILLIMETERS),
+        ExpressionUnit::Degree => None,
+    }
+}
+
+pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> {
+    match unit {
+        "millimeter" => Some(value),
+        "inch" => Some(value * INCH_TO_MILLIMETERS),
+        "degree" => Some(value.to_radians()),
+        _ => None,
+    }
 }
 
 /// Named parameter declaration in a bounded NX expression object record.
@@ -3977,6 +4008,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 qualifier: expression.qualifier.map(str::to_string),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
+                    crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
                 },
                 expression: expression.expression.to_string(),

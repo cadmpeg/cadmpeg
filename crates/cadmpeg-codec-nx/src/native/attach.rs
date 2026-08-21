@@ -8037,22 +8037,20 @@ pub(crate) fn attach_expression_parameters(
             if !dependencies.is_empty() {
                 annotations.derived(&id.0, "dependencies");
             }
-            let value = expression.value.map(|value| match expression.unit {
-                crate::native::om::ExpressionUnit::Millimeter => {
-                    ParameterValue::Length(Length(value))
+            let value = expression.value.and_then(|value| match expression.unit {
+                crate::native::om::ExpressionUnit::Millimeter
+                | crate::native::om::ExpressionUnit::Inch => {
+                    crate::native::expression_length_in_millimeters(expression.unit, value)
+                        .map(|value| ParameterValue::Length(Length(value)))
                 }
                 crate::native::om::ExpressionUnit::Degree => {
-                    ParameterValue::Angle(Angle(value.to_radians()))
+                    Some(ParameterValue::Angle(Angle(value.to_radians())))
                 }
             });
             let mut properties = BTreeMap::new();
             properties.insert(
                 "unit".to_string(),
-                match expression.unit {
-                    crate::native::om::ExpressionUnit::Millimeter => "millimeter",
-                    crate::native::om::ExpressionUnit::Degree => "degree",
-                }
-                .to_string(),
+                expression.unit.property_name().to_string(),
             );
             annotations.derived(&id.0, "properties");
             if let Some(declaration) = expression

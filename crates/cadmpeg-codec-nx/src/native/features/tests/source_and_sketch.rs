@@ -171,10 +171,26 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     expressions[2].source_entry = "section-a".into();
     expressions[2].source_table = "table-a".into();
     assert_eq!(
-        super::feature_block_dimensions(&[construction], &[binding], &declarations, &expressions,)
-            .len(),
+        super::feature_block_dimensions(
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&binding),
+            &declarations,
+            &expressions,
+        )
+        .len(),
         1
     );
+
+    for expression in &mut expressions {
+        expression.unit = ExpressionUnit::Inch;
+    }
+    let dimensions = super::feature_block_dimensions(
+        std::slice::from_ref(&construction),
+        std::slice::from_ref(&binding),
+        &declarations,
+        &expressions,
+    );
+    assert_eq!(dimensions[0].values, [508.0, 533.4, 558.8]);
 }
 
 #[test]

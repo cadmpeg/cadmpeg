@@ -17,6 +17,7 @@ pub const NUMBER_PREFIX: &[u8] = b"(Number [";
 pub fn unit_for(token: &str) -> Option<ExpressionUnit> {
     match token {
         "mm" => Some(ExpressionUnit::Millimeter),
+        "in" => Some(ExpressionUnit::Inch),
         "degrees" => Some(ExpressionUnit::Degree),
         _ => None,
     }
@@ -29,6 +30,7 @@ mod tests {
     #[test]
     fn resolves_supported_units() {
         assert_eq!(unit_for("mm"), Some(ExpressionUnit::Millimeter));
+        assert_eq!(unit_for("in"), Some(ExpressionUnit::Inch));
         assert_eq!(unit_for("degrees"), Some(ExpressionUnit::Degree));
         assert_eq!(unit_for("furlongs"), None);
     }

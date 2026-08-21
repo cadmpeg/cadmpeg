@@ -1164,8 +1164,10 @@ pub struct ReferenceValue {
 /// Unit declared by an NX numeric-expression serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionUnit {
-    /// Canonical model length in millimeters.
+    /// Model length in millimeters as serialized by NX.
     Millimeter,
+    /// Model length in inches as serialized by NX.
+    Inch,
     /// Angular value in degrees as serialized by NX.
     Degree,
 }
@@ -7336,14 +7338,9 @@ fn numeric_expression_at(
     let text_end = relative.checked_add(text_len)?;
     (bytes.get(text_end) == Some(&0)).then_some(())?;
     let text = std::str::from_utf8(bytes.get(relative..text_end)?).ok()?;
-    text.ends_with("; ").then_some(())?;
     let text = text.strip_prefix("(Number [")?;
     let (unit, rest) = text.split_once("]) ")?;
-    let unit = match unit {
-        "mm" => ExpressionUnit::Millimeter,
-        "degrees" => ExpressionUnit::Degree,
-        _ => return None,
-    };
+    let unit = crate::om_tokens::unit_for(unit)?;
     let (name, value_tail) = rest.split_once(": ")?;
     if name.is_empty()
         || !name
@@ -7352,7 +7349,10 @@ fn numeric_expression_at(
     {
         return None;
     }
-    let value_text = value_tail.strip_suffix("; ")?;
+    let (value_text, comment) = value_tail.split_once("; ")?;
+    if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
+        return None;
+    }
     let (parameter_index, qualifier) = parameter_name_parts(name)
         .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
     let value = evaluate_constant_expression(value_text);
@@ -7366,6 +7366,13 @@ fn numeric_expression_at(
         expression: value_text,
         value,
     })
+}
+
+fn numeric_expression_comment_is_valid(comment: &str) -> bool {
+    comment.starts_with("//")
+        && comment
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
 }
 
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.

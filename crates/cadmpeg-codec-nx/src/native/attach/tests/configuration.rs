@@ -1356,6 +1356,54 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
 }
 
 #[test]
+fn nx_inch_expression_values_are_attached_in_millimeters() {
+    let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
+        id: format!("nx:test:expression#{key}"),
+        object_id: Some(key),
+        record: None,
+        declaration: None,
+        name: name.into(),
+        parameter_index: Some(key),
+        qualifier: None,
+        unit: crate::native::om::ExpressionUnit::Inch,
+        expression: formula.into(),
+        value,
+        source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_table: "table".into(),
+        source_offset: u64::from(key),
+    };
+    let expressions = [
+        expression(1, "p1", "2", Some(2.0)),
+        expression(2, "p2", "p1 * 3", Some(6.0)),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(2.0 * 25.4)
+        ))
+    );
+    assert_eq!(
+        ir.model.parameters[1].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(6.0 * 25.4)
+        ))
+    );
+    assert_eq!(
+        ir.model.parameters[0]
+            .properties
+            .get("unit")
+            .map(String::as_str),
+        Some("inch")
+    );
+    assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+}
+
+#[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;

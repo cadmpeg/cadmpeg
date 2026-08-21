@@ -1577,6 +1577,29 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
 }
 
 #[test]
+fn om_numeric_expression_accepts_inches_and_terminal_comments() {
+    let texts = [
+        b"(Number [in]) p1: 0.5; ".as_slice(),
+        b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
+    ];
+    let mut bytes = b"hostglobalvariables".to_vec();
+    for text in texts {
+        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(text);
+        bytes.push(0);
+    }
+
+    let expressions = super::numeric_expressions(&bytes);
+
+    assert_eq!(expressions.len(), 2);
+    assert_eq!(expressions[0].unit, super::ExpressionUnit::Inch);
+    assert_eq!(expressions[0].expression, "0.5");
+    assert_eq!(expressions[0].value, Some(0.5));
+    assert_eq!(expressions[1].expression, "p1 * 2");
+    assert_eq!(expressions[1].value, None);
+}
+
+#[test]
 fn om_numeric_expression_applies_power_before_unary_sign() {
     for (formula, expected) in [
         ("-2^2", -4.0),

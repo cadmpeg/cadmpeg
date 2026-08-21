@@ -6,7 +6,7 @@ use super::*;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
     DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
-    ExpressionUnit, OmSchemaRole,
+    OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
@@ -8619,12 +8619,15 @@ pub fn feature_block_dimensions(
                         expression.declaration.as_deref() == Some(&declaration.id)
                     });
                     let expression = matches.next()?;
-                    if matches.next().is_some() || expression.unit != ExpressionUnit::Millimeter {
+                    if matches.next().is_some() {
                         return None;
                     }
                     Some((
                         expression,
-                        expression.value.filter(|value| value.is_finite())?,
+                        crate::native::expression_length_in_millimeters(
+                            expression.unit,
+                            expression.value.filter(|value| value.is_finite())?,
+                        )?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()?
