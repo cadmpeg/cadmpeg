@@ -241,6 +241,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         value: "SIMPLE HOLE".to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: 100,
     };
     let record = FeatureOperationRecord {
@@ -251,6 +252,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         sha256: "a".repeat(64),
         payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
+        stable_identity: None,
         payload_source_offset: 120,
         source_offset: 90,
     };
@@ -367,6 +369,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         value: "SKETCH".to_string(),
         object_indices: [Some(45), None, Some(81), None],
         raw_object_indices: [vec![45], vec![0xff], vec![81], vec![0xff]],
+        stable_identity: None,
         source_offset: 700,
     };
     let record = FeatureOperationRecord {
@@ -377,6 +380,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         sha256: "00".repeat(32),
         payload_byte_len: 140,
         payload_sha256: "11".repeat(32),
+        stable_identity: None,
         payload_source_offset: 733,
         source_offset: 700,
     };
@@ -815,6 +819,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: 100 + u64::from(ordinal),
     };
     let labels = [label("csys", "DATUM_CSYS", 0), label("sketch", "SKETCH", 1)];

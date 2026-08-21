@@ -939,6 +939,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 2 - u64::from(ordinal),
         };
         let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
@@ -992,6 +993,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1), label(0)];
@@ -1061,6 +1063,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let labels = [label(2, "EXTRUDE"), label(1, "UNITE"), label(0, "UNITE")];
@@ -1134,6 +1137,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1181,6 +1185,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [
@@ -1249,6 +1254,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1300,6 +1306,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1355,6 +1362,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1427,6 +1435,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1497,6 +1506,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1562,6 +1572,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         // Feature-history labels are newest-first within one section. The raw
@@ -1613,6 +1624,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let reference = |ordinal: u32| FeatureBodyReference {
@@ -1666,6 +1678,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let labels = [
@@ -1722,6 +1735,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
@@ -1781,6 +1795,7 @@ mod tests {
             value: "SEW".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
@@ -1831,6 +1846,7 @@ mod tests {
             value: "TRIM BODY".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {

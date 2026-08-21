@@ -37,6 +37,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             value: "EXTRUDE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         },
         FeatureOperationLabel {
@@ -46,6 +47,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 1,
         },
     ];
@@ -598,6 +600,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: 1 - u64::from(ordinal),
     };
     let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
@@ -664,6 +667,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         value: "SIMPLE HOLE".into(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: u64::from(ordinal),
     };
     let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
@@ -914,6 +918,7 @@ fn operation_history_reverses_source_order_within_each_section() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: u64::from(ordinal),
     };
     let labels = [
@@ -948,6 +953,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: u64::from(ordinal),
     };
     let labels = [
@@ -982,6 +988,7 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset,
     };
     let labels = [

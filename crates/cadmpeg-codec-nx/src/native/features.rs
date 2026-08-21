@@ -26,6 +26,10 @@ pub struct FeatureOperationLabel {
     pub object_indices: [Option<u32>; 4],
     /// Exact serialized object-index tokens in header order.
     pub raw_object_indices: [Vec<u8>; 4],
+    /// Record-order-independent header identity when one non-null tuple is
+    /// unique across the feature-history sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Absolute file offset of the `03` label tag.
     pub source_offset: u64,
 }
@@ -82,6 +86,9 @@ pub struct FeatureOperationRecord {
     pub payload_byte_len: u64,
     /// SHA-256 of the post-label serialized operation payload.
     pub payload_sha256: String,
+    /// Record-order-independent header identity when the owning label has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Absolute file offset of the first post-label payload byte.
     pub payload_source_offset: u64,
     /// Absolute file offset of the fixed operation-header marker.
@@ -2876,6 +2883,38 @@ pub(crate) fn canonical_feature_history_links(
     links
 }
 
+/// Return the identity witness encoded by one operation header.
+///
+/// The tuple is useful only when it contains a non-null slot. An all-null
+/// header has no serialized operation witness; duplicate tuples are rejected
+/// by `assign_operation_header_identities` rather than being given an
+/// ambiguous identity.
+fn operation_header_identity_key(object_indices: [Option<u32>; 4]) -> Option<String> {
+    object_indices.iter().any(Option::is_some).then(|| {
+        let slots = object_indices
+            .iter()
+            .map(|index| index.map_or_else(|| "null".to_string(), |value| value.to_string()))
+            .collect::<Vec<_>>();
+        format!(
+            "nx:feature-history:operation-header-identity#{}",
+            slots.join("-")
+        )
+    })
+}
+
+fn assign_operation_header_identities(labels: &mut [FeatureOperationLabel]) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for label in labels.iter() {
+        if let Some(key) = operation_header_identity_key(label.object_indices) {
+            *counts.entry(key).or_default() += 1;
+        }
+    }
+    for label in labels.iter_mut() {
+        label.stable_identity = operation_header_identity_key(label.object_indices)
+            .filter(|key| counts.get(key) == Some(&1));
+    }
+}
+
 /// Decode ordered operation labels from feature-history record areas.
 pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
@@ -2928,11 +2967,13 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                         value: label.value.to_string(),
                         object_indices: label.object_indices,
                         raw_object_indices,
+                        stable_identity: None,
                         source_offset: entry_offset + label.offset as u64,
                     })
                 }),
         );
     }
+    assign_operation_header_identities(&mut labels);
     labels
 }
 
@@ -2979,28 +3020,44 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 
 /// Decode exact feature-operation record boundaries and byte identities.
 pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
+    let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            records.push(FeatureOperationRecord {
-                id: format!(
-                    "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label,
-                ordinal: operation_ordinal as u32,
-                byte_len: record.bytes.len() as u64,
-                sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                payload_byte_len: record.payload.len() as u64,
-                payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
-                payload_source_offset: entry_offset + record.payload_offset as u64,
-                source_offset: entry_offset + record.offset as u64,
-            });
+            let stable_identity = operation_header_identity_key(record.label.object_indices);
+            if let Some(key) = &stable_identity {
+                *identity_counts.entry(key.clone()).or_default() += 1;
+            }
+            records.push((
+                FeatureOperationRecord {
+                    id: format!(
+                        "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: operation_ordinal as u32,
+                    byte_len: record.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    payload_byte_len: record.payload.len() as u64,
+                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                    stable_identity: None,
+                    payload_source_offset: entry_offset + record.payload_offset as u64,
+                    source_offset: entry_offset + record.offset as u64,
+                },
+                stable_identity,
+            ));
         },
     );
     records
+        .into_iter()
+        .map(|(mut record, stable_identity)| {
+            record.stable_identity =
+                stable_identity.filter(|key| identity_counts.get(key) == Some(&1));
+            record
+        })
+        .collect()
 }
 
 /// Decode exact nested object-relation frames from bounded feature operations.

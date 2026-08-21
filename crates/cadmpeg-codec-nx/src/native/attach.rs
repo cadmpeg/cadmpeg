@@ -1990,6 +1990,12 @@ fn attach_feature_operations(
             operation_common_frames,
             operation_terminal_frames,
         ));
+        if let Some(stable_identity) = &label.stable_identity {
+            source_properties.insert(
+                "operation_stable_identity".to_string(),
+                stable_identity.clone(),
+            );
+        }
         for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
             .into_iter()

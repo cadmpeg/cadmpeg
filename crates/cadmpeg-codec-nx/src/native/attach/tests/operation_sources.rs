@@ -13,6 +13,7 @@ fn operation_source_properties_require_unique_owned_structures() {
         sha256: "record-hash".into(),
         payload_byte_len: 10,
         payload_sha256: "payload-hash".into(),
+        stable_identity: None,
         payload_source_offset: 110,
         source_offset: 100,
     };

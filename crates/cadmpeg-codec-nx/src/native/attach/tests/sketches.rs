@@ -12,6 +12,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         value: "SKETCH".to_string(),
         object_indices: [None; 4],
         raw_object_indices: Default::default(),
+        stable_identity: None,
         source_offset: 40,
     };
     let pair = crate::native::features::FeatureSketchPayloadCoordinatePair {

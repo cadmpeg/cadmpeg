@@ -769,6 +769,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         value: "SKETCH".to_string(),
         object_indices: [None; 4],
         raw_object_indices: Default::default(),
+        stable_identity: None,
         source_offset: 40,
     };
     let group = crate::native::features::FeatureSketchPointGroup {
@@ -842,6 +843,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         value: "SKETCH".to_string(),
         object_indices: [None; 4],
         raw_object_indices: Default::default(),
+        stable_identity: None,
         source_offset: 40,
     };
     let point = crate::native::features::FeatureSketchPoint {
