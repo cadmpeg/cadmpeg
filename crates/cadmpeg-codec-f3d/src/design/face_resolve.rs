@@ -1569,6 +1569,37 @@ pub(crate) fn nested_bounded_face_history_candidates(
     (!candidates.is_empty()).then_some(candidates)
 }
 
+/// Return active B-rep faces for the legacy `FromFace` envelope whose counted
+/// bounded recipe contains support references but no active face lane.
+///
+/// This is a candidate-generation proof, not a selection proof. The caller
+/// must reduce the returned faces to one plane coincident with the profile
+/// sketch before binding it to the operand.
+fn extrude_start_plane_geometry_candidates(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+    faces: &[cadmpeg_ir::topology::Face],
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    let [record_index] = group.members.as_slice() else {
+        return None;
+    };
+    let mut matching = operands.iter().filter(|operand| {
+        native_stream(&operand.id) == native_stream(&group.id)
+            && operand.scope_record_index == group.scope_record_index
+            && operand.record_index == *record_index
+    });
+    let operand = matching.next()?;
+    if matching.next().is_some()
+        || !face_operand_candidates(operand).is_empty()
+        || !operand.resolved_face_slots.is_empty()
+        || operand.resolved_active_face.is_some()
+        || nested_bounded_face_history_candidates(operand).is_none()
+    {
+        return None;
+    }
+    Some(faces.iter().map(|face| face.id.clone()).collect())
+}
+
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.
 pub(crate) struct ExtrudeStartPlaneResolution<'a> {
     pub faces: &'a [cadmpeg_ir::topology::Face],
@@ -1647,6 +1678,15 @@ pub(crate) fn bind_extrude_start_planes(
         }
         candidates.sort_by(|left, right| left.0.cmp(&right.0));
         candidates.dedup();
+        if candidates.is_empty() {
+            if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
+                group,
+                resolution.operands,
+                resolution.faces,
+            ) {
+                candidates = geometry_candidates;
+            }
+        }
         let coincident = candidates
             .into_iter()
             .filter(|candidate| {
@@ -1661,14 +1701,15 @@ pub(crate) fn bind_extrude_start_planes(
             })
             .collect::<Vec<_>>();
         if let [face] = coincident.as_slice() {
-            retain_face_operand_resolution(group, resolution.operands, face);
-            *start = ExtrudeStart::FromFace {
-                face: FaceSelection::Resolved {
-                    faces: vec![face.clone()],
-                    native: native.clone(),
-                },
-                offset: retained_offset,
-            };
+            if retain_face_operand_resolution(group, resolution.operands, face) {
+                *start = ExtrudeStart::FromFace {
+                    face: FaceSelection::Resolved {
+                        faces: vec![face.clone()],
+                        native: native.clone(),
+                    },
+                    offset: retained_offset,
+                };
+            }
         }
     }
 }
@@ -1681,6 +1722,30 @@ pub(crate) fn retain_face_operand_resolution(
     let Some(stream) = native_stream(&group.id) else {
         return false;
     };
+    let mut matches = operands.iter_mut().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == group.scope_record_index
+            && group.members.contains(&operand.record_index)
+            && (face_operand_candidates(operand).contains(face)
+                || (face_operand_candidates(operand).is_empty()
+                    && operand.resolved_face_slots.is_empty()
+                    && operand.resolved_active_face.is_none()
+                    && nested_bounded_face_history_candidates(operand).is_some()))
+    });
+    let Some(operand) = matches.next() else {
+        return false;
+    };
+    if matches.next().is_some() {
+        return false;
+    }
+    let geometry_bound = face_operand_candidates(operand).is_empty()
+        && operand.resolved_face_slots.is_empty()
+        && operand.resolved_active_face.is_none()
+        && nested_bounded_face_history_candidates(operand).is_some();
+    if geometry_bound {
+        operand.resolved_active_face = Some(face.clone());
+        return true;
+    }
     let Some(slot) = face
         .0
         .rsplit_once('#')
@@ -1688,17 +1753,7 @@ pub(crate) fn retain_face_operand_resolution(
     else {
         return false;
     };
-    let mut matches = operands.iter_mut().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == group.scope_record_index
-            && group.members.contains(&operand.record_index)
-            && face_operand_candidates(operand).contains(face)
-            && (operand.resolved_face_slots.is_empty() || operand.resolved_face_slots == [slot])
-    });
-    let Some(operand) = matches.next() else {
-        return false;
-    };
-    if matches.next().is_some() {
+    if !operand.resolved_face_slots.is_empty() && operand.resolved_face_slots != [slot] {
         return false;
     }
     operand.resolved_face_slots = vec![slot];
@@ -2463,6 +2518,113 @@ mod tests {
                 native,
             }) if state == expected_state && faces == [expected_face] && native == [group.id]
         ));
+    }
+
+    #[test]
+    fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
+        let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "group_record_index": 150,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "271",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "261",
+            "recipe_record_index": 201,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [{
+                "selector": 1,
+                "selector_offset": 0,
+                "token": "support",
+                "token_offset": 0,
+                "design_reference": 201,
+                "design_reference_offset": 0,
+                "candidate_faces": ["f3d:brep:entity#10"]
+            }],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": [0],
+            "recipe_nodes": [{
+                "byte_offset": 0,
+                "end_byte_offset": 12,
+                "program": [0, -1, 1],
+                "recipe_structure": {
+                    "root": 0,
+                    "prelude": [0, 0],
+                    "sides": [
+                        {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []},
+                        {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []}
+                    ],
+                    "postlude": []
+                }
+            }],
+            "candidate_faces": [],
+            "unreferenced_candidate_faces": [],
+            "alternate_selector_candidate_faces": [],
+            "preceding_candidate_faces": [],
+            "changed_candidate_faces": [],
+            "historical_support_contexts": [],
+            "resolved_face_slots": [],
+            "next_record_index": 202,
+            "next_byte_offset": 100
+        }))
+        .expect("nested bounded-face operand");
+        let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "338",
+            "role": 0,
+            "members": [200],
+            "member_offsets": [0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 0,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role_offset": 0,
+            "paired_class_tag": "261",
+            "paired_byte_offset": 0
+        }))
+        .expect("FromFace group");
+        let faces = vec![Face {
+            id: face(10),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId("surface".into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        }];
+
+        assert_eq!(
+            extrude_start_plane_geometry_candidates(&group, &[operand.clone()], &faces),
+            Some(vec![face(10)])
+        );
+        let mut bound = operand.clone();
+        assert!(retain_face_operand_resolution(
+            &group,
+            std::slice::from_mut(&mut bound),
+            &face(10)
+        ));
+        assert_eq!(bound.resolved_active_face, Some(face(10)));
+
+        let mut incomplete = operand;
+        incomplete.recipe_nodes.clear();
+        assert!(extrude_start_plane_geometry_candidates(&group, &[incomplete], &faces).is_none());
     }
 
     #[test]
