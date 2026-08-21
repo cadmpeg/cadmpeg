@@ -198,6 +198,28 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
+    /// Return an absolute source span only when it is wholly owned by one
+    /// catalogued directory entry.
+    pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
+        let offset = usize::try_from(offset).ok()?;
+        let byte_len = usize::try_from(byte_len).ok()?;
+        let end = offset.checked_add(byte_len)?;
+        let owner_end = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (start, entry_byte_len) = entry.file_span?;
+                let start = usize::try_from(start).ok()?;
+                let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
+                let entry_end = start.checked_add(entry_byte_len)?;
+                (start <= offset && end <= entry_end).then_some(entry_end)
+            })
+            .min()?;
+        (end <= owner_end)
+            .then(|| self.data.get(offset..end))
+            .flatten()
+    }
+
     /// Return bytes from an absolute offset through the end of its bounded
     /// directory-entry span.
     pub(crate) fn bounded_entry_tail(&self, offset: u64) -> Option<&[u8]> {

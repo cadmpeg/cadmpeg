@@ -1687,10 +1687,8 @@ pub fn external_reference_indexed_records(
         .filter_map(|(entry, record)| {
             let entry_offset = entry.file_span?.0;
             let source_offset = entry_offset.checked_add(record.offset as u64)?;
-            let start = usize::try_from(source_offset).ok()?;
             let bytes = container
-                .data
-                .get(start..start.checked_add(record.byte_len)?)?;
+                .bounded_entry_bytes(source_offset, u64::try_from(record.byte_len).ok()?)?;
             Some(ExternalReferenceIndexedRecord {
                 id: format!(
                     "nx:external-reference-indexed-record:{}#{}",
@@ -1718,9 +1716,7 @@ pub fn external_reference_empty_records(
     indexed
         .iter()
         .filter_map(|record| {
-            let start = usize::try_from(record.source_offset).ok()?;
-            let length = usize::try_from(record.byte_len).ok()?;
-            let bytes = container.data.get(start..start.checked_add(length)?)?;
+            let bytes = container.bounded_entry_bytes(record.source_offset, record.byte_len)?;
             let closing_marker = crate::container::parse_extref_empty_record(bytes)?;
             Some(ExternalReferenceEmptyRecord {
                 id: record.id.replacen("indexed-record", "empty-record", 1),
@@ -1739,19 +1735,12 @@ pub fn external_reference_tail_reference_pairs(
     records
         .iter()
         .flat_map(|record| {
-            let Some(start) = usize::try_from(record.source_offset)
-                .ok()
-                .and_then(|start| start.checked_add(usize::try_from(record.prefix_byte_len).ok()?))
+            let Some(source_offset) = record.source_offset.checked_add(record.prefix_byte_len)
             else {
                 return Vec::new();
             };
-            let Some(length) = usize::try_from(record.tail_byte_len).ok() else {
-                return Vec::new();
-            };
-            let Some(end) = start.checked_add(length) else {
-                return Vec::new();
-            };
-            let Some(bytes) = container.data.get(start..end) else {
+            let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len)
+            else {
                 return Vec::new();
             };
             crate::container::parse_extref_reference_pairs(bytes)
@@ -1770,7 +1759,7 @@ pub fn external_reference_tail_reference_pairs(
                         ordinal: ordinal as u32,
                         persistent_handle,
                         tagged_reference,
-                        source_offset: (start + offset) as u64,
+                        source_offset: source_offset + offset as u64,
                     }
                 })
                 .collect::<Vec<_>>()

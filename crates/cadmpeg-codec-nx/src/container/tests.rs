@@ -82,6 +82,9 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
         om_operation_label_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
+    assert_eq!(container.bounded_entry_bytes(1, 2), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_bytes(1, 3), None);
+    assert_eq!(container.bounded_entry_bytes(3, 3), Some(&payload[3..6]));
     assert_eq!(container.bounded_entry_tail(1), Some(&payload[1..3]));
     assert_eq!(container.bounded_entry_tail(4), Some(&payload[4..6]));
     assert_eq!(container.bounded_entry_tail(6), None);
