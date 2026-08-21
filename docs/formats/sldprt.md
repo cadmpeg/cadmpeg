@@ -389,6 +389,8 @@ Keywords feature attributes that contain object identifiers use the feature's `i
 
 A classless Keywords `Extrusion` element is a joined blind solid extrusion. Its sole distinct positive Keywords dimension is the blind depth independently of the dimension name and of additional dimensions recovered from the feature-input stream. Repeated references to that same Keywords dimension do not make the depth ambiguous. When it has no explicit profile attribute or dissected child, the sketch with the greatest positive source identifier smaller than the extrusion's source identifier is its profile; the built-in `moOriginProfileFeature_c` record does not participate.
 
+An extrusion with `DissectableRoot="true"`, no `Profile` attribute, no `DissectableChildren` attribute, and exactly one distinct dimension child uses the profile feature with the greatest source identifier smaller than the extrusion's source identifier; the built-in `moOriginProfileFeature_c` record does not participate. This root form supplies the profile dependency only; it does not replace an explicit or class-derived Boolean operation.
+
 Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` `Feature` record with type `Attribute-Definition` and a nonempty name defines an attribute family. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name also defines that attribute family.
 
 A classless Keywords `Note` element whose type is `Note`, whose text is nonempty, and which has no parameters or properties is a standalone semantic text annotation. It is not a regeneration feature. Its element text is the ordered visible text content.
