@@ -87,6 +87,7 @@ use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
+use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
 use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
@@ -5084,12 +5085,114 @@ fn exact_legacy_thicken_class_347(
     })
 }
 
+fn exact_shell_class_369_261(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignDirectFaceOperation> {
+    if scope.class_tag != "369"
+        || scope.paired_class_tag != "261"
+        || scope.frame_length != shell_369_261::LEN as u64
+        || scope.reference_members.len() != 3
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if bytes.get(start + shell_369_261::ZERO_RUN_9..start + shell_369_261::FEATURE_FORM)
+        != Some(&[0; 9])
+        || bytes.get(start + shell_369_261::FEATURE_FORM)
+            != Some(&shell_369_261::FEATURE_FORM_VALUE)
+        || bytes.get(start + shell_369_261::ZERO_RUN_3..start + shell_369_261::SCALAR_MARKER)
+            != Some(&[0; 3])
+        || bytes.get(start + shell_369_261::SCALAR_MARKER)
+            != Some(&shell_369_261::SCALAR_MARKER_VALUE)
+        || bytes
+            .get(start + shell_369_261::ZERO_RUN_9_AFTER_SCALAR..start + shell_369_261::GROUP_FORM)
+            != Some(&[0; 9])
+        || bytes.get(start + shell_369_261::GROUP_FORM) != Some(&shell_369_261::GROUP_FORM_VALUE)
+        || bytes.get(start + 47..start + shell_369_261::GROUP_REFERENCE) != Some(&[0; 3])
+        || bytes.get(
+            start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES
+                ..start + shell_369_261::REFERENCE_COUNT,
+        ) != Some(&[0; 3])
+        || View::u32_le_at(bytes, start + shell_369_261::GUID_CODE_UNIT_COUNT)
+            != Some(shell_369_261::GUID_CODE_UNIT_COUNT_VALUE)
+        || View::u32_le_at(bytes, start + shell_369_261::REFERENCE_COUNT)
+            != Some(shell_369_261::REFERENCE_COUNT_VALUE)
+        || View::u32_le_at(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT)
+            != Some(shell_369_261::KIND_CODE_UNIT_COUNT_VALUE)
+    {
+        return None;
+    }
+    let outward = match bytes.get(start + shell_369_261::OUTWARD) {
+        Some(0) => false,
+        Some(1) => true,
+        _ => return None,
+    };
+    let (guid, guid_end) = lp_utf16_bounded(
+        bytes,
+        start + shell_369_261::GUID_CODE_UNIT_COUNT,
+        shell_369_261::GUID_CODE_UNIT_COUNT_VALUE as usize
+            ..=shell_369_261::GUID_CODE_UNIT_COUNT_VALUE as usize,
+    )?;
+    if guid != "00000000-0000-0000-0000-000000000000"
+        || guid_end != start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES
+    {
+        return None;
+    }
+    let (kind, kind_end) = lp_utf16_bounded(
+        bytes,
+        start + shell_369_261::KIND_CODE_UNIT_COUNT,
+        shell_369_261::KIND_CODE_UNIT_COUNT_VALUE as usize
+            ..=shell_369_261::KIND_CODE_UNIT_COUNT_VALUE as usize,
+    )?;
+    if kind != "Shell" || kind_end != start + shell_369_261::FEATURE_ORDINAL {
+        return None;
+    }
+    let reference_entries = [
+        shell_369_261::SCALAR_REFERENCE,
+        shell_369_261::GROUP_REFERENCE,
+        shell_369_261::REFERENCE_ENTRY_2,
+    ];
+    for (offset, expected) in reference_entries
+        .into_iter()
+        .zip(scope.reference_members.iter().copied())
+    {
+        if marked_record_reference(bytes, start + offset) != Some(expected) {
+            return None;
+        }
+    }
+    let thickness_record_index = scope.reference_members.first().copied()?;
+    if marked_record_reference(bytes, start + shell_369_261::SCALAR_REFERENCE)
+        != Some(thickness_record_index)
+    {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
+    if scalar.value <= 0.0 {
+        return None;
+    }
+    Some(DesignDirectFaceOperation::Shell {
+        thickness: scalar.value,
+        thickness_record_index,
+        thickness_offset: scalar.value_offset,
+        outward,
+        outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
+    })
+}
+
 pub(crate) fn exact_direct_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset).ok()?;
+    if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)
+        && scope.class_tag == "369"
+        && scope.paired_class_tag == "261"
+    {
+        return exact_shell_class_369_261(bytes, records, scope);
+    }
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::OffsetFaces
             if matches!(

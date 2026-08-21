@@ -643,6 +643,190 @@ source = "spec"
 anchor = "a six-byte zero trailer"
 
 [[record]]
+name = "shell_class_369_261_scope_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`369`/`261` `Shell` scope has a 271-byte frame"
+size = 271
+note = "Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 271; the class pair and frame length admit this form."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "primary indexed header"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "offsets 11 through 19 are zero"
+
+[[record.field]]
+name = "feature_form"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "offset 20 is `1`"
+value = 1
+
+[[record.field]]
+name = "outward"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "offset 21 is the outward Boolean"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 22
+type = "bytes[3]"
+source = "spec"
+anchor = "offsets 22 through 24 are zero"
+
+[[record.field]]
+name = "scalar_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "Offset 25 is `1`"
+value = 1
+
+[[record.field]]
+name = "scalar_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked reference at offset 26 names the first ordered scalar"
+
+[[record.field]]
+name = "zero_run_9_after_scalar"
+offset = 37
+type = "bytes[9]"
+source = "spec"
+anchor = "Offsets 37 through 45 are zero"
+
+[[record.field]]
+name = "group_form"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "offset 46 is `1`"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked reference at offset 50 names the second ordered construction group"
+
+[[record.gap]]
+offset = 47
+size = 3
+note = "The three bytes before the marked second-group reference are zero."
+
+[[record.field]]
+name = "guid_code_unit_count"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "A u32 `36` at offset 61"
+value = 36
+
+[[record.field]]
+name = "guid"
+offset = 65
+type = "bytes[72]"
+source = "spec"
+anchor = "a 36-code-unit null GUID at offset 65"
+
+[[record.field]]
+name = "zero_run_3_before_references"
+offset = 137
+type = "bytes[3]"
+source = "spec"
+anchor = "offsets 137 through 139 are zero"
+
+[[record.field]]
+name = "reference_count"
+offset = 140
+type = "u32"
+source = "spec"
+anchor = "The three-entry ordered reference table begins at offset 140"
+value = 3
+
+[[record.field]]
+name = "reference_entry_0"
+offset = 144
+type = "bytes[11]"
+source = "spec"
+anchor = "The three-entry ordered reference table begins at offset 140"
+
+[[record.field]]
+name = "reference_entry_1"
+offset = 155
+type = "bytes[11]"
+source = "spec"
+anchor = "The three-entry ordered reference table begins at offset 140"
+
+[[record.field]]
+name = "reference_entry_2"
+offset = 166
+type = "bytes[11]"
+source = "spec"
+anchor = "The three-entry ordered reference table begins at offset 140"
+
+[[record.field]]
+name = "history_state_id"
+offset = 177
+type = "u32"
+source = "spec"
+anchor = "The current history-state identity is at offset 177"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 181
+type = "u32"
+source = "spec"
+anchor = "the kind count is u32 `5` at offset 181"
+value = 5
+
+[[record.field]]
+name = "kind"
+offset = 185
+type = "bytes[10]"
+source = "spec"
+anchor = "`Shell` begins at offset 185"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 195
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal follows at offset 195"
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 225
+type = "u32"
+source = "spec"
+anchor = "the preceding history-state identity is at offset 225"
+
+[[record.gap]]
+offset = 199
+size = 26
+note = "The generic fixed scope tail precedes the preceding history-state identity."
+
+[[record.gap]]
+offset = 229
+size = 42
+note = "The generic fixed scope tail closes immediately before the paired class-261 header."
+
+[[record]]
 name = "thicken_class_347_scope_frame"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
@@ -1944,6 +1945,82 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         assert_eq!(decoded.transform_offset, work_plane_325::MATRIX as u64);
         assert_eq!(decoded.reference, None);
     }
+}
+
+#[test]
+fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
+    let mut frame = vec![0; shell_369_261::LEN];
+    frame[shell_369_261::FEATURE_FORM] = shell_369_261::FEATURE_FORM_VALUE;
+    frame[shell_369_261::OUTWARD] = 0;
+    frame[shell_369_261::SCALAR_MARKER] = shell_369_261::SCALAR_MARKER_VALUE;
+    frame[shell_369_261::GROUP_FORM] = shell_369_261::GROUP_FORM_VALUE;
+    frame[shell_369_261::GUID_CODE_UNIT_COUNT..shell_369_261::GUID]
+        .copy_from_slice(&shell_369_261::GUID_CODE_UNIT_COUNT_VALUE.to_le_bytes());
+    let mut guid = Vec::new();
+    lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
+    frame[shell_369_261::GUID..shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES]
+        .copy_from_slice(&guid[4..]);
+    frame[shell_369_261::REFERENCE_COUNT..shell_369_261::REFERENCE_ENTRY_0]
+        .copy_from_slice(&shell_369_261::REFERENCE_COUNT_VALUE.to_le_bytes());
+    for (offset, record_index) in [
+        (shell_369_261::SCALAR_REFERENCE, 9_000u32),
+        (shell_369_261::GROUP_REFERENCE, 200u32),
+        (shell_369_261::REFERENCE_ENTRY_2, 201u32),
+    ] {
+        frame[offset] = 1;
+        frame[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+    frame[shell_369_261::HISTORY_STATE_ID..shell_369_261::KIND_CODE_UNIT_COUNT]
+        .copy_from_slice(&8_323u32.to_le_bytes());
+    frame[shell_369_261::KIND_CODE_UNIT_COUNT..shell_369_261::KIND]
+        .copy_from_slice(&shell_369_261::KIND_CODE_UNIT_COUNT_VALUE.to_le_bytes());
+    let mut kind = Vec::new();
+    lp_utf16(&mut kind, "Shell");
+    frame[shell_369_261::KIND..shell_369_261::FEATURE_ORDINAL].copy_from_slice(&kind[4..]);
+    frame[shell_369_261::FEATURE_ORDINAL..shell_369_261::FEATURE_ORDINAL + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    frame[shell_369_261::PREVIOUS_HISTORY_STATE_ID..shell_369_261::PREVIOUS_HISTORY_STATE_ID + 4]
+        .copy_from_slice(&8_322u32.to_le_bytes());
+
+    let mut bytes = frame;
+    let scalar_start = bytes.len();
+    let mut scalar = vec![0; 105];
+    scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+    scalar[4..7].copy_from_slice(b"321");
+    scalar[7..11].copy_from_slice(&9_000u32.to_le_bytes());
+    scalar[24] = 1;
+    scalar[25..29].copy_from_slice(&42u32.to_le_bytes());
+    scalar[40..48].copy_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&scalar);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"265");
+    bytes.extend_from_slice(&9_000u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty("f3d:test:shell-369#42", "Shell", 42);
+    scope.byte_offset = 0;
+    scope.class_tag = "369".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = shell_369_261::LEN as u64;
+    scope.reference_members = vec![9_000, 200, 201];
+    let records = IndexedRecordOffsets::build(&bytes);
+    assert!(matches!(
+        exact_direct_face_operation(&bytes, &records, &scope),
+        Some(DesignDirectFaceOperation::Shell {
+            thickness: 0.25,
+            thickness_record_index: 9_000,
+            outward: false,
+            thickness_offset,
+            outward_offset: 21,
+        }) if thickness_offset == (scalar_start + 40) as u64
+    ));
+
+    let mut wrong_pair = scope.clone();
+    wrong_pair.paired_class_tag = "258".into();
+    assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
+
+    let mut invalid_outward = bytes;
+    invalid_outward[shell_369_261::OUTWARD] = 2;
+    assert!(exact_direct_face_operation(&invalid_outward, &records, &scope).is_none());
 }
 
 #[test]

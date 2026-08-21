@@ -214,6 +214,46 @@ Parsed by:
 | 78 | 4 | `repeated_scope_record_index` | `u32` | little | spec | `u8 1 + u32 scope_record_index` with a six-byte zero trailer |
 | 82 | 6 | `zero_run_6_tail` | `bytes[6]` | little | spec | a six-byte zero trailer |
 
+## `shell_class_369_261_scope_frame`
+
+Spec §3.1 · layout: byte offsets · size: 271 B
+
+Offsets are relative to the primary indexed header. The paired class-261 header begins at offset 271; the class pair and frame length admit this form.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | primary indexed header |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | offsets 11 through 19 are zero |
+| 20 | 1 | `feature_form` | `u8` | little | spec | offset 20 is `1` · value `1` |
+| 21 | 1 | `outward` | `u8` | little | spec | offset 21 is the outward Boolean |
+| 22 | 3 | `zero_run_3` | `bytes[3]` | little | spec | offsets 22 through 24 are zero |
+| 25 | 1 | `scalar_marker` | `u8` | little | spec | Offset 25 is `1` · value `1` |
+| 26 | 11 | `scalar_reference` | `bytes[11]` | little | spec | the marked reference at offset 26 names the first ordered scalar |
+| 37 | 9 | `zero_run_9_after_scalar` | `bytes[9]` | little | spec | Offsets 37 through 45 are zero |
+| 46 | 1 | `group_form` | `u8` | little | spec | offset 46 is `1` · value `1` |
+| 50 | 11 | `group_reference` | `bytes[11]` | little | spec | the marked reference at offset 50 names the second ordered construction group |
+| 61 | 4 | `guid_code_unit_count` | `u32` | little | spec | A u32 `36` at offset 61 · value `36` |
+| 65 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit null GUID at offset 65 |
+| 137 | 3 | `zero_run_3_before_references` | `bytes[3]` | little | spec | offsets 137 through 139 are zero |
+| 140 | 4 | `reference_count` | `u32` | little | spec | The three-entry ordered reference table begins at offset 140 · value `3` |
+| 144 | 11 | `reference_entry_0` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
+| 155 | 11 | `reference_entry_1` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
+| 166 | 11 | `reference_entry_2` | `bytes[11]` | little | spec | The three-entry ordered reference table begins at offset 140 |
+| 177 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 177 |
+| 181 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind count is u32 `5` at offset 181 · value `5` |
+| 185 | 10 | `kind` | `bytes[10]` | little | spec | `Shell` begins at offset 185 |
+| 195 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal follows at offset 195 |
+| 225 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 225 |
+
+Unstated regions:
+
+- `47..50` (3 B): The three bytes before the marked second-group reference are zero.
+- `199..225` (26 B): The generic fixed scope tail precedes the preceding history-state identity.
+- `229..271` (42 B): The generic fixed scope tail closes immediately before the paired class-261 header.
+
 ## `thicken_class_347_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 291 B
