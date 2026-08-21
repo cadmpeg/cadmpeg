@@ -9418,9 +9418,10 @@ where
                     candidate_gauge,
                     priority_edges,
                 );
-                if !matches!(resolution, MeshEndpointResolve::Exhausted)
-                    && endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES
-                {
+                // Exhaustion is deterministic for this input and child budget.
+                // The parent budget only decreases, so retrying the same key
+                // cannot turn an exhausted materialization into a solution.
+                if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
                     endpoint_resolution_memo.insert(endpoint_key, resolution.clone());
                 }
                 resolution
