@@ -322,7 +322,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     if unresolved_suppression_count != 0 {
         losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
             "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-                 {suppression_scope}feature history operation(s)."
+                 {suppression_scope}feature history operation(s): no admitted \
+                 operation-to-state-object-to-typed-value relation is present. Common-frame \
+                 state lanes, saved toggles, OM registry declarations, and topology ObjectState \
+                 values remain non-suppression evidence."
         )));
     }
 

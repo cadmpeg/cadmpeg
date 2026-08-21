@@ -1412,6 +1412,9 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     assert!(losses[0]
         .message
         .contains("Suppression state remains unresolved for 1 NX feature history operation"));
+    assert!(losses[0]
+        .message
+        .contains("no admitted operation-to-state-object-to-typed-value relation is present"));
     assert!(losses[1].message.contains("DELETE (1)"));
 }
 
