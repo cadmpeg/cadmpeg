@@ -1490,6 +1490,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&history),
+        &HashMap::new(),
     );
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
@@ -1552,6 +1553,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&cylinder_history),
+        &HashMap::new(),
     );
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
@@ -1566,6 +1568,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&cylinder_history),
+        &HashMap::new(),
     );
     assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
 
@@ -1591,6 +1594,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         std::slice::from_ref(&group),
         &[],
         &[ambiguous_geometry_history],
+        &HashMap::new(),
     );
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
@@ -1605,6 +1609,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &[unrelated_group],
         &[],
         &[history],
+        &HashMap::new(),
     );
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());

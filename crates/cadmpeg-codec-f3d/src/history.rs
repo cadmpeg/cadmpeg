@@ -3394,6 +3394,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     recipes: &[crate::records::ConstructionRecipe],
     histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
 ) {
     if projection_was_finalized(histories) {
         return;
@@ -3419,16 +3420,34 @@ pub(crate) fn bind_face_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
+        let scoped_history = if scope_histories.contains_key(&scope.id) {
+            let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
+                continue;
+            };
+            Some(history)
+        } else {
+            None
+        };
+        let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
         let Some(state_id) = scope.history_state_id else {
             continue;
         };
-        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
+        let Some(previous_state_id) =
+            effective_scope_previous_history_state_id(scope, scoped_histories)
         else {
             continue;
         };
-        let Some((history, state, previous)) =
+        let Some((history, state, previous)) = (if scoped_history.is_some() {
+            bound_history_state_pair(
+                &scope.id,
+                state_id,
+                previous_state_id,
+                scope_histories,
+                histories,
+            )
+        } else {
             unique_history_state_pair(histories, state_id, previous_state_id)
-        else {
+        }) else {
             continue;
         };
         let states = history_state_index(history);
@@ -3659,7 +3678,13 @@ pub(crate) fn bind_face_operand_history_candidates(
             }
         }
     }
-    bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+    bind_profile_face_group_cardinality(
+        operands,
+        scopes,
+        operand_groups,
+        histories,
+        scope_histories,
+    );
 }
 
 /// Resolve a Draft face whose persistent selector lane is ambiguous in the
@@ -4525,15 +4550,18 @@ fn bind_profile_face_group_cardinality(
     scopes: &[crate::records::DesignParameterScope],
     operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
 ) {
-    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
     for scope in scopes {
+        let scoped_history = if scope_histories.contains_key(&scope.id) {
+            let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
+                continue;
+            };
+            Some(history)
+        } else {
+            None
+        };
+        let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
         let Some(profile_groups) =
             crate::design::face_resolve::extrude_profile_group_roots(scope, operand_groups)
         else {
@@ -4556,16 +4584,27 @@ fn bind_profile_face_group_cardinality(
             {
                 continue;
             }
-            let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id, scope.previous_history_state_id)
-            else {
+            let (Some(state_id), Some(previous_state_id)) = (
+                scope.history_state_id,
+                effective_scope_previous_history_state_id(scope, scoped_histories),
+            ) else {
                 continue;
             };
-            let (Some(Some(state)), Some(Some(previous))) =
-                (states.get(&state_id), states.get(&previous_state_id))
-            else {
+            let history_pair = if scoped_history.is_some() {
+                bound_history_state_pair(
+                    &scope.id,
+                    state_id,
+                    previous_state_id,
+                    scope_histories,
+                    histories,
+                )
+            } else {
+                unique_history_state_pair(histories, state_id, previous_state_id)
+            };
+            let Some((history, state, previous)) = history_pair else {
                 continue;
             };
+            let states = history_state_index(history);
             let (Some(topology), Some(changed_faces)) = (
                 previous.topology.as_ref(),
                 face_changes_across_state_chain(state, previous_state_id, &states),

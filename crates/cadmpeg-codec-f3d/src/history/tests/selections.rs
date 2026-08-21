@@ -1491,12 +1491,23 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         projection_finalized: false,
         states: vec![previous, current],
     };
+    let bound_history_id = history.id.clone();
+    let mut unrelated_history = history.clone();
+    unrelated_history.id = "f3d:other-history".into();
+    unrelated_history.states[0]
+        .topology
+        .as_mut()
+        .expect("unrelated preceding topology")
+        .faces = vec![30, 31, 40];
+    let histories = vec![history, unrelated_history];
+    let scope_histories = HashMap::from([(scope.id.clone(), bound_history_id)]);
 
     bind_profile_face_group_cardinality(
         &mut operands,
         std::slice::from_ref(&scope),
         &groups,
-        std::slice::from_ref(&history),
+        &histories,
+        &scope_histories,
     );
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
