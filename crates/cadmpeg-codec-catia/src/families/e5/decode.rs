@@ -58,7 +58,17 @@ pub(crate) fn try_decode_e5(
         },
         |topology| topology.vertex_refs.len(),
     );
-    let points = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
+    let points = {
+        let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
+        if roster.len() == vertex_count {
+            roster
+        } else {
+            topology
+                .as_ref()
+                .and_then(|topology| derive_e5_vertices(topology, &surfaces))
+                .unwrap_or_default()
+        }
+    };
     if let Some(topology) = &topology {
         append_e5_planes(stream, topology, &points, &mut surfaces);
     }
@@ -191,6 +201,62 @@ pub(crate) fn try_decode_e5(
         unknowns,
         standard_face_population: false,
     })
+}
+
+fn derive_e5_vertices(
+    topology: &crate::families::e5::graph::E5Topology,
+    surfaces: &[crate::families::e5::records::E5Surface],
+) -> Option<Vec<Point3>> {
+    let surface_for_ref: HashMap<u32, &crate::families::e5::records::E5Surface> = surfaces
+        .iter()
+        .map(|surface| (surface.record_id, surface))
+        .collect();
+    let mut candidates = HashMap::<u32, Vec<Point3>>::new();
+    for face in &topology.faces {
+        for loop_ in &face.loops {
+            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+                let edge = topology.edges.get(&edge_ref)?;
+                let pcurve = topology.pcurves.get(&pcurve_ref)?;
+                let surface_ref = match pcurve {
+                    crate::families::e5::graph::E5Pcurve::Line { surface, .. }
+                    | crate::families::e5::graph::E5Pcurve::Circle { surface, .. }
+                    | crate::families::e5::graph::E5Pcurve::Jet { surface, .. }
+                    | crate::families::e5::graph::E5Pcurve::Nurbs { surface, .. } => *surface,
+                };
+                let surface = surface_for_ref.get(&surface_ref)?;
+                let (_, range, endpoints) = e5_pcurve_on_surface(pcurve, surface)?;
+                let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)?;
+                let endpoints = if reversed {
+                    [endpoints[1], endpoints[0]]
+                } else {
+                    endpoints
+                };
+                candidates
+                    .entry(edge.start_vertex)
+                    .or_default()
+                    .push(endpoints[0]);
+                candidates
+                    .entry(edge.end_vertex)
+                    .or_default()
+                    .push(endpoints[1]);
+            }
+        }
+    }
+    topology
+        .vertex_refs
+        .iter()
+        .map(|vertex| {
+            let values = candidates.get(vertex)?;
+            let point = *values.first()?;
+            if values
+                .iter()
+                .any(|candidate| candidate.distance(point) > E5_ENDPOINT_MATCH_TOLERANCE)
+            {
+                return None;
+            }
+            Some(point)
+        })
+        .collect()
 }
 
 pub(crate) fn append_e5_planes(
@@ -563,6 +629,26 @@ pub(crate) fn e5_native_uv_endpoints(
         })),
         crate::families::e5::graph::E5Pcurve::Jet { points, .. } => {
             finite([*points.first()?, *points.last()?])
+        }
+        crate::families::e5::graph::E5Pcurve::Nurbs {
+            degree,
+            knots,
+            multiplicities,
+            control_points,
+            range,
+            ..
+        } => {
+            let (knots, _) =
+                crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
+            let control_points = control_points
+                .iter()
+                .map(|[u, v]| Point2::new(*u, *v))
+                .collect::<Vec<_>>();
+            let endpoints = range.map(|parameter| {
+                cadmpeg_ir::eval::nurbs_pcurve_uv(*degree, &knots, &control_points, None, parameter)
+                    .map(|point| [point.u, point.v])
+            });
+            Some([endpoints[0]?, endpoints[1]?]).and_then(finite)
         }
     }
 }
@@ -1088,7 +1174,8 @@ fn plan_e5_boundary(
             let surface_ref = match pcurve {
                 crate::families::e5::graph::E5Pcurve::Line { surface, .. }
                 | crate::families::e5::graph::E5Pcurve::Circle { surface, .. }
-                | crate::families::e5::graph::E5Pcurve::Jet { surface, .. } => *surface,
+                | crate::families::e5::graph::E5Pcurve::Jet { surface, .. }
+                | crate::families::e5::graph::E5Pcurve::Nurbs { surface, .. } => *surface,
             };
             let Some((surface_id, decoded_surface)) = surface_for_ref.get(&surface_ref) else {
                 continue;
@@ -1906,6 +1993,48 @@ pub(crate) fn e5_pcurve_on_surface(
             }
             Some((geometry, *range, endpoints))
         }
+        crate::families::e5::graph::E5Pcurve::Nurbs {
+            degree,
+            knots,
+            multiplicities,
+            control_points,
+            range,
+            ..
+        } => {
+            let scale = decoded_surface.uv_scale;
+            let (knots, _) =
+                crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
+            let control_points = control_points
+                .iter()
+                .map(|[u, v]| Point2::new(*u * scale[0], *v * scale[1]))
+                .collect::<Vec<_>>();
+            if !scale
+                .into_iter()
+                .all(|value| value.is_finite() && value != 0.0)
+                || !range.iter().copied().all(f64::is_finite)
+                || !knots.iter().copied().all(f64::is_finite)
+                || !control_points.iter().copied().all(finite_point2)
+            {
+                return None;
+            }
+            let geometry = PcurveGeometry::Nurbs {
+                degree: *degree,
+                knots,
+                control_points,
+                weights: None,
+                periodic: false,
+            };
+            let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
+            let uv = uv[0].zip(uv[1])?;
+            let uv = [uv.0, uv.1];
+            let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
+            let endpoints = lifted[0].zip(lifted[1])?;
+            let endpoints = [endpoints.0, endpoints.1];
+            if !endpoints.iter().copied().all(finite_point3) {
+                return None;
+            }
+            Some((geometry, *range, endpoints))
+        }
     }
 }
 
@@ -1971,6 +2100,55 @@ pub(crate) fn e5_boundary_curve(
             u_axis,
         },
         crate::families::e5::graph::E5Pcurve::Jet { .. },
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        },
+    ) = (surface, native_pcurve, pcurve)
+    {
+        let v_axis = (*normal).cross(*u_axis);
+        let control_points = control_points
+            .iter()
+            .map(|point| {
+                (*origin)
+                    .translated(*u_axis, point.u)
+                    .translated(v_axis, point.v)
+            })
+            .collect::<Vec<_>>();
+        if !finite_point(*origin)
+            || !finite_vector(*normal)
+            || !finite_vector(*u_axis)
+            || !finite_vector(v_axis)
+            || !range.into_iter().all(f64::is_finite)
+            || !knots.iter().copied().all(f64::is_finite)
+            || !control_points.iter().copied().all(finite_point)
+            || weights
+                .as_ref()
+                .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
+        {
+            return None;
+        }
+        return Some((
+            CurveGeometry::Nurbs(NurbsCurve {
+                degree: *degree,
+                knots: knots.clone(),
+                control_points,
+                weights: weights.clone(),
+                periodic: *periodic,
+            }),
+            range,
+        ));
+    }
+    if let (
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        },
+        crate::families::e5::graph::E5Pcurve::Nurbs { .. },
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -2546,7 +2724,9 @@ mod route_tests {
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
@@ -3829,6 +4009,59 @@ mod route_tests {
         );
         assert!(endpoints[0].distance(Point3::new(2.0, 0.0, 3.0)) < 1e-12);
         assert!(endpoints[1].distance(Point3::new(0.0, 2.0, 3.0)) < 1e-12);
+    }
+
+    #[test]
+    fn e5_nurbs_pcurve_evaluates_on_nurbs_surface() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            uv_scale: [1.0, 1.0],
+        };
+        let pcurve = E5Pcurve::Nurbs {
+            surface: 7,
+            degree: 1,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [1.0, 1.0]],
+            range: [0.0, 1.0],
+        };
+
+        let (geometry, range, endpoints) =
+            e5_pcurve_on_surface(&pcurve, &surface).expect("NURBS pcurve on surface");
+        assert_eq!(range, [0.0, 1.0]);
+        assert!(matches!(
+            geometry,
+            PcurveGeometry::Nurbs {
+                degree: 1,
+                knots,
+                control_points,
+                weights: None,
+                periodic: false,
+            } if knots == [0.0, 0.0, 1.0, 1.0]
+                && control_points == [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]
+        ));
+        assert_eq!(
+            endpoints,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
+        );
     }
 
     #[test]

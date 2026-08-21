@@ -5,7 +5,7 @@
 //! analytic surface carriers.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
@@ -59,6 +59,7 @@ struct E5Record {
 }
 
 const MARKER: &[u8; 3] = &crate::layout::token::E5_RECORD_FAMILY;
+const E5_NURBS_SURFACE_TAIL_BYTES: usize = 148;
 
 fn e5_records(data: &[u8]) -> Vec<E5Record> {
     debug_assert_eq!(MARKER, crate::container::E5_MARKER);
@@ -275,6 +276,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                     .all(f64::is_finite)
                     .then_some((geometry, parameter_scale))
             }),
+            0xe7 => e5_nurbs_surface(data, record).map(|geometry| (geometry, [1.0, 1.0])),
             _ => None,
         };
         if let Some((geometry, uv_scale)) = decoded {
@@ -287,6 +289,108 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
         }
     }
     out
+}
+
+fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
+    let mut view = View::over_retained(data).child(record.pos + 13, record.end)?;
+    if view.u8()? != 0x80 {
+        return None;
+    }
+    let (u_degree, u_knots, u_multiplicities) = read_nurbs_axis(&mut view)?;
+    let (v_degree, v_knots, v_multiplicities) = read_nurbs_axis(&mut view)?;
+    let (u_knots, u_count) = expand_nurbs_axis(u_degree, &u_knots, &u_multiplicities, record.size)?;
+    let (v_knots, v_count) = expand_nurbs_axis(v_degree, &v_knots, &v_multiplicities, record.size)?;
+    let mode = view.u16_le()?;
+    if !matches!(mode, 0 | 1) {
+        return None;
+    }
+    let control_count = u_count.checked_mul(v_count)?;
+    let control_points = view.read_counted(u64::try_from(control_count).ok()?, 24, |view| {
+        Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
+    })?;
+    let weights = if mode == 1 {
+        Some(view.read_counted(u64::try_from(control_count).ok()?, 8, View::f64_le)?)
+    } else {
+        None
+    };
+    if control_points
+        .iter()
+        .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        || weights.as_ref().is_some_and(|weights| {
+            weights
+                .iter()
+                .copied()
+                .any(|weight| !weight.is_finite() || weight == 0.0)
+        })
+        || view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES
+    {
+        return None;
+    }
+    view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
+    view.is_empty()
+        .then_some(SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count: u32::try_from(u_count).ok()?,
+            v_count: u32::try_from(v_count).ok()?,
+            control_points,
+            weights,
+            u_periodic: false,
+            v_periodic: false,
+        }))
+}
+
+fn read_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, Vec<u32>)> {
+    let degree = view.u32_le()?;
+    let zero0 = view.u32_le()?;
+    let zero1 = view.u32_le()?;
+    let knot_count = usize::try_from(view.u32_le()?).ok()?;
+    let zero2 = view.u32_le()?;
+    if degree == 0 || [zero0, zero1, zero2] != [0; 3] || knot_count == 0 {
+        return None;
+    }
+    let knot_count_u64 = u64::try_from(knot_count).ok()?;
+    let knots = view.read_counted(knot_count_u64, 8, View::f64_le)?;
+    let multiplicities = view.read_counted(knot_count_u64, 4, View::u32_le)?;
+    Some((degree, knots, multiplicities))
+}
+
+fn expand_nurbs_axis(
+    degree: u32,
+    knots: &[f64],
+    multiplicities: &[u32],
+    payload_size: usize,
+) -> Option<(Vec<f64>, usize)> {
+    if knots.len() != multiplicities.len()
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || multiplicities.contains(&0)
+    {
+        return None;
+    }
+    let total = multiplicities
+        .iter()
+        .try_fold(0usize, |total, multiplicity| {
+            total.checked_add(usize::try_from(*multiplicity).ok()?)
+        })?;
+    if total > payload_size {
+        return None;
+    }
+    let degree = usize::try_from(degree).ok()?;
+    let control_count = total.checked_sub(degree.checked_add(1)?)?;
+    if control_count <= degree || knots.first()? >= knots.last()? {
+        return None;
+    }
+    let mut expanded = Vec::with_capacity(total);
+    for (knot, multiplicity) in knots.iter().zip(multiplicities) {
+        expanded.extend(std::iter::repeat_n(
+            *knot,
+            usize::try_from(*multiplicity).ok()?,
+        ));
+    }
+    (expanded.len() == total).then_some((expanded, control_count))
 }
 
 fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
@@ -339,10 +443,84 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::e5_ref;
+    use super::{e5_ref, e5_surfaces};
+
+    fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
+        bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
+        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(payload);
+    }
+
+    fn append_nurbs_axis(payload: &mut Vec<u8>, degree: u32) {
+        payload.extend_from_slice(&degree.to_le_bytes());
+        payload.extend_from_slice(&[0; 8]);
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&[0.0_f64.to_le_bytes(), 1.0_f64.to_le_bytes()].concat());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+    }
+
+    fn nurbs_surface_payload(mode: u16) -> Vec<u8> {
+        let mut payload = vec![0x80];
+        append_nurbs_axis(&mut payload, 1);
+        append_nurbs_axis(&mut payload, 1);
+        payload.extend_from_slice(&mode.to_le_bytes());
+        for point in [
+            [0.0_f64, 0.0, 0.0],
+            [0.0_f64, 1.0, 0.0],
+            [1.0_f64, 0.0, 0.0],
+            [1.0_f64, 1.0, 0.0],
+        ] {
+            for value in point {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        if mode == 1 {
+            for weight in [1.0_f64, 1.0, 1.0, 1.0] {
+                payload.extend_from_slice(&weight.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0; 148]);
+        payload
+    }
 
     #[test]
     fn e5_width_coded_reference_widens_before_shifting() {
         assert_eq!(e5_ref(&[0x10, 0xff], 0), Some((0xff00, 2)));
+    }
+
+    #[test]
+    fn e7_nurbs_surface_decodes_polynomial_and_rational_modes() {
+        for mode in [0, 1] {
+            let mut bytes = Vec::new();
+            append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
+            let surfaces = e5_surfaces(&bytes);
+            let [surface] = surfaces.as_slice() else {
+                panic!("E7 surface did not decode");
+            };
+            let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+                panic!("E7 surface was not NURBS");
+            };
+            assert_eq!(nurbs.u_degree, 1);
+            assert_eq!(nurbs.v_degree, 1);
+            assert_eq!(nurbs.u_knots, [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.u_count, 2);
+            assert_eq!(nurbs.v_count, 2);
+            assert_eq!(nurbs.control_points.len(), 4);
+            assert_eq!(nurbs.weights.is_some(), mode == 1);
+        }
+    }
+
+    #[test]
+    fn e7_nurbs_surface_requires_its_fixed_trailing_lane() {
+        let mut payload = nurbs_surface_payload(0);
+        payload.pop();
+        let mut bytes = Vec::new();
+        append_e5_record(&mut bytes, 0xe7, 116, &payload);
+        assert!(e5_surfaces(&bytes).is_empty());
     }
 }
