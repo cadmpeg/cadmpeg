@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product definitions, occurrences, and ordered assembly relationships.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{
@@ -859,7 +859,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -2098,11 +2098,7 @@ pub(super) fn project(
         }
     }
 
-    Projection {
-        decoded,
-        consumed: BTreeSet::default(),
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //! Explicit IGES B-rep topology projection.
 
 use super::evaluation;
-use super::geometry::{entity_loss, resolve_transform};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -15,7 +15,6 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
     VertexUse,
@@ -241,18 +240,13 @@ fn pcurves_agree<'a>(
             .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance)
 }
 
-pub(super) struct BrepProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> BrepProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1126,7 +1120,7 @@ pub(super) fn project(
         decoded.extend(vertex_ids.keys().map(|key| key.0));
     }
 
-    BrepProjection { decoded, losses }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

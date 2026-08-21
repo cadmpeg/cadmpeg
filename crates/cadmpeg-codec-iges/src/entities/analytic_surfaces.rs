@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object, Affine};
+use super::geometry::{entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -9,7 +9,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{derive_reference_direction, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{PointId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -147,18 +146,13 @@ fn surface_transform(
     )
 }
 
-pub(super) struct AnalyticSurfaceProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> AnalyticSurfaceProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -489,7 +483,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    AnalyticSurfaceProjection { decoded, losses }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

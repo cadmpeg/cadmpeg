@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Piecewise parametric spline projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
+use super::geometry::{
+    entity_loss, resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -13,19 +15,12 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SPLINE_SEGMENTS: usize = 100_000;
 const MAX_SPLINE_SURFACE_POLES: usize = 1_000_000;
-
-pub(super) struct SplineProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-}
 
 fn declared_interval(
     record: &ParameterRecord,
@@ -229,7 +224,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<SplineProjection, CodecError> {
+) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -876,7 +871,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(SplineProjection {
+    Ok(WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,

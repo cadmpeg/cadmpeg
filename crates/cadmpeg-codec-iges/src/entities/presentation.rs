@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory display attributes and color definitions.
 
+use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
@@ -12,11 +13,6 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
-
-pub(super) struct PresentationProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
 
 #[derive(Clone, Copy)]
 struct TextFontDefinition {
@@ -189,7 +185,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
-) -> PresentationProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -546,7 +542,7 @@ pub(super) fn project(
         });
     }
 
-    PresentationProjection { decoded, losses }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

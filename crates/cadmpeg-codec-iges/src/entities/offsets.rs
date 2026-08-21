@@ -2,7 +2,7 @@
 //! Offset curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{declared_unit_vector, entity_loss, source_object};
+use super::geometry::{declared_unit_vector, entity_loss, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -13,7 +13,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,12 +43,6 @@ fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
         record.value(index),
         Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
     )
-}
-
-pub(super) struct OffsetProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
 }
 
 #[derive(Clone, Copy)]
@@ -165,7 +158,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
-) -> OffsetProjection {
+) -> WireProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -731,7 +724,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    OffsetProjection {
+    WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
+use super::geometry::{
+    declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
@@ -15,7 +17,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -238,18 +239,13 @@ fn indicator_orientation(
     }
 }
 
-pub(super) struct SurfaceProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<SurfaceProjection, CodecError> {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1236,7 +1232,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(SurfaceProjection { decoded, losses })
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

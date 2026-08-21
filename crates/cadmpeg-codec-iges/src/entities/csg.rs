@@ -2,7 +2,8 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
+    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
+    ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -128,7 +129,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -506,11 +507,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Projection {
-        decoded,
-        consumed: BTreeSet::default(),
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

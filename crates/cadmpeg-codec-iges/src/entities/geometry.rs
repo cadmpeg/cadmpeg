@@ -520,6 +520,17 @@ pub(crate) fn enforce_transform_depth(
     Ok(())
 }
 
+pub(super) struct ProjectionOutcome {
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+}
+
+pub(super) struct WireProjectionOutcome {
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+    pub(super) wire_edges: Vec<EdgeId>,
+}
+
 pub(crate) struct Projection {
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone

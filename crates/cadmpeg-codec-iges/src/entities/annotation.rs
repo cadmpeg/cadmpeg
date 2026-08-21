@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
 };
@@ -713,7 +713,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -793,11 +793,7 @@ pub(super) fn project(
         }
     }
 
-    Projection {
-        decoded,
-        consumed: BTreeSet::default(),
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

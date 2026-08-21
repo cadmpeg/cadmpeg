@@ -3,7 +3,7 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
-use super::geometry::entity_loss;
+use super::geometry::{entity_loss, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
@@ -705,18 +705,13 @@ fn select_boundary_edge(
     }
 }
 
-pub(super) struct TrimmingProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> TrimmingProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1383,7 +1378,7 @@ pub(super) fn project(
         decoded.insert(sequence);
     }
 
-    TrimmingProjection { decoded, losses }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

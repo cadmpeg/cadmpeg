@@ -2,7 +2,7 @@
 //! Conic-arc classification and bounded neutral projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -10,18 +10,11 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = 1.0e-12;
-
-pub(super) struct ConicProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-}
 
 fn add_bounded_curve(
     ir: &mut CadIr,
@@ -94,7 +87,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ConicProjection {
+) -> WireProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -415,7 +408,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    ConicProjection {
+    WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,

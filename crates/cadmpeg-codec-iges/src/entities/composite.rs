@@ -2,7 +2,7 @@
 //! Ordered composite-curve projection.
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
-use super::geometry::{entity_loss, source_object};
+use super::geometry::{entity_loss, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
@@ -24,12 +24,6 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
-
-pub(super) struct CompositeProjection {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-}
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
@@ -879,7 +873,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<CompositeProjection, CodecError> {
+) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -1126,7 +1120,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(CompositeProjection {
+    Ok(WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,
