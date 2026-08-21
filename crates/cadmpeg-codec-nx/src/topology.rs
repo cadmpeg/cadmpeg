@@ -688,9 +688,15 @@ impl Graph {
             );
         }
 
-        let selected = Self::select_unique_candidates(candidates);
+        // Resolve physical overlap before identity uniqueness. A candidate
+        // that is wholly contained in a selected record is payload data, not
+        // a second serialized node. Counting it first can invalidate the real
+        // node and make otherwise stable identities depend on unrelated bytes.
+        let selected = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
+            stream, candidates,
+        ));
         let mut graph = Self::default();
-        for candidate in Self::select_non_overlapping_candidates(stream, selected) {
+        for candidate in selected {
             let Some(node) = candidate.materialize(stream) else {
                 continue;
             };

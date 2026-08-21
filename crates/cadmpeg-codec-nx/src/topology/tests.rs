@@ -305,6 +305,32 @@ fn topology_rejects_overlapping_candidates_without_ranking() {
 }
 
 #[test]
+fn topology_resolves_overlap_before_duplicate_identity() {
+    let stream = vec![0; 40];
+    let outer = NodeCandidate {
+        kind: 29,
+        xmt: 11,
+        pos: 0,
+        shift: 0,
+        end: 40,
+    };
+    let embedded = NodeCandidate {
+        kind: 29,
+        xmt: 11,
+        pos: 8,
+        shift: 0,
+        end: 32,
+    };
+
+    assert!(Graph::select_unique_candidates(vec![outer, embedded]).is_empty());
+    let non_overlapping = Graph::select_non_overlapping_candidates(&stream, vec![outer, embedded]);
+    let selected = Graph::select_unique_candidates(non_overlapping);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].pos, outer.pos);
+    assert_eq!(selected[0].end(), outer.end());
+}
+
+#[test]
 fn topology_rejects_status_framed_delta_as_fixed_record() {
     let graph = Graph::parse(&variable_status_framed_deltas_stream());
 
