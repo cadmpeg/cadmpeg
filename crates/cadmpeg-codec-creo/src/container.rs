@@ -248,9 +248,10 @@ pub struct FramingScan<'a> {
     pub data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
-    /// Native model filename from the length-prefixed `CMNM` header record.
+    /// Native root model filename or name from `CMNM` or a binary
+    /// `model_name` field.
     pub model_name: Option<String>,
-    /// Byte offset of the native model filename.
+    /// Byte offset of the native model name in the source.
     pub model_name_offset: Option<usize>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
@@ -1004,7 +1005,7 @@ fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     }
 }
 
-fn model_name(data: &[u8]) -> Option<(String, usize)> {
+fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
     const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
     let start = marker + cmnm::NAME_LENGTH_HEX;
@@ -1020,11 +1021,57 @@ fn model_name(data: &[u8]) -> Option<(String, usize)> {
     ))
 }
 
+/// Find the root model name stored by binary sections that do not carry a
+/// `CMNM` header record.
+fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize)> {
+    const FIELD: &[u8] = b"model_name\0";
+
+    for section in sections {
+        if section.role == role::THUMBNAIL {
+            continue;
+        }
+        let end = section
+            .offset
+            .saturating_add(section.length)
+            .min(data.len());
+        let region = data.get(section.offset..end)?;
+        let mut from = 0;
+        while let Some(field) = find(region, FIELD, from) {
+            let value_start = field + FIELD.len();
+            if region.get(value_start) == Some(&0xe1) {
+                from = value_start + 1;
+                continue;
+            }
+            let Some(value_end) = find(region, b"\0", value_start) else {
+                break;
+            };
+            let mut name_start = value_start;
+            if region.get(name_start) == Some(&0xf1) {
+                name_start += 1;
+            }
+            let value = &region[name_start..value_end];
+            if let Ok(name) = std::str::from_utf8(value) {
+                if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
+                    return Some((name.to_owned(), section.offset + name_start));
+                }
+            }
+            from = value_end + 1;
+        }
+    }
+    None
+}
+
 fn relation_model_name(filename: &str) -> Option<&str> {
     let filename = filename.trim_end_matches(' ');
-    let suffix = filename.get(filename.len().checked_sub(4)?..)?;
-    suffix.eq_ignore_ascii_case(".prt").then_some(())?;
-    let name = filename.get(..filename.len() - 4)?;
+    let name = if filename.len() >= 4
+        && filename.as_bytes()[filename.len() - 4..].eq_ignore_ascii_case(b".prt")
+    {
+        &filename[..filename.len() - 4]
+    } else if !filename.contains('.') {
+        filename
+    } else {
+        return None;
+    };
     (!name.is_empty()).then_some(name)
 }
 
@@ -2106,7 +2153,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
     let (mut model_name, mut model_name_offset) =
-        model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
+        cmnm_model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2153,6 +2200,15 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         if let Some((name, offset)) = legacy_ascii
             .as_ref()
             .and_then(|framing| framing.persistence.model_name())
+        {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
+    }
+    if model_name.is_none() {
+        if let Some((name, offset)) = legacy_ascii
+            .as_ref()
+            .and_then(|framing| framing.persistence.first_source_model_name())
         {
             model_name = Some(name);
             model_name_offset = Some(offset);
@@ -2242,6 +2298,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
     let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
+    if model_name.is_none() && layout != Layout::LegacyAscii {
+        if let Some((name, offset)) = native_model_name(&data, &sections) {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
+    }
     let legacy_ascii = if layout == Layout::LegacyAscii {
         legacy_ascii
     } else {

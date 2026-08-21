@@ -428,6 +428,29 @@ impl Persistence {
         values.next().is_none().then_some(first)
     }
 
+    /// Return the first non-null source-order `model_name` row.
+    ///
+    /// This is a source-identity fallback for legacy sections that contain
+    /// several scoped model names. [`Self::model_name`] remains the resolver
+    /// for relation evaluation and withholds conflicting identities.
+    pub fn first_source_model_name(&self) -> Option<(String, usize)> {
+        self.string_values
+            .iter()
+            .filter(|record| record.name == "model_name")
+            .filter_map(|record| {
+                let StringPayload::Scalar {
+                    value: StringValue::Utf8 { text },
+                } = &record.payload
+                else {
+                    return None;
+                };
+                let text = text.trim();
+                (!text.is_empty() && !text.eq_ignore_ascii_case("NULL"))
+                    .then(|| (text.to_owned(), record.offset))
+            })
+            .min_by_key(|(_, offset)| *offset)
+    }
+
     /// Number of unique local attribute declarations across all scopes.
     pub fn declaration_count(&self) -> usize {
         self.scopes

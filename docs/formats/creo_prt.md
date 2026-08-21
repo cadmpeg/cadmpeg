@@ -26,8 +26,24 @@ three ASCII hexadecimal digits give the filename byte length. Trailing ASCII
 spaces pad the counted field. A unique nonempty `.prt` filename supplies the
 current relation model name after removing that padding and suffix.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
-those bytes is not part of the name. Exactly one record establishes model
-identity; an absent or repeated record leaves model identity undefined.
+those bytes is not part of the name. A repeated or malformed `CMNM` record does
+not establish identity.
+
+Binary model-data sections can store the same identity in the named field
+`e0 0a model_name\0`. Its value is a NUL-terminated UTF-8 string. One leading
+`f1` framing byte may precede the string and is not part of the value. The
+single-byte `e1` value is null and does not establish identity. When no unique
+`CMNM` record establishes identity, the first nonempty, non-control-valued
+`model_name` field in section order is the root model name. A missing valid
+value leaves model identity undefined. This field already contains the relation
+model name; the `CMNM` filename form supplies it after its `.prt` suffix is
+removed.
+
+Legacy ASCII sections can repeat `model_name` in separate scopes. A nonempty
+value other than the `NULL` placeholder in source order is the root source
+identity. Other scoped values remain separate model references. Relation
+evaluation uses the stricter unique-root resolver and does not use this
+fallback when those references conflict.
 
 In the legacy ASCII layout, the byte immediately after
 `#-END_OF_UGC_HEADER\n` begins `#P_OBJECT <schema>\n`. `schema` is one or more

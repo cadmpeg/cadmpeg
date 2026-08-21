@@ -89,6 +89,27 @@ fn model_name_withholds_conflicting_root_identities() {
 }
 
 #[test]
+fn first_source_model_name_selects_root_row_for_scoped_sections() {
+    let data = b"@model_name 1 10\n0 1 ROOT\n\
+@model_name 2 10\n0 2 DEPENDENT\n";
+    let second_scope = data
+        .windows(b"@model_name 2".len())
+        .position(|window| window == b"@model_name 2")
+        .expect("second scope");
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+
+    assert_eq!(
+        persistence.first_source_model_name(),
+        Some((
+            "ROOT".to_string(),
+            data.windows(b"0 1 ROOT".len())
+                .position(|window| window == b"0 1 ROOT")
+                .expect("root value")
+        ))
+    );
+}
+
+#[test]
 fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
     let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));

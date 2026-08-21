@@ -100,6 +100,62 @@ fn scan_withholds_repeated_native_model_names() {
 }
 
 #[test]
+fn scan_decodes_binary_model_name_field_without_cmnm_header() {
+    let data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"e0\x0amodel_name\0\xf1WIDGET_ROOT\0e0\x00disp_outl_info\0".to_vec(),
+        )],
+    );
+
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.framing.model_name.as_deref(), Some("WIDGET_ROOT"));
+    let model_name_offset = data
+        .windows(b"WIDGET_ROOT".len())
+        .position(|window| window == b"WIDGET_ROOT")
+        .expect("model name offset");
+    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("model_name"))
+            .map(String::as_str),
+        Some("WIDGET_ROOT")
+    );
+}
+
+#[test]
+fn scan_skips_empty_binary_model_name_fields() {
+    let data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"e0\x0amodel_name\0\xe1e0\x0amodel_name\0ROOT\0".to_vec(),
+        )],
+    );
+
+    let scan = container::scan_bytes(data);
+    assert_eq!(scan.framing.model_name.as_deref(), Some("ROOT"));
+}
+
+#[test]
+fn relation_model_name_accepts_binary_root_name() {
+    assert_eq!(
+        super::relation_model_name("DRILL_BIT_10D0_SUPPRESSED_FEAT"),
+        Some("DRILL_BIT_10D0_SUPPRESSED_FEAT")
+    );
+    assert_eq!(super::relation_model_name("widget.PrT "), Some("widget"));
+    assert_eq!(super::relation_model_name("widget.step"), None);
+}
+
+#[test]
 fn scan_enumerates_and_classifies_sections() {
     let data = build_prt(
         "test",
