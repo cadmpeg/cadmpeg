@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(unused_imports)]
 use super::*;
 use crate::design::geometry::{region_containing_points, MAX_ARRANGEMENT_WALK_WORK};
 use crate::history_records::{

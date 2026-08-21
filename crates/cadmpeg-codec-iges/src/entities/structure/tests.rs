@@ -1,34 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
 
 #[test]
 fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
@@ -228,6 +211,81 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
         loss.provenance.as_ref().unwrap().offset,
         pointer_offset as u64
     );
+}
+
+#[test]
+fn strict_decode_refuses_an_unresolved_pointer_loss() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000200",
+            parameters: "402,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,99,0;".into(),
+        },
+    ]);
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap_err();
+
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => {
+            assert_eq!(loss_code, IgesLossCode::PointerUnresolved.kind().as_str());
+        }
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000200",
+            parameters: "402,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 999,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00000000",
+            parameters: "999,0,0,0,0,1,0,2,7,9;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::ParameterBoundaryAmbiguous.kind())
+        .expect("ambiguous required group boundary loss");
+    assert!(loss.message.contains("2 structural"));
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D3")
+    );
+    let member = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(member.fields()["parameters"].as_array().unwrap().len(), 10);
 }
 
 #[test]
@@ -446,6 +504,49 @@ fn decode_types_scalar_and_string_property_forms() {
     assert_eq!(property(18).fields()["percent"], 12.5);
     assert_eq!(property(20).fields()["highlighted"], true);
     assert_eq!(property(21).fields()["pickable"], true);
+    assert_eq!(property(10).fields()["line_font"], 1);
+    assert_eq!(property(10).fields()["view"], 0);
+    assert_eq!(property(10).fields()["level"], 1);
+    assert_eq!(property(10).fields()["blank"], 0);
+    assert_eq!(property(10).fields()["line_weight"], 1);
+    assert_eq!(property(10).fields()["color"], 0);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_rejects_descending_drilled_hole_layer_range() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_drilled_hole_layer_order_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn decode_accepts_equal_drilled_hole_layer_range() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(equal_drilled_hole_layer_range_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -703,7 +804,7 @@ fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
             form: 30,
             label: "DISPLAY".into(),
             status: "00000000",
-            parameters: "406,15,2,1,,3HDIA,0,,1,0,0,0,12.5,1,1,1,1;".into(),
+            parameters: "406,14,2,1,,3HDIA,0,,1,0,0,0,12.5,1,1,1,1;".into(),
         },
     ]);
     let result = IgesCodec
@@ -811,6 +912,38 @@ fn decode_types_bounded_predefined_associativity_roles() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_label_display_without_leader() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(label_display_without_leader_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D5")
+    );
+    let label_display = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|associativity| associativity.fields()["kind"] == "label_display")
+        .unwrap();
+    assert!(label_display.fields()["placements"][0]["leader"].is_null());
 }
 
 #[test]
@@ -951,6 +1084,30 @@ fn decode_types_fundamental_units_and_property_owner() {
 }
 
 #[test]
+fn type316_scale_is_scoped_to_the_property_owner() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(units_data_scope_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+    let units = &native.arenas["units_data"][0];
+    assert_eq!(
+        units.fields()["owners"],
+        serde_json::json!(["iges:entity:directory#1"])
+    );
+    let unowned = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.fields()["directory_sequence"] == 5)
+        .unwrap();
+    assert!(unowned.fields()["property_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_preserves_ordered_solid_assembly_member_placements() {
     let result = IgesCodec
         .decode(
@@ -1084,6 +1241,35 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
 }
 
 #[test]
+fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_occurrence_placement_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["subfigure_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_placement");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrencePlacementMalformed.kind())
+        .expect("malformed placement loss");
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D5")
+    );
+}
+
+#[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     let result = crate::reader::decode_with_test_occurrence_limits(
         &occurrence_limit_file(),
@@ -1104,6 +1290,18 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     assert!(result.report().losses.iter().any(|loss| {
         loss.message == "IGES product occurrence expansion reached its configured output limit"
     }));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionOutputTruncated.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D203")
+    );
 }
 
 #[test]
@@ -1130,6 +1328,18 @@ fn decode_reports_product_occurrence_depth_truncation() {
         loss.message
             == "IGES product occurrence expansion reached its configured nesting-depth limit"
     }));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceExpansionDepthTruncated.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D259")
+    );
 }
 
 #[test]
@@ -1164,10 +1374,23 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
     let expansion = &native.arenas["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields()["truncated"], true);
     assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
-    }));
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::OccurrenceRootInferenceBlocked.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 2);
+    let tags = losses
+        .iter()
+        .map(|loss| {
+            loss.provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(tags, ["directory_entry:D5", "directory_entry:D7"]);
     let dangling = native.arenas["entities"]
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#7")
@@ -1179,6 +1402,37 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         .unwrap()
         .fields()["members"][0]
         .is_null());
+}
+
+#[test]
+fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_network_occurrence_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["network_definitions"].len(), 1);
+    assert_eq!(native.arenas["network_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::OccurrenceRootInferenceBlocked.kind())
+        .unwrap();
+    assert_eq!(
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+    assert!(native.arenas["network_definitions"][0].fields()["members"][0].is_null());
 }
 
 #[test]
@@ -1196,6 +1450,144 @@ fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
         result.ir().native.namespace("iges").unwrap().arenas["subfigure_definitions"].len(),
         2
     );
+}
+
+#[test]
+fn decode_omits_occurrences_for_rejected_structure_entities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["subfigure_definitions"].len(), 1);
+    assert_eq!(native.arenas["subfigure_instances"].len(), 2);
+    assert_eq!(native.arenas["network_definitions"].len(), 1);
+    assert_eq!(native.arenas["network_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        4
+    );
+}
+
+#[test]
+fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
+    let rejected = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = rejected.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+
+    let admitted = IgesCodec
+        .decode(
+            &mut Cursor::new(admitted_containing_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        admitted.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+
+    let container_only = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_subfigure_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+}
+
+#[test]
+fn decode_does_not_promote_network_instance_in_rejected_definition() {
+    let rejected = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_network_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = rejected.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 0);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+
+    let admitted = IgesCodec
+        .decode(
+            &mut Cursor::new(admitted_containing_network_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        admitted.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+
+    let container_only = IgesCodec
+        .decode(
+            &mut Cursor::new(rejected_containing_network_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        container_only.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].len(),
+        2
+    );
+}
+
+#[test]
+fn container_only_preserves_raw_occurrence_expansion_without_structure_admission() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_top_level_occurrence_structure_file()),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let native = result.ir().native.namespace("iges").unwrap();
+
+    assert!(!result.report().geometry_transferred);
+    assert_eq!(native.arenas["product_occurrences"].len(), 3);
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["emitted"], 3);
+    assert_eq!(expansion.fields()["truncated"], false);
+    assert!(expansion.fields()["issues"].as_array().unwrap().is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
@@ -1249,12 +1641,29 @@ fn decode_rejects_wrong_typed_network_instance_type_flag() {
         )
         .unwrap();
     assert!(
-        result.report().losses.iter().any(|loss| loss
-            .message
-            .contains("network instance placement or connection list is invalid")),
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_wrong_typed_network_definition_type_flag() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wrong_typed_network_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

@@ -1,33 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+use super::{general_note_font_valid, mirror_flag_valid, standard_color, vertical_text_flag_valid};
+
+#[test]
+fn presentation_enumerations_match_the_iges_tables() {
+    let entries = BTreeMap::new();
+    for value in [
+        0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
+    ] {
+        assert!(
+            general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [-1, 4, 5, 7, 1000, 3002] {
+        assert!(
+            !general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+
+    for value in 0..=2 {
+        assert!(mirror_flag_valid(value));
+    }
+    assert!(!mirror_flag_valid(-1));
+    assert!(!mirror_flag_valid(3));
+
+    for value in 0..=1 {
+        assert!(vertical_text_flag_valid(value));
+    }
+    assert!(!vertical_text_flag_valid(-1));
+    assert!(!vertical_text_flag_valid(2));
+
+    assert!(standard_color(1).is_some());
+    assert!(standard_color(8).is_some());
+    assert!(standard_color(0).is_none());
+    assert!(standard_color(9).is_none());
+}
 
 #[test]
 fn decode_applies_standard_body_color_and_face_color_override() {
@@ -79,7 +97,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
             && appearance.name.as_deref() == Some("custom")));
     assert_eq!(result.ir().model.appearance_bindings.len(), 2);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 2);
+    assert_eq!(native.version, 3);
     assert_eq!(native.arenas["colors"].len(), 1);
     assert_eq!(
         native.arenas["colors"][0].id(),
@@ -94,6 +112,74 @@ fn decode_applies_standard_body_color_and_face_color_override() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_keeps_raw_display_pointers_when_definition_targets_do_not_resolve() {
+    let bytes = owned_test_file_with_directory_fields(
+        &[
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "SOURCE".into(),
+                status: "00000000",
+                parameters: "116,1,2,3;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 304,
+                form: 99,
+                label: "BADFONT".into(),
+                status: "00000000",
+                parameters: "304;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "FILLER".into(),
+                status: "00000000",
+                parameters: "116,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 314,
+                form: 9,
+                label: "BADCOLOR".into(),
+                status: "00000000",
+                parameters: "314,0,0,0;".into(),
+            },
+        ],
+        &[(1, -7)],
+        &[(1, -3)],
+        &[(1, -99)],
+        &[],
+        &[],
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let display = result.ir().native.namespace("iges").unwrap().arenas["display_attributes"]
+        .iter()
+        .find(|record| record.id() == "iges:presentation:display-attributes#D1")
+        .unwrap();
+    assert_eq!(display.fields()["line_font_number"], -3);
+    assert!(display.fields()["line_font_definition"].is_null());
+    assert_eq!(display.fields()["level_number"], -99);
+    assert!(display.fields()["level_definition"].is_null());
+    assert_eq!(display.fields()["color_number"], -7);
+    assert!(display.fields()["color_definition"].is_null());
+
+    let pointer_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::PointerUnresolved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(pointer_losses.len(), 3);
+    assert!(pointer_losses.iter().all(|loss| {
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+            == Some("D1")
+    }));
 }
 
 #[test]
@@ -139,6 +225,22 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_out_of_table_text_template_font() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_text_template_font_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]

@@ -1,33 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
 
 #[derive(Debug)]
 struct ShortReader {
@@ -178,4 +157,45 @@ fn representation_detection_rejects_malformed_flag_constants() {
     let mut malformed_tail = binary;
     malformed_tail[75] = b'X';
     assert_eq!(IgesCodec.detect(&malformed_tail), Confidence::No);
+}
+
+#[test]
+fn detection_reads_the_second_card_image_from_a_fused_first_line() {
+    let base = point_file();
+    let mut fused = base[..80].to_vec();
+    fused.extend_from_slice(&base[81..161]);
+    fused.extend_from_slice(&base[161..]);
+
+    assert_eq!(IgesCodec.detect(&fused), Confidence::High);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(fused), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::CardFramingRecovered.kind())
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn detection_refuses_a_start_card_with_no_readable_sequence() {
+    let mut bytes = point_file();
+    bytes[73..80].fill(b' ');
+
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
+    assert_eq!(
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err()
+            .to_string(),
+        "not the expected format: unrecognized IGES representation"
+    );
 }

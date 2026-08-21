@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
+use super::geometry::{
+    declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
@@ -13,7 +17,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -58,7 +61,7 @@ fn bounded_nurbs(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx)
+    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
 }
 
 fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
@@ -180,18 +183,23 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
     }
 }
 
+fn offset_indicator_parameters(bounds: Option<[Option<f64>; 4]>) -> [f64; 2] {
+    bounds
+        .and_then(|bounds| match bounds {
+            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
+            _ => None,
+        })
+        .unwrap_or([0.0, 0.0])
+}
+
 fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
     let parameters = ir
         .model
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == *surface)
-        .and_then(|procedural| procedural.record_bounds)
-        .and_then(|bounds| match bounds {
-            [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
-            _ => None,
-        })
-        .unwrap_or([0.0, 0.0]);
+        .map(|procedural| offset_indicator_parameters(procedural.record_bounds));
+    let parameters = parameters.unwrap_or([0.0, 0.0]);
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let partials = cadmpeg_ir::eval::model_surface_partials_by_id(
         &index,
@@ -206,7 +214,7 @@ fn indicator_orientation(
     record: &ParameterRecord,
     indicator: Vector3,
     normal: Vector3,
-    global: &Global,
+    global: &ProjectedGlobal,
 ) -> Option<f64> {
     let precision = global.real_precision();
     let values = [indicator.x, indicator.y, indicator.z];
@@ -231,19 +239,13 @@ fn indicator_orientation(
     }
 }
 
-pub(super) struct SurfaceProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> SurfaceProjection {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -252,7 +254,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -260,7 +261,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -366,7 +366,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -491,7 +490,11 @@ pub(super) fn project(
                 Some(second_interval[1]),
             ]),
         });
-        let _ = developable_flag;
+        losses.push(
+            IgesLossCode::RuledDevelopabilityNotTransferred
+                .note("Type 118 developability is retained only in the native entity record")
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
     }
 
@@ -499,7 +502,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 122 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -599,7 +601,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -689,15 +690,20 @@ pub(super) fn project(
             .len()
             .checked_mul(angular_controls.len())
         else {
-            losses.push(entity_loss(entry, "revolution pole count overflows"));
-            continue;
+            return Err(refuse_local_limit(
+                "iges_revolution_poles",
+                MAX_SURFACE_POLES as u64,
+                u64::MAX,
+                None,
+            ));
         };
         if surface_pole_count > MAX_SURFACE_POLES {
-            losses.push(entity_loss(
-                entry,
-                format!("revolution exceeds the {MAX_SURFACE_POLES}-pole limit"),
+            return Err(refuse_local_limit(
+                "iges_revolution_poles",
+                MAX_SURFACE_POLES as u64,
+                surface_pole_count as u64,
+                None,
             ));
-            continue;
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
@@ -805,7 +811,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -813,8 +818,14 @@ pub(super) fn project(
         };
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
-        let [Some(k1), Some(k2)] = indices.map(|value| value.and_then(|v| usize::try_from(v).ok()))
-        else {
+        let [Some(raw_k1), Some(raw_k2)] = indices else {
+            losses.push(entity_loss(
+                entry,
+                "surface upper indices K1 or K2 are invalid",
+            ));
+            continue;
+        };
+        let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
             losses.push(entity_loss(
                 entry,
                 "surface upper indices K1 or K2 are invalid",
@@ -834,6 +845,34 @@ pub(super) fn project(
                 "surface pole counts are smaller than their degrees plus one",
             ));
             continue;
+        }
+        let requested = u64::try_from(raw_k1)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .and_then(|u_count| {
+                u64::try_from(raw_k2)
+                    .ok()
+                    .and_then(|value| value.checked_add(1))
+                    .and_then(|v_count| u_count.checked_mul(v_count))
+            });
+        match requested {
+            None => {
+                return Err(refuse_local_limit(
+                    "iges_surface_poles",
+                    MAX_SURFACE_POLES as u64,
+                    u64::MAX,
+                    None,
+                ));
+            }
+            Some(requested) if requested > MAX_SURFACE_POLES as u64 => {
+                return Err(refuse_local_limit(
+                    "iges_surface_poles",
+                    MAX_SURFACE_POLES as u64,
+                    requested,
+                    None,
+                ));
+            }
+            Some(_) => {}
         }
         let flags = (5..=9)
             .map(|index| record.integer(index))
@@ -859,11 +898,12 @@ pub(super) fn project(
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
-            losses.push(entity_loss(
-                entry,
-                format!("surface exceeds the {MAX_SURFACE_POLES}-pole limit"),
+            return Err(refuse_local_limit(
+                "iges_surface_poles",
+                MAX_SURFACE_POLES as u64,
+                pole_count as u64,
+                None,
             ));
-            continue;
         }
         let Some(u_knot_count) = u_count
             .checked_add(u_degree_usize)
@@ -1075,7 +1115,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1193,11 +1232,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    SurfaceProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

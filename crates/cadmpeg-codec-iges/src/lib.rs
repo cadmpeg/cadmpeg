@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES Fixed ASCII codec for versions 5.1, 5.2, and 5.3.
+//! IGES Fixed ASCII codec. Decode admits every declared version and
+//! interprets it with semantics verified for versions 5.1, 5.2, and 5.3.
 //!
-//! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 //! for the declared Fixed ASCII mechanical/document envelope. Bounded
-//! semantic writing is an extra; the L9 gate remains open.
+//! semantic writing and independent-producer acceptance are part of the
+//! verified profile.
 
 mod card;
 mod directory;
@@ -13,7 +15,6 @@ mod global;
 mod graph;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
 pub(crate) mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod native;
 mod parameter;
@@ -97,40 +98,15 @@ impl CodecBackend for IgesCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
         match representation::classify(&mut reader)? {
+            representation::Representation::FixedAscii => reader::inspect(ctx, root.window()),
             representation @ (representation::Representation::CompressedAscii
             | representation::Representation::Binary) => {
-                return Ok(representation::unsupported_summary(representation));
+                Ok(representation::unsupported_summary(representation))
             }
-            representation::Representation::Unknown => {
-                return Err(CodecError::WrongFormat(
-                    "unrecognized IGES representation".into(),
-                ));
-            }
-            representation::Representation::FixedAscii => {}
+            representation::Representation::Unknown => Err(CodecError::WrongFormat(
+                "unrecognized IGES representation".into(),
+            )),
         }
-        ctx.charge_work(root.window().len() as u64, "iges_inspect_card_scan")?;
-        let _scan_storage = ctx.reserve_scoped(
-            root.window().len() as u64,
-            "iges_inspect_card_storage",
-            None,
-        )?;
-        let scan = card::scan_with_context(root.window(), Some(ctx))?;
-        let global = global::parse(&scan)?;
-        let directory = directory::parse(&scan)?;
-        ctx.charge_entities(directory.len() as u64, "iges_inspect_directory_entries")?;
-        let parameters = parameter::assemble_with_context(&scan, &directory, &global, Some(ctx))?;
-        let parameter_tokens = parameters
-            .iter()
-            .map(|record| record.tokens.len() as u64)
-            .sum();
-        ctx.charge_work(parameter_tokens, "iges_inspect_parameter_parse")?;
-        let references = graph::build(&directory);
-        let mut summary = card::summarize(&scan);
-        summary.notes.extend(global.summary_notes());
-        summary.notes.extend(directory::summary_notes(&directory));
-        summary.notes.extend(parameter::summary_notes(&parameters));
-        summary.notes.extend(graph::summary_notes(&references));
-        Ok(summary)
     }
 
     fn decode_impl(
