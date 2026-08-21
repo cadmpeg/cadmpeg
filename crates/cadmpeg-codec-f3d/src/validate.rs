@@ -12,7 +12,8 @@
 use crate::design::decode::scopes::{
     is_class_296_legacy_one_sided_distance_layout, is_class_296_legacy_one_sided_to_face_layout,
     is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout,
-    is_class_296_two_sided_to_faces_layout, legacy_class_415,
+    is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
+    legacy_class_415,
 };
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
@@ -4878,6 +4879,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                         .extrude_prologue
                                         .and_then(records::DesignExtrudePrologue::extent)
                                         == Some(records::DesignExtrudeExtent::OneSidedToFace)
+                                || group.role == 0x0000_0012_0000_0000
+                                    && is_class_296_two_sided_to_faces_scope(scope)
                                 || group.role == 0x0000_0005_0000_0000
                                     && scope
                                         .extrude_prologue

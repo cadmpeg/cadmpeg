@@ -8501,6 +8501,21 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
         && (frame_length, reference_member_count) == (536, 13)
 }
 
+pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope) -> bool {
+    is_class_296_two_sided_to_faces_layout(
+        &scope.class_tag,
+        &scope.paired_class_tag,
+        scope.frame_length,
+        scope
+            .reference_count_offset
+            .saturating_sub(scope.byte_offset),
+        scope.reference_members.len(),
+    ) && scope
+        .extrude_prologue
+        .and_then(DesignExtrudePrologue::extent)
+        == Some(DesignExtrudeExtent::TwoSidedToFaces)
+}
+
 pub(crate) fn is_class_296_legacy_one_sided_to_face_layout(
     class_tag: &str,
     paired_class_tag: &str,

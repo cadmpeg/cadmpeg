@@ -1082,6 +1082,93 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 }
 
 #[test]
+fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
+    let mut scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#296536", "Extrude", 296536);
+    scope.byte_offset = 1000;
+    scope.class_tag = "296".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = 536;
+    scope.reference_count_offset = 1291;
+    scope.reference_members = (0..13).map(|index| 296500 + index).collect();
+    scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation: DesignExtrudeOperation::Join,
+        operation_offset: 1026,
+        direction_face_extend_values: [2, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [1115, 1287],
+        extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
+        direction_face_extend_offsets: [1030, 1034],
+        direction_reversed: false,
+        direction_reversed_offset: 1038,
+        solid_operation: true,
+        solid_operation_offset: 1039,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 1040,
+    });
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"323");
+    bytes.extend_from_slice(&296501u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&91u32.to_le_bytes());
+    bytes.extend_from_slice(&0.125f64.to_le_bytes());
+    bytes.extend_from_slice(&91u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&296503u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[1, 1, 0]);
+    bytes.push(1);
+    bytes.extend_from_slice(&296502u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.push(0);
+    bytes.push(1);
+    bytes.extend_from_slice(&scope.record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&296501u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:group#296501".into(),
+        byte_offset: 0,
+        class_tag: "323".into(),
+        record_index: 296501,
+    };
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
+        .complete()
+        .expect("class-296 two-sided-to-faces construction group");
+    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Faces));
+
+    let mut wrong_length = scope.clone();
+    wrong_length.frame_length = 537;
+    let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &header)
+        .complete()
+        .expect("construction group with otherwise valid frame");
+    assert_eq!(group.extrude_role, None);
+
+    let mut wrong_extent = scope;
+    let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
+        wrong_extent.extrude_prologue.as_mut()
+    else {
+        panic!("synthetic class-296 two-sided-to-faces prologue");
+    };
+    *extent = Some(DesignExtrudeExtent::SymmetricDistance);
+    let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &header)
+        .complete()
+        .expect("construction group with otherwise valid frame");
+    assert_eq!(group.extrude_role, None);
+}
+
+#[test]
 fn construction_operand_trailing_transform_has_exact_affine_frame() {
     let record_index = 300u32;
     let mut bytes = Vec::new();

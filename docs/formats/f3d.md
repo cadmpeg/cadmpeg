@@ -1070,7 +1070,7 @@ Every `Extrude`, `Extrusion`, `Fillet`, `Chamfer`, `Draft`, `Loft`, `Sweep`, `Of
 
 A `ReplaceFace` scope in the class-`301`/`258` form has a 290-byte primary frame and four ordered references. Reference zero is a role-`0x0000000900000000` group with one whole-body recipe member at reference one; its complete input-state face selection supplies the replacement geometry. Reference two is a role-`0x0000001000000000` group with one bounded-face member at reference three; its historical face selection supplies the target faces. The group and member positions must match the ordered reference table.
 
-In a one-sided-to-face `Extrude` or `Extrusion`, role `0x0000001200000000` is the legacy spelling of the face-termination group. The same role in a `Thicken` scope retains the bounded-face meaning defined above.
+In a one-sided-to-face `Extrude` or `Extrusion`, role `0x0000001200000000` is the legacy spelling of the face-termination group. In the exact class-`296`/`261` 536-byte two-sided-to-faces envelope, the same role identifies each face-termination group. The same role in a `Thicken` scope retains the bounded-face meaning defined above.
 
 An `Extrude` or `Extrusion` existing-body group uses role `0x0000000400000000` or `0x0000000800000000`. Each member is a whole-body recipe operand.
 

@@ -7,7 +7,7 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
 };
-use crate::design::decode::scopes::payload_prologue;
+use crate::design::decode::scopes::{is_class_296_two_sided_to_faces_scope, payload_prologue};
 use crate::design::decode::sketch::{
     indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
     IndexedRecordOffsets,
@@ -1557,8 +1557,10 @@ impl ConstructionOperandGroupParse {
 /// Interpret the role of a counted group owned by an Extrude scope.
 ///
 /// The `0x12` face-group role is a legacy spelling of the one-sided-to-face
-/// termination group. It is also a valid Thicken role, so the extent gate is
-/// part of this admission rule rather than a global role alias.
+/// termination group. Class-296 two-sided-to-faces scopes use the same role
+/// for their termination groups. It is also a valid Thicken role, so the
+/// extent and exact-layout gates are part of this admission rule rather than
+/// a global role alias.
 fn extrude_operand_role(
     scope: &DesignParameterScope,
     role: u64,
@@ -1582,6 +1584,9 @@ fn extrude_operand_role(
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
+            Some(DesignExtrudeOperandRole::Faces)
+        }
+        0x0000_0012_0000_0000 if is_class_296_two_sided_to_faces_scope(scope) => {
             Some(DesignExtrudeOperandRole::Faces)
         }
         _ => None,
