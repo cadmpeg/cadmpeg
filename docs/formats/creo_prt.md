@@ -1654,6 +1654,23 @@ same `F0`/`F1` faces as the topology row. A complete legacy curve namespace
 uses the same half-edge successor, vertex-orbit, face-loop, and carrier
 admission rules as the binary `crv_array` namespace.
 
+### 4.1.2 Pcurve operand join
+
+An endpoint path in one face parameter space maps to model space through that
+face's stored surface chart. The path is a boundary witness only when its
+mapped points satisfy both placed incident surface carriers. For two plane
+carriers, their normals must be nonparallel so that the operand join has one
+intersection line. A complete linear path uses its two endpoints and the
+interpolated points between them for this carrier test.
+
+One face path can establish a one-sided endpoint witness when the other face
+path is incomplete or fails the carrier join. A failed path does not veto a
+different path that has a complete carrier proof. Every carrier-proven path
+for one curve must agree on the ordered model-space endpoint pair. A path that
+conflicts with an already solved endpoint vertex is not evidence. When the
+incident carriers do not provide a unique supported join, retain the complete
+face paths and require their mapped endpoint pairs to agree.
+
 ### 4.2 `fc` curve bodies
 
 Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class.

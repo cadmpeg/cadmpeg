@@ -302,6 +302,28 @@ impl BrepTransferDiagnostics {
             "brep_pcurve_mapped_path_count".to_string(),
             self.vertex_solve.pcurve.mapped_paths,
         );
+        if pcurve.carrier_validated_paths > 0
+            || pcurve.carrier_rejected_paths > 0
+            || pcurve.carrier_unknown_paths > 0
+            || pcurve.carrier_rejected_records > 0
+        {
+            coverage.insert(
+                "brep_pcurve_carrier_validated_path_count".to_string(),
+                pcurve.carrier_validated_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_rejected_path_count".to_string(),
+                pcurve.carrier_rejected_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_unknown_path_count".to_string(),
+                pcurve.carrier_unknown_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_carrier_rejected_record_count".to_string(),
+                pcurve.carrier_rejected_records,
+            );
+        }
         coverage.insert(
             "brep_pcurve_unmapped_record_count".to_string(),
             self.vertex_solve.pcurve.unmapped_records,
@@ -334,6 +356,18 @@ impl BrepTransferDiagnostics {
             "brep_vertex_pcurve_constraint_count".to_string(),
             self.vertex_solve.pcurve_constraints,
         );
+        if self.vertex_solve.pcurve_fixed_endpoint_conflicts > 0 {
+            coverage.insert(
+                "brep_vertex_pcurve_fixed_endpoint_conflict_count".to_string(),
+                self.vertex_solve.pcurve_fixed_endpoint_conflicts,
+            );
+        }
+        if self.vertex_solve.pcurve_ambiguous_endpoint_vertices > 0 {
+            coverage.insert(
+                "brep_vertex_pcurve_ambiguous_endpoint_vertex_count".to_string(),
+                self.vertex_solve.pcurve_ambiguous_endpoint_vertices,
+            );
+        }
         coverage.insert(
             "brep_vertex_directed_endpoint_assignment_count".to_string(),
             self.vertex_solve.directed_endpoint_assignments,

@@ -258,6 +258,31 @@ pub(super) fn push_brep_transfer_note(
             String::new()
         }
     };
+    let pcurve_carrier_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        let fixed_endpoint_conflicts = diagnostics.vertex_solve.pcurve_fixed_endpoint_conflicts;
+        let ambiguous_endpoint_vertices =
+            diagnostics.vertex_solve.pcurve_ambiguous_endpoint_vertices;
+        if pcurve.carrier_validated_paths > 0
+            || pcurve.carrier_rejected_paths > 0
+            || pcurve.carrier_rejected_records > 0
+            || fixed_endpoint_conflicts > 0
+            || ambiguous_endpoint_vertices > 0
+        {
+            format!(
+                " Pcurve carrier join: validated paths={}, rejected paths={}, unknown paths={}, \
+                 rejected records={}, fixed endpoint conflicts={}, ambiguous endpoint vertices={}.",
+                pcurve.carrier_validated_paths,
+                pcurve.carrier_rejected_paths,
+                pcurve.carrier_unknown_paths,
+                pcurve.carrier_rejected_records,
+                fixed_endpoint_conflicts,
+                ambiguous_endpoint_vertices,
+            )
+        } else {
+            String::new()
+        }
+    };
     let carrier_rejection_samples = diagnostics
         .vertex_solve
         .carrier_rejection_samples
@@ -308,7 +333,7 @@ pub(super) fn push_brep_transfer_note(
          a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
-         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}",
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}{}",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -341,6 +366,7 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.vertex_solve.solved_vertices,
         pcurve_mismatch_evidence,
         pcurve_activity_evidence,
+        pcurve_carrier_evidence,
         carrier_rejection_evidence,
     );
 

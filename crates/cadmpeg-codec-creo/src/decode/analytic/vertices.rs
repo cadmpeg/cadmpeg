@@ -45,6 +45,31 @@ pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
         .all(|(first, second)| (first - second).abs() <= EPS_AGREE * scale)
 }
 
+fn pcurve_candidate_agrees_with_fixed_points(
+    vertices: [u32; 2],
+    points: [[f64; 3]; 2],
+    directions: [u8; 2],
+    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+) -> bool {
+    let Some(ordered) = directed_pcurve_points(directions, points) else {
+        return true;
+    };
+    vertices.into_iter().zip(ordered).all(|(vertex, point)| {
+        fixed_points
+            .get(&vertex)
+            .is_none_or(|known| known.is_none_or(|known| model_points_agree(known, point)))
+    })
+}
+
+fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
+    candidates.first().is_some_and(|first| {
+        candidates
+            .iter()
+            .skip(1)
+            .any(|candidate| !model_points_agree(*first, *candidate))
+    })
+}
+
 pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
     let (
         CurveGeometry::Line {
@@ -399,6 +424,8 @@ pub struct TopologicalVertexSolveDiagnostics {
     pub carrier_points: usize,
     pub pcurve: PcurveEndpointDiagnostics,
     pub pcurve_constraints: usize,
+    pub pcurve_fixed_endpoint_conflicts: usize,
+    pub pcurve_ambiguous_endpoint_vertices: usize,
     pub directed_endpoint_assignments: usize,
     pub directed_endpoint_conflicts: usize,
     pub nurbs_endpoint_constraints: usize,
@@ -486,50 +513,80 @@ pub fn solve_topological_vertices(
         }
     }
     diagnostics.carrier_points = carrier_points.len();
-    let (endpoint_evidence, pcurve_diagnostics) =
-        pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir);
-    diagnostics.pcurve = pcurve_diagnostics;
-    let edge_endpoints = endpoint_evidence
-        .into_iter()
-        .map(|(curve_id, evidence)| (curve_id, evidence.points))
-        .collect::<BTreeMap<_, _>>();
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
         .into_iter()
         .map(|(vertex, point)| (vertex, Some(point)))
         .collect::<BTreeMap<_, _>>();
-    let mut constraints = Vec::new();
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let Some(points) = edge_endpoints.get(&row.id).copied() else {
+    let (endpoint_evidence, pcurve_diagnostics) =
+        pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir);
+    diagnostics.pcurve = pcurve_diagnostics;
+    let edge_endpoints = endpoint_evidence
+        .into_iter()
+        .map(|(curve_id, evidence)| (curve_id, (evidence.points, evidence.complete)))
+        .collect::<BTreeMap<_, _>>();
+    let topology_rows = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows);
+    let mut pcurve_constraints = Vec::new();
+    let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
+    for row in &topology_rows {
+        let Some((points, complete)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
         let Some(vertices) = edge_vertices.get(&row.id).copied() else {
             continue;
         };
-        diagnostics.pcurve_constraints += 1;
-        constraints.push((vertices, points));
-        if let Some(ordered) = directed_pcurve_points(row.directions, points) {
+        if !pcurve_candidate_agrees_with_fixed_points(
+            vertices,
+            points,
+            row.directions,
+            &fixed_points,
+        ) {
+            diagnostics.pcurve_fixed_endpoint_conflicts += 1;
+            continue;
+        }
+        let ordered = directed_pcurve_points(row.directions, points);
+        if let Some(ordered) = ordered {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
-                diagnostics.directed_endpoint_assignments += 1;
-                match fixed_points.entry(vertex) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(Some(point));
-                    }
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        if entry
-                            .get()
-                            .is_none_or(|known| !model_points_agree(known, point))
-                        {
-                            diagnostics.directed_endpoint_conflicts += 1;
-                            entry.insert(None);
-                        }
-                    }
-                }
+                pcurve_endpoint_candidates
+                    .entry(vertex)
+                    .or_default()
+                    .push(point);
             }
         }
+        pcurve_constraints.push((vertices, points, ordered, complete));
     }
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+    let ambiguous_pcurve_vertices = pcurve_endpoint_candidates
+        .iter()
+        .filter_map(|(vertex, candidates)| {
+            pcurve_endpoint_is_ambiguous(candidates).then_some(*vertex)
+        })
+        .collect::<BTreeSet<_>>();
+    diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
+    let mut constraints = Vec::new();
+    for (vertices, points, ordered, complete) in pcurve_constraints {
+        if let Some(ordered) = ordered {
+            let ambiguous = vertices
+                .iter()
+                .any(|vertex| ambiguous_pcurve_vertices.contains(vertex));
+            if ambiguous && !complete {
+                continue;
+            }
+            diagnostics.pcurve_constraints += 1;
+            constraints.push((vertices, points));
+            if ambiguous {
+                continue;
+            }
+            for (vertex, point) in vertices.into_iter().zip(ordered) {
+                diagnostics.directed_endpoint_assignments += 1;
+                fixed_points.entry(vertex).or_insert(Some(point));
+            }
+        } else {
+            diagnostics.pcurve_constraints += 1;
+            constraints.push((vertices, points));
+        }
+    }
+    for row in &topology_rows {
         let Some(vertices) = edge_vertices.get(&row.id).copied() else {
             continue;
         };
@@ -549,7 +606,7 @@ pub fn solve_topological_vertices(
     // Non-periodic NURBS boundary rows contribute their intrinsic endpoint
     // pair through the witness constraint above. They are not analytic
     // carrier equations for the vertex-domain solver.
-    let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+    let analytic_curves = topology_rows
         .into_iter()
         .filter_map(|row| {
             let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
@@ -661,5 +718,19 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn pcurve_endpoint_ambiguity_requires_distinct_points() {
+        const EPS_TEST_POINT_AGREE: f64 = 1e-12;
+        assert!(!pcurve_endpoint_is_ambiguous(&[[1.0, 2.0, 3.0]]));
+        assert!(!pcurve_endpoint_is_ambiguous(&[
+            [1.0, 2.0, 3.0],
+            [1.0 + EPS_TEST_POINT_AGREE, 2.0, 3.0],
+        ]));
+        assert!(pcurve_endpoint_is_ambiguous(&[
+            [1.0, 2.0, 3.0],
+            [1.1, 2.0, 3.0],
+        ]));
     }
 }
