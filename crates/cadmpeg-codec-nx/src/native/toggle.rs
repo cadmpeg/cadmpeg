@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::View;
+use std::collections::BTreeMap;
 
 use crate::container::{Container, EntryContent};
 
@@ -28,6 +29,9 @@ pub struct SavedToggleEntry {
     pub ordinal: u32,
     /// Lowercase 32-hex-digit toggle identity.
     pub toggle_id: String,
+    /// Record-order-independent identity when the toggle ID is unique in the stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Exact state selected by the member text.
     pub state: SavedToggleState,
     /// Exact little-endian member-length word.
@@ -139,12 +143,14 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
             id: format!("nx:saved-toggle:entry#{ordinal}"),
             ordinal: u32::try_from(ordinal).ok()?,
             toggle_id: toggle_id.to_string(),
+            stable_identity: None,
             state,
             raw_byte_len,
             source_offset: source_offset.checked_add(member_offset as u64)?,
             value_source_offset: source_offset.checked_add(value_at as u64)?,
         });
     }
+    assign_stable_toggle_identities(&mut entries);
     let trailer_at = view.position();
     let trailer = view.array::<4>()?;
     if !view.is_empty() {
@@ -167,14 +173,28 @@ fn parse_saved_toggle_stream(bytes: &[u8], source_offset: u64) -> Option<ParsedT
     })
 }
 
+fn assign_stable_toggle_identities(entries: &mut [SavedToggleEntry]) {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for entry in entries.iter() {
+        *counts.entry(entry.toggle_id.clone()).or_default() += 1;
+    }
+    for entry in entries.iter_mut() {
+        entry.stable_identity = (counts.get(&entry.toggle_id) == Some(&1))
+            .then(|| format!("nx:saved-toggle:identity#{}", entry.toggle_id));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_saved_toggle_stream, SavedToggleState};
 
-    fn stream(member: &str, trailer: [u8; 4]) -> Vec<u8> {
-        let mut bytes = vec![1, 1, 0, 0, 0];
-        bytes.extend_from_slice(&(member.len() as u16).to_le_bytes());
-        bytes.extend_from_slice(member.as_bytes());
+    fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&(members.len() as u32).to_le_bytes());
+        for member in members {
+            bytes.extend_from_slice(&(member.len() as u16).to_le_bytes());
+            bytes.extend_from_slice(member.as_bytes());
+        }
         bytes.extend_from_slice(&trailer);
         bytes
     }
@@ -182,7 +202,7 @@ mod tests {
     #[test]
     fn parses_complete_counted_toggle_stream() {
         let bytes = stream(
-            "0123456789abcdef0123456789abcdef:Off",
+            &["0123456789abcdef0123456789abcdef:Off"],
             [0xde, 0xad, 0xbe, 0xef],
         );
         let parsed = parse_saved_toggle_stream(&bytes, 100).expect("complete stream");
@@ -192,16 +212,64 @@ mod tests {
         assert_eq!(parsed.stream.trailer_source_offset, 143);
         assert_eq!(parsed.entries.len(), 1);
         assert_eq!(parsed.entries[0].state, SavedToggleState::Off);
+        assert_eq!(
+            parsed.entries[0].stable_identity.as_deref(),
+            Some("nx:saved-toggle:identity#0123456789abcdef0123456789abcdef")
+        );
         assert_eq!(parsed.entries[0].source_offset, 105);
         assert_eq!(parsed.entries[0].value_source_offset, 107);
     }
 
     #[test]
+    fn stable_toggle_identity_ignores_member_order_and_state() {
+        let first = stream(
+            &[
+                "0123456789abcdef0123456789abcdef:On",
+                "fedcba9876543210fedcba9876543210:Off",
+            ],
+            [1, 2, 3, 4],
+        );
+        let reordered = stream(
+            &[
+                "fedcba9876543210fedcba9876543210:On",
+                "0123456789abcdef0123456789abcdef:Off",
+            ],
+            [1, 2, 3, 4],
+        );
+        let first = parse_saved_toggle_stream(&first, 0).expect("first stream");
+        let reordered = parse_saved_toggle_stream(&reordered, 0).expect("reordered stream");
+        assert_eq!(
+            first.entries[0].stable_identity,
+            reordered.entries[1].stable_identity
+        );
+        assert_eq!(
+            first.entries[1].stable_identity,
+            reordered.entries[0].stable_identity
+        );
+    }
+
+    #[test]
+    fn duplicate_toggle_ids_have_no_stable_identity() {
+        let bytes = stream(
+            &[
+                "0123456789abcdef0123456789abcdef:On",
+                "0123456789abcdef0123456789abcdef:Off",
+            ],
+            [1, 2, 3, 4],
+        );
+        let parsed = parse_saved_toggle_stream(&bytes, 0).expect("complete stream");
+        assert!(parsed
+            .entries
+            .iter()
+            .all(|entry| entry.stable_identity.is_none()));
+    }
+
+    #[test]
     fn rejects_partial_or_noncanonical_streams_atomically() {
-        let complete = stream("0123456789abcdef0123456789abcdef:On", [1, 2, 3, 4]);
+        let complete = stream(&["0123456789abcdef0123456789abcdef:On"], [1, 2, 3, 4]);
         assert!(parse_saved_toggle_stream(&complete[..complete.len() - 1], 0).is_none());
 
-        let uppercase = stream("0123456789ABCDEF0123456789abcdef:On", [1, 2, 3, 4]);
+        let uppercase = stream(&["0123456789ABCDEF0123456789abcdef:On"], [1, 2, 3, 4]);
         assert!(parse_saved_toggle_stream(&uppercase, 0).is_none());
 
         let mut wrong_count = complete;

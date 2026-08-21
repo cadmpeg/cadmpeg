@@ -350,6 +350,10 @@ member retains its order, exact length word, toggle identity, state, and source
 offsets. The stream retains the exact count word and terminal word. A version,
 count, member, UTF-8, identity, state, or terminal-boundary mismatch rejects the
 typed stream atomically.
+When a toggle identity occurs exactly once in the stream, that member also has
+an order-independent identity witness formed from the 32 hexadecimal digits.
+Duplicate toggle identities retain their ordered members but have no such
+witness. The `On` or `Off` state is not part of the identity witness.
 
 ### 2.3 Fast-load component roster
 
