@@ -1211,6 +1211,35 @@ pub struct FeatureSketchPayloadScalar {
     pub source_offset: u64,
 }
 
+/// Exact scalar-vector frame retained from one reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadScalarLane {
+    /// Globally unique scalar-lane identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying this lane.
+    pub construction_payload: String,
+    /// Zero-based lane order within the reconstructed payload.
+    pub ordinal: u32,
+    /// Exact discriminator selecting the lane form.
+    pub discriminator: Vec<u8>,
+    /// Ordered finite scalar values after the discriminator.
+    pub values: Vec<f64>,
+    /// Exact nonzero scalar atoms in serialized order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Payload-relative offsets of the scalar atoms.
+    pub value_payload_offsets: Vec<u64>,
+    /// Payload-relative offset of the terminating zero atom.
+    pub terminator_payload_offset: u64,
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar atoms.
+    pub value_source_offsets: Vec<u64>,
+    /// Absolute source offset of the terminating zero atom.
+    pub terminator_source_offset: u64,
+}
+
 /// Exact framed name retained from one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadName {
@@ -5349,6 +5378,45 @@ pub fn feature_sketch_payload_scalars(
         })
         .flatten()
         .collect()
+}
+
+/// Decode exact scalar-vector frames across reconstructed sketch payloads.
+pub fn feature_sketch_payload_scalar_lanes(
+    container: &Container,
+    payloads: &[FeatureSketchConstructionPayload],
+) -> Vec<FeatureSketchPayloadScalarLane> {
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_scalar_lanes,
+        |payload, ordinal, lane, source_offset| {
+            let value_payload_offsets = lane
+                .value_offsets
+                .iter()
+                .map(|offset| *offset as u64)
+                .collect::<Vec<_>>();
+            let value_source_offsets = lane
+                .value_offsets
+                .iter()
+                .map(|offset| source_offset(*offset))
+                .collect::<Option<Vec<_>>>()?;
+            Some(FeatureSketchPayloadScalarLane {
+                id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                discriminator: lane.discriminator,
+                values: lane.values,
+                raw_values: lane.raw_values,
+                value_payload_offsets,
+                terminator_payload_offset: lane.terminator_offset as u64,
+                source_offset: source_offset(lane.offset)?,
+                value_source_offsets,
+                terminator_source_offset: source_offset(lane.terminator_offset)?,
+            })
+        },
+    )
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.

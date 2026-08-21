@@ -225,6 +225,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_payload_fixed_pairs: Vec<FeatureSketchPayloadFixedPair>,
     pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
     pub(crate) feature_sketch_payload_scalars: Vec<FeatureSketchPayloadScalar>,
+    pub(crate) feature_sketch_payload_scalar_lanes: Vec<FeatureSketchPayloadScalarLane>,
     pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
     pub(crate) feature_sketch_fixed_points: Vec<FeatureSketchFixedPoint>,
@@ -811,6 +812,8 @@ impl NativeModel {
             feature_sketch_payload_mixed_pairs(container, &feature_sketch_construction_payloads);
         let feature_sketch_payload_scalars =
             feature_sketch_payload_scalars(container, &feature_sketch_construction_inputs);
+        let feature_sketch_payload_scalar_lanes =
+            feature_sketch_payload_scalar_lanes(container, &feature_sketch_construction_payloads);
         let feature_sketch_payload_names =
             feature_sketch_payload_names(container, &feature_sketch_construction_inputs);
         let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
@@ -1149,6 +1152,7 @@ impl NativeModel {
                 feature_sketch_payload_fixed_pairs,
                 feature_sketch_payload_mixed_pairs,
                 feature_sketch_payload_scalars,
+                feature_sketch_payload_scalar_lanes,
                 feature_sketch_payload_names,
                 feature_sketch_payload_named_records,
                 feature_sketch_fixed_points,

@@ -2080,6 +2080,23 @@ pub struct SketchPayloadFixedPair {
     pub discriminator: Vec<u8>,
 }
 
+/// Exact scalar-vector frame in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPayloadScalarLane {
+    /// Payload-relative offset of the fixed scalar-lane discriminator.
+    pub offset: usize,
+    /// Exact discriminator selecting the scalar-lane form.
+    pub discriminator: Vec<u8>,
+    /// Ordered finite scalar values after the discriminator.
+    pub values: Vec<f64>,
+    /// Exact nonzero scalar atoms in serialized order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Payload-relative offsets of the scalar atoms.
+    pub value_offsets: Vec<usize>,
+    /// Payload-relative offset of the terminating zero atom.
+    pub terminator_offset: usize,
+}
+
 /// Exact mixed Q1.55 and shifted-binary32 pair in a sketch payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPayloadMixedPair {
@@ -5415,6 +5432,63 @@ pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
     }
     pairs.sort_by_key(|pair| pair.offset);
     pairs
+}
+
+/// Decode every complete scalar-vector frame in a reconstructed sketch
+/// payload.
+pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane> {
+    const DISCRIMINATORS: [&[u8]; 2] = [
+        &[
+            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86,
+            0x81, 0x02, 0x00, 0x01, 0x00,
+        ],
+        &[
+            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
+            0x02, 0x00, 0x01, 0x00,
+        ],
+    ];
+
+    let mut lanes = DISCRIMINATORS
+        .into_iter()
+        .flat_map(|discriminator| {
+            bytes
+                .windows(discriminator.len())
+                .enumerate()
+                .filter_map(move |(offset, window)| {
+                    (window == discriminator).then_some(())?;
+                    let mut at = offset + discriminator.len();
+                    let mut values = Vec::new();
+                    let mut raw_values = Vec::new();
+                    let mut value_offsets = Vec::new();
+                    loop {
+                        if bytes.get(at) == Some(&0x00) {
+                            break;
+                        }
+                        let (value, encoding, width) = payload_scalar(bytes.get(at..)?)?;
+                        if encoding == PayloadScalarEncoding::Zero {
+                            return None;
+                        }
+                        values.push(value);
+                        raw_values.push(bytes.get(at..at + width)?.to_vec());
+                        value_offsets.push(at);
+                        at += width;
+                    }
+                    if values.is_empty() {
+                        return None;
+                    }
+                    Some(SketchPayloadScalarLane {
+                        offset,
+                        discriminator: discriminator.to_vec(),
+                        values,
+                        raw_values,
+                        value_offsets,
+                        terminator_offset: at,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    lanes.sort_by_key(|lane| lane.offset);
+    lanes
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
