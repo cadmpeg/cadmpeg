@@ -10,6 +10,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod binders;
+
 #[test]
 fn transfers_partdesign_refine_and_fuzzy_post_processing() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -23,14 +25,14 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
   <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
   <Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="-0.5"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="-0.5"/></Property>
  </Properties></Object>
  <Object name="Explicit"><Properties Count="5">
   <Property name="Length" type="App::PropertyLength"><Float value="4"/></Property>
   <Property name="Width" type="App::PropertyLength"><Float value="5"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="6"/></Property>
   <Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0.01"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -69,6 +71,125 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
 }
 
 #[test]
+fn retains_native_for_malformed_post_process_controls() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="PartDesign::AdditiveBox" name="Absent" id="1"/>
+ <Object type="PartDesign::AdditiveBox" name="FuzzyOnly" id="2"/>
+ <Object type="PartDesign::AdditiveBox" name="RefineOnly" id="3"/>
+ <Object type="PartDesign::AdditiveBox" name="WrongRefine" id="4"/>
+ <Object type="PartDesign::AdditiveBox" name="WrongFuzzy" id="5"/>
+ <Object type="PartDesign::AdditiveBox" name="NestedFuzzy" id="6"/>
+ <Object type="PartDesign::AdditiveBox" name="DuplicateFuzzy" id="7"/>
+ <Object type="PartDesign::AdditiveBox" name="NonFiniteFuzzy" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="Absent"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+ </Properties></Object>
+ <Object name="FuzzyOnly"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/></Property>
+ </Properties></Object>
+ <Object name="RefineOnly"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="WrongRefine"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Refine" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="WrongFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0.01"/></Property>
+ </Properties></Object>
+ <Object name="NestedFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Wrapper><Float value="0.01"/></Wrapper></Property>
+ </Properties></Object>
+ <Object name="DuplicateFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="0.01"/><Float value="0.02"/></Property>
+ </Properties></Object>
+ <Object name="NonFiniteFuzzy"><Properties Count="4">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloatConstraint"><Float value="NaN"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("post-processing control admission");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Absent"),
+        FeatureDefinition::Primitive { .. }
+    ));
+    assert!(matches!(
+        definition("FuzzyOnly"),
+        FeatureDefinition::PostProcess {
+            operation,
+            refine: false,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(value),
+        } if (*value - 0.01).abs() < f64::EPSILON
+            && matches!(operation.as_ref(), FeatureDefinition::Primitive { .. })
+    ));
+    assert!(matches!(
+        definition("RefineOnly"),
+        FeatureDefinition::PostProcess {
+            operation,
+            refine: true,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
+        } if matches!(operation.as_ref(), FeatureDefinition::Primitive { .. })
+    ));
+    for name in [
+        "WrongRefine",
+        "WrongFuzzy",
+        "NestedFuzzy",
+        "DuplicateFuzzy",
+        "NonFiniteFuzzy",
+    ] {
+        assert!(matches!(
+            definition(name),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::AdditiveBox"
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 5);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+}
+
+#[test]
 pub(crate) fn transfers_part_construction_geometry_features() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="8">
@@ -86,14 +207,25 @@ pub(crate) fn transfers_part_construction_geometry_features() {
  <Object name="Line"><Properties Count="6"><Property name="X1" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Y1" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z1" type="App::PropertyDistance"><Float value="2"/></Property><Property name="X2" type="App::PropertyDistance"><Float value="3"/></Property><Property name="Y2" type="App::PropertyDistance"><Float value="4"/></Property><Property name="Z2" type="App::PropertyDistance"><Float value="5"/></Property></Properties></Object>
  <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle0" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
  <Object name="Ellipse"><Properties Count="4"><Property name="MajorRadius" type="App::PropertyLength"><Float value="6"/></Property><Property name="MinorRadius" type="App::PropertyLength"><Float value="2"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="15"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="270"/></Property></Properties></Object>
- <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList count="3"><Vector x="0" y="0" z="0"/><Vector x="2" y="0" z="0"/><Vector x="1" y="1" z="0"/></VectorList></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList file="Nodes"/></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="Regular"><Properties Count="2"><Property name="Polygon" type="App::PropertyInteger"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="8"/></Property></Properties></Object>
  <Object name="Plane"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="9"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
  <Object name="Face"><Properties Count="2"><Property name="Sources" type="App::PropertyLinkList"><LinkList count="2"><Link value="Line"/><Link value="Circle"/></LinkList></Property><Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property></Properties></Object>
 </ObjectData></Document>"#;
+    let mut nodes = Vec::new();
+    nodes.extend_from_slice(&3_u32.to_le_bytes());
+    let points: &[(f64, f64, f64)] = &[(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (1.0, 1.0, 0.0)];
+    for (x, y, z) in points {
+        nodes.extend_from_slice(&x.to_le_bytes());
+        nodes.extend_from_slice(&y.to_le_bytes());
+        nodes.extend_from_slice(&z.to_le_bytes());
+    }
     let result = FcstdCodec
         .decode(
-            &mut Cursor::new(archive(document)),
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Nodes", &nodes),
+            ])),
             &DecodeOptions::default(),
         )
         .expect("Part construction geometry");
@@ -152,6 +284,118 @@ pub(crate) fn transfers_part_construction_geometry_features() {
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn rejects_nested_polygon_vector_list_root() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Polygon" name="Polygon" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Polygon"><Properties Count="2">
+<Property name="Nodes" type="App::PropertyVectorList"><Wrapper><VectorList file="Nodes"/></Wrapper></Property>
+<Property name="Close" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let mut nodes = Vec::new();
+    nodes.extend_from_slice(&2_u32.to_le_bytes());
+    let points: &[(f64, f64, f64)] = &[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)];
+    for (x, y, z) in points {
+        nodes.extend_from_slice(&x.to_le_bytes());
+        nodes.extend_from_slice(&y.to_le_bytes());
+        nodes.extend_from_slice(&z.to_le_bytes());
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Nodes", &nodes),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("native fallback for nested vector list");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Polygon"))
+        .expect("polygon feature");
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Native { .. }
+    ));
+}
+
+#[test]
+fn rejects_malformed_polygon_vector_list_side_streams() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Polygon" name="Polygon" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Polygon"><Properties Count="2">
+<Property name="Nodes" type="App::PropertyVectorList"><VectorList file="Nodes"/></Property>
+<Property name="Close" type="App::PropertyBool"><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let encode = |points: &[(f64, f64, f64)]| {
+        let mut bytes = Vec::with_capacity(4 + points.len() * 24);
+        bytes.extend_from_slice(&(points.len() as u32).to_le_bytes());
+        for (x, y, z) in points {
+            bytes.extend_from_slice(&x.to_le_bytes());
+            bytes.extend_from_slice(&y.to_le_bytes());
+            bytes.extend_from_slice(&z.to_le_bytes());
+        }
+        bytes
+    };
+    let mut trailing = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    trailing.push(0xaa);
+    let mut non_finite = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    non_finite[4 + 24..4 + 32].copy_from_slice(&f64::NAN.to_le_bytes());
+
+    for nodes in [trailing, non_finite] {
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("Nodes", &nodes),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("native fallback for malformed vector side stream");
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Polygon"))
+            .expect("polygon feature");
+        assert!(matches!(
+            feature.definition,
+            FeatureDefinition::Native { .. }
+        ));
+    }
+
+    let document_with_unowned_entry = document.replace(
+        "<VectorList file=\"Nodes\"/>",
+        "<VectorList file=\"Nodes\"/><Extra file=\"Other\"/>",
+    );
+    let nodes = encode(&[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]);
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document_with_unowned_entry.as_bytes()),
+                ("Nodes", &nodes),
+                ("Other", &[]),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("native fallback for unowned vector side stream");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Polygon"))
+        .expect("polygon feature");
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Native { .. }
+    ));
 }
 
 #[test]
@@ -222,6 +466,110 @@ fn transfers_uniform_and_anisotropic_part_scale() {
             ..
         }
     ));
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn document(uniform_property: Option<&str>) -> String {
+        let uniform = uniform_property.unwrap_or_default();
+        let count = 5 + usize::from(!uniform.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Box" name="Source"/><Object type="Part::Scale" name="Scale"/></Objects>
+<ObjectData Count="2"><Object name="Source"><Properties Count="3">
+<Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+<Property name="Width" type="App::PropertyLength"><Float value="1"/></Property>
+<Property name="Height" type="App::PropertyLength"><Float value="1"/></Property>
+</Properties></Object>
+<Object name="Scale"><Properties Count="{count}">
+<Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
+{uniform}
+<Property name="UniformScale" type="App::PropertyFloat"><Float value="2"/></Property>
+<Property name="XScale" type="App::PropertyFloat"><Float value="3"/></Property>
+<Property name="YScale" type="App::PropertyFloat"><Float value="4"/></Property>
+<Property name="ZScale" type="App::PropertyFloat"><Float value="5"/></Property>
+</Properties></Object></ObjectData></Document>"#
+        )
+    }
+
+    let absent = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document(None))),
+            &DecodeOptions::default(),
+        )
+        .expect("absent Part scale flag");
+    assert!(matches!(
+        definition(&absent, "Scale"),
+        FeatureDefinition::Scale {
+            factors: cadmpeg_ir::features::ScaleFactors {
+                uniform: Some(2.0),
+                x: None,
+                y: None,
+                z: None,
+            },
+            ..
+        }
+    ));
+    assert_valid_document(absent.ir());
+
+    let valid =
+        r#"<Property name="Uniform" type="App::PropertyBool"><Bool value="false"/></Property>"#;
+    let valid = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document(Some(valid)))),
+            &DecodeOptions::default(),
+        )
+        .expect("valid Part scale flag");
+    assert!(matches!(
+        definition(&valid, "Scale"),
+        FeatureDefinition::Scale {
+            factors: cadmpeg_ir::features::ScaleFactors {
+                uniform: None,
+                x: Some(3.0),
+                y: Some(4.0),
+                z: Some(5.0),
+            },
+            ..
+        }
+    ));
+    assert_valid_document(valid.ir());
+
+    let malformed_values = [
+        r#"<Property name="TARGET" type="App::PropertyString"><String value="false"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyInteger"><Integer value="0"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="1"/></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Wrapper><Bool value="false"/></Wrapper></Property>"#,
+        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>"#,
+    ];
+    for malformed in malformed_values {
+        let replacement = malformed.replace("TARGET", "Uniform");
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document(Some(&replacement)))),
+                &DecodeOptions::default(),
+            )
+            .expect("malformed Part scale flag");
+        assert!(matches!(
+            definition(&result, "Scale"),
+            FeatureDefinition::Native { kind, .. } if kind == "Part::Scale"
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+        assert_valid_document(result.ir());
+    }
 }
 
 #[test]
@@ -356,8 +704,8 @@ fn transfers_standalone_part_mirror_plane_semantics() {
  <Object name="PlaneCarrier"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="4"/></Property><Property name="Width" type="App::PropertyLength"><Float value="5"/></Property><Property name="Height" type="App::PropertyLength"><Float value="6"/></Property></Properties></Object>
  <Object name="Mirror"><Properties Count="4">
   <Property name="Source" type="App::PropertyLink"><Link value="Source"/></Property>
-  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
-  <Property name="Normal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+ <Property name="Base" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+ <Property name="Normal" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="4"/></Property>
   <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="PlaneCarrier" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -403,7 +751,7 @@ fn transfers_part_projection_on_surface_construction() {
  <Object name="Projection"><Properties Count="6">
   <Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="First" sub="Wire1"/><Link obj="Second" sub="Face2"/></LinkSubList></Property>
   <Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
-  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="0" z="5"/></Property>
+ <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="5"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="-1.5"/></Property>
@@ -525,11 +873,26 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             solid: false,
             ruled: false,
             max_degree: Some(7),
-            check_compatibility: Some(false),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }
     ));
+    let native_properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("native properties");
+    let compatibility_properties = native_properties
+        .iter()
+        .filter(|property| property.name == "CheckCompatibility")
+        .collect::<Vec<_>>();
+    assert_eq!(compatibility_properties.len(), 1);
+    assert_eq!(compatibility_properties[0].type_name, "App::PropertyBool");
+    assert!(compatibility_properties[0]
+        .raw_xml
+        .contains("<Bool value=\"false\"/>"));
     assert!(matches!(
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {
@@ -604,7 +967,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
   <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
-  <Property name="Binormal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+ <Property name="Binormal" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="4"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>
@@ -677,6 +1040,232 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
             } if *actual == expected
         ));
     }
+}
+
+#[test]
+fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
+    fn definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="17">
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Section" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Path" id="3"/>
+ <Object type="Part::Loft" name="LoftAbsent" id="4"/>
+ <Object type="PartDesign::AdditiveLoft" name="LoftValid" id="5"/>
+ <Object type="Part::Sweep" name="SweepAbsent" id="6"/>
+ <Object type="Part::Sweep" name="SweepValid" id="7"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeAbsent" id="8"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeValid" id="9"/>
+ <Object type="Part::Loft" name="LoftBadSolid" id="10"/>
+ <Object type="PartDesign::AdditiveLoft" name="LoftBadAllow" id="11"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeBadSpine" id="12"/>
+ <Object type="PartDesign::AdditivePipe" name="PipeBadAux" id="13"/>
+ <Object type="Part::Sweep" name="SweepBadSolid" id="14"/>
+ <Object type="Part::Sweep" name="SweepBadFrenet" id="15"/>
+ <Object type="Part::Loft" name="LoftLinearized" id="16"/>
+ <Object type="Part::Loft" name="LoftBadLinearize" id="17"/>
+</Objects>
+<ObjectData Count="17">
+ <Object name="Profile"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Section"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="LoftAbsent"><Properties Count="1">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="LoftValid"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Section" sub=""/></LinkSubList></Property>
+  <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="SweepAbsent"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="SweepValid"><Properties Count="6">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+ </Properties></Object>
+ <Object name="PipeAbsent"><Properties Count="2">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+ </Properties></Object>
+ <Object name="PipeValid"><Properties Count="9">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="SpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
+  <Property name="AuxiliarySpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliaryCurvilinear" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadSolid"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Solid" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadAllow"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Section" sub=""/></LinkSubList></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Wrapper><Bool value="true"/></Wrapper></Property>
+ </Properties></Object>
+ <Object name="PipeBadSpine"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="SpineTangent" type="App::PropertyBool"><Bool value="1"/></Property>
+ </Properties></Object>
+ <Object name="PipeBadAux"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="AuxiliaryCurvilinear" type="App::PropertyInteger"><Integer value="1"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+ <Object name="SweepBadSolid"><Properties Count="3">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Solid" type="App::PropertyString"><String value="true"/></Property>
+ </Properties></Object>
+ <Object name="SweepBadFrenet"><Properties Count="3">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="Profile"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="LoftLinearized"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="LoftBadLinearize"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Profile"/><Link value="Section"/></LinkList></Property>
+  <Property name="Linearize" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("loft and sweep flags");
+
+    assert!(matches!(
+        definition(&result, "LoftAbsent"),
+        FeatureDefinition::Loft {
+            closed: false,
+            solid: true,
+            ruled: false,
+            linearize: false,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "LoftValid"),
+        FeatureDefinition::Loft {
+            closed: true,
+            solid: true,
+            ruled: true,
+            linearize: false,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "LoftLinearized"),
+        FeatureDefinition::Loft {
+            closed: false,
+            solid: true,
+            ruled: false,
+            linearize: true,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "SweepAbsent"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            orientation: Some(SweepOrientation::Frenet),
+            path_tangent: false,
+            linearize: false,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "SweepValid"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Surface,
+            orientation: Some(SweepOrientation::CorrectedFrenet),
+            path_tangent: false,
+            linearize: true,
+            allow_multi_profile_faces: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "PipeAbsent"),
+        FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            orientation: Some(SweepOrientation::CorrectedFrenet),
+            path_tangent: false,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition(&result, "PipeValid"),
+        FeatureDefinition::Sweep {
+            orientation: Some(SweepOrientation::Auxiliary {
+                tangent: true,
+                curvilinear: false,
+                ..
+            }),
+            path_tangent: true,
+            allow_multi_profile_faces: Some(false),
+            ..
+        }
+    ));
+    for (name, kind) in [
+        ("LoftBadSolid", "Part::Loft"),
+        ("LoftBadAllow", "PartDesign::AdditiveLoft"),
+        ("PipeBadSpine", "PartDesign::AdditivePipe"),
+        ("PipeBadAux", "PartDesign::AdditivePipe"),
+        ("SweepBadSolid", "Part::Sweep"),
+        ("SweepBadFrenet", "Part::Sweep"),
+        ("LoftBadLinearize", "Part::Loft"),
+    ] {
+        assert!(matches!(
+            definition(&result, name),
+            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 7);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
 }
 
 #[test]
@@ -825,6 +1414,56 @@ fn transfers_shape_and_subshape_binder_construction() {
 }
 
 #[test]
+fn rejects_noncanonical_subshape_binder_context_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Source" id="1"/>
+ <Object type="PartDesign::CoordinateSystem" name="Context" id="2"/>
+ <Object type="PartDesign::SubShapeBinder" name="SubBind" id="3"/>
+ <Object type="PartDesign::SubShapeBinder" name="SubBindSelector" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Context"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="SubBind"><Properties Count="2">
+  <Property name="Support" type="App::PropertyXLinkSubList"><XLinkSubList count="1"><XLink name="Source" sub="Face1"/></XLinkSubList></Property>
+  <Property name="Context" type="App::PropertyXLinkList"><XLinkSubList count="2"><XLink name="Context"/><XLink name="OtherContext"/></XLinkSubList></Property>
+ </Properties></Object>
+ <Object name="SubBindSelector"><Properties Count="2">
+  <Property name="Support" type="App::PropertyXLinkSubList"><XLinkSubList count="1"><XLink name="Source" sub="Face1"/></XLinkSubList></Property>
+  <Property name="Context" type="App::PropertyXLink"><XLink name="Context" sub="Face1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical binder context");
+    for name in ["SubBind", "SubBindSelector"] {
+        let definition = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("subshape binder feature");
+        assert!(matches!(
+            &definition.definition,
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::SubShapeBinder"
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 2);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking));
+}
+
+#[test]
 fn transfers_complete_thickness_construction_controls() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
@@ -867,7 +1506,7 @@ fn transfers_complete_thickness_construction_controls() {
             thickness: Some(cadmpeg_ir::features::Length(2.5)),
             outward: Some(false),
             mode: Some(cadmpeg_ir::features::ShellMode::BothSides),
-            join: Some(cadmpeg_ir::features::ShellJoin::Tangent),
+            join: Some(cadmpeg_ir::features::ShellJoin::Intersection),
             resolve_intersections: Some(true),
             allow_self_intersections: Some(true),
             ..
@@ -973,6 +1612,207 @@ fn transfers_part_thickness_and_shape_offset_construction() {
 }
 
 #[test]
+fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
+    fn feature_definition<'a>(
+        result: &'a cadmpeg_ir::codec::DecodeResult,
+        name: &str,
+    ) -> &'a FeatureDefinition {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    }
+
+    fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
+        assert!(matches!(
+            feature_definition(result, "Target"),
+            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code.namespace == "fcstd"
+                && loss.code.code == "feature.native-kind-retained"
+                && loss.severity == cadmpeg_ir::Severity::Blocking
+        }));
+    }
+
+    let shell_document = |kind: &str, mode: &str, join: &str| {
+        let (base_properties, base_count) = match kind {
+            "PartDesign::Thickness" => (
+                r#"<Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Reversed" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            "Part::Thickness" => (
+                r#"<Property name="Faces" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="SelfIntersection" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            "Part::Offset" => (
+                r#"<Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="SelfIntersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fill" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                5,
+            ),
+            "Part::Offset2D" => (
+                r#"<Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property><Property name="Value" type="App::PropertyLength"><Float value="2"/></Property><Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fill" type="App::PropertyBool"><Bool value="false"/></Property>"#,
+                4,
+            ),
+            _ => panic!("unexpected shell kind {kind}"),
+        };
+        let count = base_count + usize::from(!mode.is_empty()) + usize::from(!join.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Box" name="Base" id="1"/><Object type="{kind}" name="Target" id="2"/></Objects>
+<ObjectData Count="2">
+ <Object name="Base"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="10"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property><Property name="Height" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
+ <Object name="Target"><Properties Count="{count}">{base_properties}{mode}{join}</Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+    let decode_shell = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("shell selector document")
+    };
+
+    for kind in [
+        "PartDesign::Thickness",
+        "Part::Thickness",
+        "Part::Offset",
+        "Part::Offset2D",
+    ] {
+        let result = decode_shell(&shell_document(kind, "", ""));
+        let expected_mode = if kind == "Part::Offset2D" {
+            ShellMode::Pipe
+        } else {
+            ShellMode::Skin
+        };
+        assert!(
+            matches!(
+                feature_definition(&result, "Target"),
+                FeatureDefinition::Shell {
+                    mode: Some(mode),
+                    join: Some(ShellJoin::Arc),
+                    ..
+                } if *mode == expected_mode
+            ) || matches!(
+                feature_definition(&result, "Target"),
+                FeatureDefinition::OffsetShape {
+                    mode,
+                    join: ShellJoin::Arc,
+                    ..
+                } if *mode == expected_mode
+            )
+        );
+        assert!(result.report().losses.is_empty());
+
+        let malformed_values = [
+            "<Integer value=\"bad\"/>",
+            "<String value=\"0\"/>",
+            "<Wrapper><Integer value=\"0\"/></Wrapper>",
+            "<Integer value=\"0\"/><Integer value=\"1\"/>",
+            "<Integer value=\"-1\"/>",
+            "<Integer value=\"99\"/>",
+        ];
+        for selector in ["Mode", "Join"] {
+            for value in malformed_values {
+                let property = if value.starts_with("<String") {
+                    format!(
+                        r#"<Property name="{selector}" type="App::PropertyString">{value}</Property>"#
+                    )
+                } else {
+                    format!(
+                        r#"<Property name="{selector}" type="App::PropertyEnumeration">{value}</Property>"#
+                    )
+                };
+                let mode = if selector == "Mode" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                };
+                let join = if selector == "Join" {
+                    property.as_str()
+                } else {
+                    r#"<Property name="Join" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#
+                };
+                let result = decode_shell(&shell_document(kind, mode, join));
+                assert_native(&result, kind);
+            }
+        }
+    }
+
+    let offset_2d_unsupported = decode_shell(&shell_document(
+        "Part::Offset2D",
+        r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>"#,
+        r#"<Property name="Join" type="App::PropertyEnumeration"><Integer value="0"/></Property>"#,
+    ));
+    assert_native(&offset_2d_unsupported, "Part::Offset2D");
+
+    let surface_document = |mode: &str| {
+        let count = 5 + usize::from(!mode.is_empty());
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Box" name="Source" id="1"/><Object type="Part::Box" name="Support" id="2"/><Object type="Part::ProjectOnSurface" name="Target" id="3"/></Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Support"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="Target"><Properties Count="{count}"><Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property><Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="4"/></Property><Property name="Offset" type="App::PropertyDistance"><Float value="-0.5"/></Property>{mode}</Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+    let decode_surface = |document: &str| {
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("surface selector document")
+    };
+    for (mode, expected) in [
+        ("", cadmpeg_ir::features::SurfaceProjectionMode::All),
+        (
+            r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>"#,
+            cadmpeg_ir::features::SurfaceProjectionMode::Faces,
+        ),
+        (
+            r#"<Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>"#,
+            cadmpeg_ir::features::SurfaceProjectionMode::Edges,
+        ),
+    ] {
+        let result = decode_surface(&surface_document(mode));
+        assert!(matches!(
+            feature_definition(&result, "Target"),
+            FeatureDefinition::ProjectOnSurface { mode: actual, .. } if *actual == expected
+        ));
+        assert!(result.report().losses.is_empty());
+    }
+    for value in [
+        "<Integer value=\"bad\"/>",
+        "<String value=\"0\"/>",
+        "<Wrapper><Integer value=\"0\"/></Wrapper>",
+        "<Integer value=\"0\"/><Integer value=\"1\"/>",
+        "<Integer value=\"-1\"/>",
+        "<Integer value=\"99\"/>",
+    ] {
+        let mode = if value.starts_with("<String") {
+            format!(r#"<Property name="Mode" type="App::PropertyString">{value}</Property>"#)
+        } else {
+            format!(r#"<Property name="Mode" type="App::PropertyEnumeration">{value}</Property>"#)
+        };
+        let result = decode_surface(&surface_document(&mode));
+        assert!(matches!(
+            feature_definition(&result, "Target"),
+            FeatureDefinition::Native { kind, .. } if kind == "Part::ProjectOnSurface"
+        ));
+        assert_eq!(result.report().losses.len(), 1);
+    }
+}
+
+#[test]
 fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
@@ -1047,4 +1887,72 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         }
     ));
     assert!(result.report().losses.is_empty());
+}
+
+#[test]
+fn rejects_ambiguous_single_source_design_operands() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="Part::Box" name="A" id="1"/>
+ <Object type="Part::Box" name="B" id="2"/>
+ <Object type="Part::Box" name="C" id="3"/>
+ <Object type="Part::Scale" name="Scale" id="4"/>
+ <Object type="Part::Offset" name="Offset" id="5"/>
+ <Object type="Part::Cut" name="Cut" id="6"/>
+ <Object type="Part::Compound" name="Compound" id="7"/>
+ <Object type="Part::Sweep" name="Sweep" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="C"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="3"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
+ <Object name="Scale"><Properties Count="3">
+  <Property name="Base" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Uniform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="UniformScale" type="App::PropertyFloat"><Float value="2"/></Property>
+ </Properties></Object>
+ <Object name="Offset"><Properties Count="3">
+  <Property name="Source" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Value" type="App::PropertyDistance"><Float value="1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="Cut"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property>
+  <Property name="Tool" type="App::PropertyLink"><Link value="C"/></Property>
+ </Properties></Object>
+ <Object name="Compound"><Properties Count="1">
+  <Property name="Links" type="App::PropertyLinkList"><LinkList count="0"/></Property>
+ </Properties></Object>
+ <Object name="Sweep"><Properties Count="4">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="1"><Link value="A"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="C"/></LinkList></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous single-source operands");
+    let definition = |name: &str| {
+        &result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    for name in ["Scale", "Offset", "Cut", "Compound", "Sweep"] {
+        assert!(matches!(definition(name), FeatureDefinition::Native { .. }));
+    }
+    assert_eq!(result.report().losses.len(), 5);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
 }

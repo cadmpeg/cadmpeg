@@ -160,10 +160,38 @@ fn classify(name: &str) -> &'static str {
     }
 }
 
-fn attr(root: roxmltree::Node<'_, '_>, names: &[&str]) -> Option<String> {
-    names
-        .iter()
-        .find_map(|name| root.attribute(*name).map(str::to_owned))
+pub(crate) fn canonical_attribute(
+    root: roxmltree::Node<'_, '_>,
+    canonical: &str,
+    alias: &str,
+) -> Result<Option<String>, CodecError> {
+    match (root.attribute(canonical), root.attribute(alias)) {
+        (Some(_), Some(_)) => Err(CodecError::Malformed(format!(
+            "Document element has both {canonical} and {alias} attributes"
+        ))),
+        (Some(value), None) => Ok(Some(value.to_owned())),
+        (None, Some(_)) => Err(CodecError::Malformed(format!(
+            "Document element uses unsupported {alias}; expected {canonical}"
+        ))),
+        (None, None) => Ok(None),
+    }
+}
+
+fn unique_section<'a, 'input>(
+    root: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    let sections = root
+        .children()
+        .filter(|node| node.has_tag_name(tag))
+        .collect::<Vec<_>>();
+    match sections.as_slice() {
+        [section] => Ok(Some(*section)),
+        [] => Ok(None),
+        _ => Err(CodecError::Malformed(format!(
+            "Document.xml has duplicate {tag} sections"
+        ))),
+    }
 }
 
 fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
@@ -178,9 +206,10 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
             root.tag_name().name()
         )));
     }
-    let schema_version = attr(root, &["SchemaVersion", "schemaVersion"])
+    let schema_version = canonical_attribute(root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
-    let file_version = attr(root, &["FileVersion", "fileVersion"]).unwrap_or_else(|| "0".into());
+    let file_version =
+        canonical_attribute(root, "FileVersion", "fileVersion")?.unwrap_or_else(|| "0".into());
     schema_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
@@ -197,15 +226,16 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     } else {
         "Object"
     };
-    let declarations = root
-        .children()
-        .find(|node| node.has_tag_name(declaration_tag))
+    let data_tag = if schema_version == "2" {
+        "FeatureData"
+    } else {
+        "ObjectData"
+    };
+    let _ = unique_section(root, data_tag)?;
+    let declarations = unique_section(root, declaration_tag)?
         .into_iter()
-        .flat_map(|declarations| {
-            declarations
-                .children()
-                .filter(|node| node.has_tag_name(record_tag))
-        })
+        .flat_map(|section| section.children())
+        .filter(|node| node.has_tag_name(record_tag))
         .collect::<Vec<_>>();
     let object_count = declarations.len();
     let domains = declarations
@@ -237,7 +267,7 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         id: crate::native::native_id("document", "0"),
         schema_version,
         file_version,
-        program_version: attr(root, &["ProgramVersion", "programVersion"]),
+        program_version: canonical_attribute(root, "ProgramVersion", "programVersion")?,
         root_name: root.tag_name().name().into(),
         object_count,
         document_kind,
@@ -303,7 +333,14 @@ pub(crate) fn logical_ledger(
                         (
                             property.byte_start,
                             property.byte_end,
-                            "typed",
+                            if gui::has_registered_property_grammar(
+                                &property.name,
+                                &property.type_name,
+                            ) {
+                                "typed"
+                            } else {
+                                "named_opaque"
+                            },
                             property.id.clone(),
                         )
                     })

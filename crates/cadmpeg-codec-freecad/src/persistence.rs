@@ -45,10 +45,7 @@ pub fn parse_with_context(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
-    let schema = root
-        .attribute("SchemaVersion")
-        .or_else(|| root.attribute("schemaVersion"))
-        .map(str::to_owned)
+    let schema = crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| {
             CodecError::Malformed("Document element has no SchemaVersion attribute".into())
         })?;
@@ -61,16 +58,8 @@ pub fn parse_with_context(
             )));
         }
     };
-    let objects_node = root
-        .children()
-        .find(|node| node.has_tag_name(declarations_tag))
-        .ok_or_else(|| {
-            CodecError::Malformed(format!("Document.xml has no {declarations_tag} section"))
-        })?;
-    let data_node = root
-        .children()
-        .find(|node| node.has_tag_name(data_tag))
-        .ok_or_else(|| CodecError::Malformed(format!("Document.xml has no {data_tag} section")))?;
+    let objects_node = unique_section(root, declarations_tag)?;
+    let data_node = unique_section(root, data_tag)?;
 
     let declared_count = objects_node
         .attribute("Count")
@@ -91,6 +80,16 @@ pub fn parse_with_context(
     }
 
     let dependencies_enabled = schema != "2" && objects_node.attribute("Dependencies").is_some();
+    let mut saw_object_declaration = false;
+    for child in objects_node.children().filter(roxmltree::Node::is_element) {
+        if child.has_tag_name(record_tag) {
+            saw_object_declaration = true;
+        } else if saw_object_declaration && child.has_tag_name("ObjectDeps") {
+            return Err(CodecError::Malformed(
+                "ObjectDeps records must precede object declarations".into(),
+            ));
+        }
+    }
     let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
@@ -256,24 +255,69 @@ pub fn parse_with_context(
 
     let mut properties = Vec::new();
     let mut extensions = Vec::new();
-    if let Some(document_properties) = root.children().find(|node| node.has_tag_name("Properties"))
-    {
-        parse_properties(
-            text,
-            document_properties,
-            &crate::native::native_id("document", "0"),
-            &mut properties,
-            ctx,
-        )?;
+    let document_properties = root
+        .children()
+        .filter(|node| node.has_tag_name("Properties"))
+        .collect::<Vec<_>>();
+    match document_properties.as_slice() {
+        [] => {}
+        [document_properties] => {
+            parse_properties(
+                text,
+                *document_properties,
+                &crate::native::native_id("document", "0"),
+                &mut properties,
+                ctx,
+            )?;
+        }
+        _ => {
+            return Err(CodecError::Malformed(
+                "Document.xml has multiple root Properties containers".into(),
+            ));
+        }
     }
     for object in &objects {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
             CodecError::Malformed(format!("missing ObjectData for {}", object.name))
         })?;
-        for extensions_node in data
+        let children = data
             .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        let extension_containers = children
+            .iter()
             .filter(|node| node.has_tag_name("Extensions"))
+            .copied()
+            .collect::<Vec<_>>();
+        if extension_containers.len() > 1 {
+            return Err(malformed(format!(
+                "object {} has multiple direct Extensions containers",
+                object.id
+            )));
+        }
+        let property_containers = children
+            .iter()
+            .filter(|node| node.has_tag_name("Properties"))
+            .copied()
+            .collect::<Vec<_>>();
+        if property_containers.len() > 1 {
+            return Err(malformed(format!(
+                "object {} has multiple direct Properties containers",
+                object.id
+            )));
+        }
+        if let (Some(extensions), Some(properties)) =
+            (extension_containers.first(), property_containers.first())
         {
+            if extensions.range().start > properties.range().start {
+                return Err(malformed(format!(
+                    "object {} writes Properties before Extensions",
+                    object.id
+                )));
+            }
+        }
+        let mut extension_ids_by_start = HashMap::new();
+        if let Some(extensions_node) = extension_containers.first() {
             let nodes = extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"))
@@ -291,46 +335,58 @@ pub fn parse_with_context(
                     object.id
                 )));
             }
+            let mut extension_names = HashSet::new();
+            let mut extension_types = HashSet::new();
             for (order, node) in nodes.into_iter().enumerate() {
                 let name = required_attr(node, "name")?;
+                let type_name = required_attr(node, "type")?;
+                if !extension_names.insert(name.clone()) {
+                    return Err(malformed(format!(
+                        "duplicate extension name {name} for {}",
+                        object.id
+                    )));
+                }
+                if !extension_types.insert(type_name.clone()) {
+                    return Err(malformed(format!(
+                        "duplicate extension type {type_name} for {}",
+                        object.id
+                    )));
+                }
+                let id = extension_id(&object.id, &name, order);
+                extension_ids_by_start.insert(node.range().start, id.clone());
                 extensions.push(ExtensionRecord {
-                    id: extension_id(&object.id, &name, order),
+                    id,
                     owner: object.id.clone(),
                     name,
-                    type_name: required_attr(node, "type")?,
+                    type_name,
                     order,
                     raw_xml: text[node.range()].to_owned(),
                 });
             }
         }
-        let containers = data
-            .children()
-            .filter(|node| node.has_tag_name("Properties"))
-            .chain(
-                data.children()
-                    .filter(|node| node.has_tag_name("Extensions"))
-                    .flat_map(|node| {
-                        node.children()
-                            .filter(|child| child.has_tag_name("Extension"))
-                    })
-                    .flat_map(|node| {
-                        node.children()
-                            .filter(|child| child.has_tag_name("Properties"))
-                    }),
-            );
-        for container in containers {
-            let property_owner = container
-                .ancestors()
-                .find(|ancestor| ancestor.has_tag_name("Extension"))
-                .and_then(|extension| {
-                    let name = extension.attribute("name")?;
-                    extensions
-                        .iter()
-                        .find(|record| record.owner == object.id && record.name == name)
-                        .map(|record| record.id.clone())
-                })
-                .unwrap_or_else(|| object.id.clone());
-            parse_properties(text, container, &property_owner, &mut properties, ctx)?;
+        for container in property_containers {
+            parse_properties(text, container, &object.id, &mut properties, ctx)?;
+        }
+        if let Some(extensions_node) = extension_containers.first() {
+            for extension in extensions_node
+                .children()
+                .filter(|node| node.has_tag_name("Extension"))
+            {
+                let extension_id = extension_ids_by_start
+                    .get(&extension.range().start)
+                    .ok_or_else(|| {
+                        malformed(format!(
+                            "extension under {} has no native identity",
+                            object.id
+                        ))
+                    })?;
+                for container in extension
+                    .children()
+                    .filter(|node| node.has_tag_name("Properties"))
+                {
+                    parse_properties(text, container, extension_id, &mut properties, ctx)?;
+                }
+            }
         }
     }
     for property in &mut properties {
@@ -365,6 +421,15 @@ fn parse_properties(
         .children()
         .filter(|node| node.has_tag_name("_Property"))
         .collect::<Vec<_>>();
+    let mut property_names = HashSet::new();
+    for node in transient_nodes.iter().chain(nodes.iter()) {
+        let name = required_attr(*node, "name")?;
+        if !property_names.insert(name.clone()) {
+            return Err(CodecError::Malformed(format!(
+                "duplicate property name {name} for {owner}"
+            )));
+        }
+    }
     let declared = container
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -396,7 +461,7 @@ fn parse_properties(
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
-            family: classify_property(&type_name),
+            family: property_family(&type_name),
             type_name,
             status: node
                 .attribute("status")
@@ -451,7 +516,7 @@ fn parse_properties(
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
-        let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
+        let links = if link_grammar(&type_name).is_some() {
             parse_link_targets(node, &type_name)?
         } else {
             Vec::new()
@@ -463,9 +528,8 @@ fn parse_properties(
                     .attributes
                     .iter()
                     .filter(|(name, _)| {
-                        (matches!(name.as_str(), "file" | "File")
-                            && !type_name.contains("PropertyXLink"))
-                            || (type_name.contains("PropertyFile")
+                        (matches!(name.as_str(), "file" | "File") && !is_xlink_type(&type_name))
+                            || (property_family(&type_name) == PropertyFamily::File
                                 && matches!(name.as_str(), "name" | "Name"))
                     })
                     .map(|(_, value)| value.clone())
@@ -476,7 +540,7 @@ fn parse_properties(
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
             name,
-            family: classify_property(&type_name),
+            family: property_family(&type_name),
             type_name,
             status: node
                 .attribute("status")
@@ -501,6 +565,18 @@ fn parse_properties(
     Ok(())
 }
 
+pub(crate) fn validate_link_property(
+    property: roxmltree::Node<'_, '_>,
+    type_name: &str,
+) -> Result<(), CodecError> {
+    let grammar_type = if type_name == "App::PropertyPlacementLink" {
+        "App::PropertyLink"
+    } else {
+        type_name
+    };
+    parse_link_targets(property, grammar_type).map(|_| ())
+}
+
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
@@ -511,18 +587,28 @@ fn parse_link_targets(
     };
     let root = single_value_element(property, grammar.root_tag(), type_name)?;
     match grammar {
-        LinkGrammar::Link => Ok(vec![local_link(root, "value", &[])?]),
+        LinkGrammar::Link => {
+            reject_nested_link_value(root)?;
+            Ok(vec![local_link(root, "value", &[])?])
+        }
         LinkGrammar::LinkList => counted_children(root, "Link", type_name)?
-            .map(|node| local_link(node, "value", &[]))
+            .map(|node| {
+                reject_nested_link_value(node)?;
+                local_link(node, "value", &[])
+            })
             .collect(),
         LinkGrammar::LinkSub => {
             let subelements = counted_children(root, "Sub", type_name)?
-                .map(|node| restored_subelement(node, "value"))
+                .map(|node| {
+                    reject_nested_link_value(node)?;
+                    restored_subelement(node, "value")
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(vec![local_link(root, "value", &subelements)?])
         }
         LinkGrammar::LinkSubList => counted_children(root, "Link", type_name)?
             .map(|node| {
+                reject_nested_link_value(node)?;
                 let sub = restored_subelement(node, "sub")?;
                 local_link(node, "obj", &[sub])
             })
@@ -532,6 +618,15 @@ fn parse_link_targets(
             .map(xlink)
             .collect(),
     }
+}
+
+fn reject_nested_link_value(node: roxmltree::Node<'_, '_>) -> Result<(), CodecError> {
+    if node.children().any(|child| child.is_element()) {
+        return Err(CodecError::Malformed(
+            "link carrier contains nested element values".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -643,12 +738,44 @@ fn local_link(
 fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
     reject_link_aliases(node, &["name", "file", "sub"])?;
     let file = node.attribute("file").map(str::to_owned);
+    let children = node
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
     let subelements = match (node.attribute("sub"), node.attribute("count")) {
-        (Some(_), None) => vec![restored_subelement(node, "sub")?],
-        (None, Some(_)) => counted_children(node, "Sub", "App::PropertyXLink")?
-            .map(|child| restored_subelement(child, "value"))
-            .collect::<Result<Vec<_>, _>>()?,
-        (None, None) => Vec::new(),
+        (Some(_), None) if children.is_empty() => vec![restored_subelement(node, "sub")?],
+        (Some(_), None) => {
+            return Err(CodecError::Malformed(
+                "App::PropertyXLink sub carrier has nested values".into(),
+            ));
+        }
+        (None, Some(_)) => {
+            if node
+                .attribute("count")
+                .and_then(|count| count.parse::<usize>().ok())
+                == Some(0)
+            {
+                return Err(CodecError::Malformed(
+                    "App::PropertyXLink uses count only for one or more Sub values".into(),
+                ));
+            }
+            counted_children(node, "Sub", "App::PropertyXLink")?
+                .map(|child| {
+                    if child.children().any(|value| value.is_element()) {
+                        return Err(CodecError::Malformed(
+                            "App::PropertyXLink Sub carrier has nested values".into(),
+                        ));
+                    }
+                    restored_subelement(child, "value")
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        (None, None) if children.is_empty() => Vec::new(),
+        (None, None) => {
+            return Err(CodecError::Malformed(
+                "App::PropertyXLink has nested values without a sub carrier".into(),
+            ));
+        }
         (Some(_), Some(_)) => {
             return Err(CodecError::Malformed(
                 "App::PropertyXLink has both sub and count carriers".into(),
@@ -688,63 +815,113 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
     Ok(())
 }
 
-fn classify_property(type_name: &str) -> PropertyFamily {
-    if type_name.contains("PropertyPythonObject") {
-        PropertyFamily::PythonObject
-    } else if type_name.contains("PropertyExpression") {
-        PropertyFamily::Expression
-    } else if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
-        PropertyFamily::Link
-    } else if type_name.contains("PropertyFile") {
-        PropertyFamily::File
-    } else if type_name.contains("PropertyPartShape")
-        || type_name.contains("PropertyGeometry")
-        || type_name.contains("PropertyMesh")
-        || type_name.contains("PropertyPoint")
-    {
-        PropertyFamily::Geometry
-    } else if type_name.contains("PropertyPlacement") || type_name.contains("PropertyTransform") {
-        PropertyFamily::Placement
-    } else if type_name.contains("PropertyMatrix") {
-        PropertyFamily::Matrix
-    } else if type_name.contains("PropertyVector") {
-        PropertyFamily::Vector
-    } else if type_name.contains("PropertyEnumeration") {
-        PropertyFamily::Enumeration
-    } else if type_name.contains("PropertyQuantity")
-        || type_name.contains("PropertyLength")
-        || type_name.contains("PropertyDistance")
-        || type_name.contains("PropertyAngle")
-        || type_name.contains("PropertyArea")
-        || type_name.contains("PropertyVolume")
-        || type_name.contains("PropertySpeed")
-        || type_name.contains("PropertyAcceleration")
-        || type_name.contains("PropertyPressure")
-        || type_name.contains("PropertyForce")
-    {
-        PropertyFamily::Quantity
-    } else if type_name.contains("PropertyMap") {
-        PropertyFamily::Map
-    } else if type_name.contains("List") {
-        PropertyFamily::List
-    } else if type_name.contains("PropertyString")
-        || type_name.contains("PropertyPath")
-        || type_name.contains("PropertyUUID")
-    {
-        PropertyFamily::String
-    } else if type_name.contains("PropertyBool")
-        || type_name.contains("PropertyInteger")
-        || type_name.contains("PropertyFloat")
-        || type_name.contains("PropertyPercent")
-    {
-        PropertyFamily::Scalar
-    } else {
-        PropertyFamily::Unknown
+pub(crate) fn property_family(type_name: &str) -> PropertyFamily {
+    match type_name {
+        "App::PropertyPythonObject" => PropertyFamily::PythonObject,
+        "App::PropertyExpression" | "App::PropertyExpressionEngine" => PropertyFamily::Expression,
+        "App::PropertyLink"
+        | "App::PropertyLinkChild"
+        | "App::PropertyLinkGlobal"
+        | "App::PropertyLinkHidden"
+        | "App::PropertyLinkList"
+        | "App::PropertyLinkListChild"
+        | "App::PropertyLinkListGlobal"
+        | "App::PropertyLinkListHidden"
+        | "App::PropertyLinkSub"
+        | "App::PropertyLinkSubChild"
+        | "App::PropertyLinkSubGlobal"
+        | "App::PropertyLinkSubHidden"
+        | "App::PropertyLinkSubList"
+        | "App::PropertyLinkSubListChild"
+        | "App::PropertyLinkSubListGlobal"
+        | "App::PropertyLinkSubListHidden"
+        | "App::PropertyXLink"
+        | "App::PropertyXLinkList"
+        | "App::PropertyXLinkSub"
+        | "App::PropertyXLinkSubHidden"
+        | "App::PropertyXLinkSubList" => PropertyFamily::Link,
+        "App::PropertyFile" | "App::PropertyFileIncluded" => PropertyFamily::File,
+        "Part::PropertyPartShape"
+        | "Part::PropertyGeometryList"
+        | "Mesh::PropertyMeshKernel"
+        | "Points::PropertyPointKernel" => PropertyFamily::Geometry,
+        "App::PropertyPlacement" | "App::PropertyPlacementList" => PropertyFamily::Placement,
+        "App::PropertyMatrix" => PropertyFamily::Matrix,
+        "App::PropertyVector" | "App::PropertyVectorList" => PropertyFamily::Vector,
+        "App::PropertyEnumeration" => PropertyFamily::Enumeration,
+        "App::PropertyAcceleration"
+        | "App::PropertyAngle"
+        | "App::PropertyArea"
+        | "App::PropertyDistance"
+        | "App::PropertyForce"
+        | "App::PropertyLength"
+        | "App::PropertyPressure"
+        | "App::PropertyQuantity"
+        | "App::PropertyQuantityConstraint"
+        | "App::PropertySpeed"
+        | "App::PropertyVolume" => PropertyFamily::Quantity,
+        "App::PropertyMap" => PropertyFamily::Map,
+        "App::PropertyBoolList"
+        | "App::PropertyFloatList"
+        | "App::PropertyIntegerList"
+        | "App::PropertyIntegerSet"
+        | "App::PropertyStringList"
+        | "Part::PropertyTopoShapeList"
+        | "Sketcher::PropertyConstraintList"
+        | "TechDraw::PropertyCenterLineList"
+        | "TechDraw::PropertyCosmeticEdgeList"
+        | "TechDraw::PropertyCosmeticVertexList"
+        | "TechDraw::PropertyGeomFormatList" => PropertyFamily::List,
+        "App::PropertyPath"
+        | "App::PropertyString"
+        | "App::PropertyUUID"
+        | "Path::PropertyPath" => PropertyFamily::String,
+        "App::PropertyBool"
+        | "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => PropertyFamily::Scalar,
+        _ => PropertyFamily::Unknown,
+    }
+}
+
+pub(crate) fn is_xlink_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyXLink"
+            | "App::PropertyXLinkList"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+    )
+}
+
+fn unique_section<'a, 'input>(
+    root: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let sections = root
+        .children()
+        .filter(|node| node.has_tag_name(tag))
+        .collect::<Vec<_>>();
+    match sections.as_slice() {
+        [section] => Ok(*section),
+        [] => Err(CodecError::Malformed(format!(
+            "Document.xml has no {tag} section"
+        ))),
+        _ => Err(CodecError::Malformed(format!(
+            "Document.xml has duplicate {tag} sections"
+        ))),
     }
 }
 
 fn object_id(name: &str) -> String {
     crate::native::native_id("object", name)
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 fn extension_id(owner: &str, name: &str, order: usize) -> String {

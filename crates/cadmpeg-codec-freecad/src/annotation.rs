@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic annotation graph recovery.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
@@ -48,8 +48,12 @@ pub(crate) fn transfer(
                 text: owned
                     .iter()
                     .filter(|property| schema.text.contains(&property.name.as_str()))
-                    .flat_map(|property| property.values.iter())
-                    .filter_map(text_value)
+                    .filter_map(|property| {
+                        schema
+                            .text_type
+                            .and_then(|type_name| strict_text_values(property, type_name).ok())
+                    })
+                    .flatten()
                     .collect(),
                 references,
                 parameters,
@@ -89,6 +93,7 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
+        validate_text_carriers(&owned, &schema)?;
         let target = |link: &crate::native::LinkTarget| SemanticAnnotationTarget {
             target: link
                 .document
@@ -127,7 +132,10 @@ pub(crate) fn transfer_neutral(
                 .map(|(role, references)| (role.clone(), references.iter().map(target).collect()))
                 .collect(),
             value: None,
-            format: schema.format.and_then(|name| string_property(&owned, name)),
+            format: match schema.format {
+                Some(name) => string_property(&owned, name, "App::PropertyString")?,
+                None => None,
+            },
             position: annotation_position(&owned, schema.position)?,
             parameters: record.parameters.clone(),
             assets: record
@@ -149,15 +157,29 @@ pub(crate) fn is_annotation_type(type_name: &str) -> bool {
 struct AnnotationSchema {
     kind: SemanticAnnotationKind,
     text: &'static [&'static str],
+    text_type: Option<&'static str>,
     format: Option<&'static str>,
     position: PositionCarrier,
 }
 
 #[derive(Clone, Copy)]
 enum PositionCarrier {
-    Vector(&'static str),
-    Coordinates(&'static str, &'static str),
+    Vector {
+        name: &'static str,
+        type_name: &'static str,
+    },
+    Coordinates {
+        x_name: &'static str,
+        y_name: &'static str,
+        type_names: &'static [&'static str],
+    },
 }
+
+const TECHDRAW_POSITION_TYPES: &[&str] = &[
+    "App::PropertyDistance",
+    "App::PropertyLength",
+    "App::PropertyFloat",
+];
 
 fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
     use SemanticAnnotationKind as Kind;
@@ -165,46 +187,79 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
         "App::Annotation" => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Vector("Position"),
+            position: PositionCarrier::Vector {
+                name: "Position",
+                type_name: "App::PropertyVector",
+            },
         },
         "App::AnnotationLabel" => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Vector("TextPosition"),
+            position: PositionCarrier::Vector {
+                name: "TextPosition",
+                type_name: "App::PropertyVector",
+            },
         },
         "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython" => AnnotationSchema {
             kind: Kind::Text,
             text: &["Text"],
+            text_type: Some("App::PropertyStringList"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython" => AnnotationSchema {
             kind: Kind::Text,
             text: &["AnnoText"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewDimension"
         | "TechDraw::DrawViewDimExtent"
         | "TechDraw::LandmarkDimension" => AnnotationSchema {
             kind: Kind::Dimension,
             text: &["FormatSpec"],
+            text_type: Some("App::PropertyString"),
             format: Some("FormatSpec"),
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewBalloon" => AnnotationSchema {
             kind: Kind::Balloon,
             text: &["Text"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawLeaderLine" | "TechDraw::DrawLeaderLinePython" => AnnotationSchema {
             kind: Kind::Leader,
             text: &[],
+            text_type: None,
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         "TechDraw::DrawViewSymbol"
         | "TechDraw::DrawViewSymbolPython"
@@ -212,8 +267,13 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
         | "TechDraw::DrawWeldSymbolPython" => AnnotationSchema {
             kind: Kind::Symbol,
             text: &["TailText"],
+            text_type: Some("App::PropertyString"),
             format: None,
-            position: PositionCarrier::Coordinates("X", "Y"),
+            position: PositionCarrier::Coordinates {
+                x_name: "X",
+                y_name: "Y",
+                type_names: TECHDRAW_POSITION_TYPES,
+            },
         },
         _ => return None,
     };
@@ -225,13 +285,30 @@ fn annotation_position(
     carrier: PositionCarrier,
 ) -> Result<Option<[f64; 3]>, CodecError> {
     match carrier {
-        PositionCarrier::Vector(name) => optional_vector_property(properties, name),
-        PositionCarrier::Coordinates(x_name, y_name) => {
-            let x = optional_scalar_property(properties, x_name)?;
-            let y = optional_scalar_property(properties, y_name)?;
+        PositionCarrier::Vector { name, type_name } => {
+            let position = optional_vector_property(properties, name, &[type_name])?;
+            if position
+                .is_some_and(|position| position.iter().any(|component| !component.is_finite()))
+            {
+                return Err(CodecError::Malformed(
+                    "annotation position contains a non-finite coordinate".into(),
+                ));
+            }
+            Ok(position)
+        }
+        PositionCarrier::Coordinates {
+            x_name,
+            y_name,
+            type_names,
+        } => {
+            let x = optional_scalar_property(properties, x_name, type_names)?;
+            let y = optional_scalar_property(properties, y_name, type_names)?;
             match (x, y) {
                 (None, None) => Ok(None),
-                (Some(x), Some(y)) => Ok(Some([x, y, 0.0])),
+                (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok(Some([x, y, 0.0])),
+                (Some(_), Some(_)) => Err(CodecError::Malformed(
+                    "annotation position contains a non-finite coordinate".into(),
+                )),
                 _ => Err(CodecError::Malformed(format!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),
@@ -243,81 +320,305 @@ fn annotation_position(
 fn optional_scalar_property(
     properties: &[&PropertyRecord],
     name: &str,
+    type_names: &[&str],
 ) -> Result<Option<f64>, CodecError> {
-    let Some(property) = properties.iter().find(|property| property.name == name) else {
+    let Some(property) = typed_property(properties, name, type_names)? else {
         return Ok(None);
     };
-    scalar_property(properties, name).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "annotation property {} is not a scalar",
-            property.id
-        ))
-    })
+    let attributes = direct_value_attributes(property, "Float", &["value"])?;
+    let value = attributes
+        .get("value")
+        .and_then(|value| value.parse::<f64>().ok())
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "annotation property {} is not a scalar",
+                property.id
+            ))
+        })?;
+    Ok(Some(value))
 }
 
 fn optional_vector_property(
     properties: &[&PropertyRecord],
     name: &str,
+    type_names: &[&str],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = properties.iter().find(|property| property.name == name) else {
+    let Some(property) = typed_property(properties, name, type_names)? else {
         return Ok(None);
     };
-    vector_property(properties, name).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
+    let attributes =
+        direct_value_attributes(property, "PropertyVector", &["valueX", "valueY", "valueZ"])?;
+    let x = attributes
+        .get("valueX")
+        .and_then(|value| value.parse::<f64>().ok());
+    let y = attributes
+        .get("valueY")
+        .and_then(|value| value.parse::<f64>().ok());
+    let z = attributes
+        .get("valueZ")
+        .and_then(|value| value.parse::<f64>().ok());
+    match (x, y, z) {
+        (Some(x), Some(y), Some(z)) => Ok(Some([x, y, z])),
+        _ => Err(CodecError::Malformed(format!(
             "annotation property {} is not a vector",
+            property.id
+        ))),
+    }
+}
+
+fn string_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+    type_name: &str,
+) -> Result<Option<String>, CodecError> {
+    let Some(property) = typed_property(properties, name, &[type_name])? else {
+        return Ok(None);
+    };
+    let attributes = direct_value_attributes(property, "String", &["value"])?;
+    attributes.get("value").cloned().map(Some).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "annotation property {} string value is missing value",
             property.id
         ))
     })
 }
 
-fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
-    property_attribute(properties, name, &["value", "Value"])?
-        .parse()
-        .ok()
-}
-
-fn string_property(properties: &[&PropertyRecord], name: &str) -> Option<String> {
-    property_attribute(properties, name, &["value", "Value", "string", "String"]).map(str::to_owned)
-}
-
-fn property_attribute<'a>(
+fn typed_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
-    attributes: &[&str],
-) -> Option<&'a str> {
-    let value = properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?;
-    attributes
-        .iter()
-        .find_map(|attribute| value.attributes.get(*attribute).map(String::as_str))
-        .or(value.text.as_deref())
+    type_names: &[&str],
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    if !type_names.contains(&property.type_name.as_str()) {
+        let expected = type_names.join(" or ");
+        return Err(CodecError::Malformed(format!(
+            "annotation property {name} has runtime type {}, expected {expected}",
+            property.type_name
+        )));
+    }
+    Ok(Some(property))
 }
 
-fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {
-    let attributes = &properties
-        .iter()
-        .find(|property| property.name == name)?
-        .values
-        .first()?
-        .attributes;
-    Some([
-        attributes.get("valueX")?.parse().ok()?,
-        attributes.get("valueY")?.parse().ok()?,
-        attributes.get("valueZ")?.parse().ok()?,
-    ])
+fn validate_text_carriers(
+    properties: &[&PropertyRecord],
+    schema: &AnnotationSchema,
+) -> Result<(), CodecError> {
+    let Some(type_name) = schema.text_type else {
+        return Ok(());
+    };
+    for name in schema.text {
+        let Some(property) = typed_property(properties, name, &[type_name])? else {
+            continue;
+        };
+        strict_text_values(property, type_name)?;
+    }
+    Ok(())
 }
 
-fn text_value(value: &crate::native::ValueRecord) -> Option<String> {
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn direct_value_attributes(
+    property: &PropertyRecord,
+    expected_tag: &str,
+    allowed_attributes: &[&str],
+) -> Result<BTreeMap<String, String>, CodecError> {
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "annotation property {} has invalid XML: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if has_non_whitespace_text(root) {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has unexpected text",
+            property.id
+        )));
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [value] = values.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} requires one direct {expected_tag} value",
+            property.id
+        )));
+    };
+    if !value.has_tag_name(expected_tag) {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has root {}, expected {expected_tag}",
+            property.id,
+            value.tag_name().name()
+        )));
+    }
+    validate_leaf_value(*value, property, allowed_attributes)?;
+    Ok(value
+        .attributes()
+        .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+        .collect())
+}
+
+fn strict_text_values(
+    property: &PropertyRecord,
+    expected_type: &str,
+) -> Result<Vec<String>, CodecError> {
+    if property.type_name != expected_type {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has runtime type {}, expected {expected_type}",
+            property.id, property.type_name
+        )));
+    }
+    if expected_type == "App::PropertyString" {
+        let attributes = direct_value_attributes(property, "String", &["value"])?;
+        let value = attributes.get("value").cloned().ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "annotation property {} string value is missing value",
+                property.id
+            ))
+        })?;
+        return Ok([value]
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect());
+    }
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "annotation property {} has invalid XML: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if has_non_whitespace_text(root) {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has unexpected text",
+            property.id
+        )));
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [string_list] = values.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} requires one direct StringList value",
+            property.id
+        )));
+    };
+    if !string_list.has_tag_name("StringList") {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} has root {}, expected StringList",
+            property.id,
+            string_list.tag_name().name()
+        )));
+    }
+    validate_attributes(*string_list, property, &["count"])?;
+    let count = string_list
+        .attribute("count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "annotation property {} StringList has an invalid count",
+                property.id
+            ))
+        })?;
+    if has_non_whitespace_text(*string_list) {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} StringList has unexpected text",
+            property.id
+        )));
+    }
+    let strings = string_list
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if strings.len() != count {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} StringList count={count} but {} direct String values were found",
+            property.id,
+            strings.len()
+        )));
+    }
+    strings
+        .into_iter()
+        .map(|string| {
+            if !string.has_tag_name("String") {
+                return Err(CodecError::Malformed(format!(
+                    "annotation property {} StringList has an unexpected child {}",
+                    property.id,
+                    string.tag_name().name()
+                )));
+            }
+            validate_leaf_value(string, property, &["value"])?;
+            string.attribute("value").map(str::to_owned).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "annotation property {} String value is missing value",
+                    property.id
+                ))
+            })
+        })
+        .map(|value| value.map(|value| (!value.trim().is_empty()).then_some(value)))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|values| values.into_iter().flatten().collect())
+}
+
+fn validate_leaf_value(
+    value: roxmltree::Node<'_, '_>,
+    property: &PropertyRecord,
+    allowed_attributes: &[&str],
+) -> Result<(), CodecError> {
+    validate_attributes(value, property, allowed_attributes)?;
+    if value.children().any(|child| child.is_element()) || has_non_whitespace_text(value) {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} value {} has nested content",
+            property.id,
+            value.tag_name().name()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_attributes(
+    value: roxmltree::Node<'_, '_>,
+    property: &PropertyRecord,
+    allowed_attributes: &[&str],
+) -> Result<(), CodecError> {
+    if value
+        .attributes()
+        .any(|attribute| !allowed_attributes.contains(&attribute.name()))
+    {
+        return Err(CodecError::Malformed(format!(
+            "annotation property {} value {} has unsupported attributes",
+            property.id,
+            value.tag_name().name()
+        )));
+    }
+    Ok(())
+}
+
+fn has_non_whitespace_text(value: roxmltree::Node<'_, '_>) -> bool {
     value
-        .attributes
-        .iter()
-        .find(|(name, _)| matches!(name.as_str(), "value" | "Value" | "string" | "String"))
-        .map(|(_, value)| value.clone())
-        .or_else(|| value.text.clone())
-        .filter(|value| !value.trim().is_empty())
+        .children()
+        .any(|child| child.is_text() && child.text().is_some_and(|text| !text.trim().is_empty()))
 }
 
 #[cfg(test)]
@@ -403,6 +704,138 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn rejects_noncanonical_annotation_value_roots_and_attributes() {
+        fn app_annotation_document(label_text: &str, position: &str) -> String {
+            format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Annotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2"><Property name="LabelText" type="App::PropertyStringList">{label_text}</Property><Property name="Position" type="App::PropertyVector">{position}</Property></Properties></Object></ObjectData></Document>"#
+            )
+        }
+
+        fn techdraw_annotation_document(x: &str) -> String {
+            format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="3"><Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property><Property name="X" type="App::PropertyDistance">{x}</Property><Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property></Properties></Object></ObjectData></Document>"#
+            )
+        }
+
+        fn rich_annotation_document(text: &str) -> String {
+            format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawRichAnno" name="Rich"/></Objects>
+<ObjectData Count="1"><Object name="Rich"><Properties Count="3"><Property name="AnnoText" type="App::PropertyString">{text}</Property><Property name="X" type="App::PropertyDistance"><Float value="10"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property></Properties></ObjectData></Document>"#
+            )
+        }
+
+        fn dimension_document(format_spec: &str) -> String {
+            format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects>
+<ObjectData Count="1"><Object name="Dimension"><Properties Count="3"><Property name="FormatSpec" type="App::PropertyString">{format_spec}</Property><Property name="X" type="App::PropertyDistance"><Float value="10"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property></Properties></Object></ObjectData></Document>"#
+            )
+        }
+
+        let documents = [
+            (
+                "nested string list child",
+                app_annotation_document(
+                    r#"<StringList count="1"><Wrapper><String value="BAD"/></Wrapper></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "string list count mismatch",
+                app_annotation_document(
+                    r#"<StringList count="2"><String value="ONE"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "string list uppercase attribute",
+                app_annotation_document(
+                    r#"<StringList count="1"><String Value="BAD"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "string list wrong direct child",
+                app_annotation_document(
+                    r#"<StringList count="1"><Float value="1"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "property significant text",
+                app_annotation_document(
+                    r#"prefix<StringList count="1"><String value="NOTE"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "duplicate string list roots",
+                app_annotation_document(
+                    r#"<StringList count="1"><String value="ONE"/></StringList><StringList count="1"><String value="TWO"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/>"#,
+                ),
+            ),
+            (
+                "vector wrapper",
+                app_annotation_document(
+                    r#"<StringList count="1"><String value="NOTE"/></StringList>"#,
+                    r#"<Wrapper><PropertyVector valueX="1" valueY="2" valueZ="3"/></Wrapper>"#,
+                ),
+            ),
+            (
+                "vector unsupported attribute",
+                app_annotation_document(
+                    r#"<StringList count="1"><String value="NOTE"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3" Value="4"/>"#,
+                ),
+            ),
+            (
+                "vector missing attribute",
+                app_annotation_document(
+                    r#"<StringList count="1"><String value="NOTE"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2"/>"#,
+                ),
+            ),
+            (
+                "vector duplicate roots",
+                app_annotation_document(
+                    r#"<StringList count="1"><String value="NOTE"/></StringList>"#,
+                    r#"<PropertyVector valueX="1" valueY="2" valueZ="3"/><PropertyVector valueX="4" valueY="5" valueZ="6"/>"#,
+                ),
+            ),
+            (
+                "scalar uppercase attribute",
+                techdraw_annotation_document(r#"<Float Value="10"/>"#),
+            ),
+            (
+                "string uppercase attribute",
+                rich_annotation_document(r#"<String Value="BAD"/>"#),
+            ),
+            (
+                "format duplicate attribute spellings",
+                dimension_document(r#"<String value="A" Value="B"/>"#),
+            ),
+        ];
+        for (case, document) in documents {
+            assert!(
+                matches!(
+                    FcstdCodec.decode(
+                        &mut Cursor::new(archive(&document)),
+                        &DecodeOptions::default(),
+                    ),
+                    Err(cadmpeg_core::CodecError::Malformed(_))
+                ),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_incomplete_annotation_position_carriers() {
         let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
@@ -425,6 +858,110 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn accepts_historical_techdraw_annotation_position_types() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="TechDraw::DrawViewAnnotation" name="Note"/>
+ <Object type="TechDraw::DrawRichAnno" name="Rich"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Note"><Properties Count="3">
+  <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+  <Property name="X" type="App::PropertyFloat"><Float value="10"/></Property>
+  <Property name="Y" type="App::PropertyLength"><Float value="20"/></Property>
+ </Properties></Object>
+ <Object name="Rich"><Properties Count="3">
+  <Property name="AnnoText" type="App::PropertyString"><String value="RICH"/></Property>
+  <Property name="X" type="App::PropertyLength"><Float value="30"/></Property>
+  <Property name="Y" type="App::PropertyFloat"><Float value="40"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("historical annotation positions");
+
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .semantic_annotations
+                .iter()
+                .map(|annotation| annotation.position)
+                .collect::<Vec<_>>(),
+            [Some([10.0, 20.0, 0.0]), Some([30.0, 40.0, 0.0])]
+        );
+        assert!(crate::validate_native(result.ir()).is_empty());
+        assert_valid_document(result.ir());
+    }
+
+    #[test]
+    fn rejects_duplicate_annotation_carrier_properties_and_values() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="3">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/><Float value="11"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="4">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="11"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects>
+<ObjectData Count="1"><Object name="Dimension"><Properties Count="3">
+<Property name="FormatSpec" type="App::PropertyString"><String value="A"/><String value="B"/></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+<Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_annotation_carrier_types() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Annotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="LabelText" type="App::PropertyString"><String value="NOTE"/></Property>
+<Property name="Position" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Annotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="Position" type="App::PropertyString"><String value="1,2,3"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
     fn separates_semantic_annotations_from_drawing_relationships() {
         let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -436,9 +973,10 @@ pub(crate) mod tests {
 <ObjectData Count="4">
  <Object name="Model"><Properties Count="0"/></Object>
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
- <Object name="Dimension"><Properties Count="5">
+ <Object name="Dimension"><Properties Count="6">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
   <Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge1"/></LinkSubList></Property>
+  <Property name="Source3d" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge2"/></LinkSubList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
   <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
   <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
@@ -486,6 +1024,8 @@ pub(crate) mod tests {
                 .as_deref(),
             Some("fcstd:native:object#View")
         );
+        assert_eq!(drawing_dimension.sources.len(), 2);
+        assert_eq!(drawing_dimension.sources[1].subelements, ["Edge2"]);
         let neutral_dimension = result
             .ir()
             .model

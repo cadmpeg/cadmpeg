@@ -37,10 +37,10 @@ pub(super) fn check_presentation(
                 .flatten()
                 .chain(camera.orientation.iter().flatten())
                 .all(|value| value.is_finite());
-            let quaternion_valid = camera.orientation.is_none_or(|orientation| {
+            let orientation_valid = camera.orientation.is_none_or(|orientation| {
                 orientation.iter().map(|value| value * value).sum::<f64>() > f64::EPSILON
             });
-            finite && quaternion_valid
+            finite && orientation_valid
         });
         if !native_valid || !assets_valid || orders.len() != document.states.len() || !camera_valid
         {

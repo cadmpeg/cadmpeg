@@ -3,6 +3,7 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -95,6 +96,90 @@ fn distinguishes_stored_base_and_application_owned_features() {
 }
 
 #[test]
+fn rejects_noncanonical_feature_base_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Source" id="1"/>
+ <Object type="Part::Feature" name="Alternate" id="2"/>
+ <Object type="PartDesign::FeatureBase" name="MultiBase" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Source"><Properties Count="0"/></Object>
+ <Object name="Alternate"><Properties Count="0"/></Object>
+ <Object name="MultiBase"><Properties Count="1"><Property name="BaseFeature" type="App::PropertyLinkList"><LinkList count="2"><Link value="Source"/><Link value="Alternate"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("noncanonical feature base carriers");
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("MultiBase"))
+        .expect("feature base");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Native { kind, .. } if kind == "PartDesign::FeatureBase"
+    ));
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking));
+}
+
+#[test]
+fn keeps_extension_types_out_of_exact_design_dispatch() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="7">
+<Object type="Part::Fillet" name="PartFillet"/>
+<Object type="PartDesign::Fillet" name="DesignFillet"/>
+<Object type="Vendor::Fillet" name="VendorFillet"/>
+<Object type="Vendor::PartDesign::PadLike" name="PadLike"/>
+<Object type="Vendor::PartDesign::RevolutionLike" name="RevolutionLike"/>
+<Object type="Vendor::PartDesign::BodyLike" name="BodyLike"/>
+<Object type="Vendor::Spreadsheet::SheetLike" name="SheetLike"/>
+</Objects>
+<ObjectData Count="7">
+<Object name="PartFillet"><Properties Count="0"/></Object>
+<Object name="DesignFillet"><Properties Count="0"/></Object>
+<Object name="VendorFillet"><Properties Count="0"/></Object>
+<Object name="PadLike"><Properties Count="0"/></Object>
+<Object name="RevolutionLike"><Properties Count="0"/></Object>
+<Object name="BodyLike"><Properties Count="0"/></Object>
+<Object name="SheetLike"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("exact dress-up dispatch");
+    let feature_names = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| feature.name.as_deref())
+        .collect::<Vec<_>>();
+    assert!(feature_names.contains(&"PartFillet"));
+    assert!(feature_names.contains(&"DesignFillet"));
+    assert!(!feature_names.contains(&"VendorFillet"));
+    assert!(!feature_names.contains(&"PadLike"));
+    assert!(!feature_names.contains(&"RevolutionLike"));
+    assert!(!feature_names.contains(&"BodyLike"));
+    assert!(!feature_names.contains(&"SheetLike"));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn transfers_ordered_body_membership_and_active_tip() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
@@ -173,6 +258,59 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("active tree child")));
+}
+
+#[test]
+fn rejects_ambiguous_body_history_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="6">
+ <Object type="PartDesign::Body" name="TipList" id="1"/>
+ <Object type="PartDesign::Feature" name="First" id="2"/>
+ <Object type="PartDesign::Feature" name="Second" id="3"/>
+ <Object type="PartDesign::Body" name="MembershipAliases" id="4"/>
+ <Object type="PartDesign::Feature" name="Third" id="5"/>
+ <Object type="PartDesign::Feature" name="Fourth" id="6"/>
+</Objects>
+<ObjectData Count="6">
+ <Object name="TipList"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="MembershipAliases"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Third"/></LinkList></Property>
+  <Property name="Model" type="App::PropertyLinkList"><LinkList count="1"><Link value="Fourth"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Third"><Properties Count="0"/></Object>
+ <Object name="Fourth"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("ambiguous body carriers");
+    for name in ["TipList", "MembershipAliases"] {
+        assert!(matches!(
+            result
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some(name))
+                .map(|feature| &feature.definition)
+                .expect("body feature"),
+            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Body"
+        ));
+    }
+    assert_eq!(result.report().losses.len(), 2);
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code.namespace == "fcstd"
+            && loss.code.code == "feature.native-kind-retained"
+            && loss.severity == cadmpeg_ir::Severity::Blocking
+    }));
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -461,6 +599,101 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 }
 
 #[test]
+fn rejects_ambiguous_spreadsheet_selectors() {
+    let decode = |count: usize, properties: &str| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="{count}">{properties}</Properties></Object></ObjectData>
+</Document>"#
+        );
+        FcstdCodec.decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+    };
+
+    for (index, (count, properties, expected)) in [
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>"#,
+            "duplicate property name cells",
+        ),
+        (
+            1,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/><Cells Count="0"/></Property>"#,
+            "multiple Cells values",
+        ),
+        (
+            3,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
+            "duplicate property name columnWidths",
+        ),
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/><ColumnInfo Count="0"/></Property>"#,
+            "multiple ColumnInfo values",
+        ),
+        (
+            3,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/></Property>"#,
+            "duplicate property name rowHeights",
+        ),
+        (
+            2,
+            r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><RowInfo Count="0"/><RowInfo Count="0"/></Property>"#,
+            "multiple RowInfo values",
+        ),
+        (
+            1,
+            r#"<Property name="cells" type="Vendor::PropertySheet"><Cells Count="0"/></Property>"#,
+            "no cells property",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let error = decode(count, properties).expect_err("ambiguous spreadsheet selector");
+        assert!(error.to_string().contains(expected), "case {index}: {error}");
+    }
+}
+
+#[test]
+fn rejects_nested_spreadsheet_value_roots() {
+    let decode = |properties: &str| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="2">{properties}</Properties></Object></ObjectData>
+</Document>"#
+        );
+        FcstdCodec.decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+    };
+
+    for properties in [
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Wrapper><Cells Count="1"><Cell address="A1" content="5"/></Cells></Wrapper></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><Wrapper><ColumnInfo Count="1"><Column name="A" width="120"/></ColumnInfo></Wrapper></Property>"#,
+        r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
+<Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><Wrapper><RowInfo Count="1"><Row name="1" height="45"/></RowInfo></Wrapper></Property>"#,
+    ] {
+        let error = decode(properties).expect_err("nested spreadsheet value root");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
 fn preserves_forward_declared_feature_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
@@ -526,7 +759,7 @@ fn orders_forward_linked_sketches_before_profile_consumers() {
 }
 
 #[test]
-fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
+fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2" Dependencies="1">
 <ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
@@ -544,8 +777,22 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
     assert_eq!(features.len(), 2);
     assert_eq!(features[0].ordinal, 0);
     assert_eq!(features[1].ordinal, 1);
-    assert!(features[0].dependencies.is_empty());
-    assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+    assert!(features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(features
+        .iter()
+        .all(|feature| feature.dependencies.is_empty()));
+    assert!(features.iter().all(|feature| feature.parent.is_none()));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        2
+    );
     let objects = result
         .ir()
         .native
@@ -555,6 +802,130 @@ fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
         .expect("objects");
     assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
     assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn retains_cycle_affected_expression_links_only_in_native_properties() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="1"><Dep Name="First"/></ObjectDeps>
+<Object type="PartDesign::Pad" name="First"/><Object type="PartDesign::Pad" name="Second"/>
+</Objects><ObjectData Count="2">
+<Object name="First"><Properties Count="2">
+<Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Second.Length"/></ExpressionEngine></Property>
+</Properties></Object>
+<Object name="Second"><Properties Count="2">
+<Property name="Length" type="App::PropertyLength"><Float value="20"/></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="First.Length"/></ExpressionEngine></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic expression graph");
+    assert!(result.ir().model.features.iter().all(|feature| {
+        feature.dependencies.is_empty()
+            && feature.parent.is_none()
+            && matches!(feature.definition, FeatureDefinition::Native { .. })
+    }));
+    let parameters = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.name == "Length")
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 2);
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert!(properties.iter().any(|property| {
+        property.name == "ExpressionEngine" && property.raw_xml.contains("Second.Length")
+    }));
+    assert!(properties.iter().any(|property| {
+        property.name == "ExpressionEngine" && property.raw_xml.contains("First.Length")
+    }));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        2
+    );
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet"/></Objects>
+<ObjectData Count="1"><Object name="Sheet"><Properties Count="1">
+<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2">
+<Cell address="A1" alias="first" content="=second"/>
+<Cell address="B1" alias="second" content="=first"/>
+</Cells></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic spreadsheet expressions");
+    let sheet = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sheet"))
+        .expect("sheet feature");
+    assert!(matches!(sheet.definition, FeatureDefinition::Native { .. }));
+    assert!(sheet.dependencies.is_empty());
+    let parameters = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&sheet.id))
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 2);
+    assert!(parameters
+        .iter()
+        .all(|parameter| parameter.dependencies.is_empty()));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .count(),
+        1
+    );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert!(properties
+        .iter()
+        .any(|property| { property.name == "cells" && property.raw_xml.contains("=second") }));
     assert_valid_document(result.ir());
     assert!(crate::validate_native(result.ir()).is_empty());
 }

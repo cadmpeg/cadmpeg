@@ -11,7 +11,9 @@ use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
 };
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{
@@ -24,6 +26,24 @@ pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
+    pub(crate) losses: Vec<LossNote>,
+}
+
+struct CameraSettings {
+    position: Option<[f64; 3]>,
+    orientation: Option<[f64; 4]>,
+}
+
+/// Whether the shared application-property registry knows this GUI property.
+pub(crate) fn has_registered_property_grammar(property_name: &str, type_name: &str) -> bool {
+    gui_value_tag(type_name).is_some()
+        || is_gui_link_type(type_name)
+        || is_gui_custom_type(type_name)
+        || is_visual_layer_list(property_name, type_name)
+        || !matches!(
+            crate::persistence::property_family(type_name),
+            crate::native::PropertyFamily::Unknown
+        )
 }
 
 pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
@@ -46,17 +66,31 @@ pub(crate) fn transfer(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid GuiDocument.xml: {error}")))?;
     let root = xml.root_element();
-    let schema_version = root
-        .attribute("SchemaVersion")
-        .and_then(|value| value.parse().ok());
+    let schema_version =
+        crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
+            .map(|value| {
+                value.parse::<u32>().map_err(|_| {
+                    CodecError::Malformed("GuiDocument.xml SchemaVersion is not an integer".into())
+                })
+            })
+            .transpose()?;
     let camera_count = root
         .children()
         .filter(|node| node.has_tag_name("Camera"))
         .count();
-    if schema_version == Some(1) && camera_count != 1 {
-        return Err(CodecError::Malformed(format!(
+    let camera_error = if schema_version != Some(1) {
+        Some(format!(
+            "GuiDocument.xml supports only schema 1, found {schema_version:?}"
+        ))
+    } else if camera_count != 1 {
+        Some(format!(
             "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
-        )));
+        ))
+    } else {
+        None
+    };
+    if let Some(message) = camera_error {
+        return Err(CodecError::Malformed(message));
     }
     let states = root
         .children()
@@ -80,6 +114,7 @@ pub(crate) fn transfer(
         .collect::<HashMap<_, _>>();
     let mut native_providers = Vec::new();
     let mut native_properties = Vec::new();
+    let mut losses = Vec::new();
     let payloads_by_owner = payloads
         .iter()
         .filter_map(|payload| {
@@ -93,14 +128,20 @@ pub(crate) fn transfer(
             ))
         })
         .collect::<Vec<_>>();
+    let mut view_provider_data = xml
+        .descendants()
+        .filter(|node| node.has_tag_name("ViewProviderData"));
+    let first_view_provider_data = view_provider_data.next();
+    if view_provider_data.next().is_some() {
+        return Err(CodecError::Malformed(
+            "GuiDocument.xml has multiple ViewProviderData containers".into(),
+        ));
+    }
     let providers = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProvider"))
         .collect::<Vec<_>>();
-    if let Some(container) = xml
-        .descendants()
-        .find(|node| node.has_tag_name("ViewProviderData"))
-    {
+    if let Some(container) = first_view_provider_data {
         let declared = container
             .attribute("Count")
             .and_then(|value| value.parse::<usize>().ok())
@@ -112,10 +153,16 @@ pub(crate) fn transfer(
             )));
         }
     }
+    let mut provider_names = HashSet::new();
     for (provider_order, provider) in providers.into_iter().enumerate() {
         let Some(name) = provider.attribute("name") else {
             return Err(CodecError::Malformed("ViewProvider has no name".into()));
         };
+        if !provider_names.insert(name) {
+            return Err(CodecError::Malformed(
+                "GuiDocument.xml has duplicate ViewProvider names".into(),
+            ));
+        }
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
                 text,
@@ -135,18 +182,16 @@ pub(crate) fn transfer(
             &mut native_providers,
             &mut native_properties,
         )?;
-        let properties_node = provider
-            .children()
-            .find(|node| node.has_tag_name("Properties"))
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
-            })?;
+        let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
+            CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
+        })?;
         let property_nodes = properties_node
             .children()
             .filter(|node| node.has_tag_name("Property"))
             .collect::<Vec<_>>();
         let values = property_nodes
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|property| {
                 property
                     .attribute("name")
@@ -160,6 +205,18 @@ pub(crate) fn transfer(
                 ))
             })
             .collect::<HashMap<_, _>>();
+        let property_provenance = |property_name: &str, type_name: &str| SourceProvenance {
+            format: "fcstd".into(),
+            stream: "GuiDocument.xml".into(),
+            offset: property_nodes
+                .iter()
+                .find(|property| {
+                    property.attribute("name") == Some(property_name)
+                        && property.attribute("type") == Some(type_name)
+                })
+                .map_or(0, |property| property.range().start as u64),
+            tag: Some(format!("ViewProvider {name} property {property_name}")),
+        };
         let visibility = values
             .get("Visibility")
             .and_then(|value| value.attribute("value"))
@@ -210,6 +267,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Face,
                 requires_alpha_conversion,
+                property_provenance("DiffuseColor", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         let payload_prefixes = payloads_by_owner
@@ -244,6 +303,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Edge,
                 requires_alpha_conversion,
+                property_provenance("LineColorArray", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         if let Some(color) = values
@@ -273,6 +334,8 @@ pub(crate) fn transfer(
                 element_maps,
                 TopologyColorKind::Vertex,
                 requires_alpha_conversion,
+                property_provenance("PointColorArray", "App::PropertyColorList"),
+                &mut losses,
             )?;
         }
         let Some(packed_color) = packed_color else {
@@ -318,13 +381,15 @@ pub(crate) fn transfer(
             });
         }
     }
-    let graph = Graph {
+    let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
         properties: native_properties,
+        losses,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
+    let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ir,
         &graph,
@@ -332,7 +397,9 @@ pub(crate) fn transfer(
         properties,
         payloads,
         element_maps,
-    );
+        &mut material_losses,
+    )?;
+    graph.losses.extend(material_losses);
     transfer_neutral_presentation(ir, &graph)?;
     Ok(graph)
 }
@@ -360,18 +427,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
         let camera_state = camera_states
             .next()
             .filter(|_| camera_states.next().is_none());
-        let camera = camera_state.map(|state| CameraState {
-            position: state
-                .values
-                .iter()
-                .find(|value| value.tag == "Position")
-                .and_then(|value| vector3(&value.attributes)),
-            orientation: state
-                .attributes
-                .get("orientation")
-                .and_then(|value| parse_vector::<4>(value)),
-            properties: state.attributes.clone(),
-        });
+        let camera = camera_state.map(camera_state_value).transpose()?;
         ir.model.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
             schema_version: document.schema_version,
@@ -469,21 +525,111 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
     })
 }
 
-fn vector3(attributes: &BTreeMap<String, String>) -> Option<[f64; 3]> {
-    Some([
-        attributes.get("x")?.parse().ok()?,
-        attributes.get("y")?.parse().ok()?,
-        attributes.get("z")?.parse().ok()?,
-    ])
+fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError> {
+    let settings = state
+        .attributes
+        .get("settings")
+        .ok_or_else(|| CodecError::Malformed("GUI Camera has no settings attribute".into()))?;
+    let CameraSettings {
+        position,
+        orientation,
+    } = parse_camera_settings(settings)?;
+    if position.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
+        return Err(CodecError::Malformed(
+            "GUI camera settings position contains a non-finite component".into(),
+        ));
+    }
+    if orientation.is_some_and(|value| value.iter().any(|component| !component.is_finite())) {
+        return Err(CodecError::Malformed(
+            "GUI camera settings orientation contains a non-finite component".into(),
+        ));
+    }
+    if orientation.is_some_and(|value| value.iter().all(|component| *component == 0.0)) {
+        return Err(CodecError::Malformed(
+            "GUI camera settings orientation must be nonzero".into(),
+        ));
+    }
+    Ok(CameraState {
+        position,
+        orientation,
+        properties: state.attributes.clone(),
+    })
 }
 
-fn parse_vector<const N: usize>(value: &str) -> Option<[f64; N]> {
-    let values = value
-        .split_whitespace()
-        .map(str::parse)
-        .collect::<Result<Vec<f64>, _>>()
-        .ok()?;
-    values.try_into().ok()
+fn parse_camera_settings(settings: &str) -> Result<CameraSettings, CodecError> {
+    if settings.trim().is_empty() {
+        return Ok(CameraSettings {
+            position: None,
+            orientation: None,
+        });
+    }
+
+    let tokens = settings.split_whitespace().collect::<Vec<_>>();
+    let valid_shape = tokens.len() >= 3
+        && tokens[1] == "{"
+        && tokens.last() == Some(&"}")
+        && matches!(tokens[0], "OrthographicCamera" | "PerspectiveCamera");
+    if !valid_shape {
+        return Err(CodecError::Malformed(
+            "GUI camera settings are not an Inventor camera node".into(),
+        ));
+    }
+
+    let end = tokens.len() - 1;
+    let mut position = None;
+    let mut orientation = None;
+    let mut index = 2;
+    while index < end {
+        match tokens[index] {
+            "position" => {
+                if position.is_some() {
+                    return Err(CodecError::Malformed(
+                        "GUI camera settings have multiple position fields".into(),
+                    ));
+                }
+                position = Some(camera_field::<3>(&tokens, index + 1, end, "position")?);
+                index += 4;
+            }
+            "orientation" => {
+                if orientation.is_some() {
+                    return Err(CodecError::Malformed(
+                        "GUI camera settings have multiple orientation fields".into(),
+                    ));
+                }
+                orientation = Some(camera_field::<4>(&tokens, index + 1, end, "orientation")?);
+                index += 5;
+            }
+            _ => index += 1,
+        }
+    }
+    Ok(CameraSettings {
+        position,
+        orientation,
+    })
+}
+
+fn camera_field<const N: usize>(
+    tokens: &[&str],
+    start: usize,
+    end: usize,
+    field: &str,
+) -> Result<[f64; N], CodecError> {
+    let values = tokens
+        .get(start..start.saturating_add(N))
+        .filter(|values| values.len() == N && start.saturating_add(N) <= end)
+        .ok_or_else(|| CodecError::Malformed(format!("GUI camera {field} field is incomplete")))?
+        .iter()
+        .map(|value| {
+            value.parse::<f64>().map_err(|_| {
+                CodecError::Malformed(format!("GUI camera {field} field is not numeric"))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    values.try_into().map_err(|_| {
+        CodecError::Malformed(format!(
+            "GUI camera {field} field has the wrong cardinality"
+        ))
+    })
 }
 
 fn transfer_edge_appearance(
@@ -635,6 +781,24 @@ fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStat
     }
 }
 
+fn unique_child<'a, 'input>(
+    parent: roxmltree::Node<'a, 'input>,
+    tag: &str,
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    let mut children = parent
+        .children()
+        .filter(|child| child.is_element() && child.has_tag_name(tag));
+    let Some(first) = children.next() else {
+        return Ok(None);
+    };
+    if children.next().is_some() {
+        return Err(CodecError::Malformed(
+            "GUI record has multiple child containers".into(),
+        ));
+    }
+    Ok(Some(first))
+}
+
 fn append_native_provider(
     text: &str,
     provider: roxmltree::Node<'_, '_>,
@@ -655,10 +819,7 @@ fn append_native_provider(
         order,
         raw_xml: text[provider.range()].to_owned(),
     });
-    let Some(container) = provider
-        .children()
-        .find(|node| node.has_tag_name("Properties"))
-    else {
+    let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::Malformed(format!(
             "ViewProvider {name} has no Properties"
         )));
@@ -679,10 +840,16 @@ fn append_native_provider(
             property_nodes.len()
         )));
     }
+    let mut property_names = HashSet::new();
     for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name} property has no name"))
         })?;
+        if !property_names.insert(property_name) {
+            return Err(CodecError::Malformed(
+                "ViewProvider has duplicate property names".into(),
+            ));
+        }
         let type_name = property.attribute("type").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name}.{property_name} has no type"))
         })?;
@@ -705,7 +872,10 @@ fn append_native_provider(
         let side_entries = values
             .iter()
             .flat_map(|value| value.attributes.iter())
-            .filter(|(attribute, _)| matches!(attribute.as_str(), "file" | "File"))
+            .filter(|(attribute, _)| {
+                matches!(attribute.as_str(), "file" | "File")
+                    && !crate::persistence::is_xlink_type(type_name)
+            })
             .map(|(_, value)| value.clone())
             .filter(|value| !value.is_empty())
             .collect();
@@ -733,6 +903,55 @@ fn validate_gui_property(
     property_name: &str,
     type_name: &str,
 ) -> Result<(), CodecError> {
+    if is_visual_layer_list(property_name, type_name) {
+        return validate_visual_layer_list(property, property_name);
+    }
+    if is_gui_link_type(type_name) {
+        return crate::persistence::validate_link_property(property, type_name);
+    }
+    match type_name {
+        "Mesh::PropertyMeshKernel" => {
+            return validate_gui_geometry_value(property, property_name, "Mesh");
+        }
+        "Points::PropertyPointKernel" => {
+            return validate_gui_geometry_value(property, property_name, "Points");
+        }
+        "TechDraw::PropertyGeomFormatList" => {
+            return validate_gui_geom_format_list(property, property_name);
+        }
+        "TechDraw::PropertyCosmeticVertexList" => {
+            return validate_gui_cosmetic_vertex_list(property, property_name);
+        }
+        "TechDraw::PropertyCosmeticEdgeList" => {
+            return validate_gui_cosmetic_edge_list(property, property_name);
+        }
+        "TechDraw::PropertyCenterLineList" => {
+            return validate_gui_center_line_list(property, property_name);
+        }
+        "App::PropertyExpressionEngine" => {
+            return validate_gui_expression_engine(property, property_name);
+        }
+        "Materials::PropertyMaterial" => {
+            return validate_gui_material_reference(property, property_name);
+        }
+        "Part::PropertyPartShape" => {
+            return validate_gui_part_shape(property, property_name);
+        }
+        "Part::PropertyGeometryList" => {
+            return validate_gui_geometry_list(property, property_name);
+        }
+        "Part::PropertyFilletEdges" => {
+            return validate_gui_filletedges(property, property_name);
+        }
+        "Part::PropertyTopoShapeList" => {
+            return validate_gui_shape_list(property, property_name);
+        }
+        "Sketcher::PropertyConstraintList" => {
+            return validate_gui_constraint_list(property, property_name);
+        }
+        "Part::PropertyShapeHistory" | "Part::PropertyShapeCache" => return Ok(()),
+        _ => {}
+    }
     let Some(expected_tag) = gui_value_tag(type_name) else {
         return Ok(());
     };
@@ -771,6 +990,9 @@ fn validate_gui_property(
                     "GUI property {property_name} has an invalid integer"
                 ))
             })?;
+            if is_gui_integer_constraint_type(type_name) {
+                validate_gui_constraint_attributes(root, property_name, true)?;
+            }
             if type_name == "App::PropertyEnumeration" {
                 validate_gui_enumeration(&roots, property_name)?;
                 return Ok(());
@@ -785,6 +1007,9 @@ fn validate_gui_property(
                     "GUI property {property_name} has a non-finite float"
                 )));
             }
+            if is_gui_float_constraint_type(type_name) {
+                validate_gui_constraint_attributes(root, property_name, false)?;
+            }
         }
         "String" | "Python" | "ColorList" | "MaterialList" => {
             let attribute = if matches!(expected_tag, "ColorList" | "MaterialList") {
@@ -793,6 +1018,10 @@ fn validate_gui_property(
                 "value"
             };
             scalar(attribute)?;
+            if matches!(expected_tag, "ColorList" | "MaterialList") && has_nested_gui_elements(root)
+            {
+                return Err(gui_nested_value_error(property_name, expected_tag));
+            }
             if type_name == "App::PropertyPersistentObject" {
                 if roots.len() != 2 || !roots[1].has_tag_name("PersistentObject") {
                     return Err(CodecError::Malformed(format!(
@@ -848,6 +1077,67 @@ fn validate_gui_property(
                     "GUI property {property_name} has an invalid Boolean list"
                 )));
             }
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, "BoolList"));
+            }
+        }
+        "StringList" => validate_gui_string_list(root, property_name)?,
+        "IntegerList" => validate_gui_integer_list(root, property_name, false)?,
+        "IntegerSet" => validate_gui_integer_list(root, property_name, true)?,
+        "Map" => validate_gui_map(root, property_name)?,
+        "PropertyMatrix" => {
+            for row in 1..=4 {
+                for column in 1..=4 {
+                    let attribute = format!("a{row}{column}");
+                    let value = scalar(&attribute)?.parse::<f64>().map_err(|_| {
+                        CodecError::Malformed(format!(
+                            "GUI property {property_name} has an invalid matrix value"
+                        ))
+                    })?;
+                    if !value.is_finite() {
+                        return Err(CodecError::Malformed(format!(
+                            "GUI property {property_name} has a non-finite matrix value"
+                        )));
+                    }
+                }
+            }
+        }
+        "PropertyPlacement" => validate_gui_placement(root, property_name)?,
+        "PropertyRotation" => {
+            for attribute in ["A", "Ox", "Oy", "Oz"] {
+                let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
+                    CodecError::Malformed(format!(
+                        "GUI property {property_name} has an invalid rotation"
+                    ))
+                })?;
+                if !value.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "GUI property {property_name} has a non-finite rotation"
+                    )));
+                }
+            }
+        }
+        "Uuid" | "Path" => {
+            scalar("value")?;
+        }
+        "FloatList" | "VectorList" | "PlacementList" => {
+            scalar("file")?;
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, expected_tag));
+            }
+        }
+        "FileIncluded" => {
+            let has_file = root.attribute("file").is_some();
+            let has_data = root.attribute("data").is_some();
+            if has_file == has_data {
+                let message = format!(
+                    "GUI property {property_name} FileIncluded requires exactly one file or data attribute"
+                );
+                return Err(CodecError::Malformed(message));
+            }
+            if has_nested_gui_elements(root) {
+                return Err(gui_nested_value_error(property_name, "FileIncluded"));
+            }
         }
         _ => unreachable!("closed GUI value-tag registry"),
     }
@@ -855,6 +1145,227 @@ fn validate_gui_property(
         return Err(CodecError::Malformed(format!(
             "GUI property {property_name} requires exactly one {expected_tag} value"
         )));
+    }
+    Ok(())
+}
+
+fn validate_gui_string_list(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let count = gui_list_count(root, property_name, "StringList")?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count
+        || values
+            .iter()
+            .any(|value| !value.has_tag_name("String") || value.attribute("value").is_none())
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} StringList count or value is invalid"
+        )));
+    }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, "StringList value"));
+    }
+    Ok(())
+}
+
+fn validate_gui_integer_list(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    require_sorted_unique: bool,
+) -> Result<(), CodecError> {
+    let tag = if require_sorted_unique {
+        "IntegerSet"
+    } else {
+        "IntegerList"
+    };
+    let count = gui_list_count(root, property_name, tag)?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count || values.iter().any(|value| !value.has_tag_name("I")) {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} {tag} count or value is invalid"
+        )));
+    }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, tag));
+    }
+    let mut previous = None;
+    for value in values {
+        let number = value
+            .attribute("v")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} {tag} value has no v attribute"
+                ))
+            })?
+            .parse::<i64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} {tag} value is not an integer"
+                ))
+            })?;
+        if require_sorted_unique && previous.is_some_and(|previous| number <= previous) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} IntegerSet is not sorted and unique"
+            )));
+        }
+        previous = Some(number);
+    }
+    Ok(())
+}
+
+fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
+    let count = gui_list_count(root, property_name, "Map")?;
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if values.len() != count || values.iter().any(|value| !value.has_tag_name("Item")) {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} Map count or item tag is invalid"
+        )));
+    }
+    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+        return Err(gui_nested_value_error(property_name, "Map item"));
+    }
+    let mut previous_key = None;
+    for value in values {
+        let key = value.attribute("key").ok_or_else(|| {
+            CodecError::Malformed(format!("GUI property {property_name} Map item has no key"))
+        })?;
+        if value.attribute("value").is_none() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} Map item has no value"
+            )));
+        }
+        if previous_key.is_some_and(|previous| key <= previous) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} Map keys are not sorted and unique"
+            )));
+        }
+        previous_key = Some(key);
+    }
+    Ok(())
+}
+
+fn gui_list_count(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    tag: &str,
+) -> Result<usize, CodecError> {
+    root.attribute("count")
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("GUI property {property_name} {tag} has no count"))
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} {tag} has an invalid count"
+            ))
+        })
+}
+
+fn has_nested_gui_elements(node: roxmltree::Node<'_, '_>) -> bool {
+    node.children().any(|child| child.is_element())
+}
+
+fn gui_nested_value_error(property_name: &str, value_name: &str) -> CodecError {
+    let message = format!("GUI property {property_name} {value_name} has nested element values");
+    CodecError::Malformed(message)
+}
+
+fn validate_gui_constraint_attributes(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    integer: bool,
+) -> Result<(), CodecError> {
+    for attribute in ["min", "max", "step"] {
+        let Some(value) = root.attribute(attribute) else {
+            continue;
+        };
+        if integer {
+            value.parse::<i64>().map_err(|_| {
+                gui_constraint_error(property_name, "an invalid integer", attribute)
+            })?;
+        } else {
+            let value = value
+                .parse::<f64>()
+                .map_err(|_| gui_constraint_error(property_name, "an invalid float", attribute))?;
+            if !value.is_finite() {
+                return Err(gui_constraint_error(
+                    property_name,
+                    "a non-finite",
+                    attribute,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn gui_constraint_error(property_name: &str, detail: &str, attribute: &str) -> CodecError {
+    let message = format!("GUI property {property_name} has {detail} {attribute}");
+    CodecError::Malformed(message)
+}
+
+fn validate_gui_placement(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    for attribute in ["Px", "Py", "Pz"] {
+        let value = root
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has no {attribute}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has an invalid {attribute}"
+                ))
+            })?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} placement has a non-finite {attribute}"
+            )));
+        }
+    }
+    let axis_attributes = ["A", "Ox", "Oy", "Oz"];
+    let quaternion_attributes = ["Q0", "Q1", "Q2", "Q3"];
+    let has_axis = root.attribute("A").is_some();
+    let orientation = if has_axis {
+        &axis_attributes[..]
+    } else {
+        &quaternion_attributes[..]
+    };
+    for &attribute in orientation {
+        let value = root
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has no {attribute}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} placement has an invalid {attribute}"
+                ))
+            })?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} placement has a non-finite {attribute}"
+            )));
+        }
     }
     Ok(())
 }
@@ -897,6 +1408,9 @@ fn validate_gui_enumeration(
 }
 
 fn gui_value_tag(type_name: &str) -> Option<&'static str> {
+    if GUI_QUANTITY_TYPES.contains(&type_name) {
+        return Some("Float");
+    }
     let tag = match type_name {
         "App::PropertyBool" => "Bool",
         "App::PropertyEnumeration"
@@ -907,7 +1421,8 @@ fn gui_value_tag(type_name: &str) -> Option<&'static str> {
         | "App::PropertyDistance"
         | "App::PropertyFloat"
         | "App::PropertyFloatConstraint"
-        | "App::PropertyLength" => "Float",
+        | "App::PropertyLength"
+        | "App::PropertyPrecision" => "Float",
         "App::PropertyFile"
         | "App::PropertyFont"
         | "App::PropertyPersistentObject"
@@ -916,12 +1431,1275 @@ fn gui_value_tag(type_name: &str) -> Option<&'static str> {
         "App::PropertyColorList" => "ColorList",
         "App::PropertyMaterial" => "PropertyMaterial",
         "App::PropertyMaterialList" => "MaterialList",
-        "App::PropertyVector" => "PropertyVector",
+        "App::PropertyVector"
+        | "App::PropertyVectorDistance"
+        | "App::PropertyPosition"
+        | "App::PropertyDirection" => "PropertyVector",
         "App::PropertyBoolList" => "BoolList",
+        "App::PropertyFloatList" => "FloatList",
+        "App::PropertyIntegerList" => "IntegerList",
+        "App::PropertyIntegerSet" => "IntegerSet",
+        "App::PropertyStringList" => "StringList",
+        "App::PropertyMap" => "Map",
+        "App::PropertyMatrix" => "PropertyMatrix",
+        "App::PropertyPath" => "Path",
+        "App::PropertyPlacement" => "PropertyPlacement",
+        "App::PropertyPlacementList" => "PlacementList",
         "App::PropertyPythonObject" => "Python",
+        "App::PropertyRotation" => "PropertyRotation",
+        "App::PropertyUUID" => "Uuid",
+        "App::PropertyVectorList" => "VectorList",
+        "App::PropertyFileIncluded" => "FileIncluded",
         _ => return None,
     };
     Some(tag)
+}
+
+fn is_gui_integer_constraint_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyIntegerConstraint" | "App::PropertyPercent"
+    )
+}
+
+fn is_gui_float_constraint_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyAngle"
+            | "App::PropertyArea"
+            | "App::PropertyFloatConstraint"
+            | "App::PropertyLength"
+            | "App::PropertyPrecision"
+            | "App::PropertyQuantityConstraint"
+            | "App::PropertyVolume"
+    )
+}
+
+const GUI_QUANTITY_TYPES: &[&str] = &[
+    "App::PropertyAcceleration",
+    "App::PropertyAmountOfSubstance",
+    "App::PropertyAngle",
+    "App::PropertyArea",
+    "App::PropertyCompressiveStrength",
+    "App::PropertyCurrentDensity",
+    "App::PropertyDensity",
+    "App::PropertyDissipationRate",
+    "App::PropertyDistance",
+    "App::PropertyDynamicViscosity",
+    "App::PropertyElectricalCapacitance",
+    "App::PropertyElectricalConductance",
+    "App::PropertyElectricalConductivity",
+    "App::PropertyElectricalInductance",
+    "App::PropertyElectricalResistance",
+    "App::PropertyElectricCharge",
+    "App::PropertySurfaceChargeDensity",
+    "App::PropertyVolumeChargeDensity",
+    "App::PropertyElectricCurrent",
+    "App::PropertyElectricPotential",
+    "App::PropertyFrequency",
+    "App::PropertyForce",
+    "App::PropertyHeatFlux",
+    "App::PropertyInverseArea",
+    "App::PropertyInverseLength",
+    "App::PropertyInverseVolume",
+    "App::PropertyKinematicViscosity",
+    "App::PropertyLength",
+    "App::PropertyLuminousIntensity",
+    "App::PropertyMagneticFieldStrength",
+    "App::PropertyMagneticFlux",
+    "App::PropertyMagneticFluxDensity",
+    "App::PropertyMagnetization",
+    "App::PropertyElectromagneticPotential",
+    "App::PropertyMass",
+    "App::PropertyMoment",
+    "App::PropertyPressure",
+    "App::PropertyPower",
+    "App::PropertyQuantity",
+    "App::PropertyQuantityConstraint",
+    "App::PropertyShearModulus",
+    "App::PropertySpecificEnergy",
+    "App::PropertySpecificHeat",
+    "App::PropertySpeed",
+    "App::PropertyStiffness",
+    "App::PropertyStiffnessDensity",
+    "App::PropertyStress",
+    "App::PropertyTemperature",
+    "App::PropertyThermalConductivity",
+    "App::PropertyThermalExpansionCoefficient",
+    "App::PropertyThermalTransferCoefficient",
+    "App::PropertyTime",
+    "App::PropertyUltimateTensileStrength",
+    "App::PropertyVacuumPermittivity",
+    "App::PropertyVelocity",
+    "App::PropertyVolume",
+    "App::PropertyVolumeFlowRate",
+    "App::PropertyVolumetricThermalExpansionCoefficient",
+    "App::PropertyWork",
+    "App::PropertyYieldStrength",
+    "App::PropertyYoungsModulus",
+];
+
+fn is_visual_layer_list(property_name: &str, type_name: &str) -> bool {
+    property_name == "VisualLayerList" && type_name == "BadType"
+}
+
+fn is_gui_link_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+            | "App::PropertyLinkList"
+            | "App::PropertyLinkListChild"
+            | "App::PropertyLinkListGlobal"
+            | "App::PropertyLinkListHidden"
+            | "App::PropertyLinkSubList"
+            | "App::PropertyLinkSubListChild"
+            | "App::PropertyLinkSubListGlobal"
+            | "App::PropertyLinkSubListHidden"
+            | "App::PropertyXLink"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+            | "App::PropertyXLinkList"
+            | "App::PropertyPlacementLink"
+    )
+}
+
+fn is_gui_custom_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "Materials::PropertyMaterial"
+            | "Part::PropertyPartShape"
+            | "Part::PropertyGeometryList"
+            | "Part::PropertyShapeHistory"
+            | "Part::PropertyFilletEdges"
+            | "Part::PropertyShapeCache"
+            | "Part::PropertyTopoShapeList"
+            | "Sketcher::PropertyConstraintList"
+    )
+}
+
+fn validate_gui_geometry_value(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    expected_tag: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        let message =
+            format!("GUI property {property_name} requires exactly one {expected_tag} value");
+        return Err(CodecError::Malformed(message));
+    };
+    if !root.has_tag_name(expected_tag) {
+        let message =
+            format!("GUI property {property_name} requires a leading {expected_tag} value");
+        return Err(CodecError::Malformed(message));
+    }
+
+    let side_references = property
+        .descendants()
+        .filter(roxmltree::Node::is_element)
+        .flat_map(|node| {
+            node.attributes()
+                .filter(|attribute| matches!(attribute.name(), "file" | "File"))
+                .map(move |attribute| (node, attribute.value()))
+        })
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(node, _)| node)
+        .collect::<Vec<_>>();
+    let direct_file = root
+        .attribute("file")
+        .is_some_and(|value| !value.is_empty());
+    if side_references.len() != usize::from(direct_file)
+        || side_references.first().is_some_and(|node| *node != *root)
+    {
+        let message = format!(
+            "GUI property {property_name} {expected_tag} has an unowned side-entry reference"
+        );
+        return Err(CodecError::Malformed(message));
+    }
+    if expected_tag == "Points" {
+        validate_gui_points_transform(*root, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_points_transform(
+    root: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let Some(text) = root.attribute("mtrx") else {
+        return Ok(());
+    };
+    let values = text
+        .split_whitespace()
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>();
+    let Ok(values) = values else {
+        let message =
+            format!("GUI property {property_name} Points transform has an invalid scalar");
+        return Err(CodecError::Malformed(message));
+    };
+    if values.len() != 16 || values.iter().any(|value| !value.is_finite()) {
+        let message =
+            format!("GUI property {property_name} Points transform must contain 16 finite scalars");
+        return Err(CodecError::Malformed(message));
+    }
+    Ok(())
+}
+
+fn validate_gui_geom_format_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one GeomFormatList value",
+        ));
+    };
+    if !root.has_tag_name("GeomFormatList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading GeomFormatList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormatList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "GeomFormatList has an invalid count"))?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormatList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("GeomFormat")
+            || record.attribute("type") != Some("TechDraw::GeomFormat")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormatList has an invalid record type",
+            ));
+        }
+        validate_gui_geom_format_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_geom_format_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if !(5..=6).contains(&fields.len()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid field sequence",
+        ));
+    }
+    for (field, expected_tag) in
+        fields
+            .iter()
+            .zip(["GeomIndex", "Style", "Weight", "Color", "Visible"])
+    {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat has a nested or out-of-order field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat field has no value",
+            ));
+        }
+    }
+    if let Some(line_number) = fields.get(5) {
+        if !(line_number.has_tag_name("LineNumber") || line_number.has_tag_name("ISOLineNumber"))
+            || line_number.children().any(|node| node.is_element())
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "GeomFormat has an invalid line-number field",
+            ));
+        }
+        parse_gui_techdraw_integer(*line_number, property_name)?;
+    }
+    parse_gui_techdraw_integer(fields[0], property_name)?;
+    parse_gui_techdraw_integer(fields[1], property_name)?;
+    let weight = fields[2]
+        .attribute("value")
+        .and_then(|value| value.parse::<f64>().ok())
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat has an invalid weight"))?;
+    if !weight.is_finite() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has a non-finite weight",
+        ));
+    }
+    let Some(color) = fields[3].attribute("value") else {
+        return Err(gui_techdraw_error(property_name, "GeomFormat has no color"));
+    };
+    if !(color.len() == 7 || color.len() == 9)
+        || !color.starts_with('#')
+        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid color",
+        ));
+    }
+    if parse_bool(fields[4].attribute("value").unwrap_or_default()).is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "GeomFormat has an invalid visibility",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_vertex_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one CosmeticVertexList value",
+        ));
+    };
+    if !root.has_tag_name("CosmeticVertexList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading CosmeticVertexList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertexList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticVertexList has an invalid count")
+        })?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertexList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("CosmeticVertex")
+            || record.attribute("type") != Some("TechDraw::CosmeticVertex")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertexList has an invalid record type",
+            ));
+        }
+        validate_gui_cosmetic_vertex_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_edge_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one CosmeticEdgeList value",
+        ));
+    };
+    if !root.has_tag_name("CosmeticEdgeList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading CosmeticEdgeList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdgeList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "CosmeticEdgeList has an invalid count"))?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdgeList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("CosmeticEdge")
+            || record.attribute("type") != Some("TechDraw::CosmeticEdge")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdgeList has an invalid record type",
+            ));
+        }
+        validate_gui_cosmetic_edge_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_center_line_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires exactly one CenterLineList value",
+        ));
+    };
+    if !root.has_tag_name("CenterLineList") {
+        return Err(gui_techdraw_error(
+            property_name,
+            "requires a leading CenterLineList value",
+        ));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CenterLineList has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "CenterLineList has an invalid count"))?;
+    let records = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLineList count does not match its records",
+        ));
+    }
+    for record in records {
+        if !record.has_tag_name("CenterLine")
+            || record.attribute("type") != Some("TechDraw::CenterLine")
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CenterLineList has an invalid record type",
+            ));
+        }
+        validate_gui_center_line_record(record, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_center_line_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let prefix = [
+        "Start",
+        "End",
+        "Mode",
+        "HShift",
+        "VShift",
+        "Rotate",
+        "Extend",
+        "Type",
+        "Flip",
+        "Faces",
+        "Edges",
+        "CLPoints",
+        "Style",
+        "Weight",
+        "Color",
+        "Visible",
+        "GeometryType",
+    ];
+    if fields.len() < prefix.len() + 10 + 1 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLine has an incomplete field sequence",
+        ));
+    }
+    for (field, expected_tag) in fields.iter().take(prefix.len()).zip(prefix) {
+        if !field.has_tag_name(expected_tag) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CenterLine has an out-of-order field",
+            ));
+        }
+    }
+    for index in [2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16] {
+        if fields[index].children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CenterLine has a nested field",
+            ));
+        }
+    }
+    validate_gui_techdraw_point(fields[0], property_name)?;
+    validate_gui_techdraw_point(fields[1], property_name)?;
+    let mode = parse_gui_techdraw_integer_value(fields[2], property_name, "Mode")?;
+    if !(0..=2).contains(&mode) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLine has an unsupported Mode",
+        ));
+    }
+    for field in fields.iter().skip(3).take(4) {
+        parse_gui_techdraw_finite(*field, property_name)?;
+    }
+    let line_type = parse_gui_techdraw_integer_value(fields[7], property_name, "Type")?;
+    if !(0..=2).contains(&line_type) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLine has an unsupported Type",
+        ));
+    }
+    validate_gui_techdraw_boolean(fields[8], property_name)?;
+    validate_gui_center_line_string_collection(
+        fields[9],
+        property_name,
+        "Faces",
+        "FaceCount",
+        "Face",
+    )?;
+    validate_gui_center_line_string_collection(
+        fields[10],
+        property_name,
+        "Edges",
+        "EdgeCount",
+        "Edge",
+    )?;
+    validate_gui_center_line_string_collection(
+        fields[11],
+        property_name,
+        "CLPoints",
+        "CLPointCount",
+        "CLPoint",
+    )?;
+    parse_gui_techdraw_integer_named(fields[12], property_name, "Style")?;
+    parse_gui_techdraw_finite(fields[13], property_name)?;
+    validate_gui_techdraw_color(fields[14], property_name)?;
+    validate_gui_techdraw_boolean(fields[15], property_name)?;
+    let geometry_type =
+        parse_gui_techdraw_integer_value(fields[16], property_name, "GeometryType")?;
+    validate_gui_techdraw_geometry_branch(
+        &fields,
+        prefix.len(),
+        property_name,
+        geometry_type,
+        true,
+    )?;
+    Ok(())
+}
+
+fn validate_gui_center_line_string_collection(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    container_tag: &str,
+    count_attribute: &str,
+    item_tag: &str,
+) -> Result<(), CodecError> {
+    if !field.has_tag_name(container_tag) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLine has an invalid collection field",
+        ));
+    }
+    let count = field
+        .attribute(count_attribute)
+        .ok_or_else(|| gui_techdraw_error(property_name, "CenterLine collection has no count"))?
+        .parse::<usize>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CenterLine collection has an invalid count")
+        })?;
+    let items = field
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if items.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CenterLine collection count does not match its records",
+        ));
+    }
+    for item in items {
+        if !item.has_tag_name(item_tag)
+            || item.attribute("value").is_none()
+            || item.children().any(|node| node.is_element())
+        {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CenterLine collection has an invalid item",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_edge_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if fields.len() < 16 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticEdge has an incomplete field sequence",
+        ));
+    }
+    let format_fields = ["Style", "Weight", "Color", "Visible", "GeometryType"];
+    for (field, expected_tag) in fields.iter().take(format_fields.len()).zip(format_fields) {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge has a nested or out-of-order format field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticEdge format field has no value",
+            ));
+        }
+    }
+    parse_gui_techdraw_integer_named(fields[0], property_name, "Style")?;
+    parse_gui_techdraw_finite(fields[1], property_name)?;
+    validate_gui_techdraw_color(fields[2], property_name)?;
+    validate_gui_techdraw_boolean(fields[3], property_name)?;
+    let geometry_type = fields[4]
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value"))?
+        .parse::<i64>()
+        .map_err(|_| {
+            gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
+        })?;
+
+    validate_gui_techdraw_geometry_branch(
+        &fields,
+        format_fields.len(),
+        property_name,
+        geometry_type,
+        false,
+    )?;
+    Ok(())
+}
+
+fn validate_gui_techdraw_geometry_branch(
+    fields: &[roxmltree::Node<'_, '_>],
+    base_start: usize,
+    property_name: &str,
+    expected_geometry_type: i64,
+    allow_iso_line_number: bool,
+) -> Result<(), CodecError> {
+    if fields.len() < base_start + 10 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw geometry has no complete BaseGeom sequence",
+        ));
+    }
+    validate_gui_techdraw_base_geom(
+        &fields[base_start..base_start + 10],
+        property_name,
+        expected_geometry_type,
+    )?;
+    let mut cursor = base_start + 10;
+    let branch_field_count = match expected_geometry_type {
+        1 => 2,
+        2 => 9,
+        7 => 1,
+        _ => {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw geometry has an unsupported GeometryType",
+            ));
+        }
+    };
+    let required_fields = cursor + branch_field_count;
+    if fields.len() != required_fields && fields.len() != required_fields + 1 {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw geometry has an invalid branch field sequence",
+        ));
+    }
+
+    match expected_geometry_type {
+        1 => {
+            if !fields[cursor].has_tag_name("Center") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw circle has an invalid center field",
+                ));
+            }
+            validate_gui_techdraw_point(fields[cursor], property_name)?;
+            cursor += 1;
+            if !fields[cursor].has_tag_name("Radius") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw circle has an invalid radius field",
+                ));
+            }
+            parse_gui_techdraw_finite(fields[cursor], property_name)?;
+            if fields[cursor].children().any(|node| node.is_element()) {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw circle has a nested radius field",
+                ));
+            }
+            cursor += 1;
+        }
+        2 => {
+            if !fields[cursor].has_tag_name("Center") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw arc has an invalid center field",
+                ));
+            }
+            validate_gui_techdraw_point(fields[cursor], property_name)?;
+            cursor += 1;
+            if !fields[cursor].has_tag_name("Radius") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw arc has an invalid radius field",
+                ));
+            }
+            parse_gui_techdraw_finite(fields[cursor], property_name)?;
+            if fields[cursor].children().any(|node| node.is_element()) {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw arc has a nested radius field",
+                ));
+            }
+            cursor += 1;
+            for expected_tag in ["Start", "End", "Middle"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "TechDraw arc has an out-of-order point field",
+                    ));
+                }
+                validate_gui_techdraw_point(fields[cursor], property_name)?;
+                cursor += 1;
+            }
+            for expected_tag in ["StartAngle", "EndAngle"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "TechDraw arc has an out-of-order angle field",
+                    ));
+                }
+                parse_gui_techdraw_finite(fields[cursor], property_name)?;
+                if fields[cursor].children().any(|node| node.is_element()) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "TechDraw arc has a nested angle field",
+                    ));
+                }
+                cursor += 1;
+            }
+            for expected_tag in ["Clockwise", "Large"] {
+                if !fields[cursor].has_tag_name(expected_tag) {
+                    return Err(gui_techdraw_error(
+                        property_name,
+                        "TechDraw arc has an out-of-order Boolean field",
+                    ));
+                }
+                validate_gui_techdraw_boolean(fields[cursor], property_name)?;
+                cursor += 1;
+            }
+        }
+        7 => {
+            if !fields[cursor].has_tag_name("Points") {
+                return Err(gui_techdraw_error(
+                    property_name,
+                    "TechDraw generic geometry has no Points field",
+                ));
+            }
+            validate_gui_techdraw_points(fields[cursor], property_name)?;
+            cursor += 1;
+        }
+        _ => unreachable!("unsupported GeometryType checked above"),
+    }
+
+    if cursor < fields.len() {
+        let line_number = fields[cursor].has_tag_name("LineNumber")
+            || (allow_iso_line_number && fields[cursor].has_tag_name("ISOLineNumber"));
+        if cursor + 1 != fields.len() || !line_number {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw geometry has an invalid trailing field",
+            ));
+        }
+        parse_gui_techdraw_integer_named(fields[cursor], property_name, "LineNumber")?;
+        if fields[cursor].children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw geometry line number is nested",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_base_geom(
+    fields: &[roxmltree::Node<'_, '_>],
+    property_name: &str,
+    expected_geometry_type: i64,
+) -> Result<(), CodecError> {
+    let expected = [
+        "GeomType",
+        "ExtractType",
+        "EdgeClass",
+        "HLRVisible",
+        "Reversed",
+        "Ref3D",
+        "Cosmetic",
+        "Source",
+        "SourceIndex",
+        "CosmeticTag",
+    ];
+    for (field, expected_tag) in fields.iter().zip(expected) {
+        if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw BaseGeom has a nested or out-of-order field",
+            ));
+        }
+        if field.attribute("value").is_none() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw BaseGeom field has no value",
+            ));
+        }
+    }
+    let geometry_type = fields[0]
+        .attribute("value")
+        .expect("validated GeomType value")
+        .parse::<i64>()
+        .map_err(|_| gui_techdraw_error(property_name, "TechDraw GeomType is not an integer"))?;
+    if geometry_type != expected_geometry_type {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw GeometryType and GeomType disagree",
+        ));
+    }
+    for index in [1, 2, 5, 7, 8] {
+        parse_gui_techdraw_integer_named(fields[index], property_name, expected[index])?;
+    }
+    for index in [3, 4, 6] {
+        validate_gui_techdraw_boolean(fields[index], property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_points(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let count = field
+        .attribute("PointsCount")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Points has no count"))?
+        .parse::<usize>()
+        .map_err(|_| gui_techdraw_error(property_name, "TechDraw Points has an invalid count"))?;
+    let points = field
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if points.len() != count {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw Points count does not match its records",
+        ));
+    }
+    for point in points {
+        if !point.has_tag_name("Point") || point.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "TechDraw Points has an invalid point record",
+            ));
+        }
+        validate_gui_techdraw_point(point, property_name)?;
+    }
+    Ok(())
+}
+
+fn validate_gui_cosmetic_vertex_record(
+    record: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let fields = record
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if !(15..=16).contains(&fields.len()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an invalid field sequence",
+        ));
+    }
+    let base_fields = [
+        "Point",
+        "Extract",
+        "HLRVisible",
+        "Ref3D",
+        "IsCenter",
+        "Cosmetic",
+        "CosmeticLink",
+        "CosmeticTag",
+    ];
+    for (field, expected_tag) in fields.iter().zip(base_fields) {
+        if !field.has_tag_name(expected_tag) {
+            break;
+        }
+        if field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertex has a nested field",
+            ));
+        }
+    }
+    if fields
+        .iter()
+        .zip(base_fields)
+        .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an out-of-order field",
+        ));
+    }
+    let mut cursor = base_fields.len();
+    if fields[cursor].has_tag_name("VertexTag") {
+        validate_gui_techdraw_uuid(fields[cursor], property_name, "VertexTag")?;
+        cursor += 1;
+    }
+    let tail_fields = [
+        "PermaPoint",
+        "LinkGeom",
+        "Color",
+        "Size",
+        "Style",
+        "Visible",
+        "Tag",
+    ];
+    if fields.len() != cursor + tail_fields.len()
+        || fields[cursor..]
+            .iter()
+            .zip(tail_fields)
+            .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex has an out-of-order field",
+        ));
+    }
+    for field in &fields {
+        if field.children().any(|node| node.is_element()) {
+            return Err(gui_techdraw_error(
+                property_name,
+                "CosmeticVertex has a nested field",
+            ));
+        }
+    }
+    validate_gui_techdraw_point(fields[0], property_name)?;
+    parse_gui_techdraw_integer_named(fields[1], property_name, "Extract")?;
+    validate_gui_techdraw_boolean(fields[2], property_name)?;
+    parse_gui_techdraw_integer_named(fields[3], property_name, "Ref3D")?;
+    validate_gui_techdraw_boolean(fields[4], property_name)?;
+    validate_gui_techdraw_boolean(fields[5], property_name)?;
+    parse_gui_techdraw_integer_named(fields[6], property_name, "CosmeticLink")?;
+    if fields[7].attribute("value").is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "CosmeticVertex CosmeticTag has no value",
+        ));
+    }
+    validate_gui_techdraw_point(fields[cursor], property_name)?;
+    parse_gui_techdraw_integer_named(fields[cursor + 1], property_name, "LinkGeom")?;
+    validate_gui_techdraw_color(fields[cursor + 2], property_name)?;
+    parse_gui_techdraw_finite(fields[cursor + 3], property_name)?;
+    parse_gui_techdraw_integer_named(fields[cursor + 4], property_name, "Style")?;
+    validate_gui_techdraw_boolean(fields[cursor + 5], property_name)?;
+    validate_gui_techdraw_uuid(fields[cursor + 6], property_name, "Tag")?;
+    Ok(())
+}
+
+fn validate_gui_techdraw_point(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    if field.children().any(|node| node.is_element()) {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw point has a nested field",
+        ));
+    }
+    for attribute in ["X", "Y", "Z"] {
+        let value = field
+            .attribute(attribute)
+            .ok_or_else(|| gui_techdraw_error(property_name, "point has no coordinate"))?
+            .parse::<f64>()
+            .map_err(|_| gui_techdraw_error(property_name, "point has an invalid coordinate"))?;
+        if !value.is_finite() {
+            return Err(gui_techdraw_error(
+                property_name,
+                "point has a non-finite coordinate",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_boolean(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Boolean has no value"))?;
+    if parse_bool(value).is_none() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw has an invalid Boolean",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gui_techdraw_color(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let color = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw color has no value"))?;
+    if !(color.len() == 7 || color.len() == 9)
+        || !color.starts_with('#')
+        || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw has an invalid color",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_finite(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw scalar has no value"))?
+        .parse::<f64>()
+        .map_err(|_| gui_techdraw_error(property_name, "TechDraw scalar is invalid"))?;
+    if !value.is_finite() {
+        return Err(gui_techdraw_error(
+            property_name,
+            "TechDraw scalar is non-finite",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_integer_named(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    field_name: &str,
+) -> Result<(), CodecError> {
+    parse_gui_techdraw_integer_value(field, property_name, field_name).map(|_| ())
+}
+
+fn parse_gui_techdraw_integer_value(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    field_name: &str,
+) -> Result<i64, CodecError> {
+    field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw integer has no value"))?
+        .parse::<i64>()
+        .map_err(|_| {
+            gui_techdraw_error(
+                property_name,
+                &format!("TechDraw {field_name} integer is invalid"),
+            )
+        })
+}
+
+fn validate_gui_techdraw_uuid(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    field_name: &str,
+) -> Result<(), CodecError> {
+    let value = field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex tag has no value"))?;
+    let bytes = value.as_bytes();
+    let valid = bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|&index| bytes[index] == b'-')
+        && bytes
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| ![8, 13, 18, 23].contains(index))
+            .all(|(_, byte)| byte.is_ascii_hexdigit());
+    if !valid {
+        return Err(gui_techdraw_error(
+            property_name,
+            &format!("CosmeticVertex {field_name} is not a UUID"),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_gui_techdraw_integer(
+    field: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    field
+        .attribute("value")
+        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat field has no value"))?
+        .parse::<i64>()
+        .map(|_| ())
+        .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
+}
+
+fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {
+    let message = format!("GUI property {property_name} {detail}");
+    CodecError::Malformed(message)
+}
+
+fn validate_visual_layer_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires exactly one VisualLayerList value"
+        )));
+    };
+    if !root.has_tag_name("VisualLayerList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading VisualLayerList value"
+        )));
+    }
+    let count = root
+        .attribute("count")
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayerList has no count"
+            ))
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayerList has an invalid count"
+            ))
+        })?;
+    let layers = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if layers.len() != count
+        || layers
+            .iter()
+            .any(|layer| !layer.has_tag_name("VisualLayer"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} VisualLayerList count or record tag is invalid"
+        )));
+    }
+    for layer in layers {
+        if !matches!(layer.attribute("visible"), Some("true" | "false")) {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayer has an invalid visible value"
+            )));
+        }
+        layer
+            .attribute("linePattern")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has no linePattern"
+                ))
+            })?
+            .parse::<u32>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has an invalid linePattern"
+                ))
+            })?;
+        let line_width = layer
+            .attribute("lineWidth")
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has no lineWidth"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} VisualLayer has an invalid lineWidth"
+                ))
+            })?;
+        if !line_width.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} VisualLayer has a non-finite lineWidth"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_gui_material(
@@ -971,6 +2749,212 @@ fn validate_gui_material(
     Ok(())
 }
 
+fn validate_gui_expression_engine(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ExpressionEngine value"
+        )));
+    };
+    if !root.has_tag_name("ExpressionEngine") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ExpressionEngine value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ExpressionEngine")?;
+    let expressions = root
+        .children()
+        .filter(|child| child.is_element() && child.has_tag_name("Expression"))
+        .collect::<Vec<_>>();
+    if expressions.len() != count
+        || expressions.iter().any(|expression| {
+            expression.attribute("path").is_none() || expression.attribute("expression").is_none()
+        })
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ExpressionEngine count or expression is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_material_reference(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one PropertyMaterial value"
+        )));
+    };
+    if !root.has_tag_name("PropertyMaterial") || root.attribute("uuid").is_none() {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} material reference is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_part_shape(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if (roots.is_empty() || roots[0].has_tag_name("Part"))
+        && roots
+            .iter()
+            .skip(1)
+            .all(|root| root.has_tag_name("ElementMap"))
+    {
+        return Ok(());
+    }
+    Err(CodecError::Malformed(format!(
+        "GUI property {property_name} Part shape value is invalid"
+    )))
+}
+
+fn validate_gui_geometry_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one GeometryList value"
+        )));
+    };
+    if !root.has_tag_name("GeometryList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading GeometryList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "GeometryList")?;
+    let geometries = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if geometries.len() != count
+        || geometries
+            .iter()
+            .any(|geometry| !geometry.has_tag_name("Geometry"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} GeometryList count or record tag is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_filletedges(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one FilletEdges value"
+        )));
+    };
+    if !root.has_tag_name("FilletEdges") || root.attribute("file").is_none() {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} FilletEdges value is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_shape_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ShapeList value"
+        )));
+    };
+    if !root.has_tag_name("ShapeList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ShapeList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ShapeList")?;
+    let shapes = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if shapes.len() != count
+        || shapes.iter().any(|shape| {
+            !shape.has_tag_name("TopoShape")
+                || (shape.attribute("file").is_none()
+                    && shape.attribute("binary").is_none()
+                    && shape.attribute("brep").is_none())
+        })
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ShapeList count or record is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_constraint_list(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires one ConstraintList value"
+        )));
+    };
+    if !root.has_tag_name("ConstraintList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires a leading ConstraintList value"
+        )));
+    }
+    let count = gui_list_count(*root, property_name, "ConstraintList")?;
+    let constraints = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if constraints.len() != count
+        || constraints
+            .iter()
+            .any(|constraint| !constraint.has_tag_name("Constrain"))
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} ConstraintList count or record tag is invalid"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 struct GuiMaterial {
     ambient: u32,
@@ -991,9 +2975,24 @@ fn validate_gui_list_payloads(
 ) -> Result<HashMap<String, Vec<GuiMaterial>>, CodecError> {
     let mut material_lists = HashMap::new();
     for property in properties {
-        let Some(entry_name) = property.side_entries.first() else {
+        if property.side_entries.is_empty() {
             continue;
-        };
+        }
+        if property.type_name == "Part::PropertyTopoShapeList" {
+            for entry_name in &property.side_entries {
+                entries.get(entry_name).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "GUI property {} references missing side entry {entry_name}",
+                        property.id
+                    ))
+                })?;
+            }
+            continue;
+        }
+        let entry_name = property
+            .side_entries
+            .first()
+            .expect("nonempty side entries");
         if property.side_entries.len() != 1 {
             return Err(CodecError::Malformed(format!(
                 "GUI property {} references more than one side entry",
@@ -1009,6 +3008,12 @@ fn validate_gui_list_payloads(
         match property.type_name.as_str() {
             "App::PropertyColorList" => {
                 parse_color_list(view, entry_name, requires_alpha_conversion)?;
+            }
+            "App::PropertyFloatList" => {
+                parse_float_list(view, entry_name)?;
+            }
+            "Part::PropertyFilletEdges" => {
+                parse_fillet_edges(view, entry_name)?;
             }
             "App::PropertyMaterialList" => {
                 let version = property
@@ -1030,6 +3035,12 @@ fn validate_gui_list_payloads(
                     property.id.clone(),
                     parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
                 );
+            }
+            "App::PropertyPlacementList" => {
+                parse_placement_list(view, entry_name)?;
+            }
+            "App::PropertyVectorList" => {
+                parse_vector_list(view, entry_name)?;
             }
             _ => {}
         }
@@ -1059,6 +3070,115 @@ fn parse_color_list(
         .into_iter()
         .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         .collect())
+}
+
+fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 8, View::f64_le)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "float-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(CodecError::Malformed(format!(
+            "float-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "float-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 24, |view| {
+            Some((view.f64_le()?, view.f64_le()?, view.f64_le()?))
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "vector-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values
+        .iter()
+        .flat_map(|value| [value.0, value.1, value.2])
+        .any(|value| !value.is_finite())
+    {
+        return Err(CodecError::Malformed(format!(
+            "vector-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "vector-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 56, |view| {
+            Some([
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ])
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "placement-list entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(CodecError::Malformed(format!(
+            "placement-list entry {entry_name} has a non-finite value"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "placement-list entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
+    let count = view.req_u32_le()?;
+    let values = view
+        .read_counted(count.into(), 20, |view| {
+            Some((view.i32_le()?, view.f64_le()?, view.f64_le()?))
+        })
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "fillet-edges entry {entry_name} count exceeds its payload"
+            ))
+        })?;
+    if values
+        .iter()
+        .any(|(_, radius1, radius2)| !radius1.is_finite() || !radius2.is_finite())
+    {
+        return Err(CodecError::Malformed(format!(
+            "fillet-edges entry {entry_name} has a non-finite radius"
+        )));
+    }
+    if !view.is_empty() {
+        return Err(CodecError::Malformed(format!(
+            "fillet-edges entry {entry_name} has trailing bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_material_list(
@@ -1176,7 +3296,8 @@ fn transfer_shape_appearances(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
-) {
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     for provider in &graph.providers {
         let Some(object_id) = provider.object.as_deref() else {
             continue;
@@ -1191,11 +3312,8 @@ fn transfer_shape_appearances(
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
-        if materials.is_empty() {
-            continue;
-        }
-        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads);
-        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face");
+        let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
+        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
         if materials.len() == 1 {
             let legacy_id = AppearanceId(format!("fcstd:appearance:object#{}", provider.name));
@@ -1213,6 +3331,21 @@ fn transfer_shape_appearances(
                 continue;
             }
             if materials.len() != mapped_count {
+                losses.push(
+                    crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
+                        .note(format!(
+                            "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
+                            provider.name,
+                            materials.len(),
+                            mapped_count
+                        ))
+                        .with_provenance(SourceProvenance {
+                            format: "fcstd".into(),
+                            stream: "GuiDocument.xml".into(),
+                            offset: property.byte_start,
+                            tag: Some(property.id.clone()),
+                        }),
+                );
                 continue;
             }
         }
@@ -1252,6 +3385,7 @@ fn transfer_shape_appearances(
             }
         }
     }
+    Ok(())
 }
 
 fn displayed_shape_bodies(
@@ -1259,8 +3393,8 @@ fn displayed_shape_bodies(
     object_id: &str,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-) -> Vec<cadmpeg_ir::ids::BodyId> {
-    displayed_shape_payload(object_id, properties, payloads)
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+    Ok(displayed_shape_payload(object_id, properties, payloads)?
         .into_iter()
         .flat_map(|payload| {
             let prefix = format!("{}:", crate::native::id_key(&payload.id));
@@ -1270,20 +3404,39 @@ fn displayed_shape_bodies(
                 .filter(move |body| crate::native::id_key(&body.id.0).starts_with(&prefix))
                 .map(|body| body.id.clone())
         })
-        .collect()
+        .collect())
 }
 
 fn displayed_shape_payload<'a>(
     object_id: &str,
     properties: &[PropertyRecord],
     payloads: &'a [ShapePayloadRecord],
-) -> Option<&'a ShapePayloadRecord> {
-    let property = properties
+) -> Result<Option<&'a ShapePayloadRecord>, CodecError> {
+    let shape_properties = properties
         .iter()
-        .find(|property| property.owner == object_id && property.name == "Shape")?;
-    payloads
+        .filter(|property| property.owner == object_id && property.name == "Shape")
+        .collect::<Vec<_>>();
+    let property = match shape_properties.as_slice() {
+        [] => return Ok(None),
+        [property] => property,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "object {object_id} has multiple Shape properties"
+            )));
+        }
+    };
+    let shape_payloads = payloads
         .iter()
-        .find(|payload| payload.property == property.id)
+        .filter(|payload| payload.property == property.id)
+        .collect::<Vec<_>>();
+    match shape_payloads.as_slice() {
+        [] => Ok(None),
+        [payload] => Ok(Some(payload)),
+        _ => Err(CodecError::Malformed(format!(
+            "Shape property {} has multiple payloads",
+            property.id
+        ))),
+    }
 }
 
 fn displayed_shape_group<'a>(
@@ -1292,16 +3445,40 @@ fn displayed_shape_group<'a>(
     payloads: &[ShapePayloadRecord],
     element_maps: &'a [ElementMapRecord],
     indexed_name: &str,
-) -> Option<&'a ElementMapGroup> {
-    let payload = displayed_shape_payload(object_id, properties, payloads)?;
-    element_maps
+) -> Result<Option<&'a ElementMapGroup>, CodecError> {
+    let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
+        return Ok(None);
+    };
+    let shape_maps = element_maps
         .iter()
-        .find(|map| map.property == payload.property)?
-        .maps
-        .last()?
+        .filter(|map| map.property == payload.property)
+        .collect::<Vec<_>>();
+    let map = match shape_maps.as_slice() {
+        [] => return Ok(None),
+        [map] => map,
+        _ => {
+            return Err(CodecError::Malformed(format!(
+                "Shape property {} has multiple element maps",
+                payload.property
+            )));
+        }
+    };
+    let Some(root) = map.maps.last() else {
+        return Ok(None);
+    };
+    let groups = root
         .groups
         .iter()
-        .find(|group| group.indexed_name == indexed_name)
+        .filter(|group| group.indexed_name == indexed_name)
+        .collect::<Vec<_>>();
+    match groups.as_slice() {
+        [] => Ok(None),
+        [group] => Ok(Some(group)),
+        _ => Err(CodecError::Malformed(format!(
+            "Shape property {} has multiple {indexed_name} groups",
+            payload.property
+        ))),
+    }
 }
 
 fn material_appearance(
@@ -1413,6 +3590,8 @@ fn transfer_topology_colors(
     element_maps: &[ElementMapRecord],
     kind: TopologyColorKind,
     requires_alpha_conversion: bool,
+    provenance: SourceProvenance,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let view = *entries.get(entry_name).ok_or_else(|| {
         CodecError::Malformed(format!("color list references missing entry {entry_name}"))
@@ -1420,7 +3599,7 @@ fn transfer_topology_colors(
     let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
     let count = colors.len();
     let Some(group) =
-        displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())
+        displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())?
     else {
         return Ok(());
     };
@@ -1430,11 +3609,15 @@ fn transfer_topology_colors(
         return Ok(());
     }
     if count != 1 && mapped_count != count {
-        return Err(CodecError::Malformed(format!(
-            "{provider_name} {} color count {count} does not match {} mapped subelements",
-            kind.name(),
-            mapped_count
-        )));
+        losses.push(
+            crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
+                .note(format!(
+                    "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
+                    kind.name()
+                ))
+                .with_provenance(provenance),
+        );
+        return Ok(());
     }
     for (index, packed) in colors.into_iter().enumerate() {
         let lower = kind.name().to_ascii_lowercase();
@@ -1586,6 +3769,133 @@ mod color_tests {
         assert_eq!(materials[0].diffuse, 0x4455_66bf);
         assert_eq!(materials[0].specular, 0x7788_997f);
         assert_eq!(materials[0].emissive, 0xaabb_cc00);
+    }
+}
+
+#[cfg(test)]
+mod shape_association_tests {
+    use super::displayed_shape_group;
+    use crate::brep::{ShapePayloadForm, ShapePayloadRecord};
+    use crate::native::{
+        ElementMapGroup, ElementMapNode, ElementMapRecord, PropertyFamily, PropertyRecord,
+    };
+
+    fn shape_property(id: &str) -> PropertyRecord {
+        PropertyRecord {
+            id: id.into(),
+            owner: "object".into(),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml: "<Property/>".into(),
+            byte_start: 0,
+            byte_end: 11,
+        }
+    }
+
+    fn shape_payload(id: &str, property: &str) -> ShapePayloadRecord {
+        ShapePayloadRecord {
+            id: id.into(),
+            property: property.into(),
+            entry: "Shape.brp".into(),
+            form: ShapePayloadForm::Empty,
+            text: None,
+            binary: None,
+        }
+    }
+
+    fn element_map(property: &str, groups: Vec<ElementMapGroup>) -> ElementMapRecord {
+        ElementMapRecord {
+            id: "map".into(),
+            property: property.into(),
+            version: "1.0".into(),
+            hasher_index: None,
+            source_entry: None,
+            map_id: 1,
+            declared_count: 0,
+            postfixes: Vec::new(),
+            maps: vec![ElementMapNode {
+                index: 1,
+                map_id: 1,
+                groups,
+            }],
+        }
+    }
+
+    fn group(indexed_name: &str) -> ElementMapGroup {
+        ElementMapGroup {
+            indexed_name: indexed_name.into(),
+            children: Vec::new(),
+            names: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_shape_association_candidates() {
+        let property = shape_property("property");
+        let payload = shape_payload("payload", "property");
+        let map = element_map("property", vec![group("Face")]);
+
+        let duplicate_property = shape_property("property-2");
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                &[property.clone(), duplicate_property],
+                std::slice::from_ref(&payload),
+                std::slice::from_ref(&map),
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_payload = ShapePayloadRecord {
+            id: "payload-2".into(),
+            ..payload.clone()
+        };
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                std::slice::from_ref(&property),
+                &[payload.clone(), duplicate_payload],
+                std::slice::from_ref(&map),
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_map = ElementMapRecord {
+            id: "map-2".into(),
+            ..map.clone()
+        };
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&payload),
+                &[map, duplicate_map],
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_group = element_map("property", vec![group("Face"), group("Face")]);
+        assert!(matches!(
+            displayed_shape_group(
+                "object",
+                &[property],
+                &[payload],
+                &[duplicate_group],
+                "Face"
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 }
 

@@ -2,7 +2,7 @@
 //! Product-structure transfer unit tests.
 
 use crate::native;
-use crate::product::product_cycle_nodes;
+use crate::product::{product_cycle_nodes, product_kind, product_record_index};
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -24,18 +24,18 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="3"><Property name="Label" type="App::PropertyString"><String value="Drive gear"/></Property><Property name="Description" type="App::PropertyString"><String value="Hardened drive gear"/></Property><Property name="PartNumber" type="App::PropertyString"><String value="GEAR-42"/></Property></Properties></Object>
  <Object name="Occurrence"><Properties Count="14">
-  <Property name="LinkedObject" type="App::PropertyXLinkSub"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
   <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
   <Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>
   <Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="3" valueZ="4"/></Property>
-  <Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="2"><Bool value="true"/><Bool value="false"/></BoolList></Property>
+  <Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="01"/></Property>
   <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="ElementA"/><Link value="ElementB"/></LinkList></Property>
   <Property name="LinkClaimChild" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/><CustomEnumList count="4"><Enum value="Disabled"/><Enum value="Enabled"/><Enum value="Owned"/><Enum value="Tracking"/></CustomEnumList></Property>
-  <Property name="LinkCopyOnChangeSource" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="LinkCopyOnChangeSource" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
   <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Assembly"/></Property>
   <Property name="LinkCopyOnChangeTouched" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
@@ -144,8 +144,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
     assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
     assert_eq!(link_occurrences[0].linked_subelements, ["Face1"]);
-    assert_eq!(link_occurrences[0].visible, Some(true));
-    assert_eq!(link_occurrences[1].visible, Some(false));
+    assert_eq!(link_occurrences[0].visible, None);
+    assert_eq!(link_occurrences[1].visible, None);
     assert!(link_occurrences[0].element_component.is_some());
     assert_eq!(link_occurrences[0].claim_child, Some(true));
     assert_eq!(
@@ -186,7 +186,475 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
-fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
+fn projects_direct_string_metadata_and_part_number_precedence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="App::Part" name="Explicit" id="1"/>
+ <Object type="App::Part" name="IdOnly" id="2"/>
+ <Object type="App::Part" name="EmptyId" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Explicit"><Properties Count="8">
+  <Property name="Label" type="App::PropertyString"><String value="Explicit label"/></Property>
+  <Property name="Label2" type="App::PropertyString"><String value="BOM description"/></Property>
+  <Property name="Id" type="App::PropertyString"><String value="ID-42"/></Property>
+  <Property name="Description" type="App::PropertyString"><String value="Explicit description"/></Property>
+  <Property name="PartNumber" type="App::PropertyString"><String value="PART-42"/></Property>
+  <Property name="StockCode" type="App::PropertyString"><String value="STOCK-42"/></Property>
+  <Property name="Vendor" type="App::PropertyString"><String value="Vendor 42"/></Property>
+  <Property name="Manufacturer" type="App::PropertyString"><String value="Maker 42"/></Property>
+ </Properties></Object>
+ <Object name="IdOnly"><Properties Count="1">
+  <Property name="Id" type="App::PropertyString"><String value="ID-ONLY-42"/></Property>
+ </Properties></Object>
+ <Object name="EmptyId"><Properties Count="1">
+  <Property name="Id" type="App::PropertyString"><String value=""/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("direct product metadata");
+    let definition = |name: &str| {
+        result
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.source_name.as_deref() == Some(name))
+            .expect("product definition")
+    };
+    let explicit = definition("Explicit");
+    assert_eq!(explicit.label.as_deref(), Some("Explicit label"));
+    assert_eq!(
+        explicit.description.as_deref(),
+        Some("Explicit description")
+    );
+    assert_eq!(explicit.part_number.as_deref(), Some("PART-42"));
+    assert_eq!(explicit.bom_properties.len(), 4);
+    assert_eq!(
+        explicit.bom_properties.get("Label2").map(String::as_str),
+        Some("BOM description")
+    );
+    assert_eq!(
+        explicit.bom_properties.get("StockCode").map(String::as_str),
+        Some("STOCK-42")
+    );
+    assert_eq!(
+        explicit.bom_properties.get("Vendor").map(String::as_str),
+        Some("Vendor 42")
+    );
+    assert_eq!(
+        explicit
+            .bom_properties
+            .get("Manufacturer")
+            .map(String::as_str),
+        Some("Maker 42")
+    );
+    assert_eq!(
+        definition("IdOnly").part_number.as_deref(),
+        Some("ID-ONLY-42")
+    );
+    assert_eq!(definition("EmptyId").part_number, None);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn retains_malformed_product_metadata_without_neutral_projection() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Part" name="Malformed" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Malformed"><Properties Count="5">
+ <Property name="Label" type="App::PropertyString"><Wrapper><String value="nested label"/></Wrapper></Property>
+ <Property name="Label2" type="App::PropertyString"><Wrapper><String value="nested BOM"/></Wrapper></Property>
+ <Property name="Description" type="App::PropertyString"><Wrapper><String value="nested description"/></Wrapper></Property>
+ <Property name="PartNumber" type="App::PropertyInteger"><Integer value="17"/></Property>
+ <Property name="Id" type="App::PropertyInteger"><Integer value="18"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("native malformed metadata");
+    let definition = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Malformed"))
+        .expect("malformed product definition");
+    assert_eq!(definition.label, None);
+    assert_eq!(definition.description, None);
+    assert_eq!(definition.part_number, None);
+    assert!(definition.bom_properties.is_empty());
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(properties.len(), 5);
+    assert!(properties.iter().any(|property| {
+        property.name == "Description" && property.raw_xml.contains("<Wrapper>")
+    }));
+    assert!(properties.iter().any(|property| {
+        property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
+    }));
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn selects_the_active_link_placement_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Propagating" id="2"/>
+ <Object type="App::Link" name="LocalOnly" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Propagating"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+ <Object name="LocalOnly"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="30" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("active link placement carrier");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let x = |name: &str| {
+        nodes
+            .iter()
+            .find(|node| node.object.ends_with(name))
+            .and_then(|node| node.local_transform)
+            .map(|matrix| matrix[0][3])
+            .expect("link placement")
+    };
+    assert_eq!(x("Propagating"), 2.0);
+    assert_eq!(x("LocalOnly"), 30.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn accepts_axis_angle_placement_values() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="3" Pz="4" A="1.5707963267948966" Ox="0" Oy="0" Oz="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("axis-angle placement");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert_eq!(matrix[0][3], 2.0);
+    assert_eq!(matrix[1][3], 3.0);
+    assert_eq!(matrix[2][3], 4.0);
+    assert!((matrix[0][0]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="3" Pz="4" Q0="0" Q1="0" Q2="0" Q3="1" A="1.5707963267948966" Ox="0" Oy="0" Oz="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("source placement semantics");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert_eq!(matrix[0][3], 2.0);
+    assert_eq!(matrix[1][3], 3.0);
+    assert_eq!(matrix[2][3], 4.0);
+    assert!((matrix[0][0]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn accepts_nonzero_axis_below_machine_epsilon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" A="1.5707963267948966" Ox="1e-20" Oy="0" Oz="0"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nonzero source axis");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][2]).abs() < f64::EPSILON * 16.0);
+}
+
+#[test]
+fn accepts_nonzero_quaternion_below_machine_epsilon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+ <Object type="Part::Feature" name="Feature" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="1e-20" Q2="0" Q3="1e-20"/></Property>
+ </Properties></Object>
+ <Object name="Feature"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="1e-16" Q2="0" Q3="1e-16"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nonzero source quaternion");
+    let nodes = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    let matrix = occurrence.local_transform.expect("placement");
+    assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
+    assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
+    assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
+    assert!(matrix[2][2].abs() < f64::EPSILON * 16.0);
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn rejects_ambiguous_link_placement_without_policy() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="3">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("ambiguous placement carriers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_ambiguous_link_prototype_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="First" id="1"/>
+ <Object type="Part::Feature" name="Second" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="1">
+  <Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("multiple linked-object carriers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_duplicate_product_carriers() {
+    for document in [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="First" id="1"/>
+ <Object type="Part::Feature" name="Second" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="First"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Second"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+    ] {
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("duplicate product carrier");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn rejects_invalid_product_placement_values() {
+    for placement in [
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" A="1" Ox="0" Oy="0"/></Property>"#,
+        r#"<Property name="Placement" type="App::PropertyString"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+{placement}
+</Properties></Object></ObjectData></Document>"#
+        );
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn rejects_overlapping_product_membership_for_neutral_projection() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
 <ObjectData Count="3">
@@ -194,40 +662,94 @@ fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
  <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
  <Object name="Member"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
-    let result = FcstdCodec
+    let error = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
             &DecodeOptions::default(),
         )
-        .expect("overlapping product membership");
-    let nodes = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("native namespace")
-        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
-        .expect("product nodes");
-    let member_id = "fcstd:native:object#Member";
-    assert_eq!(
-        nodes
-            .iter()
-            .filter(|node| node.members.iter().any(|member| member == member_id))
-            .count(),
-        2
-    );
-    let member = result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| occurrence.native_ref.as_deref() == Some(member_id))
-        .expect("member occurrence");
+        .expect_err("overlapping product membership");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn product_runtime_dispatch_requires_exact_registered_types() {
+    for (runtime_type, expected) in [
+        ("Assembly::AssemblyObject", Some("part")),
+        ("Assembly::AssemblyLink", Some("part")),
+        ("App::Part", Some("part")),
+        ("App::DocumentObjectGroup", Some("group")),
+        ("App::LinkGroup", Some("link_group")),
+        ("App::Link", Some("occurrence")),
+        ("App::LinkElement", Some("occurrence")),
+    ] {
+        assert_eq!(product_kind(runtime_type), expected, "{runtime_type}");
+    }
+    for runtime_type in [
+        "Vendor::AssemblyObject",
+        "Vendor::LinkGroup",
+        "App::LinkPython",
+        "App::DocumentObjectGroupPython",
+        "Assembly::AssemblyObjectExtension",
+    ] {
+        assert_eq!(product_kind(runtime_type), None, "{runtime_type}");
+    }
+}
+
+#[test]
+fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyInteger"><Integer value="2"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("wrong copy-on-change carrier type");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_wrong_runtime_types_for_named_product_carriers() {
+    for carrier in [
+        r#"<Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
+        r#"<Property name="LinkTransform" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="ElementCount" type="App::PropertyInteger"><Integer value="1"/></Property>"#,
+        r#"<Property name="ScaleVector" type="App::PropertyFloat"><Float value="1"/></Property>"#,
+        r#"<Property name="VisibilityList" type="App::PropertyString"><String value="1"/></Property>"#,
+        r#"<Property name="ElementList" type="App::PropertyLink"><Link value="Prototype"/></Property>"#,
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+{carrier}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("wrong named product carrier type");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
+#[test]
+fn product_record_identity_rejects_duplicates() {
+    let records = [node("A", &[]), node("A", &[])];
     assert!(matches!(
-        &member.parent,
-        cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
-            if occurrence.0.contains("First")
+        product_record_index(&records),
+        Err(cadmpeg_core::CodecError::Malformed(_))
     ));
-    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -237,7 +759,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
 <ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
-<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
 {array_property}
 </Properties></Object></ObjectData></Document>"#
@@ -269,7 +791,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
             Some(("ScaleList", scale)),
         ),
         (
-            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="1"><Bool value="true"/></BoolList></Property>"#,
+            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="1"/></Property>"#,
             None,
         ),
         (
@@ -287,7 +809,7 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     }
 
     let zero = decode(
-        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="0"/></Property>"#,
+        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value=""/></Property>"#,
         None,
     )
     .expect("empty zero-count link array");
@@ -320,9 +842,9 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
 <ObjectData Count="5">
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Outer"/><Link value="Override"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
- <Object name="Inner"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
- <Object name="Outer"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
- <Object name="Override"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object>
+ <Object name="Inner"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Outer"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Override"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
