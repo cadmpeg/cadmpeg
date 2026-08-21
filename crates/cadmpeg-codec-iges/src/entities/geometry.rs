@@ -5,7 +5,7 @@ use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
@@ -687,6 +687,7 @@ pub(crate) fn project_geometry(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
@@ -1485,7 +1486,14 @@ pub(crate) fn project_geometry(
     decoded.extend(csg.decoded);
     losses.extend(csg.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
-    let structure = super::structure::project(ir, directory, parameters, global, ctx);
+    let structure = super::structure::project(
+        ir,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        ctx,
+    );
     decoded.extend(structure.decoded);
     losses.extend(structure.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
@@ -1498,7 +1506,14 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_presentation",
     )?;
-    let drawing = super::drawing::project(ir, directory, parameters, global, ctx);
+    let drawing = super::drawing::project(
+        ir,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        ctx,
+    );
     decoded.extend(drawing.decoded);
     losses.extend(drawing.losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;

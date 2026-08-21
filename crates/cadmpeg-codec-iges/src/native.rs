@@ -8,8 +8,8 @@ use crate::entities::structure::array_base_type;
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    trailing_pointer_groups, DefaultTailCount, ParameterRecord, QuarantinedParameterRecord, Token,
-    TokenValue,
+    DefaultTailCount, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
+    TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -1407,6 +1407,7 @@ pub(crate) fn store(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     quarantine: QuarantinedRecords<'_>,
     structure_admitted: Option<&BTreeSet<u32>>,
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
@@ -1464,18 +1465,13 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let trailing_by_directory = by_directory
-        .iter()
-        .map(|(sequence, record)| (*sequence, trailing_pointer_groups(record, &entries)))
-        .collect::<BTreeMap<_, _>>();
-    // The native reading boundary: the trailing-group boundary clamped to
-    // `entity_primary_end`. It reads the memoized trailing-group map, which
-    // is why it re-spells the unclamped half instead of calling
-    // `end_before_trailing_pointer_groups`.
+    // The native reading boundary is the retained trailing-group boundary
+    // clamped to the entity's primary layout.
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
-        trailing_by_directory
+        trailing_pointer_analysis
             .get(&sequence)
-            .and_then(|groups| groups.as_ref())
+            .and_then(|analysis| analysis.groups.as_ref())
+            .filter(|groups| groups.fully_valid)
             .map_or(record.parameter_end(), |groups| groups.token_start)
             .min(
                 crate::parameter::entity_primary_end(record, &entries)
@@ -1506,9 +1502,9 @@ pub(crate) fn store(
         }
     }
     let ambiguous_parameter_boundaries = by_directory
-        .iter()
-        .filter_map(|(sequence, record)| {
-            let analysis = crate::parameter::analyze_trailing_pointer_groups(record, &entries);
+        .keys()
+        .filter_map(|sequence| {
+            let analysis = trailing_pointer_analysis.get(sequence)?;
             let equally_valid = analysis.valid_candidate_count > 1;
             let required_back_pointer_ambiguity = required_back_pointer_members.contains(sequence)
                 && analysis.candidate_count > 1
@@ -1531,20 +1527,20 @@ pub(crate) fn store(
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            let trailing = trailing_by_directory
+            let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
-                .and_then(|groups| groups.as_ref());
+                .and_then(|analysis| analysis.groups.as_ref())
+                .filter(|groups| groups.fully_valid);
             let invalid_trailing = (trailing.is_none()
                 && required_back_pointer_members.contains(&entry.sequence))
             .then(|| {
-                parameters
-                    .and_then(|record| {
-                        crate::parameter::analyze_trailing_pointer_groups(record, &entries).groups
-                    })
+                trailing_pointer_analysis
+                    .get(&entry.sequence)
+                    .and_then(|analysis| analysis.groups.as_ref())
                     .filter(|groups| !groups.fully_valid)
             })
             .flatten();
-            let edge_trailing = trailing.or(invalid_trailing.as_ref());
+            let edge_trailing = trailing.or(invalid_trailing);
             let resolved_associations = edge_trailing
                 .as_ref()
                 .into_iter()
@@ -3435,9 +3431,10 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, _owner_record)| {
                         **sequence != entry.sequence
-                            && trailing_by_directory
+                            && trailing_pointer_analysis
                                 .get(sequence)
-                                .and_then(|groups| groups.as_ref())
+                                .and_then(|analysis| analysis.groups.as_ref())
+                                .filter(|groups| groups.fully_valid)
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3773,9 +3770,10 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, _owner)| {
                         **sequence != entry.sequence
-                            && trailing_by_directory
+                            && trailing_pointer_analysis
                                 .get(sequence)
-                                .and_then(|groups| groups.as_ref())
+                                .and_then(|analysis| analysis.groups.as_ref())
+                                .filter(|groups| groups.fully_valid)
                                 .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -3794,9 +3792,10 @@ pub(crate) fn store(
             let owners = by_directory
                 .iter()
                 .filter(|(sequence, _owner)| {
-                    trailing_by_directory
+                    trailing_pointer_analysis
                         .get(sequence)
-                        .and_then(|groups| groups.as_ref())
+                        .and_then(|analysis| analysis.groups.as_ref())
+                        .filter(|groups| groups.fully_valid)
                         .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                 })
                 .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
@@ -4080,9 +4079,10 @@ pub(crate) fn store(
                 .unwrap_or_default();
             let (view_count, annotation_count) = counts;
             let annotation_count_index = 2 + view_count * width;
-            let trailing = trailing_by_directory
+            let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
-                .and_then(|groups| groups.as_ref());
+                .and_then(|analysis| analysis.groups.as_ref())
+                .filter(|groups| groups.fully_valid);
             let candidates = |form| drawing_property_candidates(trailing, form, &entries);
             let (name_property, name_ambiguous) =
                 choose_drawing_property(&candidates(15), 15, &by_directory);

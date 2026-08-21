@@ -334,33 +334,6 @@ impl ParameterRecord {
     }
 }
 
-pub(crate) fn trailing_pointer_groups(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> Option<TrailingPointerGroups> {
-    analyze_trailing_pointer_groups(record, directory)
-        .groups
-        .filter(|groups| groups.fully_valid)
-}
-
-/// Return the boundary where the record's trailing pointer groups begin, or
-/// the record's parameter end when it has none.
-///
-/// Semantic validators admit counted lists against this boundary. It is
-/// deliberately stricter than the native reader's `clamped_primary_end`,
-/// which also honors `entity_primary_end`: a record with surplus tokens
-/// after its complete declared list keeps those items in the native record
-/// while its semantic projection is refused. `assemble_with_context` derives
-/// the same boundary once more when it seals `parameter_end`, so this is the
-/// shared spelling, not the sole derivation.
-pub(crate) fn end_before_trailing_pointer_groups(
-    record: &ParameterRecord,
-    directory: &BTreeMap<u32, &DirectoryEntry>,
-) -> usize {
-    trailing_pointer_groups(record, directory)
-        .map_or(record.parameter_end(), |groups| groups.token_start)
-}
-
 pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
@@ -1772,6 +1745,7 @@ enum TokenizeFailure {
 /// Both parse results of the Parameter Data section.
 pub(crate) struct ParameterAssembly {
     pub(crate) records: Vec<ParameterRecord>,
+    pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
 }
@@ -2192,6 +2166,7 @@ pub(crate) fn assemble_with_context(
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries, ctx)?;
     let mut records = Vec::new();
+    let mut trailing_pointer_analysis = BTreeMap::new();
     let mut quarantined = Vec::new();
     for owned in &ownership {
         let entry = owned.entry;
@@ -2244,8 +2219,13 @@ pub(crate) fn assemble_with_context(
             tokens,
             parameter_end,
         };
-        record.parameter_end = trailing_pointer_groups(&record, &entries)
+        let analysis = analyze_trailing_pointer_groups(&record, &entries);
+        record.parameter_end = analysis
+            .groups
+            .as_ref()
+            .filter(|groups| groups.fully_valid)
             .map_or(record.tokens.len(), |groups| groups.token_start);
+        trailing_pointer_analysis.insert(entry.sequence, analysis);
         records.push(record);
     }
     let accounted = ownership
@@ -2277,6 +2257,7 @@ pub(crate) fn assemble_with_context(
     }
     Ok(ParameterAssembly {
         records,
+        trailing_pointer_analysis,
         quarantined,
         recoveries,
     })

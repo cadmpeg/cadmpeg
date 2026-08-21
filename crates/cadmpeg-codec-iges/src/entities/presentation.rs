@@ -5,7 +5,7 @@ use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
-use crate::parameter::{end_before_trailing_pointer_groups, ParameterRecord, TokenValue};
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -119,7 +119,7 @@ fn text_font_definition(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
-    let parameter_end = end_before_trailing_pointer_groups(record, entries);
+    let parameter_end = record.parameter_end();
     let directory_valid = entry.status.use_flag == 2
         && entry.structure == 0
         && entry.line_font == 0
@@ -241,7 +241,7 @@ pub(super) fn project(
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let parameter_end = end_before_trailing_pointer_groups(record, &entries);
+        let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
         let font_valid = font.is_some_and(|font| general_note_font_valid(font, &entries));
         let directory_valid = entry.status.use_flag == 2

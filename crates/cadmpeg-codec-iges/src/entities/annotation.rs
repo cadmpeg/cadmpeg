@@ -7,7 +7,7 @@ use super::presentation::{
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
-use crate::parameter::{end_before_trailing_pointer_groups, DefaultTailCount, ParameterRecord};
+use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,12 +62,8 @@ fn finite(record: &ParameterRecord, index: usize) -> bool {
     record.number(index).is_some_and(f64::is_finite)
 }
 
-fn exact_parameter_count(
-    record: &ParameterRecord,
-    expected: usize,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    end_before_trailing_pointer_groups(record, entries) == expected
+fn exact_parameter_count(record: &ParameterRecord, expected: usize) -> bool {
+    record.parameter_end() == expected
 }
 
 fn justification_valid(value: i64) -> bool {
@@ -87,7 +83,7 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let parameter_end = end_before_trailing_pointer_groups(record, entries);
+    let parameter_end = record.parameter_end();
     let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
         _ => return false,
@@ -128,7 +124,7 @@ fn new_general_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let parameter_end = end_before_trailing_pointer_groups(record, entries);
+    let parameter_end = record.parameter_end();
     let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
         _ => return false,
@@ -207,11 +203,7 @@ fn new_general_note_valid(
         })
 }
 
-fn leader_valid(
-    entry: &DirectoryEntry,
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
+fn leader_valid(entry: &DirectoryEntry, record: &ParameterRecord) -> bool {
     let Some(count) = record
         .count_with_stride_at(1, 7, 2, record.parameter_end())
         .filter(|count| *count > 0)
@@ -231,7 +223,7 @@ fn leader_valid(
                     _ => false,
                 }
         });
-    exact_parameter_count(record, 7 + count * 2, entries)
+    exact_parameter_count(record, 7 + count * 2)
         && dimensions_valid
         && (4..=6 + count * 2).all(|index| finite(record, index))
 }
@@ -264,8 +256,8 @@ fn child_valid(
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
                     212 => general_note_valid(record, entries),
-                    214 => leader_valid(entry, record, entries),
-                    106 => witness_valid(record, entries),
+                    214 => leader_valid(entry, record),
+                    106 => witness_valid(record),
                     _ => false,
                 })
     })
@@ -291,7 +283,7 @@ fn dimension_children_valid(
         })
 }
 
-fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
+fn witness_valid(record: &ParameterRecord) -> bool {
     let Some(count) = record
         .count_with_stride_at(2, 4, 2, record.parameter_end())
         .filter(|count| *count >= 3 && *count % 2 == 1)
@@ -299,7 +291,7 @@ fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEnt
         return false;
     };
     record.integer(1) == Some(1)
-        && exact_parameter_count(record, 4 + count * 2, entries)
+        && exact_parameter_count(record, 4 + count * 2)
         && (3..4 + count * 2).all(|index| finite(record, index))
 }
 
@@ -344,7 +336,7 @@ fn dimension_valid(
             });
             children.extend((2..=3).filter_map(|index| pointer(record, index, entries)));
             children.extend(leaders.into_iter().flatten());
-            exact_parameter_count(record, 9, entries)
+            exact_parameter_count(record, 9)
                 && witnesses_valid
                 && (4..=5).all(|index| finite(record, index))
                 && record
@@ -391,10 +383,7 @@ fn dimension_valid(
                 None => false,
             });
             children.extend((2..=7).filter_map(|index| pointer(record, index, entries)));
-            exact_parameter_count(record, 8, entries)
-                && curves_valid
-                && leaders_valid
-                && witnesses_valid
+            exact_parameter_count(record, 8) && curves_valid && leaders_valid && witnesses_valid
         }
         (206, 0) => {
             let first = pointer(record, 2, entries);
@@ -422,7 +411,7 @@ fn dimension_valid(
             };
             children.extend(first);
             children.extend(second);
-            exact_parameter_count(record, 6, entries)
+            exact_parameter_count(record, 6)
                 && leaders_valid
                 && (4..=5).all(|index| finite(record, index))
         }
@@ -449,7 +438,7 @@ fn dimension_valid(
             });
             children.extend(leaders.into_iter().flatten());
             children.extend((4..=5).filter_map(|index| pointer(record, index, entries)));
-            exact_parameter_count(record, 6, entries) && leaders_valid && witnesses_valid
+            exact_parameter_count(record, 6) && leaders_valid && witnesses_valid
         }
         (218, 0) => {
             let ordinate = pointer(record, 2, entries);
@@ -464,7 +453,7 @@ fn dimension_valid(
                     )
             });
             children.extend(ordinate);
-            exact_parameter_count(record, 3, entries) && valid
+            exact_parameter_count(record, 3) && valid
         }
         (218, 1) => {
             let witness = pointer(record, 2, entries);
@@ -482,7 +471,7 @@ fn dimension_valid(
             });
             children.extend(witness);
             children.extend(leader);
-            exact_parameter_count(record, 4, entries) && valid
+            exact_parameter_count(record, 4) && valid
         }
         (220, 0) => {
             let leader = pointer(record, 2, entries);
@@ -510,7 +499,7 @@ fn dimension_valid(
             };
             children.extend(leader);
             children.extend(enclosure);
-            exact_parameter_count(record, 4, entries) && leader_valid && enclosure_valid
+            exact_parameter_count(record, 4) && leader_valid && enclosure_valid
         }
         (222, 0..=1) => {
             let first = pointer(record, 2, entries);
@@ -538,7 +527,7 @@ fn dimension_valid(
                 };
             children.extend(first);
             children.extend(second);
-            exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 }, entries)
+            exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 })
                 && first_valid
                 && center_valid
                 && second_valid
@@ -577,7 +566,7 @@ fn flag_or_label_valid(
         })
     });
     let shape_valid = if entry.entity_type == 208 {
-        count.is_some_and(|count| exact_parameter_count(record, 7 + count, entries))
+        count.is_some_and(|count| exact_parameter_count(record, 7 + count))
             && (1..=4).all(|index| finite(record, index))
             && note
                 .and_then(|sequence| records.get(&sequence))
@@ -593,7 +582,7 @@ fn flag_or_label_valid(
                         <= 10
                 })
     } else {
-        count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count, entries))
+        count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count))
     };
     note_valid && leaders_valid && shape_valid
 }
@@ -637,7 +626,7 @@ fn general_symbol_valid(
     note_valid
         && geometry_valid
         && leaders_valid
-        && exact_parameter_count(record, leader_count_index + 1 + leader_count, entries)
+        && exact_parameter_count(record, leader_count_index + 1 + leader_count)
 }
 
 pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
@@ -704,7 +693,7 @@ fn sectioned_area_valid(
     boundary_valid
         && pattern_parameters_valid
         && islands_valid
-        && exact_parameter_count(record, 9 + island_count, entries)
+        && exact_parameter_count(record, 9 + island_count)
 }
 
 pub(super) fn project(
@@ -757,7 +746,7 @@ pub(super) fn project(
                     }
                     AnnotationKind::GeneralNote => general_note_valid(record, &entries),
                     AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
-                    AnnotationKind::Leader => leader_valid(entry, record, &entries),
+                    AnnotationKind::Leader => leader_valid(entry, record),
                     AnnotationKind::GeneralSymbol => {
                         general_symbol_valid(record, &entries, &records)
                     }

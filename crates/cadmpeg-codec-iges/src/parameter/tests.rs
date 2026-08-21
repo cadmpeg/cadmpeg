@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
     analyze_trailing_pointer_groups, groups_for_candidate, structural_pointer_group_candidates,
-    trailing_pointer_groups, ParameterRecord, Token, TokenValue,
+    ParameterRecord, Token, TokenValue,
 };
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -255,7 +255,8 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
         comment: Vec::new(),
     };
 
-    assert!(trailing_pointer_groups(&record, &BTreeMap::new()).is_none());
+    let analysis = analyze_trailing_pointer_groups(&record, &BTreeMap::new());
+    assert!(analysis.groups.is_none());
 }
 
 #[test]
@@ -331,11 +332,11 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
     assert_eq!(analysis.candidate_count, 1);
     assert_eq!(analysis.valid_candidate_count, 1);
     let groups = analysis.groups.expect("unique valid group");
+    assert!(groups.fully_valid);
     assert_eq!(groups.token_start, 3);
     assert_eq!(groups.associations, vec![3, 1]);
     assert!(groups.properties.is_empty());
     assert_eq!(groups.association_pointers.len(), 2);
-    assert_eq!(trailing_pointer_groups(&record, &directory), Some(groups));
 }
 
 #[test]
@@ -11112,7 +11113,6 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     assert_eq!(analysis.candidate_count, 2);
     assert_eq!(analysis.valid_candidate_count, 2);
     assert!(analysis.groups.is_none());
-    assert!(trailing_pointer_groups(&record, &directory).is_none());
 }
 
 #[test]

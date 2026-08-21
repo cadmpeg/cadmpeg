@@ -5,7 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -91,8 +91,13 @@ fn conflicting_drawing_property_forms(
     form: i64,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> bool {
-    let Some(groups) = trailing_pointer_groups(record, directory) else {
+    let Some(groups) = trailing_pointer_analysis
+        .get(&record.directory_sequence)
+        .and_then(|analysis| analysis.groups.as_ref())
+        .filter(|groups| groups.fully_valid)
+    else {
         return false;
     };
     let values = groups
@@ -116,6 +121,7 @@ pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> ProjectionOutcome {
@@ -171,7 +177,13 @@ pub(super) fn project(
             continue;
         };
         for form in [15, 16, 17] {
-            if conflicting_drawing_property_forms(record, form, &entries, &records) {
+            if conflicting_drawing_property_forms(
+                record,
+                form,
+                &entries,
+                &records,
+                trailing_pointer_analysis,
+            ) {
                 losses.push(
                     IgesLossCode::DrawingPropertyAmbiguous
                         .note(format!(
@@ -428,9 +440,13 @@ pub(super) fn project(
                     .is_some_and(|view| {
                         view.entity_type == 410
                             && records.get(&view.sequence).is_some_and(|view_record| {
-                                trailing_pointer_groups(view_record, &entries).is_some_and(
-                                    |groups| groups.associations.contains(&entry.sequence),
-                                )
+                                trailing_pointer_analysis
+                                    .get(&view_record.directory_sequence)
+                                    .and_then(|analysis| analysis.groups.as_ref())
+                                    .filter(|groups| groups.fully_valid)
+                                    .is_some_and(|groups| {
+                                        groups.associations.contains(&entry.sequence)
+                                    })
                             })
                     })
                     && (entry.form == 3 || {
