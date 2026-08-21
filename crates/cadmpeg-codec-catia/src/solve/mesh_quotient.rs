@@ -6835,18 +6835,14 @@ fn resolve_endpoint_configuration_relation_streaming(
                 )
             })
         } else {
-            resolve_standard_mesh_endpoint_candidates(
+            resolve_fixed_mesh_endpoint_assignment_domains(
                 edge_rows,
                 vertex_points,
                 &candidates,
-                assignment_domains,
+                &assignment_domains,
                 port_identities,
-                None,
                 &endpoint_resolution_budget,
-                partial_solution_valid,
-                complete_solution_valid,
                 candidate_gauge,
-                priority_edges,
             )
         };
         match outcome {
@@ -7165,6 +7161,139 @@ fn resolve_fixed_mesh_endpoint_pairs(
     } else if search.ambiguous {
         MeshEndpointResolve::Ambiguous
     } else if let Some((topology, assignment)) = search.solution {
+        MeshEndpointResolve::Solved(topology, assignment)
+    } else {
+        MeshEndpointResolve::Rejected
+    }
+}
+
+/// Materialize boundary-assignment alternatives after the relation phase has
+/// fixed every edge endpoint pair. Re-entering the general endpoint resolver
+/// here rebuilds the same relation and recurses indefinitely when multiple
+/// boundary assignments share one endpoint configuration. Enumerate only the
+/// remaining assignment choices, then apply the exact fixed-pair materializer.
+#[allow(clippy::items_after_statements)]
+fn resolve_fixed_mesh_endpoint_assignment_domains(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    assignment_domains: &[Vec<MeshFaceBoundaryAssignment>],
+    port_identities: &[[u32; 2]],
+    budget: &WorkBudget<'_>,
+    candidate_gauge: Option<MeshCandidateGauge<'_>>,
+) -> MeshEndpointResolve {
+    if assignment_domains.is_empty()
+        || assignment_domains.iter().any(Vec::is_empty)
+        || edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+        || edge_candidates
+            .iter()
+            .any(|candidates| candidates.len() != 1)
+    {
+        return MeshEndpointResolve::Rejected;
+    }
+    // Keep recursive search state explicit so budget, solution, and ambiguity
+    // ownership remain visible at every branch.
+    #[allow(clippy::too_many_arguments)]
+    fn visit(
+        face: usize,
+        assignment_domains: &[Vec<MeshFaceBoundaryAssignment>],
+        selected: &mut Vec<MeshFaceBoundaryAssignment>,
+        edge_rows: &[EdgeRow],
+        vertex_points: &[[f64; 3]],
+        edge_candidates: &[Vec<[usize; 2]>],
+        port_identities: &[[u32; 2]],
+        budget: &WorkBudget<'_>,
+        candidate_gauge: Option<MeshCandidateGauge<'_>>,
+        solution: &mut Option<(StandardTopology, Vec<usize>)>,
+        ambiguous: &mut bool,
+        exhausted: &mut bool,
+    ) {
+        if *ambiguous || *exhausted || budget.exhausted() {
+            return;
+        }
+        if !budget.charge() {
+            *exhausted = true;
+            return;
+        }
+        if face == assignment_domains.len() {
+            let outcome = resolve_fixed_mesh_endpoint_pairs(
+                edge_rows,
+                vertex_points,
+                edge_candidates,
+                selected,
+                port_identities,
+                budget,
+                candidate_gauge,
+            );
+            match outcome {
+                MeshEndpointResolve::Solved(topology, assignment) => {
+                    let candidate = (topology, assignment);
+                    match solution {
+                        Some(previous)
+                            if !mesh_candidates_equivalent_with_context(
+                                previous,
+                                &candidate,
+                                candidate_gauge,
+                            ) =>
+                        {
+                            *ambiguous = true;
+                        }
+                        None => *solution = Some(candidate),
+                        Some(_) => {}
+                    }
+                }
+                MeshEndpointResolve::Rejected => {}
+                MeshEndpointResolve::Ambiguous => *ambiguous = true,
+                MeshEndpointResolve::Exhausted => *exhausted = true,
+            }
+            return;
+        }
+        for assignment in &assignment_domains[face] {
+            selected.push(assignment.clone());
+            visit(
+                face + 1,
+                assignment_domains,
+                selected,
+                edge_rows,
+                vertex_points,
+                edge_candidates,
+                port_identities,
+                budget,
+                candidate_gauge,
+                solution,
+                ambiguous,
+                exhausted,
+            );
+            selected.pop();
+            if *ambiguous || *exhausted {
+                return;
+            }
+        }
+    }
+
+    let mut solution = None;
+    let mut ambiguous = false;
+    let mut exhausted = false;
+    visit(
+        0,
+        assignment_domains,
+        &mut Vec::new(),
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        port_identities,
+        budget,
+        candidate_gauge,
+        &mut solution,
+        &mut ambiguous,
+        &mut exhausted,
+    );
+    if ambiguous {
+        MeshEndpointResolve::Ambiguous
+    } else if exhausted || budget.exhausted() {
+        MeshEndpointResolve::Exhausted
+    } else if let Some((topology, assignment)) = solution {
         MeshEndpointResolve::Solved(topology, assignment)
     } else {
         MeshEndpointResolve::Rejected
@@ -9808,6 +9937,67 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
         panic!("endpoint configuration relation did not solve the cycle");
     };
 
+    assert_eq!(topology.faces.len(), 1);
+    assert_eq!(point_assignment, vec![0, 1, 2]);
+}
+
+#[test]
+fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
+    let edge_rows = (0..3)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let assignments = vec![vec![assignment.clone(), assignment]];
+    let endpoint_configurations = vec![vec![
+        Some(vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [0, 2])]]),
+        Some(vec![vec![(0, [0, 1]), (1, [1, 2]), (2, [0, 2])]]),
+    ]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let result = resolve_endpoint_configuration_relation_streaming(
+        &assignments,
+        &endpoint_configurations,
+        &edge_candidates,
+        &edge_rows,
+        &vertex_points,
+        &[[0, 1], [2, 3], [4, 5]],
+        &budget,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let Some(MeshEndpointResolve::Solved(topology, point_assignment)) = result else {
+        panic!("endpoint relation did not materialize duplicate assignments");
+    };
     assert_eq!(topology.faces.len(), 1);
     assert_eq!(point_assignment, vec![0, 1, 2]);
 }
