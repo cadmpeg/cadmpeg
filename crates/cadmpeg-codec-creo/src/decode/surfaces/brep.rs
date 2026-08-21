@@ -30,7 +30,9 @@ use super::super::analytic::{
     unique_oriented_native_pcurve, CarrierEquation, NativePcurveCandidates,
     TopologicalVertexSolveDiagnostics,
 };
+use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
+use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
 
@@ -99,11 +101,17 @@ impl FaceAdmissionRejection {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(in super::super) struct FaceAdmissionDetail {
     pub(in super::super) face_id: u32,
     pub(in super::super) boundary_half_edges: Vec<HalfEdgeId>,
     pub(in super::super) vertex_ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in super::super) struct FaceAdmissionDiagnostic {
+    pub(in super::super) reason: FaceAdmissionRejection,
+    pub(in super::super) detail: FaceAdmissionDetail,
 }
 
 impl FaceAdmissionDetail {
@@ -165,6 +173,7 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
     pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
+    pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
     pub(in super::super) body_count_mismatch: bool,
     pub(in super::super) legacy_body_ownership_ambiguous: bool,
     pub(in super::super) empty_component_count: usize,
@@ -180,6 +189,11 @@ impl BrepTransferDiagnostics {
         reason: FaceAdmissionRejection,
         detail: FaceAdmissionDetail,
     ) {
+        self.face_rejection_diagnostics
+            .push(FaceAdmissionDiagnostic {
+                reason,
+                detail: detail.clone(),
+            });
         let evidence = self.rejected_faces.entry(reason).or_default();
         evidence.count += 1;
         if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
@@ -188,6 +202,29 @@ impl BrepTransferDiagnostics {
         if evidence.sample_details.len() < FACE_REJECTION_SAMPLE_LIMIT {
             evidence.sample_details.push(detail);
         }
+    }
+
+    pub(in super::super) fn face_admission_rejection_records(
+        &self,
+    ) -> Vec<CreoFaceAdmissionRejectionRecord> {
+        self.face_rejection_diagnostics
+            .iter()
+            .map(|diagnostic| {
+                let detail = &diagnostic.detail;
+                CreoFaceAdmissionRejectionRecord {
+                    id: format!("creo:brep:face_admission_rejection#{}", detail.face_id),
+                    face_id: detail.face_id,
+                    reason: diagnostic.reason.key(),
+                    boundary_half_edges: detail
+                        .boundary_half_edges
+                        .iter()
+                        .copied()
+                        .map(half_edge_ref)
+                        .collect(),
+                    vertex_ids: detail.vertex_ids.clone(),
+                }
+            })
+            .collect()
     }
 
     pub(in super::super) fn record_coverage(&self, coverage: &mut BTreeMap<String, usize>) {

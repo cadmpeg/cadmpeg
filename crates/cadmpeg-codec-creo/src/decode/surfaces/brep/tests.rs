@@ -31,6 +31,12 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingLoops];
     assert_eq!(evidence.count, 6);
     assert_eq!(evidence.sample_ids, vec![10, 11, 12, 13]);
+    let records = diagnostics.face_admission_rejection_records();
+    assert_eq!(records.len(), 6);
+    assert_eq!(records[0].id, "creo:brep:face_admission_rejection#10");
+    assert_eq!(records[0].face_id, 10);
+    assert_eq!(records[0].reason, "missing_loops");
+    assert_eq!(records[5].face_id, 15);
     let mut coverage = BTreeMap::new();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_candidate_face_count"], 6);

@@ -61,6 +61,7 @@ const CREO_ARENAS: &[&str] = &[
     "topological_vertices",
     "half_edge_vertex_incidence",
     "face_components",
+    "brep_face_admission_rejections",
     "surface_parameters",
     "nonvisible_surface_parameters",
     "cross_section_surface_parameters",

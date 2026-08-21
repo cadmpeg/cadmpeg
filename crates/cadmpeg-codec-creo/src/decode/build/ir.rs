@@ -496,7 +496,7 @@ pub(in super::super) fn build_ir(
     let (feature_result_topology_count, feature_result_edge_count) =
         finish_feature_transfers(scan, &mut ir, &mut annotations, &mut coverage);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = scan
         .framing
         .principal_unit
