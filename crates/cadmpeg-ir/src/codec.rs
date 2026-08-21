@@ -280,8 +280,9 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx.set_container_only(options.container_only);
         let result = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
-        let result = result?;
-        if options.policy.mode == DecodeMode::Strict && !result.report().container_only {
+        let mut result = result?;
+        result.report_mut().container_only = options.container_only;
+        if options.policy.mode == DecodeMode::Strict && !options.container_only {
             if let Some(loss) = result
                 .report()
                 .losses

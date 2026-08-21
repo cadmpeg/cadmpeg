@@ -633,6 +633,7 @@ pub struct DecodeReport {
     /// Source format id.
     pub format: String,
     /// Whether the decode stopped at the container layer (no entity decode).
+    /// The shared codec wrapper stamps this from the decode request.
     pub container_only: bool,
     /// Whether the decoder transferred B-rep geometry into the IR.
     pub geometry_transferred: bool,

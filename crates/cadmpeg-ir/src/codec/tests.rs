@@ -148,7 +148,8 @@ impl CodecBackend for RejectFloorCodec {
     ) -> Result<DecodeResult, CodecError> {
         let mut result = decode_result(unit_cube());
         let report = result.report_mut();
-        report.container_only = ctx.container_only();
+        // Deliberately lie in both directions; the wrapper owns this field.
+        report.container_only = !ctx.container_only();
         report
             .losses
             .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
