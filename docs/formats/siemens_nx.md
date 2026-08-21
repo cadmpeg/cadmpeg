@@ -364,10 +364,19 @@ witness. The `On` or `Off` state is not part of the identity witness.
 `/Root/FastLoad/Structure` begins with the twelve-byte envelope
 `ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the
 bounded directory-entry size. The payload begins `OM 01 01` and carries
-length-framed NX OM class and member declarations. A component-roster header
-is anchored by `01 02 42 00 01 02`; the final `01 02` is followed by the first
-metadata record. Exactly one complete roster follows that anchor in the
-bounded entry. Its component roster has this grammar:
+length-framed NX OM class and member declarations. A complete component-roster
+candidate has one of these exact anchors:
+
+```text
+01 02 42 00 01 02 04
+01 metadata_count_plus_one:u8 04 07 "MODEL" 00
+```
+
+For the first anchor, the candidate starts at the second `01`; the final
+`04` is the first metadata tag. For the second anchor, the candidate starts at
+its first `01`, and `MODEL` is the first metadata value. The two anchors can
+identify the same candidate. Exactly one complete roster follows the anchors
+in the bounded entry. Its component roster has this grammar:
 
 ```text
 01 metadata_count_plus_one:u8

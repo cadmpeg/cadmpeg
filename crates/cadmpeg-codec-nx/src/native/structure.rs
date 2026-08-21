@@ -2,6 +2,7 @@
 //! Typed records from the bounded fast-load assembly structure stream.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::View;
 
@@ -11,6 +12,7 @@ use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
 const ROSTER_ANCHOR: &[u8] = &[1, 2, 0x42, 0, 1, 2, 4];
+const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,20 +173,29 @@ pub fn fast_load_component_roster(
         return (Vec::new(), Vec::new(), Vec::new());
     };
 
-    // Every admitted roster has this fixed preamble before its second
-    // version/count pair. Search for that structural anchor before invoking
-    // the complete parser; trying the parser at every byte makes a large
-    // opaque structure stream quadratic in its candidate count. The first
-    // metadata value is not a reliable anchor: valid rosters use both named
-    // and `None` values.
-    let mut candidates = payload
-        .windows(ROSTER_ANCHOR.len())
-        .enumerate()
-        .filter(|(_, window)| *window == ROSTER_ANCHOR)
-        .filter_map(|(anchor_offset, _)| {
-            let start = anchor_offset.checked_add(4)?;
-            parse_candidate(payload, start)
-        });
+    // Every admitted roster has one of two structural anchors before the
+    // complete counted lanes. Search for both before invoking the parser;
+    // trying the parser at every byte makes a large opaque structure stream
+    // quadratic in its candidate count. A MODEL roster matches both anchors,
+    // so deduplicate candidate starts before enforcing uniqueness.
+    let mut starts = BTreeSet::new();
+    for (anchor_offset, window) in payload.windows(ROSTER_ANCHOR.len()).enumerate() {
+        if window == ROSTER_ANCHOR {
+            if let Some(start) = anchor_offset.checked_add(4) {
+                starts.insert(start);
+            }
+        }
+    }
+    for (model_offset, window) in payload.windows(MODEL_FRAME.len()).enumerate() {
+        if window == MODEL_FRAME {
+            if let Some(start) = model_offset.checked_sub(2) {
+                starts.insert(start);
+            }
+        }
+    }
+    let mut candidates = starts
+        .into_iter()
+        .filter_map(|start| parse_candidate(payload, start));
     let Some(candidate) = candidates.next() else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
@@ -397,9 +408,33 @@ mod tests {
         occurrence_lane_form: u8,
         markers: &[u8],
     ) -> Vec<u8> {
+        payload_with_metadata_values(
+            &[1, 2, 0x42, 0],
+            &[metadata],
+            names,
+            indices,
+            occurrence_lane_form,
+            markers,
+        )
+    }
+
+    fn payload_with_metadata_values(
+        preamble: &[u8],
+        metadata: &[&str],
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
         assert_eq!(indices.len(), markers.len());
-        let mut bytes = vec![1, 2, 0x42, 0, 1, 2];
-        string(&mut bytes, metadata);
+        let mut bytes = preamble.to_vec();
+        bytes.extend([
+            1,
+            u8::try_from(metadata.len() + 1).expect("short test metadata list"),
+        ]);
+        for value in metadata {
+            string(&mut bytes, value);
+        }
         bytes.extend([
             1,
             3,
@@ -506,6 +541,29 @@ mod tests {
         assert_eq!(uuids.len(), 1);
         assert_eq!(occurrences.len(), 2);
         assert_eq!(occurrences[0].prototype_index, 1);
+        assert_eq!(occurrences[1].prototype_index, 2);
+    }
+
+    #[test]
+    fn extracts_roster_with_extended_model_metadata_header() {
+        let (prototypes, uuids, occurrences) =
+            fast_load_component_roster(&container(payload_with_metadata_values(
+                &[1, 1, 2, 0x42, 0],
+                &["MODEL", "None"],
+                &["gear", "rod"],
+                &[1, 2],
+                0,
+                b"99",
+            )));
+        assert_eq!(
+            prototypes
+                .iter()
+                .map(|prototype| prototype.name.as_str())
+                .collect::<Vec<_>>(),
+            ["gear", "rod"]
+        );
+        assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences.len(), 2);
         assert_eq!(occurrences[1].prototype_index, 2);
     }
 
