@@ -732,6 +732,11 @@ fn resolved_edge_group_with_transition_chain(
                     )
                 }))
             })
+            .or_else(|| {
+                allow_edge_treatment_transition_chain
+                    .then(|| deleted_boundary_edge_group_candidates(&matched_operands))
+                    .flatten()
+            })
             .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
     };
     let resolved_slots =
@@ -1519,6 +1524,59 @@ pub(crate) fn common_deleted_edge_group_candidates<'a>(
         }
     }
     Some(candidates)
+}
+
+/// Resolve a treatment group whose recipe members expose the complete deleted
+/// predecessor-edge set, but do not expose one edge candidate per member.
+///
+/// The deleted set is an exact group proof only when every member has a full
+/// structured recipe context, every deleted edge is a changed predecessor
+/// boundary, each member contributes contextual evidence for at least one
+/// deleted edge, and the group-wide set has one edge per member. The context
+/// requirement excludes topology deletions that are visible only in the
+/// feature transition; the cardinality requirement excludes a member recipe
+/// that represents an edge chain rather than one selected edge.
+pub(crate) fn deleted_boundary_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    if operands.is_empty() {
+        return None;
+    }
+    let mut deleted = Vec::new();
+    let mut contextual = Vec::new();
+    for operand in operands {
+        if operand.recipe_structure.is_none()
+            || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            || operand.recipe_reference_contexts.is_empty()
+            || operand.deleted_boundary_edge_slots.is_empty()
+            || operand.deleted_boundary_edge_slots.iter().any(|edge| {
+                !operand.preceding_boundary_edge_slots.contains(edge)
+                    || !operand.changed_boundary_edge_slots.contains(edge)
+            })
+        {
+            return None;
+        }
+        let member_contextual = operand
+            .recipe_reference_contexts
+            .iter()
+            .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+            .filter(|edge| operand.deleted_boundary_edge_slots.contains(edge))
+            .collect::<Vec<_>>();
+        if member_contextual.is_empty() {
+            return None;
+        }
+        deleted.extend(operand.deleted_boundary_edge_slots.iter().copied());
+        contextual.extend(member_contextual);
+    }
+    deleted.sort_unstable();
+    deleted.dedup();
+    contextual.sort_unstable();
+    contextual.dedup();
+    (deleted.len() == operands.len()
+        && deleted
+            .iter()
+            .all(|edge| contextual.binary_search(edge).is_ok()))
+    .then_some(deleted)
 }
 
 pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(

@@ -1282,6 +1282,55 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
 }
 
 #[test]
+fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
+    let context = |changed_reference_edge_slots: &[i64]| {
+        serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": [],
+            "changed_reference_edge_slots": changed_reference_edge_slots,
+        }))
+        .expect("edge recipe reference context")
+    };
+    let operand = |record_index: u32, deleted: &[i64]| {
+        let mut operand = recipe_edge_operand(record_index, deleted, deleted);
+        operand.preceding_boundary_edge_slots = deleted.to_vec();
+        operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: Vec::new(),
+        });
+        operand.recipe_references = vec![recipe_reference(&[])];
+        operand.recipe_reference_contexts = vec![context(deleted)];
+        operand
+    };
+
+    let first = operand(10, &[17, 18]);
+    let second = operand(11, &[17, 18]);
+    let third = operand(12, &[19, 20]);
+    let fourth = operand(13, &[19, 20]);
+    assert_eq!(
+        deleted_boundary_edge_group_candidates(&[&first, &second, &third, &fourth]),
+        Some(vec![17, 18, 19, 20])
+    );
+
+    let too_many_edges = operand(11, &[17, 18, 19]);
+    assert_eq!(
+        deleted_boundary_edge_group_candidates(&[&first, &too_many_edges]),
+        None
+    );
+
+    let mut unreferenced = operand(12, &[19, 20]);
+    unreferenced.recipe_reference_contexts = vec![context(&[21])];
+    assert_eq!(
+        deleted_boundary_edge_group_candidates(&[&first, &second, &unreferenced, &fourth]),
+        None
+    );
+}
+
+#[test]
 fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::design::edge_resolve::context_only_edge_group_candidates([
