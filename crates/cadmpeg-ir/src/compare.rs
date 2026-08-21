@@ -36,7 +36,10 @@
 //! token also agree when the fractional value is within that tolerance of
 //! zero, because one libm can return exact zero where another returns a tiny
 //! residual. All other integer tokens remain exact. Encode goldens pin writer
-//! text that still carries platform libm bits.
+//! text that still carries platform libm bits. Fixed-width IGES cards receive
+//! one additional framing rule: a tolerated token-length drift may recard a
+//! Parameter Data stream, so its card padding and derived counts are ignored
+//! while the section data and owning parameter streams remain exact.
 //!
 //! ## Non-transitive relation
 //!
@@ -127,11 +130,16 @@ pub fn values_agree(left: &Value, right: &Value) -> Result<(), String> {
 /// Non-numeric spans and integer tokens must match byte-exactly, except that an
 /// integer zero agrees with a fractional token within [`FLOAT_TOLERANCE`] of
 /// zero. A pair of fractional tokens may differ by the same tolerance. IGES
-/// writer output uses `D` exponents; both `E` and `D` parse.
+/// writer output uses `D` exponents; both `E` and `D` parse. Fixed-width IGES
+/// cards also compare Parameter Data as owning streams when a tolerated token
+/// length change moves card boundaries; non-derived section fields stay exact.
 #[must_use]
 pub fn texts_agree(left: &str, right: &str) -> bool {
     if left == right {
         return true;
+    }
+    if is_fixed_ascii_card_text(left) && is_fixed_ascii_card_text(right) {
+        return fixed_ascii_card_texts_agree(left, right);
     }
     let mut left_rest = left;
     let mut right_rest = right;
@@ -153,6 +161,180 @@ pub fn texts_agree(left: &str, right: &str) -> bool {
             _ => return false,
         }
     }
+}
+
+/// Whether `text` is a sequence of IGES Fixed ASCII cards.
+fn is_fixed_ascii_card_text(text: &str) -> bool {
+    if !text.ends_with('\n') {
+        return false;
+    }
+    let mut saw_card = false;
+    for line in fixed_ascii_card_lines(text) {
+        let bytes = line.as_bytes();
+        if bytes.len() != 80
+            || !bytes.iter().all(u8::is_ascii)
+            || !matches!(bytes[72], b'S' | b'G' | b'D' | b'P' | b'T')
+            || !bytes[73..]
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || *byte == b' ')
+            || !bytes[73..].iter().any(u8::is_ascii_digit)
+        {
+            return false;
+        }
+        saw_card = true;
+    }
+    saw_card
+}
+
+fn fixed_ascii_card_lines(text: &str) -> Vec<&str> {
+    text.split_terminator('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .collect()
+}
+
+/// Compares fixed-width IGES cards while ignoring padding at the end of a
+/// Parameter Data payload. A platform may spell one tolerated real with one
+/// fewer or more byte; the writer then changes the card framing, not the
+/// parameter stream.
+fn fixed_ascii_card_texts_agree(left: &str, right: &str) -> bool {
+    let left_lines = fixed_ascii_card_lines(left);
+    let right_lines = fixed_ascii_card_lines(right);
+    if fixed_ascii_cards_agree(&left_lines, &right_lines) {
+        return true;
+    }
+    fixed_ascii_reframed_cards_agree(&left_lines, &right_lines)
+}
+
+fn fixed_ascii_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
+    if left_lines.len() != right_lines.len() {
+        return false;
+    }
+    for (&left_line, &right_line) in left_lines.iter().zip(right_lines) {
+        let left_bytes = left_line.as_bytes();
+        let right_bytes = right_line.as_bytes();
+        if left_bytes[72..] != right_bytes[72..] {
+            return false;
+        }
+        let agree = if left_bytes[72] == b'P' {
+            texts_agree(card_text(&left_bytes[..64]), card_text(&right_bytes[..64]))
+        } else {
+            texts_agree(left_line, right_line)
+        };
+        if !agree {
+            return false;
+        }
+    }
+    true
+}
+
+/// Compares an IGES file after a tolerated real changed the Parameter Data
+/// card boundaries. Directory and Terminate fields that declare those
+/// boundaries are derived framing, so compare the remaining fields exactly
+/// and compare Parameter Data as one stream per Directory Entry.
+fn fixed_ascii_reframed_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
+    if !fixed_ascii_parameter_sequences_are_positional(left_lines)
+        || !fixed_ascii_parameter_sequences_are_positional(right_lines)
+    {
+        return false;
+    }
+
+    let left_non_parameters = left_lines
+        .iter()
+        .filter(|line| line.as_bytes()[72] != b'P')
+        .copied()
+        .collect::<Vec<_>>();
+    let right_non_parameters = right_lines
+        .iter()
+        .filter(|line| line.as_bytes()[72] != b'P')
+        .copied()
+        .collect::<Vec<_>>();
+    if left_non_parameters.len() != right_non_parameters.len()
+        || !left_non_parameters.iter().zip(&right_non_parameters).all(
+            |(&left_line, &right_line)| {
+                fixed_ascii_non_parameter_cards_agree(left_line, right_line)
+            },
+        )
+    {
+        return false;
+    }
+
+    let left_parameters = fixed_ascii_parameter_streams(left_lines);
+    let right_parameters = fixed_ascii_parameter_streams(right_lines);
+    left_parameters.len() == right_parameters.len()
+        && left_parameters.iter().zip(&right_parameters).all(
+            |((left_pointer, left_data), (right_pointer, right_data))| {
+                left_pointer == right_pointer && texts_agree(left_data, right_data)
+            },
+        )
+}
+
+fn fixed_ascii_parameter_sequences_are_positional(lines: &[&str]) -> bool {
+    let mut expected = 1_u32;
+    for line in lines.iter().filter(|line| line.as_bytes()[72] == b'P') {
+        if fixed_ascii_card_sequence(line) != Some(expected) {
+            return false;
+        }
+        expected = match expected.checked_add(1) {
+            Some(next) => next,
+            None => return false,
+        };
+    }
+    true
+}
+
+fn fixed_ascii_non_parameter_cards_agree(left: &str, right: &str) -> bool {
+    let left_bytes = left.as_bytes();
+    let right_bytes = right.as_bytes();
+    if left_bytes[72..] != right_bytes[72..] {
+        return false;
+    }
+    match left_bytes[72] {
+        b'D' => fixed_ascii_directory_cards_agree(left_bytes, right_bytes),
+        b'T' => fixed_ascii_terminate_cards_agree(left_bytes, right_bytes),
+        _ => texts_agree(card_text(&left_bytes[..72]), card_text(&right_bytes[..72])),
+    }
+}
+
+fn fixed_ascii_directory_cards_agree(left: &[u8], right: &[u8]) -> bool {
+    let ignored_field = match fixed_ascii_card_sequence_bytes(left) {
+        Some(sequence) if sequence % 2 == 1 => 1,
+        Some(_) => 3,
+        None => return false,
+    };
+    (0..9).all(|field| {
+        field == ignored_field
+            || left[field * 8..(field + 1) * 8] == right[field * 8..(field + 1) * 8]
+    })
+}
+
+fn fixed_ascii_terminate_cards_agree(left: &[u8], right: &[u8]) -> bool {
+    left[..24] == right[..24] && left[32..72] == right[32..72]
+}
+
+fn fixed_ascii_parameter_streams(lines: &[&str]) -> Vec<(String, String)> {
+    let mut streams: Vec<(String, String)> = Vec::new();
+    for line in lines.iter().filter(|line| line.as_bytes()[72] == b'P') {
+        let bytes = line.as_bytes();
+        let pointer = card_text(&bytes[64..72]);
+        let data = card_text(&bytes[..64]).trim_end_matches(' ');
+        match streams.last_mut() {
+            Some((last_pointer, last_data)) if last_pointer == pointer => last_data.push_str(data),
+            _ => streams.push((pointer.to_owned(), data.to_owned())),
+        }
+    }
+    streams
+}
+
+fn fixed_ascii_card_sequence(line: &str) -> Option<u32> {
+    fixed_ascii_card_sequence_bytes(line.as_bytes())
+}
+
+fn fixed_ascii_card_sequence_bytes(line: &[u8]) -> Option<u32> {
+    std::str::from_utf8(&line[73..]).ok()?.trim().parse().ok()
+}
+
+fn card_text(bytes: &[u8]) -> &str {
+    std::str::from_utf8(bytes).expect("fixed ASCII card bytes are ASCII")
 }
 
 #[derive(Clone, Copy)]
@@ -364,7 +546,12 @@ fn truncate(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{floats_agree, texts_agree, values_agree, FLOAT_TOLERANCE};
+    use std::fmt::Write as _;
+
+    use super::{
+        fixed_ascii_card_texts_agree, floats_agree, is_fixed_ascii_card_text, texts_agree,
+        values_agree, FLOAT_TOLERANCE,
+    };
 
     /// The two values one conical face produces on Linux against Windows and
     /// macOS. Their difference is platform libm disagreement, not a change in
@@ -377,6 +564,47 @@ mod tests {
         let left = serde_json::from_str(left).expect("left test literal is JSON");
         let right = serde_json::from_str(right).expect("right test literal is JSON");
         values_agree(&left, &right)
+    }
+
+    fn card(payload: &str, section: u8, sequence: u32) -> String {
+        if section == b'P' {
+            assert!(payload.len() <= 64);
+            format!("{payload:<64}{:>8}{}{sequence:>7}\n", 1, section as char)
+        } else {
+            assert!(payload.len() <= 72);
+            format!("{payload:<72}{}{sequence:>7}\n", section as char)
+        }
+    }
+
+    fn parameter_cards(data: &str) -> String {
+        parameter_cards_for(data, 1, 1)
+    }
+
+    fn parameter_cards_for(data: &str, pointer: u32, first_sequence: u32) -> String {
+        let mut fragments = Vec::new();
+        let mut remainder = data.as_bytes();
+        while remainder.len() > 64 {
+            let split = remainder[..64]
+                .iter()
+                .rposition(|byte| matches!(byte, b',' | b';'))
+                .expect("test data has a delimiter in every card")
+                + 1;
+            fragments.push(String::from_utf8(remainder[..split].to_vec()).unwrap());
+            remainder = &remainder[split..];
+        }
+        if !remainder.is_empty() {
+            fragments.push(String::from_utf8(remainder.to_vec()).unwrap());
+        }
+        fragments
+            .into_iter()
+            .enumerate()
+            .fold(String::new(), |mut output, (index, payload)| {
+                let sequence = first_sequence
+                    + u32::try_from(index).expect("test parameter cards fit in a sequence");
+                writeln!(output, "{payload:<64}{pointer:>8}P{sequence:>7}")
+                    .expect("writing a String cannot fail");
+                output
+            })
     }
 
     #[test]
@@ -482,6 +710,114 @@ mod tests {
             &format!("{{\"output\":{right:?}}}"),
         )
         .is_ok());
+    }
+
+    #[test]
+    fn iges_parameter_card_padding_does_not_defeat_numeric_tolerance() {
+        let left = card("110,9.9999999999999978D-1,", b'P', 1);
+        let right = card("110,1.0000000000000000D0,", b'P', 1);
+        assert_ne!(left, right);
+        assert!(is_fixed_ascii_card_text(&left));
+        assert!(is_fixed_ascii_card_text(&right));
+        assert!(fixed_ascii_card_texts_agree(&left, &right));
+        assert!(texts_agree(&left, &right));
+
+        let moved_sequence = card("110,1.0000000000000000D0,", b'P', 2);
+        assert!(!texts_agree(&left, &moved_sequence));
+
+        let residual = "6.1232339957367660D-17";
+        let mut left_data = String::from("110,");
+        for _ in 0..18 {
+            left_data.push_str("0,");
+        }
+        left_data.push_str(residual);
+        left_data.push_str(",1;");
+        let right_data = left_data.replace(residual, "0");
+        let left = parameter_cards(&left_data);
+        let right = parameter_cards(&right_data);
+        assert_eq!(left.lines().count(), 2);
+        assert_eq!(right.lines().count(), 1);
+        assert!(texts_agree(&left, &right));
+
+        let directory_left = card("     110", b'D', 1);
+        let directory_right = card("     111", b'D', 1);
+        assert!(!texts_agree(&directory_left, &directory_right));
+    }
+
+    #[test]
+    fn iges_parameter_reframing_keeps_directory_structure_exact() {
+        fn directory_card(fields: [&str; 9], sequence: u32) -> String {
+            let mut payload = String::new();
+            for field in fields {
+                write!(payload, "{field:>8}").expect("writing a String cannot fail");
+            }
+            format!("{payload}D{sequence:>7}\n")
+        }
+
+        fn file(parameter_data: &str, first_parameter_count: u32) -> String {
+            let mut output = card("Generated by cadmpeg", b'S', 1);
+            output.push_str(&card("1H,,1H;", b'G', 1));
+            output.push_str(&directory_card(
+                ["110", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+                1,
+            ));
+            output.push_str(&directory_card(
+                [
+                    "110",
+                    "0",
+                    "0",
+                    &first_parameter_count.to_string(),
+                    "0",
+                    "",
+                    "",
+                    "",
+                    "0",
+                ],
+                2,
+            ));
+            let second_parameter_start = first_parameter_count + 1;
+            output.push_str(&directory_card(
+                [
+                    "110",
+                    &second_parameter_start.to_string(),
+                    "0",
+                    "0",
+                    "0",
+                    "0",
+                    "0",
+                    "0",
+                    "00000000",
+                ],
+                3,
+            ));
+            output.push_str(&directory_card(
+                ["110", "0", "0", "1", "0", "", "", "", "0"],
+                4,
+            ));
+            output.push_str(&parameter_cards_for(parameter_data, 1, 1));
+            output.push_str(&parameter_cards_for("110,1;", 3, second_parameter_start));
+            output.push_str(&card(
+                &format!("S0000001G0000001D0000004P{:07}", first_parameter_count + 1),
+                b'T',
+                1,
+            ));
+            output
+        }
+
+        let residual = "6.1232339957367660D-17";
+        let mut left_data = String::from("110,");
+        for _ in 0..18 {
+            left_data.push_str("0,");
+        }
+        left_data.push_str(residual);
+        left_data.push_str(",1;");
+        let right_data = left_data.replace(residual, "0");
+        let left = file(&left_data, 2);
+        let right = file(&right_data, 1);
+        assert!(texts_agree(&left, &right));
+
+        let changed_directory = right.replace("     110", "     111");
+        assert!(!texts_agree(&left, &changed_directory));
     }
 
     #[test]
