@@ -9,10 +9,13 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use crate::design::decode::scopes::{is_class_296_one_sided_to_face_layout, legacy_class_415};
+use crate::design::decode::scopes::{
+    is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout, legacy_class_415,
+};
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
+use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
@@ -3811,6 +3814,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     } else {
                         None
                     };
+                    let class_296_symmetric_extent_offsets =
+                        if is_class_296_symmetric_distance_layout(
+                            &scope.class_tag,
+                            &scope.paired_class_tag,
+                            scope.frame_length,
+                            scope
+                                .reference_count_offset
+                                .saturating_sub(scope.byte_offset),
+                            scope.reference_members.len(),
+                        ) && operation_offset
+                            == scope
+                                .byte_offset
+                                .saturating_add(class_296_symmetric::OPERATION as u64)
+                        {
+                            Some([
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_296_symmetric::FIRST_SIDE_EXTENT as u64),
+                                scope
+                                    .byte_offset
+                                    .saturating_add(class_296_symmetric::SECOND_SIDE_EXTENT as u64),
+                            ])
+                        } else {
+                            None
+                        };
                     let extent_valid = if compact_extent_offsets.is_some() {
                         matches!(
                             (
@@ -3837,6 +3865,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && matches!(direction_face_extend_values[1], 1 | 2)
                             && side_extent_discriminators == [2, 0]
                             && extent == Some(records::DesignExtrudeExtent::OneSidedToFace)
+                    } else if class_296_symmetric_extent_offsets.is_some() {
+                        direction_face_extend_values == [3, 2]
+                            && side_extent_discriminators == [1, 0]
+                            && extent == Some(records::DesignExtrudeExtent::SymmetricDistance)
                     } else {
                         matches!(direction_face_extend_values[0], 1..=3)
                             && matches!(
@@ -3879,6 +3911,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     let side_offsets_valid = compact_extent_offsets
                         .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
                         || class_296_extent_offsets
+                            .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
+                        || class_296_symmetric_extent_offsets
                             .is_some_and(|offsets| side_extent_discriminator_offsets == offsets)
                         || field_shift.is_some_and(|field_shift| {
                             side_extent_discriminator_offsets
@@ -3937,7 +3971,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         });
                     (field_shift.is_some()
                         || compact_extent_offsets.is_some()
-                        || class_296_extent_offsets.is_some())
+                        || class_296_extent_offsets.is_some()
+                        || class_296_symmetric_extent_offsets.is_some())
                         && extent_valid
                         && side_offsets_valid
                         && direction_face_extend_offsets

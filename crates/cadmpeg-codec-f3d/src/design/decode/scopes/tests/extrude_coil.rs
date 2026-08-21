@@ -1001,7 +1001,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
         bytes
     };
 
-    let parse = |bytes: &[u8], class_tag: &str| {
+    let parse_raw = |bytes: &[u8], class_tag: &str| {
         parse_parameter_scope(
             bytes,
             &IndexedRecordOffsets::build(bytes),
@@ -1012,7 +1012,9 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
                 byte_offset: 0,
             },
         )
-        .expect("class-296 one-sided-to-face scope envelope")
+    };
+    let parse = |bytes: &[u8], class_tag: &str| {
+        parse_raw(bytes, class_tag).expect("class-296 one-sided-to-face scope envelope")
     };
 
     for (frame_length, reference_count) in [(440, 7), (462, 9), (473, 10)] {
@@ -1050,9 +1052,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
     let mut invalid_member_count = make_bytes(440, 7);
     invalid_member_count[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
         .copy_from_slice(&8u32.to_le_bytes());
-    assert!(parse(&invalid_member_count, "296")
-        .extrude_prologue
-        .is_none());
+    assert!(parse_raw(&invalid_member_count, "296").is_none());
 
     let mut invalid_side = make_bytes(462, 9);
     invalid_side[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
@@ -1064,6 +1064,100 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
     assert!(parse(&invalid_pair, "296").extrude_prologue.is_none());
 
     assert!(parse(&make_bytes(462, 9), "414").extrude_prologue.is_none());
+}
+
+#[test]
+fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
+    use crate::layout::class_296_261_symmetric_distance_extrude_prefix as layout;
+
+    const RECORD_INDEX: u32 = 296450;
+    const REFERENCE_MEMBERS: [u32; 7] = [296451, 296454, 296457, 296460, 296463, 296466, 296469];
+
+    let mut bytes = vec![0; layout::REFERENCE_COUNT + 4];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"296");
+    bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
+    bytes[layout::PREFIX_CONSTANT..layout::PREFIX_CONSTANT + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[layout::OPERATION..layout::OPERATION + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::DIRECTION..layout::DIRECTION + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[layout::FACE_EXTEND..layout::FACE_EXTEND + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::DIRECTION_REVERSED] = 0;
+    bytes[layout::GEOMETRY_KIND] = 1;
+    bytes[layout::START_SUPPORT] = 0;
+    bytes[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
+        .copy_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    for reference in REFERENCE_MEMBERS {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Extrude");
+    let mut tail = [0; 76];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[30..34].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&RECORD_INDEX.to_le_bytes());
+    assert_eq!(bytes.len(), 450 + 11);
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#class-296-symmetric".into(),
+        record_index: RECORD_INDEX,
+        class_tag: "296".into(),
+        byte_offset: 0,
+    };
+    let parse = |bytes: &[u8]| {
+        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .expect("class-296 symmetric-distance scope envelope")
+    };
+    let scope = parse(&bytes);
+    assert_eq!(scope.frame_length, 450);
+    assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+    assert_eq!(scope.reference_members, REFERENCE_MEMBERS);
+    assert_eq!(
+        scope.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: layout::OPERATION as u64,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [
+                layout::FIRST_SIDE_EXTENT as u64,
+                layout::SECOND_SIDE_EXTENT as u64,
+            ],
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_face_extend_offsets: [layout::DIRECTION as u64, layout::FACE_EXTEND as u64,],
+            direction_reversed: false,
+            direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+            solid_operation: true,
+            solid_operation_offset: layout::GEOMETRY_KIND as u64,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: layout::START_SUPPORT as u64,
+        })
+    );
+
+    let mut invalid_extent = bytes.clone();
+    invalid_extent[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
+        .copy_from_slice(&2u32.to_le_bytes());
+    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+
+    let mut invalid_direction = bytes.clone();
+    invalid_direction[layout::DIRECTION..layout::DIRECTION + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    assert!(parse(&invalid_direction).extrude_prologue.is_none());
+
+    let mut invalid_pair = bytes;
+    invalid_pair[450 + 4..450 + 7].copy_from_slice(b"260");
+    assert!(parse(&invalid_pair).extrude_prologue.is_none());
 }
 
 #[test]
