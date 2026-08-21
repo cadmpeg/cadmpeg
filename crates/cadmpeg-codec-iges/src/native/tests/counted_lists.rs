@@ -1808,3 +1808,50 @@ fn decode_attribute_definition_holds_its_count_while_the_nested_triple_stays_emp
         .is_empty());
     assert_no_count_loss(&result);
 }
+
+#[test]
+fn decode_attribute_instance_rows_clamp_to_the_values_the_record_holds() {
+    for (parameters, rows) in [
+        ("422,2,8,4HIRON,9,5HBRASS;", 2),
+        ("422,1,8,4HIRON,9,5HBRASS;", 1),
+        ("422,0,8,4HIRON;", 0),
+        ("422,3,8,4HIRON,9,5HBRASS;", 0),
+        ("422,2,8,4HIRON,9;", 0),
+        ("422,,8,4HIRON;", 0),
+        ("422,-3,8,4HIRON;", 0),
+        ("422,9223372036854775807,8,4HIRON;", 0),
+    ] {
+        let entities = [
+            OwnedTestEntity {
+                entity_type: 322,
+                form: 0,
+                label: "ATTRDEF".into(),
+                status: "00000000",
+                parameters: "322,4HMETA,1,2,10,1,1,11,3,1;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 422,
+                form: 1,
+                label: "ATTRTAB".into(),
+                status: "00000000",
+                parameters: parameters.into(),
+            },
+        ];
+        let bytes = owned_test_file_with_structures(&entities, &[(3, -1)]);
+        let result = salvage(&bytes);
+        let native = result.ir().native.namespace("iges").unwrap();
+        let instance = &native.arenas["attribute_table_instances"][0];
+        let fields = instance.fields();
+
+        assert_eq!(
+            fields["definition"], "iges:product:attribute-definition#D1",
+            "{parameters}"
+        );
+        let read = fields["rows"].as_array().unwrap();
+        assert_eq!(read.len(), rows, "{parameters}");
+        assert!(
+            read.iter().all(|row| row.as_array().unwrap().len() == 2),
+            "{parameters}"
+        );
+    }
+}

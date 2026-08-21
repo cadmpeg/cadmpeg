@@ -243,3 +243,30 @@ fn a_negative_or_missing_count_admits_no_list() {
         Some(0)
     );
 }
+
+#[test]
+fn a_bounded_count_admits_exactly_the_counts_that_fit_the_available_items() {
+    for stride in [1, 2, 3, 7] {
+        for item_tokens in 0..4 * stride {
+            for declared in 0..6_usize {
+                let record = counted_record(declared, item_tokens);
+                let end = record.parameter_end();
+                let available = end.saturating_sub(2);
+                let fits = declared <= available / stride;
+                assert_eq!(
+                    record.count_with_stride_before(1, stride, end).is_some(),
+                    fits,
+                    "stride {stride}, {item_tokens} item tokens, declared {declared}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_bounded_count_rejects_a_product_that_overflows_without_panicking() {
+    let record = integer_record(&[0, i64::MAX, 0, 0], 4);
+
+    assert_eq!(record.count_with_stride_before(1, 7, 4), None);
+    assert_eq!(record.count_with_stride_before(1, 1, 4), None);
+}

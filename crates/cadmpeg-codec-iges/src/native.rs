@@ -3363,30 +3363,22 @@ pub(crate) fn store(
                     total.checked_add(count)
                 })
                 .unwrap_or_default();
-            let row_count = if entry.form == 0 {
+            let declared_rows = if entry.form == 0 {
                 usize::from(values_per_row > 0)
             } else {
                 record
-                    .and_then(|record| {
-                        (values_per_row > 0).then(|| {
-                            record.count_with_stride_before(
-                                1,
-                                values_per_row,
-                                clamped_primary_end(entry.sequence, record),
-                            )
-                        })
-                    })
-                    .flatten()
+                    .and_then(|record| record.integer(1))
+                    .and_then(|value| usize::try_from(value).ok())
                     .unwrap_or_default()
             };
             let value_start = if entry.form == 0 { 1 } else { 2 };
             let row_count = record.map_or(0, |record| {
                 let available =
                     clamped_primary_end(entry.sequence, record).saturating_sub(value_start);
-                if values_per_row == 0 || row_count > available / values_per_row {
+                if values_per_row == 0 || declared_rows > available / values_per_row {
                     0
                 } else {
-                    row_count
+                    declared_rows
                 }
             });
             let rows = (0..row_count)
