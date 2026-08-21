@@ -145,6 +145,222 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
 }
 
 #[test]
+fn serializer_joins_class_335_surface_with_class_331_pair() {
+    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+    let mut serializer = indexed_frame(b"335", 8305, 132);
+    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+        let at = 25 + ordinal * 2;
+        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    serializer[121] = 1;
+    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+    let following = indexed_frame(b"331", 8306, 15);
+    let surface = indexed_frame(b"358", 8304, 15);
+    let bytes = [serializer, following, surface].concat();
+    assert_eq!(
+        super::form_cage_serializers(
+            &bytes,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+        )
+        .get(&8304),
+        Some(&Some(entry_name.into()))
+    );
+
+    let mut wrong_pair = bytes.clone();
+    wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
+    assert!(!super::form_cage_serializers(
+        &wrong_pair,
+        &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
+    )
+    .by_surface
+    .contains_key(&8304));
+
+    let mut nonzero_tail = bytes;
+    nonzero_tail[131] = 1;
+    assert!(!super::form_cage_serializers(
+        &nonzero_tail,
+        &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
+    )
+    .by_surface
+    .contains_key(&8304));
+}
+
+#[test]
+fn serializers_preserve_primary_frame_order() {
+    let names = [
+        "TSpline.00000000-0000-0000-0000-000000000000.tsm",
+        "TSpline.11111111-1111-1111-1111-111111111111.tsm",
+    ];
+    let mut chunks = Vec::new();
+    for (ordinal, (name, surface)) in names.iter().zip([8304u64, 8307]).enumerate() {
+        let record = 8305 + ordinal as u32 * 2;
+        let mut serializer = indexed_frame(b"315", record, 132);
+        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+        for (name_ordinal, code_unit) in name.encode_utf16().enumerate() {
+            let at = 25 + name_ordinal * 2;
+            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        }
+        serializer[121] = 1;
+        serializer[122..130].copy_from_slice(&surface.to_le_bytes());
+        chunks.push(serializer);
+        chunks.push(indexed_frame(b"457", record + 1, 15));
+    }
+    let bytes = chunks.concat();
+    let serializers = super::form_cage_serializers(
+        &bytes,
+        &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+    );
+    assert_eq!(
+        serializers
+            .ordered
+            .iter()
+            .map(|(surface, _)| *surface)
+            .collect::<Vec<_>>(),
+        vec![8304, 8307]
+    );
+}
+
+#[test]
+fn reads_class_328_form_envelope() {
+    let scope_record = 201;
+    let group_record = 205;
+    let metadata_record = 207;
+    let scope_frame = indexed_frame(
+        b"328",
+        scope_record,
+        crate::layout::form_class_328_scope::LEN,
+    );
+    let scope_paired = indexed_frame(b"267", scope_record, 15);
+
+    let mut group = indexed_frame(
+        b"417",
+        group_record,
+        crate::layout::form_class_328_cage_group::LEN,
+    );
+    group[crate::layout::form_class_328_cage_group::OWNER_MARKER] = 1;
+    group[crate::layout::form_class_328_cage_group::OWNER_SCOPE_RECORD_INDEX
+        ..crate::layout::form_class_328_cage_group::OWNER_SCOPE_RECORD_INDEX + 8]
+        .copy_from_slice(&u64::from(scope_record).to_le_bytes());
+    group[crate::layout::form_class_328_cage_group::MEMBER_COUNT
+        ..crate::layout::form_class_328_cage_group::MEMBER_COUNT + 4]
+        .copy_from_slice(&4u32.to_le_bytes());
+    group[crate::layout::form_class_328_cage_group::TERMINAL_U32
+        ..crate::layout::form_class_328_cage_group::TERMINAL_U32 + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    group[crate::layout::form_class_328_cage_group::FIRST_TAIL_MARKER] = 1;
+    group[crate::layout::form_class_328_cage_group::FIRST_TAIL_RECORD_INDEX
+        ..crate::layout::form_class_328_cage_group::FIRST_TAIL_RECORD_INDEX + 8]
+        .copy_from_slice(&206u64.to_le_bytes());
+    group[crate::layout::form_class_328_cage_group::SECOND_TAIL_MARKER] = 1;
+    group[crate::layout::form_class_328_cage_group::SECOND_TAIL_RECORD_INDEX
+        ..crate::layout::form_class_328_cage_group::SECOND_TAIL_RECORD_INDEX + 8]
+        .copy_from_slice(&208u64.to_le_bytes());
+    group[crate::layout::form_class_328_cage_group::FINAL_SCOPE_MARKER] = 1;
+    group[crate::layout::form_class_328_cage_group::FINAL_SCOPE_RECORD_INDEX
+        ..crate::layout::form_class_328_cage_group::FINAL_SCOPE_RECORD_INDEX + 8]
+        .copy_from_slice(&u64::from(scope_record).to_le_bytes());
+    let group_paired = indexed_frame(b"267", group_record, 15);
+
+    let mut metadata = indexed_frame(
+        b"341",
+        metadata_record,
+        crate::layout::form_class_328_metadata_group::LEN,
+    );
+    metadata[crate::layout::form_class_328_metadata_group::OWNER_MARKER] = 1;
+    metadata[crate::layout::form_class_328_metadata_group::OWNER_SCOPE_RECORD_INDEX
+        ..crate::layout::form_class_328_metadata_group::OWNER_SCOPE_RECORD_INDEX + 8]
+        .copy_from_slice(&u64::from(scope_record).to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::MEMBER_COUNT
+        ..crate::layout::form_class_328_metadata_group::MEMBER_COUNT + 4]
+        .copy_from_slice(&19u32.to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::TAIL_U32
+        ..crate::layout::form_class_328_metadata_group::TAIL_U32 + 4]
+        .copy_from_slice(&61u32.to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::TAIL_SCALAR
+        ..crate::layout::form_class_328_metadata_group::TAIL_SCALAR + 8]
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::FIRST_TAIL_MARKER] = 1;
+    metadata[crate::layout::form_class_328_metadata_group::FIRST_TAIL_RECORD_INDEX
+        ..crate::layout::form_class_328_metadata_group::FIRST_TAIL_RECORD_INDEX + 8]
+        .copy_from_slice(&209u64.to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::SECOND_TAIL_MARKER] = 1;
+    metadata[crate::layout::form_class_328_metadata_group::SECOND_TAIL_RECORD_INDEX
+        ..crate::layout::form_class_328_metadata_group::SECOND_TAIL_RECORD_INDEX + 8]
+        .copy_from_slice(&210u64.to_le_bytes());
+    metadata[crate::layout::form_class_328_metadata_group::FINAL_SCOPE_MARKER] = 1;
+    metadata[crate::layout::form_class_328_metadata_group::FINAL_SCOPE_RECORD_INDEX
+        ..crate::layout::form_class_328_metadata_group::FINAL_SCOPE_RECORD_INDEX + 8]
+        .copy_from_slice(&u64::from(scope_record).to_le_bytes());
+    let metadata_paired = indexed_frame(b"267", metadata_record, 15);
+
+    let mut member_frames = Vec::new();
+    for (ordinal, member_record) in (301u32..305).enumerate() {
+        let mut member = indexed_frame(b"350", member_record, 40);
+        member[27] = 1;
+        member[28..36].copy_from_slice(&u64::from(group_record).to_le_bytes());
+        member[39] = 1;
+        group[crate::layout::form_class_328_cage_group::MEMBER_ENTRIES
+            + ordinal * crate::layout::form_class_328_reference_entry::LEN] = 1;
+        group[crate::layout::form_class_328_cage_group::MEMBER_ENTRIES
+            + ordinal * crate::layout::form_class_328_reference_entry::LEN
+            + crate::layout::form_class_328_reference_entry::RECORD_INDEX
+            ..crate::layout::form_class_328_cage_group::MEMBER_ENTRIES
+                + ordinal * crate::layout::form_class_328_reference_entry::LEN
+                + crate::layout::form_class_328_reference_entry::RECORD_INDEX
+                + 8]
+            .copy_from_slice(&u64::from(member_record).to_le_bytes());
+        member_frames.push(member);
+        member_frames.push(indexed_frame(b"351", member_record, 15));
+    }
+
+    for (ordinal, member_record) in (4000u32..4019).enumerate() {
+        metadata[crate::layout::form_class_328_metadata_group::MEMBER_ENTRIES
+            + ordinal * crate::layout::form_class_328_reference_entry::LEN] = 1;
+        metadata[crate::layout::form_class_328_metadata_group::MEMBER_ENTRIES
+            + ordinal * crate::layout::form_class_328_reference_entry::LEN
+            + crate::layout::form_class_328_reference_entry::RECORD_INDEX
+            ..crate::layout::form_class_328_metadata_group::MEMBER_ENTRIES
+                + ordinal * crate::layout::form_class_328_reference_entry::LEN
+                + crate::layout::form_class_328_reference_entry::RECORD_INDEX
+                + 8]
+            .copy_from_slice(&u64::from(member_record).to_le_bytes());
+    }
+
+    let mut chunks = vec![
+        scope_frame,
+        scope_paired,
+        group,
+        group_paired,
+        metadata,
+        metadata_paired,
+    ];
+    chunks.extend(member_frames);
+    chunks.extend([
+        indexed_frame(b"272", 206, 15),
+        indexed_frame(b"404", 208, 15),
+        indexed_frame(b"259", 209, 15),
+        indexed_frame(b"404", 210, 15),
+    ]);
+    chunks.extend((4000..4019).map(|record| indexed_frame(b"320", record, 15)));
+    let bytes = chunks.concat();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let mut scope = crate::records::DesignParameterScope::empty("scope", "Form", scope_record);
+    scope.reference_members = vec![group_record, metadata_record];
+    assert!(super::form_class_328_envelope(&bytes, &records, &scope));
+
+    let mut wrong_pair = bytes;
+    let group_start = crate::layout::form_class_328_scope::LEN + 15;
+    let paired_class = group_start + crate::layout::form_class_328_cage_group::LEN + 4;
+    wrong_pair[paired_class..paired_class + 3].copy_from_slice(b"266");
+    assert!(!super::form_class_328_envelope(
+        &wrong_pair,
+        &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
+        &scope,
+    ));
+}
+
+#[test]
 fn reads_class_325_cage_table_entries() {
     let scope_record = 309;
     let owner_record = 315;

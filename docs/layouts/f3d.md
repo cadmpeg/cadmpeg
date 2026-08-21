@@ -1718,7 +1718,7 @@ Offsets are relative to one entry's base; the entry repeats every 30 bytes from 
 
 Spec §1.1.1 · layout: byte offsets · size: 132 B
 
-Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame.
+Offsets are relative to the serializer's primary indexed header. Classes 315, 349, 360, 431, and 446 use the ordinary paired-header form. Class 335 uses the same 132-byte primary frame followed by a class-331 header with a different record index; its fixed tail after the marked surface reference is zero.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1729,6 +1729,98 @@ Offsets are relative to the serializer's primary indexed header. The LP-UTF16 en
 Unstated regions:
 
 - `25..132` (107 B): The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes.
+
+## `form_class_328_scope`
+
+Spec §1.1.1 · layout: byte offsets · size: 940 B
+
+The scope reference table has exactly two ordered members: one class-417/267 cage group and one class-341/267 cage metadata group. The feature-scope grammar supplies the table offsets and the feature kind.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the class-328 primary indexed header |
+
+Unstated regions:
+
+- `11..940` (929 B): The class-328 scope payload and fixed history/kind tail are parsed by the Design feature-scope grammar.
+
+## `form_class_328_cage_group`
+
+Spec §1.1.1 · layout: byte offsets · size: 136 B
+
+Offsets are relative to the class-417 primary indexed header. The four class-350/351 member records are followed by three typed tail references: class 272, class 404, and the owning class-328 scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the class-417 primary indexed header |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | fourteen zero bytes |
+| 25 | 1 | `owner_marker` | `u8` | little | spec | marked owning class-328 scope reference · value `1` |
+| 26 | 8 | `owner_scope_record_index` | `u64` | little | spec | owning class-328 scope record index |
+| 34 | 14 | `zero_run_14_after_owner` | `bytes[14]` | little | spec | fourteen zero bytes before the member count |
+| 48 | 4 | `member_count` | `u32` | little | spec | four class-350 member references · value `4` |
+| 52 | 44 | `member_entries` | `bytes[44]` | little | spec | four entries of `u8 1 + u64 record index + u16 0`, repeated every 11 bytes |
+| 96 | 4 | `terminal_u32` | `u32` | little | spec | fixed u32 value 1 · value `1` |
+| 100 | 1 | `first_tail_marker` | `u8` | little | spec | marked class-272 tail reference · value `1` |
+| 101 | 8 | `first_tail_record_index` | `u64` | little | spec | class-272 tail record index |
+| 109 | 4 | `first_tail_zero_run` | `bytes[4]` | little | spec | four zero bytes |
+| 113 | 1 | `second_tail_marker` | `u8` | little | spec | marked class-404 tail reference · value `1` |
+| 114 | 8 | `second_tail_record_index` | `u64` | little | spec | class-404 tail record index |
+| 122 | 3 | `second_tail_zero_run` | `bytes[3]` | little | spec | three zero bytes |
+| 125 | 1 | `final_scope_marker` | `u8` | little | spec | marked repeated class-328 scope reference · value `1` |
+| 126 | 8 | `final_scope_record_index` | `u64` | little | spec | repeated owning class-328 scope record index |
+| 134 | 2 | `paired_zero_tail` | `bytes[2]` | little | spec | two terminal bytes are zero |
+
+## `form_class_328_reference_entry`
+
+Spec §1.1.1 · layout: byte offsets · size: 11 B
+
+The entry is repeated in the class-417 and class-341 ordered reference runs.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | marked record reference · value `1` |
+| 1 | 8 | `record_index` | `u64` | little | spec | referenced record index |
+| 9 | 2 | `zero_tail` | `bytes[2]` | little | spec | two zero bytes |
+
+## `form_class_328_metadata_group`
+
+Spec §1.1.1 · layout: byte offsets · size: 293 B
+
+Offsets are relative to the class-341 primary indexed header. The nineteen class-320 member records form the ordered metadata run.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the class-341 primary indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 1 | `owner_marker` | `u8` | little | spec | marked owning class-328 scope reference · value `1` |
+| 22 | 8 | `owner_scope_record_index` | `u64` | little | spec | owning class-328 scope record index |
+| 30 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
+| 32 | 4 | `member_count` | `u32` | little | spec | nineteen class-320 member references · value `19` |
+| 36 | 209 | `member_entries` | `bytes[209]` | little | spec | nineteen entries of `u8 1 + u64 record index + u16 0`, repeated every 11 bytes |
+| 245 | 4 | `tail_u32` | `u32` | little | spec | fixed u32 value 61 · value `61` |
+| 249 | 8 | `tail_scalar` | `f64` | little | spec | finite little-endian f64 |
+| 257 | 1 | `first_tail_marker` | `u8` | little | spec | marked class-259 tail reference · value `1` |
+| 258 | 8 | `first_tail_record_index` | `u64` | little | spec | class-259 tail record index |
+| 266 | 4 | `first_tail_zero_run` | `bytes[4]` | little | spec | four zero bytes |
+| 270 | 1 | `second_tail_marker` | `u8` | little | spec | marked class-404 tail reference · value `1` |
+| 271 | 8 | `second_tail_record_index` | `u64` | little | spec | class-404 tail record index |
+| 279 | 3 | `second_tail_zero_run` | `bytes[3]` | little | spec | three zero bytes |
+| 282 | 1 | `final_scope_marker` | `u8` | little | spec | marked repeated class-328 scope reference · value `1` |
+| 283 | 8 | `final_scope_record_index` | `u64` | little | spec | repeated owning class-328 scope record index |
+| 291 | 2 | `paired_zero_tail` | `bytes[2]` | little | spec | two terminal bytes are zero |
+
+## `form_class_350_member_owner_tail`
+
+Spec §1.1.1 · layout: byte offsets · size: 13 B
+
+Offsets are relative to the class-351 paired header's preceding tail. The backlink names the class-417 cage group.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `owner_marker` | `u8` | little | spec | marked class-417 group reference · value `1` |
+| 1 | 8 | `owner_group_record_index` | `u64` | little | spec | owning class-417 group record index |
+| 9 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes before the paired header |
+| 12 | 1 | `paired_marker` | `u8` | little | spec | a final paired marker · value `1` |
 
 ## `extrude_selection_member_fixed_frame`
 

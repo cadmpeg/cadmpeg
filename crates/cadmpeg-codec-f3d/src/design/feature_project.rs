@@ -27,8 +27,11 @@ use crate::ids::{
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::{
     form_class_325_cage_entry as form_325_entry, form_class_325_cage_table as form_325,
-    form_compact_one_cage_list as form_cage, form_legacy_one_cage_owner as legacy_form_cage,
-    form_serializer_frame_132 as form_serializer,
+    form_class_328_cage_group as form_328_group,
+    form_class_328_metadata_group as form_328_metadata,
+    form_class_328_reference_entry as form_328_entry, form_class_328_scope,
+    form_class_350_member_owner_tail as form_350_tail, form_compact_one_cage_list as form_cage,
+    form_legacy_one_cage_owner as legacy_form_cage, form_serializer_frame_132 as form_serializer,
 };
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
@@ -4098,6 +4101,56 @@ pub(crate) fn bind_form_cages(
                 continue;
             }
         }
+        if scope.class_tag == "328"
+            && scopes
+                .iter()
+                .filter(|candidate| candidate.kind == "Form")
+                .count()
+                == 1
+            && form_class_328_envelope(bytes, &records, scope)
+        {
+            let serializers = form_cage_serializers(bytes, &records);
+            let mut resolved = Vec::with_capacity(serializers.ordered.len());
+            let mut valid = true;
+            for (_, entry_name) in &serializers.ordered {
+                let Some(entry_name) = entry_name else {
+                    valid = false;
+                    break;
+                };
+                let mut matches = cages.iter().filter(|cage| {
+                    cage.source_object
+                        .as_ref()
+                        .and_then(|source| source.object_id.rsplit('/').next())
+                        == Some(entry_name.as_str())
+                });
+                let Some(cage) = matches.next() else {
+                    continue;
+                };
+                if matches.next().is_some() {
+                    valid = false;
+                    break;
+                }
+                resolved.push(cage.id.clone());
+            }
+            if valid
+                && !resolved.is_empty()
+                && resolved.len() == cages.len()
+                && resolved.iter().collect::<HashSet<_>>().len() == resolved.len()
+            {
+                let feature_id = neutral_feature_id(scope);
+                if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
+                {
+                    if matches!(
+                        &feature.definition,
+                        cadmpeg_ir::features::FeatureDefinition::Native { .. }
+                    ) {
+                        feature.definition =
+                            cadmpeg_ir::features::FeatureDefinition::Form { cages: resolved };
+                    }
+                }
+            }
+            continue;
+        }
         if scopes
             .iter()
             .filter(|candidate| candidate.kind == "Form")
@@ -4269,6 +4322,277 @@ fn legacy_form_owner_count(
         return None;
     };
     (bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)
+}
+
+fn form_class_328_envelope(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> bool {
+    let Some((scope_start, scope_paired)) = one_indexed_frame(records, scope.record_index) else {
+        return false;
+    };
+    if scope_paired.checked_sub(scope_start) != Some(form_class_328_scope::LEN)
+        || bytes.get(scope_start + 4..scope_start + 7) != Some(b"328")
+        || bytes.get(scope_paired + 4..scope_paired + 7) != Some(b"267")
+    {
+        return false;
+    }
+    if scope.reference_members.len() != 2 {
+        return false;
+    }
+    let Some(group_record) = scope
+        .reference_members
+        .iter()
+        .copied()
+        .find(|record_index| {
+            records.frames(*record_index).any(|(start, paired)| {
+                bytes.get(start + 4..start + 7) == Some(b"417")
+                    && bytes.get(paired + 4..paired + 7) == Some(b"267")
+            })
+        })
+    else {
+        return false;
+    };
+    let Some(metadata_record) = scope
+        .reference_members
+        .iter()
+        .copied()
+        .find(|record_index| {
+            *record_index != group_record
+                && records.frames(*record_index).any(|(start, paired)| {
+                    bytes.get(start + 4..start + 7) == Some(b"341")
+                        && bytes.get(paired + 4..paired + 7) == Some(b"267")
+                })
+        })
+    else {
+        return false;
+    };
+    let Some((group_start, group_paired)) = records.frames(group_record).find(|(start, paired)| {
+        bytes.get(*start + 4..*start + 7) == Some(b"417")
+            && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
+    }) else {
+        return false;
+    };
+    if group_paired.checked_sub(group_start) != Some(form_328_group::LEN)
+        || bytes.get(
+            group_start + form_328_group::ZERO_RUN_14..group_start + form_328_group::OWNER_MARKER,
+        ) != Some(&[0; 14])
+        || bytes.get(group_start + form_328_group::OWNER_MARKER)
+            != Some(&form_328_group::OWNER_MARKER_VALUE)
+        || View::u64_le_at(
+            bytes,
+            group_start + form_328_group::OWNER_SCOPE_RECORD_INDEX,
+        ) != Some(u64::from(scope.record_index))
+        || bytes.get(
+            group_start + form_328_group::ZERO_RUN_14_AFTER_OWNER
+                ..group_start + form_328_group::MEMBER_COUNT,
+        ) != Some(&[0; 14])
+        || View::u32_le_at(bytes, group_start + form_328_group::MEMBER_COUNT)
+            != Some(form_328_group::MEMBER_COUNT_VALUE)
+        || View::u32_le_at(bytes, group_start + form_328_group::TERMINAL_U32)
+            != Some(form_328_group::TERMINAL_U32_VALUE)
+        || bytes.get(group_start + form_328_group::FIRST_TAIL_MARKER)
+            != Some(&form_328_group::FIRST_TAIL_MARKER_VALUE)
+        || bytes.get(
+            group_start + form_328_group::FIRST_TAIL_ZERO_RUN
+                ..group_start + form_328_group::SECOND_TAIL_MARKER,
+        ) != Some(&[0; 4])
+        || bytes.get(group_start + form_328_group::SECOND_TAIL_MARKER)
+            != Some(&form_328_group::SECOND_TAIL_MARKER_VALUE)
+        || bytes.get(
+            group_start + form_328_group::SECOND_TAIL_ZERO_RUN
+                ..group_start + form_328_group::FINAL_SCOPE_MARKER,
+        ) != Some(&[0; 3])
+        || bytes.get(group_start + form_328_group::FINAL_SCOPE_MARKER)
+            != Some(&form_328_group::FINAL_SCOPE_MARKER_VALUE)
+        || View::u64_le_at(
+            bytes,
+            group_start + form_328_group::FINAL_SCOPE_RECORD_INDEX,
+        ) != Some(u64::from(scope.record_index))
+        || bytes
+            .get(group_start + form_328_group::PAIRED_ZERO_TAIL..group_start + form_328_group::LEN)
+            != Some(&[0; 2])
+    {
+        return false;
+    }
+    let Some(group_class_272) =
+        View::u64_le_at(bytes, group_start + form_328_group::FIRST_TAIL_RECORD_INDEX)
+            .and_then(|value| u32::try_from(value).ok())
+    else {
+        return false;
+    };
+    let Some(group_class_404) = View::u64_le_at(
+        bytes,
+        group_start + form_328_group::SECOND_TAIL_RECORD_INDEX,
+    )
+    .and_then(|value| u32::try_from(value).ok()) else {
+        return false;
+    };
+    if !unique_record_has_class(bytes, records, group_class_272, b"272")
+        || !unique_record_has_class(bytes, records, group_class_404, b"404")
+    {
+        return false;
+    }
+    let mut members = HashSet::new();
+    for ordinal in 0..form_328_group::MEMBER_COUNT_VALUE as usize {
+        let at = group_start + form_328_group::MEMBER_ENTRIES + ordinal * form_328_entry::LEN;
+        if bytes.get(at) != Some(&form_328_entry::MARKER_VALUE)
+            || bytes.get(at + form_328_entry::ZERO_TAIL..at + form_328_entry::LEN) != Some(&[0; 2])
+        {
+            return false;
+        }
+        let Some(member) = View::u64_le_at(bytes, at + form_328_entry::RECORD_INDEX)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return false;
+        };
+        if !members.insert(member) {
+            return false;
+        }
+        let Some((member_start, member_paired)) = one_indexed_frame(records, member) else {
+            return false;
+        };
+        if bytes.get(member_start + 4..member_start + 7) != Some(b"350")
+            || bytes.get(member_paired + 4..member_paired + 7) != Some(b"351")
+            || member_paired < member_start + form_350_tail::LEN
+            || bytes.get(member_paired - form_350_tail::LEN + form_350_tail::OWNER_MARKER)
+                != Some(&form_350_tail::OWNER_MARKER_VALUE)
+            || View::u64_le_at(
+                bytes,
+                member_paired - form_350_tail::LEN + form_350_tail::OWNER_GROUP_RECORD_INDEX,
+            ) != Some(u64::from(group_record))
+            || bytes.get(
+                member_paired - form_350_tail::LEN + form_350_tail::ZERO_RUN_3
+                    ..member_paired - form_350_tail::LEN + form_350_tail::PAIRED_MARKER,
+            ) != Some(&[0; 3])
+            || bytes.get(member_paired - form_350_tail::LEN + form_350_tail::PAIRED_MARKER)
+                != Some(&form_350_tail::PAIRED_MARKER_VALUE)
+        {
+            return false;
+        }
+    }
+    if members.len() != form_328_group::MEMBER_COUNT_VALUE as usize {
+        return false;
+    }
+    let Some((metadata_start, metadata_paired)) =
+        records.frames(metadata_record).find(|(start, paired)| {
+            bytes.get(*start + 4..*start + 7) == Some(b"341")
+                && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
+        })
+    else {
+        return false;
+    };
+    if metadata_paired.checked_sub(metadata_start) != Some(form_328_metadata::LEN)
+        || bytes.get(
+            metadata_start + form_328_metadata::ZERO_RUN_10
+                ..metadata_start + form_328_metadata::OWNER_MARKER,
+        ) != Some(&[0; 10])
+        || bytes.get(metadata_start + form_328_metadata::OWNER_MARKER)
+            != Some(&form_328_metadata::OWNER_MARKER_VALUE)
+        || View::u64_le_at(
+            bytes,
+            metadata_start + form_328_metadata::OWNER_SCOPE_RECORD_INDEX,
+        ) != Some(u64::from(scope.record_index))
+        || bytes.get(
+            metadata_start + form_328_metadata::ZERO_RUN_2
+                ..metadata_start + form_328_metadata::MEMBER_COUNT,
+        ) != Some(&[0; 2])
+        || View::u32_le_at(bytes, metadata_start + form_328_metadata::MEMBER_COUNT)
+            != Some(form_328_metadata::MEMBER_COUNT_VALUE)
+        || View::u32_le_at(bytes, metadata_start + form_328_metadata::TAIL_U32)
+            != Some(form_328_metadata::TAIL_U32_VALUE)
+        || View::f64_le_at(bytes, metadata_start + form_328_metadata::TAIL_SCALAR)
+            .is_none_or(|value| !value.is_finite())
+        || bytes.get(metadata_start + form_328_metadata::FIRST_TAIL_MARKER)
+            != Some(&form_328_metadata::FIRST_TAIL_MARKER_VALUE)
+        || bytes.get(
+            metadata_start + form_328_metadata::FIRST_TAIL_ZERO_RUN
+                ..metadata_start + form_328_metadata::SECOND_TAIL_MARKER,
+        ) != Some(&[0; 4])
+        || bytes.get(metadata_start + form_328_metadata::SECOND_TAIL_MARKER)
+            != Some(&form_328_metadata::SECOND_TAIL_MARKER_VALUE)
+        || bytes.get(
+            metadata_start + form_328_metadata::SECOND_TAIL_ZERO_RUN
+                ..metadata_start + form_328_metadata::FINAL_SCOPE_MARKER,
+        ) != Some(&[0; 3])
+        || bytes.get(metadata_start + form_328_metadata::FINAL_SCOPE_MARKER)
+            != Some(&form_328_metadata::FINAL_SCOPE_MARKER_VALUE)
+        || View::u64_le_at(
+            bytes,
+            metadata_start + form_328_metadata::FINAL_SCOPE_RECORD_INDEX,
+        ) != Some(u64::from(scope.record_index))
+        || bytes.get(
+            metadata_start + form_328_metadata::PAIRED_ZERO_TAIL
+                ..metadata_start + form_328_metadata::LEN,
+        ) != Some(&[0; 2])
+    {
+        return false;
+    }
+    let Some(metadata_class_259) = View::u64_le_at(
+        bytes,
+        metadata_start + form_328_metadata::FIRST_TAIL_RECORD_INDEX,
+    )
+    .and_then(|value| u32::try_from(value).ok()) else {
+        return false;
+    };
+    let Some(metadata_class_404) = View::u64_le_at(
+        bytes,
+        metadata_start + form_328_metadata::SECOND_TAIL_RECORD_INDEX,
+    )
+    .and_then(|value| u32::try_from(value).ok()) else {
+        return false;
+    };
+    if !unique_record_has_class(bytes, records, metadata_class_259, b"259")
+        || !unique_record_has_class(bytes, records, metadata_class_404, b"404")
+    {
+        return false;
+    }
+    let mut metadata_members = HashSet::new();
+    for ordinal in 0..form_328_metadata::MEMBER_COUNT_VALUE as usize {
+        let at = metadata_start + form_328_metadata::MEMBER_ENTRIES + ordinal * form_328_entry::LEN;
+        if bytes.get(at) != Some(&form_328_entry::MARKER_VALUE)
+            || bytes.get(at + form_328_entry::ZERO_TAIL..at + form_328_entry::LEN) != Some(&[0; 2])
+        {
+            return false;
+        }
+        let Some(member) = View::u64_le_at(bytes, at + form_328_entry::RECORD_INDEX)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return false;
+        };
+        if !metadata_members.insert(member)
+            || records.offsets(member).len() != 1
+            || records
+                .offsets(member)
+                .first()
+                .and_then(|offset| bytes.get(*offset + 4..*offset + 7))
+                != Some(b"320")
+        {
+            return false;
+        }
+    }
+    metadata_members.len() == form_328_metadata::MEMBER_COUNT_VALUE as usize
+}
+
+fn unique_record_has_class(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    class: &[u8],
+) -> bool {
+    let [offset] = records.offsets(record_index) else {
+        return false;
+    };
+    bytes.get(*offset + 4..*offset + 7) == Some(class)
+}
+
+fn one_indexed_frame(records: &IndexedRecordOffsets, record_index: u32) -> Option<(usize, usize)> {
+    let frames = records.frames(record_index).collect::<Vec<_>>();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
 }
 
 fn form_class_325_cage_objects(
@@ -4504,52 +4828,92 @@ fn form_cage_surface(
     u32::try_from(View::u64_le_at(bytes, carrier_at + 340)?).ok()
 }
 
-fn form_cage_serializers(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-) -> HashMap<u32, Option<String>> {
-    let mut serializers = HashMap::new();
-    for (_, offsets) in records.records() {
-        for offset in offsets {
-            if !matches!(
-                bytes.get(offset + 4..offset + 7),
-                Some(b"315" | b"349" | b"360" | b"431" | b"446")
-            ) || next_indexed_record_offset(bytes, offset + 1)
-                != Some(offset + form_serializer::LEN)
-                || bytes.get(
-                    offset + form_serializer::ZERO_RUN_10
-                        ..offset + form_serializer::ENTRY_NAME_LENGTH,
-                ) != Some(&[0; 10])
-            {
-                continue;
+struct FormCageSerializers {
+    by_surface: HashMap<u32, Option<String>>,
+    ordered: Vec<(u32, Option<String>)>,
+}
+
+impl FormCageSerializers {
+    fn get(&self, surface: &u32) -> Option<&Option<String>> {
+        self.by_surface.get(surface)
+    }
+}
+
+fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCageSerializers {
+    let mut offsets = records
+        .records()
+        .flat_map(|(_, offsets)| offsets.iter().copied())
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    let mut by_surface = HashMap::<u32, Option<String>>::new();
+    let mut ordered = Vec::<(u32, Option<String>)>::new();
+    let mut ordered_positions = HashMap::<u32, usize>::new();
+    for offset in offsets {
+        let is_class_335 = bytes.get(offset + 4..offset + 7) == Some(b"335");
+        if !matches!(
+            bytes.get(offset + 4..offset + 7),
+            Some(b"315" | b"335" | b"349" | b"360" | b"431" | b"446")
+        ) || bytes
+            .get(offset + form_serializer::ZERO_RUN_10..offset + form_serializer::ENTRY_NAME_LENGTH)
+            != Some(&[0; 10])
+        {
+            continue;
+        }
+        let Some(next) = next_indexed_record_offset(bytes, offset + 1) else {
+            continue;
+        };
+        if next != offset + form_serializer::LEN
+            || (is_class_335 && bytes.get(next + 4..next + 7) != Some(b"331"))
+        {
+            continue;
+        }
+        let Some((entry_name, after_name)) =
+            lp_utf16_bounded(bytes, offset + form_serializer::ENTRY_NAME_LENGTH, 1..=256)
+        else {
+            continue;
+        };
+        if !entry_name.starts_with("TSpline.")
+            || !std::path::Path::new(&entry_name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
+            || bytes.get(after_name) != Some(&1)
+            || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
+        {
+            continue;
+        }
+        let Some(surface) =
+            View::u64_le_at(bytes, after_name + 1).and_then(|surface| u32::try_from(surface).ok())
+        else {
+            continue;
+        };
+        if is_class_335
+            && (bytes
+                .get(after_name + 11..offset + form_serializer::LEN)
+                .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
+                || !records.offsets(surface).iter().any(|surface_offset| {
+                    bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
+                }))
+        {
+            continue;
+        }
+        if !is_class_335 && after_name + 11 != offset + form_serializer::LEN {
+            continue;
+        }
+        if let Some(candidate) = by_surface.get_mut(&surface) {
+            *candidate = None;
+            if let Some(position) = ordered_positions.get(&surface).copied() {
+                ordered[position].1 = None;
             }
-            let Some((entry_name, after_name)) =
-                lp_utf16_bounded(bytes, offset + form_serializer::ENTRY_NAME_LENGTH, 1..=256)
-            else {
-                continue;
-            };
-            if !entry_name.starts_with("TSpline.")
-                || !std::path::Path::new(&entry_name)
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
-                || bytes.get(after_name) != Some(&1)
-                || bytes.get(after_name + 9..after_name + 11) != Some(&[0, 0])
-                || after_name + 11 != offset + form_serializer::LEN
-            {
-                continue;
-            }
-            let Some(surface) = View::u64_le_at(bytes, after_name + 1)
-                .and_then(|surface| u32::try_from(surface).ok())
-            else {
-                continue;
-            };
-            serializers
-                .entry(surface)
-                .and_modify(|candidate| *candidate = None)
-                .or_insert(Some(entry_name));
+        } else {
+            ordered_positions.insert(surface, ordered.len());
+            by_surface.insert(surface, Some(entry_name.clone()));
+            ordered.push((surface, Some(entry_name)));
         }
     }
-    serializers
+    FormCageSerializers {
+        by_surface,
+        ordered,
+    }
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {

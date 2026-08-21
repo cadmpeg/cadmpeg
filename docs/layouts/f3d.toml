@@ -5677,9 +5677,9 @@ value = 0
 name = "form_serializer_frame_132"
 kind = "byte"
 section = "1.1.1"
-anchor = "A 132-byte class-315, class-349, class-360, class-431, or class-446 serializer record"
+anchor = "A 132-byte Form serializer record"
 size = 132
-note = "Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame."
+note = "Offsets are relative to the serializer's primary indexed header. Classes 315, 349, 360, 431, and 446 use the ordinary paired-header form. Class 335 uses the same 132-byte primary frame followed by a class-331 header with a different record index; its fixed tail after the marked surface reference is zero."
 
 [[record.field]]
 name = "indexed_header"
@@ -5706,6 +5706,367 @@ anchor = "LP-UTF16 blob-part entry name"
 offset = 25
 size = 107
 note = "The LP-UTF16 entry name, marked surface reference, and two-byte zero tail occupy this variable-length region; the complete serializer frame remains 132 bytes."
+
+[[record]]
+name = "form_class_328_scope"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-328 Form scope is 940 bytes from its primary indexed header to its class-267 paired header."
+size = 940
+note = "The scope reference table has exactly two ordered members: one class-417/267 cage group and one class-341/267 cage metadata group. The feature-scope grammar supplies the table offsets and the feature kind."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the class-328 primary indexed header"
+
+[[record.gap]]
+offset = 11
+size = 929
+note = "The class-328 scope payload and fixed history/kind tail are parsed by the Design feature-scope grammar."
+
+[[record]]
+name = "form_class_328_cage_group"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-417 cage group owned by a class-328 Form scope is 136 bytes from its primary indexed header to its class-267 paired header."
+size = 136
+note = "Offsets are relative to the class-417 primary indexed header. The four class-350/351 member records are followed by three typed tail references: class 272, class 404, and the owning class-328 scope."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the class-417 primary indexed header"
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes"
+
+[[record.field]]
+name = "owner_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "marked owning class-328 scope reference"
+value = 1
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 26
+type = "u64"
+source = "spec"
+anchor = "owning class-328 scope record index"
+
+[[record.field]]
+name = "zero_run_14_after_owner"
+offset = 34
+type = "bytes[14]"
+source = "spec"
+anchor = "fourteen zero bytes before the member count"
+
+[[record.field]]
+name = "member_count"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "four class-350 member references"
+value = 4
+
+[[record.field]]
+name = "member_entries"
+offset = 52
+type = "bytes[44]"
+source = "spec"
+anchor = "four entries of `u8 1 + u64 record index + u16 0`, repeated every 11 bytes"
+
+[[record.field]]
+name = "terminal_u32"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "fixed u32 value 1"
+value = 1
+
+[[record.field]]
+name = "first_tail_marker"
+offset = 100
+type = "u8"
+source = "spec"
+anchor = "marked class-272 tail reference"
+value = 1
+
+[[record.field]]
+name = "first_tail_record_index"
+offset = 101
+type = "u64"
+source = "spec"
+anchor = "class-272 tail record index"
+
+[[record.field]]
+name = "first_tail_zero_run"
+offset = 109
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+
+[[record.field]]
+name = "second_tail_marker"
+offset = 113
+type = "u8"
+source = "spec"
+anchor = "marked class-404 tail reference"
+value = 1
+
+[[record.field]]
+name = "second_tail_record_index"
+offset = 114
+type = "u64"
+source = "spec"
+anchor = "class-404 tail record index"
+
+[[record.field]]
+name = "second_tail_zero_run"
+offset = 122
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "final_scope_marker"
+offset = 125
+type = "u8"
+source = "spec"
+anchor = "marked repeated class-328 scope reference"
+value = 1
+
+[[record.field]]
+name = "final_scope_record_index"
+offset = 126
+type = "u64"
+source = "spec"
+anchor = "repeated owning class-328 scope record index"
+
+[[record.field]]
+name = "paired_zero_tail"
+offset = 134
+type = "bytes[2]"
+source = "spec"
+anchor = "two terminal bytes are zero"
+
+[[record]]
+name = "form_class_328_reference_entry"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-328 Form reference entry is 11 bytes."
+size = 11
+note = "The entry is repeated in the class-417 and class-341 ordered reference runs."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "marked record reference"
+value = 1
+
+[[record.field]]
+name = "record_index"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "referenced record index"
+
+[[record.field]]
+name = "zero_tail"
+offset = 9
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record]]
+name = "form_class_328_metadata_group"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-341 cage metadata group owned by a class-328 Form scope is 293 bytes from its primary indexed header to its class-267 paired header."
+size = 293
+note = "Offsets are relative to the class-341 primary indexed header. The nineteen class-320 member records form the ordered metadata run."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the class-341 primary indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "owner_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "marked owning class-328 scope reference"
+value = 1
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "owning class-328 scope record index"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 30
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "member_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "nineteen class-320 member references"
+value = 19
+
+[[record.field]]
+name = "member_entries"
+offset = 36
+type = "bytes[209]"
+source = "spec"
+anchor = "nineteen entries of `u8 1 + u64 record index + u16 0`, repeated every 11 bytes"
+
+[[record.field]]
+name = "tail_u32"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "fixed u32 value 61"
+value = 61
+
+[[record.field]]
+name = "tail_scalar"
+offset = 249
+type = "f64"
+source = "spec"
+anchor = "finite little-endian f64"
+
+[[record.field]]
+name = "first_tail_marker"
+offset = 257
+type = "u8"
+source = "spec"
+anchor = "marked class-259 tail reference"
+value = 1
+
+[[record.field]]
+name = "first_tail_record_index"
+offset = 258
+type = "u64"
+source = "spec"
+anchor = "class-259 tail record index"
+
+[[record.field]]
+name = "first_tail_zero_run"
+offset = 266
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+
+[[record.field]]
+name = "second_tail_marker"
+offset = 270
+type = "u8"
+source = "spec"
+anchor = "marked class-404 tail reference"
+value = 1
+
+[[record.field]]
+name = "second_tail_record_index"
+offset = 271
+type = "u64"
+source = "spec"
+anchor = "class-404 tail record index"
+
+[[record.field]]
+name = "second_tail_zero_run"
+offset = 279
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "final_scope_marker"
+offset = 282
+type = "u8"
+source = "spec"
+anchor = "marked repeated class-328 scope reference"
+value = 1
+
+[[record.field]]
+name = "final_scope_record_index"
+offset = 283
+type = "u64"
+source = "spec"
+anchor = "repeated owning class-328 scope record index"
+
+[[record.field]]
+name = "paired_zero_tail"
+offset = 291
+type = "bytes[2]"
+source = "spec"
+anchor = "two terminal bytes are zero"
+
+[[record]]
+name = "form_class_350_member_owner_tail"
+kind = "byte"
+section = "1.1.1"
+anchor = "A class-350 member's class-351 paired header is preceded by a 13-byte owner backlink tail."
+size = 13
+note = "Offsets are relative to the class-351 paired header's preceding tail. The backlink names the class-417 cage group."
+
+[[record.field]]
+name = "owner_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "marked class-417 group reference"
+value = 1
+
+[[record.field]]
+name = "owner_group_record_index"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "owning class-417 group record index"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 9
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes before the paired header"
+
+[[record.field]]
+name = "paired_marker"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "a final paired marker"
+value = 1
 
 [[record]]
 name = "extrude_selection_member_fixed_frame"

@@ -2481,7 +2481,7 @@ pub(crate) mod form_class_325_cage_entry {
 /// Spec §1.1.1. Record length 132 B.
 ///
 /// ```text
-/// Offsets are relative to the serializer's primary indexed header. The LP-UTF16 entry-name span and the marked surface reference are variable-length fields within the fixed frame.
+/// Offsets are relative to the serializer's primary indexed header. Classes 315, 349, 360, 431, and 446 use the ordinary paired-header form. Class 335 uses the same 132-byte primary frame followed by a class-331 header with a different record index; its fixed tail after the marked surface reference is zero.
 /// ```
 pub(crate) mod form_serializer_frame_132 {
     /// Record length in bytes. Spec §1.1.1.
@@ -2492,6 +2492,182 @@ pub(crate) mod form_serializer_frame_132 {
     pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `entry_name_length` (`u32`, little-endian). Spec §1.1.1.
     pub(crate) const ENTRY_NAME_LENGTH: usize = 21;
+}
+
+/// Byte offsets for the `form_class_328_scope` record.
+///
+/// Spec §1.1.1. Record length 940 B.
+///
+/// ```text
+/// The scope reference table has exactly two ordered members: one class-417/267 cage group and one class-341/267 cage metadata group. The feature-scope grammar supplies the table offsets and the feature kind.
+/// ```
+pub(crate) mod form_class_328_scope {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 940;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+}
+
+/// Byte offsets for the `form_class_328_cage_group` record.
+///
+/// Spec §1.1.1. Record length 136 B.
+///
+/// ```text
+/// Offsets are relative to the class-417 primary indexed header. The four class-350/351 member records are followed by three typed tail references: class 272, class 404, and the owning class-328 scope.
+/// ```
+pub(crate) mod form_class_328_cage_group {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 136;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER: usize = 25;
+    /// Stated value of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 26;
+    /// Offset of `zero_run_14_after_owner` (`bytes[14]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_14_AFTER_OWNER: usize = 34;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const MEMBER_COUNT: usize = 48;
+    /// Stated value of `member_count` (`u32`). Spec §1.1.1.
+    pub(crate) const MEMBER_COUNT_VALUE: u32 = 0x0000_0004;
+    /// Offset of `member_entries` (`bytes[44]`). Spec §1.1.1.
+    pub(crate) const MEMBER_ENTRIES: usize = 52;
+    /// Offset of `terminal_u32` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const TERMINAL_U32: usize = 96;
+    /// Stated value of `terminal_u32` (`u32`). Spec §1.1.1.
+    pub(crate) const TERMINAL_U32_VALUE: u32 = 0x0000_0001;
+    /// Offset of `first_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_MARKER: usize = 100;
+    /// Stated value of `first_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_MARKER_VALUE: u8 = 1;
+    /// Offset of `first_tail_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_RECORD_INDEX: usize = 101;
+    /// Offset of `first_tail_zero_run` (`bytes[4]`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_ZERO_RUN: usize = 109;
+    /// Offset of `second_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_MARKER: usize = 113;
+    /// Stated value of `second_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_MARKER_VALUE: u8 = 1;
+    /// Offset of `second_tail_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_RECORD_INDEX: usize = 114;
+    /// Offset of `second_tail_zero_run` (`bytes[3]`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_ZERO_RUN: usize = 122;
+    /// Offset of `final_scope_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_MARKER: usize = 125;
+    /// Stated value of `final_scope_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `final_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_RECORD_INDEX: usize = 126;
+    /// Offset of `paired_zero_tail` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const PAIRED_ZERO_TAIL: usize = 134;
+}
+
+/// Byte offsets for the `form_class_328_reference_entry` record.
+///
+/// Spec §1.1.1. Record length 11 B.
+///
+/// ```text
+/// The entry is repeated in the class-417 and class-341 ordered reference runs.
+/// ```
+pub(crate) mod form_class_328_reference_entry {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `marker` (`u8`). Spec §1.1.1.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`u8`). Spec §1.1.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const RECORD_INDEX: usize = 1;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const ZERO_TAIL: usize = 9;
+}
+
+/// Byte offsets for the `form_class_328_metadata_group` record.
+///
+/// Spec §1.1.1. Record length 293 B.
+///
+/// ```text
+/// Offsets are relative to the class-341 primary indexed header. The nineteen class-320 member records form the ordered metadata run.
+/// ```
+pub(crate) mod form_class_328_metadata_group {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 293;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §1.1.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER: usize = 21;
+    /// Stated value of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 22;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_2: usize = 30;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const MEMBER_COUNT: usize = 32;
+    /// Stated value of `member_count` (`u32`). Spec §1.1.1.
+    pub(crate) const MEMBER_COUNT_VALUE: u32 = 0x0000_0013;
+    /// Offset of `member_entries` (`bytes[209]`). Spec §1.1.1.
+    pub(crate) const MEMBER_ENTRIES: usize = 36;
+    /// Offset of `tail_u32` (`u32`, little-endian). Spec §1.1.1.
+    pub(crate) const TAIL_U32: usize = 245;
+    /// Stated value of `tail_u32` (`u32`). Spec §1.1.1.
+    pub(crate) const TAIL_U32_VALUE: u32 = 0x0000_003d;
+    /// Offset of `tail_scalar` (`f64`, little-endian). Spec §1.1.1.
+    pub(crate) const TAIL_SCALAR: usize = 249;
+    /// Offset of `first_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_MARKER: usize = 257;
+    /// Stated value of `first_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_MARKER_VALUE: u8 = 1;
+    /// Offset of `first_tail_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_RECORD_INDEX: usize = 258;
+    /// Offset of `first_tail_zero_run` (`bytes[4]`). Spec §1.1.1.
+    pub(crate) const FIRST_TAIL_ZERO_RUN: usize = 266;
+    /// Offset of `second_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_MARKER: usize = 270;
+    /// Stated value of `second_tail_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_MARKER_VALUE: u8 = 1;
+    /// Offset of `second_tail_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_RECORD_INDEX: usize = 271;
+    /// Offset of `second_tail_zero_run` (`bytes[3]`). Spec §1.1.1.
+    pub(crate) const SECOND_TAIL_ZERO_RUN: usize = 279;
+    /// Offset of `final_scope_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_MARKER: usize = 282;
+    /// Stated value of `final_scope_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `final_scope_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const FINAL_SCOPE_RECORD_INDEX: usize = 283;
+    /// Offset of `paired_zero_tail` (`bytes[2]`). Spec §1.1.1.
+    pub(crate) const PAIRED_ZERO_TAIL: usize = 291;
+}
+
+/// Byte offsets for the `form_class_350_member_owner_tail` record.
+///
+/// Spec §1.1.1. Record length 13 B.
+///
+/// ```text
+/// Offsets are relative to the class-351 paired header's preceding tail. The backlink names the class-417 cage group.
+/// ```
+pub(crate) mod form_class_350_member_owner_tail {
+    /// Record length in bytes. Spec §1.1.1.
+    pub(crate) const LEN: usize = 13;
+    /// Offset of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER: usize = 0;
+    /// Stated value of `owner_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const OWNER_MARKER_VALUE: u8 = 1;
+    /// Offset of `owner_group_record_index` (`u64`, little-endian). Spec §1.1.1.
+    pub(crate) const OWNER_GROUP_RECORD_INDEX: usize = 1;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §1.1.1.
+    pub(crate) const ZERO_RUN_3: usize = 9;
+    /// Offset of `paired_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const PAIRED_MARKER: usize = 12;
+    /// Stated value of `paired_marker` (`u8`). Spec §1.1.1.
+    pub(crate) const PAIRED_MARKER_VALUE: u8 = 1;
 }
 
 /// Byte offsets for the `extrude_selection_member_fixed_frame` record.
