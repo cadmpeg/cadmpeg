@@ -1,23 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, dead_code, clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::IR_VERSION;
 
-use crate::chunks::{
-    anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
-    parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE, TCODE_SHORT,
-};
-use crate::settings;
+use crate::chunks::{parse_header, ArchiveVersion, FramingError, TCODE_ENDOFTABLE};
 use crate::test_support::test_dump::*;
-use crate::wire::Uuid;
-use crate::{RhinoCodec, MAGIC};
+use crate::RhinoCodec;
 
 #[test]
 fn document_table_record_budget_rejects_compact_record_amplification() {

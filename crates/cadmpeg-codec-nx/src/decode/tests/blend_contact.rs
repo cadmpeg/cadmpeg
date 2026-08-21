@@ -1,27 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use std::io::Cursor;
-
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
-use cadmpeg_ir::Exactness;
-
-use crate::container;
-use crate::parasolid::{self, StreamKind};
-use crate::test_support::*;
-use crate::NxCodec;
-
-use super::*;
 
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
