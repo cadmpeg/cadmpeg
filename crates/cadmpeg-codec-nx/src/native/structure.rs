@@ -49,6 +49,12 @@ pub struct FastLoadComponentOccurrence {
     pub id: String,
     /// Zero-based position in the serialized occurrence table.
     pub ordinal: u32,
+    /// Byte discriminator for the serialized occurrence lane form.
+    pub occurrence_lane_form: u8,
+    /// Exact marker byte in the serialized occurrence marker lane.
+    pub marker: u8,
+    /// Absolute file offset of the occurrence marker.
+    pub marker_source_offset: u64,
     /// Referenced [`FastLoadComponentPrototype::id`].
     pub prototype: String,
     /// One-based serialized prototype-table index.
@@ -118,6 +124,9 @@ pub fn fast_load_component_object_groups(
 
 struct Candidate {
     prototypes: Vec<(usize, String)>,
+    occurrence_lane_form: u8,
+    occurrence_markers_offset: usize,
+    occurrence_markers: Vec<u8>,
     occurrences_offset: usize,
     prototype_indices: Vec<u8>,
     uuids: Vec<(usize, String)>,
@@ -212,6 +221,12 @@ pub fn fast_load_component_roster(
         .map(|(ordinal, prototype_index)| FastLoadComponentOccurrence {
             id: format!("nx:fast-load:occurrence#{ordinal}"),
             ordinal: ordinal as u32,
+            occurrence_lane_form: candidate.occurrence_lane_form,
+            marker: candidate.occurrence_markers[ordinal],
+            marker_source_offset: entry_offset
+                + envelope::LEN as u64
+                + candidate.occurrence_markers_offset as u64
+                + ordinal as u64,
             prototype: prototypes[usize::from(prototype_index - 1)].id.clone(),
             prototype_index,
             component_uuid: uuids[usize::from(candidate.uuid_indices[ordinal] - 1)]
@@ -251,12 +266,19 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         metadata.push(parse_string(bytes, &mut at)?.1);
     }
     (metadata.first().map(String::as_str) == Some("MODEL")).then_some(())?;
-    take(bytes, &mut at, 4)?.eq(&[1, 3, 0, 0]).then_some(())?;
+    take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
+    let occurrence_lane_form = *take(bytes, &mut at, 1)?.first()?;
+    (occurrence_lane_form <= 1).then_some(())?;
+    take(bytes, &mut at, 1)?.eq(&[0]).then_some(())?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let markers = take(bytes, &mut at, occurrence_count)?;
-    markers.iter().all(|byte| *byte == b'9').then_some(())?;
+    let occurrence_markers_offset = at;
+    let occurrence_markers = take(bytes, &mut at, occurrence_count)?.to_vec();
+    occurrence_markers
+        .iter()
+        .all(|byte| matches!(*byte, b'1' | b'9'))
+        .then_some(())?;
     take(bytes, &mut at, 6)?
         .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
         .then_some(())?;
@@ -298,6 +320,9 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
 
     Some(Candidate {
         prototypes,
+        occurrence_lane_form,
+        occurrence_markers_offset,
+        occurrence_markers,
         occurrences_offset,
         prototype_indices,
         uuids,
@@ -347,17 +372,28 @@ mod tests {
     }
 
     fn payload(names: &[&str], indices: &[u8]) -> Vec<u8> {
+        let markers = vec![b'9'; indices.len()];
+        payload_with_occurrence_lane(names, indices, 0, &markers)
+    }
+
+    fn payload_with_occurrence_lane(
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
+        assert_eq!(indices.len(), markers.len());
         let mut bytes = vec![1, 2];
         string(&mut bytes, "MODEL");
         bytes.extend([
             1,
             3,
-            0,
+            occurrence_lane_form,
             0,
             1,
             u8::try_from(indices.len() + 1).expect("short test occurrence list"),
         ]);
-        bytes.extend(std::iter::repeat_n(b'9', indices.len()));
+        bytes.extend(markers);
         bytes.extend([
             1,
             2,
@@ -421,6 +457,8 @@ mod tests {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
         assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences[0].occurrence_lane_form, 0);
+        assert_eq!(occurrences[0].marker, b'9');
         assert_eq!(
             prototypes
                 .iter()
@@ -436,6 +474,53 @@ mod tests {
             [1, 2, 2, 3]
         );
         assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+    }
+
+    #[test]
+    fn extracts_extended_occurrence_form_and_markers() {
+        let container = container(payload_with_occurrence_lane(
+            &["plate", "bolt"],
+            &[1, 2, 2],
+            1,
+            b"919",
+        ));
+        let (_, _, occurrences) = fast_load_component_roster(&container);
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| occurrence.occurrence_lane_form)
+                .collect::<Vec<_>>(),
+            [1, 1, 1]
+        );
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| occurrence.marker)
+                .collect::<Vec<_>>(),
+            [b'9', b'1', b'9']
+        );
+        assert_eq!(
+            occurrences[1].marker_source_offset,
+            occurrences[0].marker_source_offset + 1
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_occurrence_lane_form_atomically() {
+        let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
+        assert_eq!(
+            fast_load_component_roster(&container(bytes)),
+            (Vec::new(), Vec::new(), Vec::new())
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_occurrence_marker_atomically() {
+        let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
+        assert_eq!(
+            fast_load_component_roster(&container(bytes)),
+            (Vec::new(), Vec::new(), Vec::new())
+        );
     }
 
     #[test]

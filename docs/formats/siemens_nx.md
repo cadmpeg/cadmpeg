@@ -357,9 +357,9 @@ this grammar:
 ```text
 01 metadata_count_plus_one:u8
 metadata[metadata_count]
-01 03 00 00
+01 03 occurrence_lane_form:u8 00
 01 occurrence_count_plus_one:u8
-39[occurrence_count]
+occurrence_marker[occurrence_count]
 01 02 ff ff ff ff
 01 prototype_count_plus_one:u8
 prototype[prototype_count]
@@ -374,10 +374,13 @@ uuid_index:u8[occurrence_count]
 Each `metadata` and `prototype` is `04 record_len:u8`, followed by
 `record_len - 2` non-control UTF-8 bytes and a zero terminator; `record_len`
 counts its own length byte, the string bytes, and the terminator. The first
-metadata value is `MODEL`. Each occurrence index is one-based and lies in
-`1..=prototype_count`. Occurrence order and repeated indices preserve distinct
-uses of the same named prototype. The roster does not assign hierarchy or a
-placement transform.
+metadata value is `MODEL`. `occurrence_lane_form` is `00` or `01`. Each
+`occurrence_marker` is `31` or `39`; the marker and its source offset are
+retained with the corresponding occurrence. The form and marker bytes delimit
+the occurrence lane but do not assign hierarchy, placement, or state. Each
+occurrence index is one-based and lies in `1..=prototype_count`. Occurrence
+order and repeated indices preserve distinct uses of the same named prototype.
+The roster does not assign hierarchy or a placement transform.
 
 Each `uuid` uses string tag `03` and the same length framing, and contains 36
 lowercase hexadecimal UUID characters with hyphens at positions 8, 13, 18, and 23. Each UUID index is one-based and lies in `1..=uuid_count`. It associates
