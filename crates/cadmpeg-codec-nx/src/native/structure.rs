@@ -10,7 +10,7 @@ use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
-const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
+const ROSTER_ANCHOR: &[u8] = &[1, 2, 0x42, 0, 1, 2, 4];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,16 +171,18 @@ pub fn fast_load_component_roster(
         return (Vec::new(), Vec::new(), Vec::new());
     };
 
-    // Every admitted roster starts with a version/count pair followed by the
-    // first metadata string `MODEL`. Search for that mandatory framed value
-    // before invoking the complete parser; trying the parser at every byte
-    // makes a large opaque structure stream quadratic in its candidate count.
+    // Every admitted roster has this fixed preamble before its second
+    // version/count pair. Search for that structural anchor before invoking
+    // the complete parser; trying the parser at every byte makes a large
+    // opaque structure stream quadratic in its candidate count. The first
+    // metadata value is not a reliable anchor: valid rosters use both named
+    // and `None` values.
     let mut candidates = payload
-        .windows(MODEL_FRAME.len())
+        .windows(ROSTER_ANCHOR.len())
         .enumerate()
-        .filter(|(_, window)| *window == MODEL_FRAME)
-        .filter_map(|(model_offset, _)| {
-            let start = model_offset.checked_sub(2)?;
+        .filter(|(_, window)| *window == ROSTER_ANCHOR)
+        .filter_map(|(anchor_offset, _)| {
+            let start = anchor_offset.checked_add(4)?;
             parse_candidate(payload, start)
         });
     let Some(candidate) = candidates.next() else {
@@ -265,7 +267,10 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     for _ in 0..metadata_count {
         metadata.push(parse_string(bytes, &mut at)?.1);
     }
-    (metadata.first().map(String::as_str) == Some("MODEL")).then_some(())?;
+    metadata
+        .first()
+        .is_some_and(|value| !value.is_empty())
+        .then_some(())?;
     take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
     let occurrence_lane_form = *take(bytes, &mut at, 1)?.first()?;
     (occurrence_lane_form <= 1).then_some(())?;
@@ -382,9 +387,19 @@ mod tests {
         occurrence_lane_form: u8,
         markers: &[u8],
     ) -> Vec<u8> {
+        payload_with_metadata("MODEL", names, indices, occurrence_lane_form, markers)
+    }
+
+    fn payload_with_metadata(
+        metadata: &str,
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
         assert_eq!(indices.len(), markers.len());
-        let mut bytes = vec![1, 2];
-        string(&mut bytes, "MODEL");
+        let mut bytes = vec![1, 2, 0x42, 0, 1, 2];
+        string(&mut bytes, metadata);
         bytes.extend([
             1,
             3,
@@ -474,6 +489,24 @@ mod tests {
             [1, 2, 2, 3]
         );
         assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+    }
+
+    #[test]
+    fn extracts_roster_with_none_metadata() {
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
+            payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),
+        ));
+        assert_eq!(
+            prototypes
+                .iter()
+                .map(|prototype| prototype.name.as_str())
+                .collect::<Vec<_>>(),
+            ["pin", "head"]
+        );
+        assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences.len(), 2);
+        assert_eq!(occurrences[0].prototype_index, 1);
+        assert_eq!(occurrences[1].prototype_index, 2);
     }
 
     #[test]

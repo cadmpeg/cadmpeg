@@ -351,8 +351,10 @@ typed stream atomically.
 `/Root/FastLoad/Structure` begins with the twelve-byte envelope
 `ff ff ff ff 00 00 00 00 payload_len:u32 BE`. `payload_len + 12` equals the
 bounded directory-entry size. The payload begins `OM 01 01` and carries
-length-framed NX OM class and member declarations. Its component roster has
-this grammar:
+length-framed NX OM class and member declarations. A component-roster header
+is anchored by `01 02 42 00 01 02`; the final `01 02` is followed by the first
+metadata record. Exactly one complete roster follows that anchor in the
+bounded entry. Its component roster has this grammar:
 
 ```text
 01 metadata_count_plus_one:u8
@@ -374,7 +376,8 @@ uuid_index:u8[occurrence_count]
 Each `metadata` and `prototype` is `04 record_len:u8`, followed by
 `record_len - 2` non-control UTF-8 bytes and a zero terminator; `record_len`
 counts its own length byte, the string bytes, and the terminator. The first
-metadata value is `MODEL`. `occurrence_lane_form` is `00` or `01`. Each
+metadata value is nonempty. Its text does not identify a component. The
+`occurrence_lane_form` is `00` or `01`. Each
 `occurrence_marker` is `31` or `39`; the marker and its source offset are
 retained with the corresponding occurrence. The form and marker bytes delimit
 the occurrence lane but do not assign hierarchy, placement, or state. Each
