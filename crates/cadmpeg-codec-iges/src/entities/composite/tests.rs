@@ -85,10 +85,14 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         tolerance: None,
     });
 
-    assert!(bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None).is_none());
+    assert!(
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None).is_none()
+    );
 
     ir.model.points[0].position = Point3::new(0.000_999, 0.0, 0.0);
-    assert!(bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None).is_some());
+    assert!(
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None).is_some()
+    );
 }
 
 #[test]
@@ -184,7 +188,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx)).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None).is_none());
     assert!(matches!(
         ctx.finish_session(),
         Err(CodecError::ResourceLimit(limit))
@@ -270,7 +274,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         },
     ]);
 
-    let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None)
+    let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None, None)
         .expect("the curve-valid edge occurrence");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
@@ -328,7 +332,81 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         });
     }
 
-    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None, None).is_none());
+}
+
+#[test]
+fn composite_index_lookups_match_the_unindexed_scan() {
+    let bounded = CurveId("bounded".into());
+    let edgeless = CurveId("edgeless".into());
+    let absent = CurveId("absent".into());
+    let mut ir = CadIr::empty(Units::default());
+    for id in [bounded.clone(), edgeless.clone()] {
+        ir.model.curves.push(Curve {
+            id,
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+    }
+    ir.model.points.extend([
+        Point {
+            id: PointId("start-point".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("end-point".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("start".into()),
+            point: PointId("start-point".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("end".into()),
+            point: PointId("end-point".into()),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("edge".into()),
+        curve: Some(bounded.clone()),
+        start: VertexId("start".into()),
+        end: VertexId("end".into()),
+        param_range: Some([0.0, 2.0]),
+        tolerance: None,
+    });
+
+    let index = CompositeIndex::from_ir(&ir);
+    for curve_id in [bounded, edgeless, absent] {
+        let scanned = bounded_nurbs_for_curve(&ir, &curve_id, None, None);
+        let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index));
+        assert_eq!(
+            scanned.as_ref().map(|(carrier, range)| (
+                carrier.degree,
+                carrier.control_points.clone(),
+                *range
+            )),
+            indexed.as_ref().map(|(carrier, range)| (
+                carrier.degree,
+                carrier.control_points.clone(),
+                *range
+            )),
+        );
+    }
+
+    assert!(bounded_nurbs_for_curve(&ir, &CurveId("bounded".into()), None, Some(&index)).is_some());
+    assert!(
+        bounded_nurbs_for_curve(&ir, &CurveId("edgeless".into()), None, Some(&index)).is_none()
+    );
+    assert!(bounded_nurbs_for_curve(&ir, &CurveId("absent".into()), None, Some(&index)).is_none());
 }
 
 #[test]
@@ -541,9 +619,9 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
             tolerance: None,
         });
     }
-    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None, None).is_none());
     let (carrier, range) =
-        bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None)
+        bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
             .expect("carrier join within the global resolution should project");
     assert_eq!(range, [0.0, 2.0]);
     assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));

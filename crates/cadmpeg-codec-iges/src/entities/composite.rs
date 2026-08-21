@@ -18,6 +18,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
@@ -47,21 +48,18 @@ struct CompositeEdge {
 }
 
 #[derive(Default)]
-struct CompositeIndex {
+pub(super) struct CompositeIndex {
     curve_positions: BTreeMap<CurveId, usize>,
     edges: BTreeMap<CurveId, Vec<CompositeEdge>>,
     vertex_points: BTreeMap<VertexId, Point3>,
 }
 
 impl CompositeIndex {
-    fn from_ir(ir: &CadIr) -> Self {
-        let curve_positions = ir
-            .model
-            .curves
-            .iter()
-            .enumerate()
-            .map(|(index, curve)| (curve.id.clone(), index))
-            .collect();
+    pub(super) fn from_ir(ir: &CadIr) -> Self {
+        let mut curve_positions = BTreeMap::new();
+        for (position, curve) in ir.model.curves.iter().enumerate() {
+            curve_positions.entry(curve.id.clone()).or_insert(position);
+        }
         let mut edges = BTreeMap::new();
         for edge in &ir.model.edges {
             if let Some(curve) = &edge.curve {
@@ -75,23 +73,16 @@ impl CompositeIndex {
                     });
             }
         }
-        let points = ir
-            .model
-            .points
-            .iter()
-            .map(|point| (point.id.clone(), point.position))
-            .collect::<BTreeMap<_, _>>();
-        let vertex_points = ir
-            .model
-            .vertices
-            .iter()
-            .filter_map(|vertex| {
-                points
-                    .get(&vertex.point)
-                    .copied()
-                    .map(|point| (vertex.id.clone(), point))
-            })
-            .collect();
+        let mut points = BTreeMap::new();
+        for point in &ir.model.points {
+            points.entry(point.id.clone()).or_insert(point.position);
+        }
+        let mut vertex_points = BTreeMap::<VertexId, Point3>::new();
+        for vertex in &ir.model.vertices {
+            if let Some(point) = points.get(&vertex.point).copied() {
+                vertex_points.entry(vertex.id.clone()).or_insert(point);
+            }
+        }
         Self {
             curve_positions,
             edges,
@@ -570,14 +561,13 @@ fn bounded_nurbs_for_id(
         }
         return None;
     }
-    let curve = index
-        .and_then(|index| {
-            index
-                .curve_positions
-                .get(curve_id)
-                .and_then(|position| ir.model.curves.get(*position))
-        })
-        .or_else(|| ir.model.curves.iter().find(|curve| curve.id == *curve_id))?;
+    let curve = match index {
+        Some(index) => index
+            .curve_positions
+            .get(curve_id)
+            .and_then(|position| ir.model.curves.get(*position))?,
+        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
+    };
     if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
         let children = segments
             .iter()
@@ -601,9 +591,9 @@ fn bounded_nurbs_for_id(
         let range = [0.0, *concatenated.boundaries.last()?];
         return Some((concatenated.nurbs, range));
     }
-    let edge_candidates = index
-        .and_then(|index| index.edges.get(curve_id).cloned())
-        .unwrap_or_else(|| {
+    let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
+        Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
+        None => Cow::Owned(
             ir.model
                 .edges
                 .iter()
@@ -613,8 +603,9 @@ fn bounded_nurbs_for_id(
                     end: edge.end.clone(),
                     param_range: edge.param_range,
                 })
-                .collect()
-        });
+                .collect(),
+        ),
+    };
     let edge = select_composite_edge(
         ir,
         index,
@@ -692,8 +683,9 @@ pub(super) fn bounded_nurbs_for_curve(
     ir: &CadIr,
     curve_id: &CurveId,
     ctx: Option<&DecodeContext<'_>>,
+    index: Option<&CompositeIndex>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    bounded_nurbs_for_id(ir, curve_id, 0, None, ctx, None)
+    bounded_nurbs_for_id(ir, curve_id, 0, None, ctx, index)
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(
@@ -701,6 +693,7 @@ pub(super) fn bounded_nurbs_for_curve_with_tolerance(
     curve_id: &CurveId,
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
+    index: Option<&CompositeIndex>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     bounded_nurbs_for_id(
         ir,
@@ -708,7 +701,7 @@ pub(super) fn bounded_nurbs_for_curve_with_tolerance(
         0,
         tolerance.filter(|tolerance| tolerance.is_finite() && *tolerance >= 0.0),
         ctx,
-        None,
+        index,
     )
 }
 

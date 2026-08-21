@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-local trimmed-surface projection.
 
-use super::composite::bounded_nurbs_for_curve_with_tolerance;
+use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
@@ -232,9 +232,11 @@ pub(super) fn pcurve_geometry(
     factor: f64,
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
+    composite_index: Option<&CompositeIndex>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let (nurbs, range) = bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx)?;
+    let (nurbs, range) =
+        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
@@ -728,6 +730,7 @@ pub(super) fn project(
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new(ir);
+    let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<CurveId, Vec<Edge>>::new();
     for edge in &ir.model.edges {
         if let Some(curve) = &edge.curve {
@@ -1104,6 +1107,9 @@ pub(super) fn project(
                             factor,
                             Some(carrier_agreement_tolerance),
                             ctx,
+                            Some(
+                                composite_index.get_or_insert_with(|| CompositeIndex::from_ir(ir)),
+                            ),
                         )
                     })
                     .collect::<Option<Vec<_>>>();

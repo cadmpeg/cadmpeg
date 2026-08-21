@@ -60,7 +60,7 @@ fn bounded_nurbs(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx)
+    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
 }
 
 fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {

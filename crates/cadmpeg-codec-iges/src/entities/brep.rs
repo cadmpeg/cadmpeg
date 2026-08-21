@@ -176,7 +176,7 @@ fn project_pcurve_uses(
         .enumerate()
         .map(|(index, (isoparametric, sequence))| {
             let (geometry, range) =
-                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx)?;
+                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx, None)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
@@ -195,19 +195,21 @@ fn project_pcurve_uses(
         .collect()
 }
 
-fn pcurves_agree(
-    source: &CadIr,
+#[allow(clippy::too_many_arguments)]
+fn pcurves_agree<'a>(
+    source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
+    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> bool {
     if uses.is_empty() {
         return true;
     }
-    let index = cadmpeg_ir::index::ModelIndex::new(source);
+    let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
     let mapped = uses
         .iter()
         .map(|(_, sequence)| {
@@ -218,12 +220,13 @@ fn pcurves_agree(
                 support.factor,
                 Some(tolerance),
                 ctx,
+                None,
             )?;
             let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             })?;
             let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             })?;
             Some((start, end))
         })
@@ -709,6 +712,7 @@ pub(super) fn project(
 
     for definition in body_definitions {
         let entry = definition.entry;
+        let mut model_index = None;
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
@@ -816,6 +820,7 @@ pub(super) fn project(
                                 expected,
                                 tolerance,
                                 ctx,
+                                &mut model_index,
                             ) {
                                 losses.push(entity_loss(
                                     entry,
@@ -882,6 +887,7 @@ pub(super) fn project(
                             expected_end,
                             tolerance,
                             ctx,
+                            &mut model_index,
                         ) {
                             losses.push(entity_loss(
                                 entry,
