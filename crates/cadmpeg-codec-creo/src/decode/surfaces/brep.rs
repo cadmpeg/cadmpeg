@@ -255,6 +255,29 @@ impl BrepTransferDiagnostics {
             "brep_pcurve_path_count".to_string(),
             self.vertex_solve.pcurve.paths,
         );
+        let pcurve = &self.vertex_solve.pcurve;
+        if pcurve.inactive_paths > 0
+            || pcurve.inactive_records > 0
+            || pcurve.partial_records > 0
+            || pcurve.topology_mismatch_records > 0
+        {
+            coverage.insert(
+                "brep_pcurve_inactive_path_count".to_string(),
+                pcurve.inactive_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_inactive_record_count".to_string(),
+                pcurve.inactive_records,
+            );
+            coverage.insert(
+                "brep_pcurve_partial_record_count".to_string(),
+                pcurve.partial_records,
+            );
+            coverage.insert(
+                "brep_pcurve_topology_mismatch_record_count".to_string(),
+                pcurve.topology_mismatch_records,
+            );
+        }
         coverage.insert(
             "brep_pcurve_missing_surface_path_count".to_string(),
             self.vertex_solve.pcurve.missing_surfaces,

@@ -97,6 +97,10 @@ pub struct PcurveMismatchDetail {
 pub struct PcurveEndpointDiagnostics {
     pub records: usize,
     pub paths: usize,
+    pub inactive_paths: usize,
+    pub inactive_records: usize,
+    pub partial_records: usize,
+    pub topology_mismatch_records: usize,
     pub missing_surfaces: usize,
     pub unevaluable_paths: usize,
     pub mapped_paths: usize,
@@ -108,6 +112,61 @@ pub struct PcurveEndpointDiagnostics {
     pub evidence: usize,
     pub complete_evidence: usize,
     pub mismatch_samples: Vec<PcurveMismatchDetail>,
+}
+
+#[derive(Debug, Default)]
+struct PcurvePathActivity {
+    active_paths: BTreeSet<(u32, u32)>,
+    topology_faces: BTreeMap<u32, [u32; 2]>,
+    prototype_faces: BTreeMap<u32, [u32; 2]>,
+}
+
+impl PcurvePathActivity {
+    fn from_scan(scan: &ContainerScan) -> Self {
+        let active_paths = scan
+            .topology
+            .loops
+            .iter()
+            .flat_map(|loop_| {
+                loop_
+                    .half_edges
+                    .iter()
+                    .map(move |half_edge| (loop_.face_id, half_edge.curve_id))
+            })
+            .collect();
+        let topology_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+            .into_iter()
+            .map(|row| (row.id, row.faces))
+            .collect();
+        let mut prototype_counts = BTreeMap::<u32, usize>::new();
+        for row in &scan.curves.prototype_topology {
+            *prototype_counts.entry(row.curve_id).or_default() += 1;
+        }
+        let prototype_faces = scan
+            .curves
+            .prototype_topology
+            .iter()
+            .filter(|row| prototype_counts.get(&row.curve_id) == Some(&1))
+            .map(|row| (row.curve_id, row.faces))
+            .collect();
+        Self {
+            active_paths,
+            topology_faces,
+            prototype_faces,
+        }
+    }
+
+    fn selected_paths(&self, curve_id: u32, faces: [u32; 2], prototype: bool) -> Option<[bool; 2]> {
+        let topology_faces = if prototype {
+            &self.prototype_faces
+        } else {
+            &self.topology_faces
+        };
+        (topology_faces.get(&curve_id) == Some(&faces)).then_some([
+            self.active_paths.contains(&(faces[0], curve_id)),
+            self.active_paths.contains(&(faces[1], curve_id)),
+        ])
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -248,9 +307,10 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
 ) {
     let ignored_surface_ids =
         topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
+    let path_activity = PcurvePathActivity::from_scan(scan);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
-    for (curve_id, faces, first, second) in scan
+    for (curve_id, faces, first, second, prototype) in scan
         .curves
         .pcurves
         .iter()
@@ -261,7 +321,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             );
-            (pcurve.curve_id, pcurve.faces, first, second)
+            (pcurve.curve_id, pcurve.faces, first, second, false)
         })
         .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
             let [first, second] = canonicalized_pcurve_endpoints(
@@ -270,10 +330,21 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             );
-            (pcurve.curve_id, pcurve.faces, first, second)
+            (pcurve.curve_id, pcurve.faces, first, second, true)
         }))
     {
         diagnostics.records += 1;
+        if let Some(active) = path_activity.selected_paths(curve_id, faces, prototype) {
+            let active_count = active.into_iter().filter(|is_active| *is_active).count();
+            diagnostics.inactive_paths += 2 - active_count;
+            match active_count {
+                0 => diagnostics.inactive_records += 1,
+                1 => diagnostics.partial_records += 1,
+                _ => {}
+            }
+        } else {
+            diagnostics.topology_mismatch_records += 1;
+        }
         let paths = faces
             .into_iter()
             .zip([first, second])
@@ -1158,5 +1229,70 @@ mod tests {
         assert_eq!(detail.faces, [7, 8]);
         assert!((detail.same_order_error - 1.0).abs() < EPS_TEST_ERROR);
         assert!((detail.reverse_order_error - 3.0).abs() < EPS_TEST_ERROR);
+    }
+
+    #[test]
+    fn pcurve_diagnostics_count_inactive_face_paths() {
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 7,
+                type_byte: 0,
+                feature_id: 0,
+                directions: [0x01, 0xf6],
+                faces: [10, 11],
+                next_edges: [7, 7],
+                offset: 0,
+            });
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [10, 11],
+            face_0_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            offset: 0,
+        });
+        scan.topology.loops.push(crate::topology::Loop {
+            face_id: 10,
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: 0,
+            }],
+        });
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#10".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        assert_eq!(
+            evidence.get(&7).map(|value| (value.points, value.complete)),
+            Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
+        );
+        assert_eq!(diagnostics.records, 1);
+        assert_eq!(diagnostics.paths, 2);
+        assert_eq!(diagnostics.inactive_paths, 1);
+        assert_eq!(diagnostics.inactive_records, 0);
+        assert_eq!(diagnostics.partial_records, 1);
+        assert_eq!(diagnostics.topology_mismatch_records, 0);
+        assert_eq!(diagnostics.accepted_records, 1);
+        assert_eq!(diagnostics.complete_records, 1);
     }
 }

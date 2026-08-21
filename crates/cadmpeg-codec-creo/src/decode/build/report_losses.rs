@@ -240,6 +240,24 @@ pub(super) fn push_brep_transfer_note(
     } else {
         format!(" Pcurve mismatch samples: {pcurve_mismatch_samples}.")
     };
+    let pcurve_activity_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        if pcurve.inactive_paths > 0
+            || pcurve.inactive_records > 0
+            || pcurve.partial_records > 0
+            || pcurve.topology_mismatch_records > 0
+        {
+            format!(
+                " Pcurve path activity: inactive paths={}, inactive records={}, partial records={}, topology mismatches={}.",
+                pcurve.inactive_paths,
+                pcurve.inactive_records,
+                pcurve.partial_records,
+                pcurve.topology_mismatch_records,
+            )
+        } else {
+            String::new()
+        }
+    };
     let vertex_evidence = format!(
         "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
          unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
@@ -249,7 +267,7 @@ pub(super) fn push_brep_transfer_note(
          a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
-         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}",
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -281,6 +299,7 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.vertex_solve.directed_endpoint_conflicts,
         diagnostics.vertex_solve.solved_vertices,
         pcurve_mismatch_evidence,
+        pcurve_activity_evidence,
     );
 
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
