@@ -82,6 +82,32 @@ fn legacy_cfb_catalogues_logical_stream_spans() {
 }
 
 #[test]
+fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
+    let bytes = legacy_cfb_with_two_streams();
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+        .expect("legacy CFB multi-stream inspection");
+    let part = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+        .expect("legacy UG_PART stream entry");
+    let extra = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/Extra")
+        .expect("legacy extra stream entry");
+    assert_eq!(part.compressed_size, 10 * 512);
+    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert_eq!(extra.role, "named-opaque-stream");
+    assert_eq!(extra.compressed_size, 8 * 512);
+    assert_eq!(extra.compressed_size, extra.uncompressed_size);
+
+    let result = decode(bytes);
+    assert!(!result.source_fidelity().retained_records.is_empty());
+}
+
+#[test]
 fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
     let mut bytes = legacy_cfb_with_ug_part();
     let directory_entry = &mut bytes[512 + 2 * 128..512 + 3 * 128];
@@ -184,6 +210,65 @@ fn legacy_cfb_with_partial_ug_part() -> Vec<u8> {
     put_u32(fat, STREAM_LAST * 4, 12);
     put_u32(fat, 12 * 4, END);
     file.truncate(SECTOR * 13 + 13);
+    file
+}
+
+fn legacy_cfb_with_two_streams() -> Vec<u8> {
+    const SECTOR: usize = 512;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    const EXTRA_FIRST_SECTOR: usize = 12;
+    const EXTRA_SECTORS: usize = 8;
+    const FAT_SECTOR: usize = 20;
+    let mut file = legacy_cfb_with_ug_part();
+    file.resize(SECTOR * (1 + FAT_SECTOR + 1), 0);
+    put_u32(&mut file, 76, FAT_SECTOR as u32);
+    sector_mut(&mut file, 11).fill(0xff);
+
+    let directory = sector_mut(&mut file, 0);
+    cfb_directory_entry(
+        directory,
+        3,
+        "Extra",
+        2,
+        EXTRA_FIRST_SECTOR as u32,
+        END,
+        (EXTRA_SECTORS * SECTOR) as u64,
+    );
+    put_u32(directory, 128 + 76, 3);
+    put_u32(directory, 3 * 128 + 72, 2);
+
+    let extra = sector_mut(&mut file, EXTRA_FIRST_SECTOR);
+    extra.fill(0xa5);
+    let marker = b"SECOND STREAM PAYLOAD";
+    extra[..marker.len()].copy_from_slice(marker);
+
+    let fat = sector_mut(&mut file, FAT_SECTOR);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    for sector in 1..=10 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 10 {
+                END
+            } else {
+                (sector + 1) as u32
+            },
+        );
+    }
+    for sector in EXTRA_FIRST_SECTOR..EXTRA_FIRST_SECTOR + EXTRA_SECTORS {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector + 1 == EXTRA_FIRST_SECTOR + EXTRA_SECTORS {
+                END
+            } else {
+                (sector + 1) as u32
+            },
+        );
+    }
+    put_u32(fat, FAT_SECTOR * 4, FAT);
     file
 }
 
