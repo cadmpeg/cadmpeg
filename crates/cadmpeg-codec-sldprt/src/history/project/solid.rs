@@ -60,9 +60,23 @@ pub(crate) fn project_extrude(
     let legacy_history_extrusion = feature.input_class.is_none()
         && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
         && source_depth.is_some();
+    // Some modern ICE extrusions retain the dissection-root marker but omit
+    // both the child list and the explicit profile property. Their profile is
+    // still the nearest preceding non-origin sketch in the source namespace,
+    // the same ownership rule used by the legacy history form. Restrict this
+    // fallback to a sole source dimension so an operation with several
+    // unassigned dimensions cannot acquire a profile by proximity alone.
+    let root_history_extrusion = feature
+        .properties
+        .get("DissectableRoot")
+        .is_some_and(|value| value == "true")
+        && !feature.properties.contains_key("DissectableChildren")
+        && !feature.properties.contains_key("Profile")
+        && source_depth.is_some();
+    let history_profile_extrusion = legacy_history_extrusion || root_history_extrusion;
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_dimensions.len() == 1;
-    let legacy_profile = legacy_history_extrusion
+    let history_profile = history_profile_extrusion
         .then(|| {
             let source = feature.source_id.as_deref()?.parse::<i64>().ok()?;
             features_by_source
@@ -83,7 +97,9 @@ pub(crate) fn project_extrude(
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
         .or_else(|| extrude_feature_op(feature))
-        .or_else(|| legacy_profile.is_some().then_some(BooleanOp::Join))
+        .or_else(|| {
+            (legacy_history_extrusion && history_profile.is_some()).then_some(BooleanOp::Join)
+        })
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
         let mut values = feature.parameters.values();
@@ -216,7 +232,7 @@ pub(crate) fn project_extrude(
             [profile] => ProfileRef::Native(profile.clone()),
             _ => ProfileRef::Unresolved(feature.id.clone()),
         }
-    } else if let Some(profile) = legacy_profile {
+    } else if let Some(profile) = history_profile {
         ProfileRef::Native(profile)
     } else {
         ProfileRef::Unresolved(feature.id.clone())
