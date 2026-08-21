@@ -5218,7 +5218,12 @@ fn project_chamfer(
     let right_distances = ordered_parameters("rightDistance");
     let mut angles = parameters
         .iter()
-        .filter(|(_, parameter)| matches!(parameter.source_kind.as_str(), "Angle" | "Rotate Angle"))
+        .filter(|(_, parameter)| {
+            matches!(
+                parameter.source_kind.as_str(),
+                "Angle" | "Rotate Angle" | "rotateAngle"
+            )
+        })
         .copied()
         .collect::<Vec<_>>();
     angles.sort_by_key(|(local_ordinal, _)| *local_ordinal);
@@ -5237,20 +5242,32 @@ fn project_chamfer(
                 | "rightDistance"
                 | "Angle"
                 | "Rotate Angle"
+                | "rotateAngle"
         )
     }) {
         return None;
     }
 
     let candidates = if !left_distances.is_empty() || !right_distances.is_empty() {
-        if !distances.is_empty()
-            || !first_distances.is_empty()
-            || !second_distances.is_empty()
-            || !angles.is_empty()
-        {
+        if !distances.is_empty() || !first_distances.is_empty() || !second_distances.is_empty() {
             return None;
         }
-        if right_distances.is_empty() {
+        if right_distances.is_empty() && !angles.is_empty() {
+            (left_distances.len() == group_count && angles.len() == group_count).then(|| {
+                left_distances
+                    .iter()
+                    .zip(&angles)
+                    .map(|(distance, angle)| {
+                        design_length(distance)
+                            .zip(design_angle(angle))
+                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
+                    })
+                    .collect::<Vec<_>>()
+            })
+        } else if right_distances.is_empty() {
+            if !angles.is_empty() {
+                return None;
+            }
             (left_distances.len() == group_count).then(|| {
                 left_distances
                     .iter()
@@ -5260,6 +5277,9 @@ fn project_chamfer(
                     .collect::<Vec<_>>()
             })
         } else {
+            if !angles.is_empty() {
+                return None;
+            }
             (left_distances.len() == group_count && right_distances.len() == group_count).then(
                 || {
                     left_distances

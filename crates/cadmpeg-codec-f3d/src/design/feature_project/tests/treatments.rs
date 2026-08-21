@@ -259,6 +259,27 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
     ));
 
+    distance_angle_parameters[0].source_kind = "leftDistance".into();
+    distance_angle_parameters[1].source_kind = "rotateAngle".into();
+    let (features, _) = project_parameter_design(
+        &distance_angle_parameters,
+        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+        std::slice::from_ref(&scopes[1]),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Chamfer { groups, .. }
+            if matches!(groups.as_slice(), [ChamferGroup {
+                spec: ChamferSpec::DistanceAngle { distance, angle },
+                ..
+            }] if distance.0 == 1.6 && angle.0 == 25.0_f64.to_radians())
+    ));
+
     let mut hole_parameters = [
         parameter(94, 95, "HoleDepth", "d4", "10 mm", 1.0),
         parameter(104, 105, "HoleDiameter", "d5", "4 mm", 0.4),
