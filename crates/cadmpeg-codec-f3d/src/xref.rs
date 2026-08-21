@@ -24,7 +24,7 @@ use crate::bytes::{
 };
 use crate::container::role;
 use crate::container::ContainerScan;
-use crate::layout::component_insert_grouped_identity_carrier_382 as grouped_identity_layout;
+use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::records::{
     DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
 };
@@ -683,13 +683,46 @@ pub(crate) fn grouped_component_insert_identity(
     relation_at: usize,
     carrier_record_index: u32,
 ) -> Option<(String, usize)> {
+    grouped_component_insert_identity_with_layout(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index,
+        "382",
+    )
+}
+
+/// Parse the class-380 grouped identity carrier used by the class-410/class-261
+/// `Component Insert` generation.
+pub(crate) fn grouped_component_insert_identity_class380(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    grouped_component_insert_identity_with_layout(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index,
+        "380",
+    )
+}
+
+fn grouped_component_insert_identity_with_layout(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+    expected_class_tag: &str,
+) -> Option<(String, usize)> {
     const MARKER_AFTER_ROLE: &[u8] = &[0, 1, 0, 0, 0, 0, 1, 0, 0, 0];
     const MARKER_AFTER_METADATA: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
     const MARKER_AFTER_PLACEMENT: &[u8] = &[0, 1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
-    if class_tag != "382"
+    if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
         || relation_at.checked_sub(carrier_at)? != grouped_identity_layout::LEN

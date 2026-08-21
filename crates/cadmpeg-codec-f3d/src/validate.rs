@@ -2982,6 +2982,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && construction.transform
                                     == design::decode::sketch::identity_matrix()
                         }
+                        (261, "261") if scope.class_tag == "410" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
+                        }
                         (257, "262") if scope.class_tag == "283" => {
                             construction.transform_offset.is_none()
                                 && construction.transform
@@ -2996,6 +3001,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let placement_field_order =
                     match (scope.frame_length, scope.paired_class_tag.as_str()) {
                         (261, "263") if scope.class_tag == "296" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (261, "261") if scope.class_tag == "410" => {
                             construction.carrier_transform_offset.is_none()
                         }
                         (257 | 385, "262") if scope.class_tag == "283" => {

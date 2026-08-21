@@ -4920,14 +4920,14 @@ pub(crate) mod legacy_body_group_frame_123 {
     pub(crate) const OWNING_SCOPE_REFERENCE: usize = 112;
 }
 
-/// Byte offsets for the `component_insert_identity_scope_296_263` record.
+/// Byte offsets for the `component_insert_identity_scope_compact` record.
 ///
 /// Spec §3.1. Record length 261 B.
 ///
 /// ```text
-/// Offsets are relative to the primary class-296 indexed header. The paired class-263 indexed header begins at offset 261.
+/// Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for both admitted class pairs.
 /// ```
-pub(crate) mod component_insert_identity_scope_296_263 {
+pub(crate) mod component_insert_identity_scope_compact {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 261;
     /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
@@ -5084,14 +5084,14 @@ pub(crate) mod component_insert_carrier_334_prefix {
     pub(crate) const NEUTRON_ROLE: usize = 159;
 }
 
-/// Byte offsets for the `component_insert_grouped_identity_carrier_382` record.
+/// Byte offsets for the `component_insert_grouped_identity_carrier` record.
 ///
 /// Spec §3.1. Record length 695 B.
 ///
 /// ```text
-/// Offsets are relative to the primary class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+/// Offsets are relative to the primary class-380 or class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 /// ```
-pub(crate) mod component_insert_grouped_identity_carrier_382 {
+pub(crate) mod component_insert_grouped_identity_carrier {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 695;
     /// Offset of `carrier_marker` (`u8`). Spec §3.1.

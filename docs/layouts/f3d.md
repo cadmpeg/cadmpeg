@@ -3541,11 +3541,11 @@ Unstated regions:
 - `36..53` (17 B): The one-member envelope has two null auxiliary references, a one-entry trailing count, and its trailing reference.
 - `61..71` (10 B): Ten zero bytes follow the role.
 
-## `component_insert_identity_scope_296_263`
+## `component_insert_identity_scope_compact`
 
 Spec §3.1 · layout: byte offsets · size: 261 B
 
-Offsets are relative to the primary class-296 indexed header. The paired class-263 indexed header begins at offset 261.
+Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for both admitted class pairs.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -3665,11 +3665,11 @@ Unstated regions:
 - `11..38` (27 B): The fixed prefix reaches the component identity count at offset 38.
 - `114..159` (45 B): The fixed prefix ends immediately before the direct neutron-role payload.
 
-## `component_insert_grouped_identity_carrier_382`
+## `component_insert_grouped_identity_carrier`
 
 Spec §3.1 · layout: byte offsets · size: 695 B
 
-Offsets are relative to the primary class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+Offsets are relative to the primary class-380 or class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`

@@ -20,6 +20,78 @@ use crate::test_support::*;
 use crate::F3dCodec;
 
 #[test]
+fn validation_accepts_class_410_component_insert_identity_frame() {
+    use crate::records::{
+        DesignComponentInsertConstruction, DesignParameterScope, DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope_id = format!("{stream}:design-parameter-scope#100");
+    let mut scope = DesignParameterScope::empty(&scope_id, "Component Insert", 169);
+    scope.byte_offset = 100;
+    scope.class_tag = "410".into();
+    scope.frame_length = 261;
+    scope.kind_offset = 252;
+    scope.reference_count_offset = 229;
+    scope.reference_members = vec![167];
+    scope.reference_member_offsets = vec![234];
+    scope.paired_class_tag = "261".into();
+    scope.paired_byte_offset = 361;
+    scope.feature_ordinal = 1;
+    scope.feature_ordinal_offset = 284;
+    scope.history_state_id_offset = 244;
+    scope.previous_history_state_id_offset = 315;
+    scope.component_insert_construction = Some(DesignComponentInsertConstruction {
+        relation_record_index: 167,
+        carrier_record_index: 166,
+        occurrence_identity: Some(17),
+        neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
+        neutron_role_offset: 259,
+        transform: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        transform_offset: None,
+        carrier_transform_offset: None,
+    });
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_record_headers.extend([
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#167"),
+                record_index: 167,
+                class_tag: "310".into(),
+                byte_offset: 0,
+            },
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#169"),
+                record_index: 169,
+                class_tag: "410".into(),
+                byte_offset: 100,
+            },
+        ]);
+        native.design_parameter_scopes.push(scope);
+    }
+
+    let findings = crate::validate::validate_native(&ir);
+    assert!(!findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(scope_id.as_str())
+            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+    }));
+
+    f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag = "263".into();
+    let findings = crate::validate::validate_native(&ir);
+    assert!(findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(scope_id.as_str())
+            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+    }));
+}
+
+#[test]
 fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
     let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";

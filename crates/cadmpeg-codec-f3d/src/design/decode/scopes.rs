@@ -60,7 +60,7 @@ use crate::layout::compact_shifted_extrude_extent_and_table_prefix as compact_ex
 use crate::layout::compact_shifted_extrude_mixed_extent_and_table_prefix as compact_extrude_mixed;
 use crate::layout::compact_shifted_extrude_prologue as compact_extrude;
 use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
-use crate::layout::component_insert_identity_scope_296_263 as component_identity_scope;
+use crate::layout::component_insert_identity_scope_compact as component_identity_scope;
 use crate::layout::component_insert_scope_283_262_257 as component_scope_283_257;
 use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385;
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
@@ -1592,6 +1592,11 @@ pub(crate) fn exact_component_insert_construction(
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
+            (261, "261") if scope.class_tag == "410" => (
+                identity_matrix(),
+                None,
+                exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+            ),
             (257, "262") if scope.class_tag == "283" => {
                 exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
             }
@@ -1667,6 +1672,14 @@ pub(crate) fn exact_component_insert_construction(
             (carrier_record_index, vec![(role, role_offset, None)])
         } else if scope.class_tag == "296" && scope.paired_class_tag == "263" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity(
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+            )?;
+            (carrier_record_index, vec![(role, role_offset, None)])
+        } else if scope.class_tag == "410" && scope.paired_class_tag == "261" {
+            let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
                 bytes,
                 carrier_at,
                 relation_at,
