@@ -2,13 +2,14 @@
 
 use super::{
     marker_center_dimensioned_entity, relation_constraint_is_inactive, typed_relation_definition,
-    unique_locus,
+    typed_relation_definition_with_profile_axis, unique_locus,
 };
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
+use crate::resolved_features::transforms::ProfileAxis;
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
 };
@@ -681,6 +682,64 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
             first: first_locus,
             second: second_locus,
             parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
+fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
+    let sketch = SketchId("sketch".into());
+    let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
+    first_marker.object_index = Some(0);
+    let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
+    second_marker.object_index = Some(1);
+    let first = SketchEntity {
+        id: SketchEntityId("first-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(first_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let second = SketchEntity {
+        id: SketchEntityId("second-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(second_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(10.0, 0.0),
+        },
+    };
+    let markers = [first_marker, second_marker];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let relation = dynamic_relation(
+        FeatureInputRelationFamily::PointPointVerticalDistance,
+        [0, 1],
+    );
+    let parameter = length_parameter(10.0);
+
+    assert_eq!(
+        typed_relation_definition_with_profile_axis(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first.clone(), second.clone()],
+            &markers_by_id,
+            &HashMap::new(),
+            Some(ProfileAxis::U),
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Entity(first.id),
+            second: SketchLocus::Entity(second.id),
+            parameter: parameter.id,
         })
     );
 }

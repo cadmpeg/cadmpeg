@@ -8,6 +8,7 @@ use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solv
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
     marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
+    ProfileAxis,
 };
 use super::typed_relations::{
     line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
@@ -312,12 +313,37 @@ pub(super) fn typed_relation_definition(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
+    typed_relation_definition_with_profile_axis(
+        relation,
+        parameter,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        None,
+    )
+}
+
+pub(super) fn typed_relation_definition_with_profile_axis(
+    relation: &FeatureInputRelationInstance,
+    parameter: Option<&cadmpeg_ir::features::DesignParameter>,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    profile_axis: Option<ProfileAxis>,
+) -> Option<SketchConstraintDefinition> {
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
     let parameter = parameter?;
     let parameter_id = parameter.id.clone();
+    let profile_axis = match relation.family {
+        PointPointHorizontalDistance => Some(profile_axis.unwrap_or(ProfileAxis::U)),
+        PointPointVerticalDistance => Some(profile_axis.unwrap_or(ProfileAxis::V)),
+        _ => None,
+    };
     let marker = |index: usize| relation_operand_marker(relation, index, sketch, markers_by_id);
     let dynamic = relation_uses_dynamic_operands(relation);
     let point = |index: usize| {
@@ -377,6 +403,7 @@ pub(super) fn typed_relation_definition(
                     sketch_entities,
                     markers_by_id,
                     loci_by_marker,
+                    profile_axis,
                 )
             }
             _ => None,
@@ -557,7 +584,7 @@ pub(super) fn typed_relation_definition(
             })
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
-            let horizontal = relation.family == PointPointHorizontalDistance;
+            let horizontal = profile_axis == Some(ProfileAxis::U);
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
@@ -625,18 +652,18 @@ pub(super) fn typed_relation_definition(
                     }
                 }
             }
-            Some(match relation.family {
-                PointPointHorizontalDistance => SketchConstraintDefinition::HorizontalDistance {
+            Some(if horizontal {
+                SketchConstraintDefinition::HorizontalDistance {
                     first,
                     second,
                     parameter: parameter_id,
-                },
-                PointPointVerticalDistance => SketchConstraintDefinition::VerticalDistance {
+                }
+            } else {
+                SketchConstraintDefinition::VerticalDistance {
                     first,
                     second,
                     parameter: parameter_id,
-                },
-                _ => unreachable!("relation family was filtered above"),
+                }
             })
         }
         PointLineDistance => {
@@ -1585,6 +1612,7 @@ fn unique_dynamic_marker_point_pair(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    profile_axis: Option<ProfileAxis>,
 ) -> Option<(SketchLocus, SketchLocus)> {
     let cadmpeg_ir::features::ParameterValue::Length(expected) = parameter.value.as_ref()? else {
         return None;
@@ -1597,10 +1625,18 @@ fn unique_dynamic_marker_point_pair(
                 (second_point.u - first_point.u).hypot(second_point.v - first_point.v)
             }
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                (second_point.u - first_point.u).abs()
+                if profile_axis == Some(ProfileAxis::U) {
+                    (second_point.u - first_point.u).abs()
+                } else {
+                    (second_point.v - first_point.v).abs()
+                }
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
-                (second_point.v - first_point.v).abs()
+                if profile_axis == Some(ProfileAxis::U) {
+                    (second_point.u - first_point.u).abs()
+                } else {
+                    (second_point.v - first_point.v).abs()
+                }
             }
             _ => return None,
         })
@@ -2501,6 +2537,29 @@ fn unique_dimensioned_circle_entity(
 
 pub(super) fn same_dimension_length(left: f64, right: f64) -> bool {
     (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+}
+
+pub(super) fn profile_axis_for_relation(
+    relation: &FeatureInputRelationInstance,
+    transforms: Option<&[MarkerTransform]>,
+) -> Option<ProfileAxis> {
+    let (native_axis, default_axis) = match relation.family {
+        FeatureInputRelationFamily::PointPointHorizontalDistance => (0, ProfileAxis::U),
+        FeatureInputRelationFamily::PointPointVerticalDistance => (1, ProfileAxis::V),
+        _ => return None,
+    };
+    let Some(transforms) = transforms else {
+        return Some(default_axis);
+    };
+    if transforms.is_empty() {
+        return Some(default_axis);
+    }
+    let axes = transforms
+        .iter()
+        .map(|transform| transform.profile_axis_for_native(native_axis))
+        .collect::<Option<Vec<_>>>()?;
+    let first = *axes.first()?;
+    axes.iter().all(|axis| *axis == first).then_some(first)
 }
 
 pub(super) fn marker_point_locus(

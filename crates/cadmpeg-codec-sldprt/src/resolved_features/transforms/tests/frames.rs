@@ -589,6 +589,42 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
 }
 
 #[test]
+fn marker_transform_reports_the_profile_axis_for_each_native_axis() {
+    const SCALE: i64 = 1_000_000_000_000;
+
+    let swapped = MarkerTransform {
+        swap: true,
+        u_sign: -1,
+        v_sign: 1,
+        affine_matrix: None,
+        translation: (0, 0),
+    };
+    assert_eq!(swapped.profile_axis_for_native(0), Some(ProfileAxis::V));
+    assert_eq!(swapped.profile_axis_for_native(1), Some(ProfileAxis::U));
+
+    let direct = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: -1,
+        affine_matrix: None,
+        translation: (0, 0),
+    };
+    assert_eq!(direct.profile_axis_for_native(0), Some(ProfileAxis::U));
+    assert_eq!(direct.profile_axis_for_native(1), Some(ProfileAxis::V));
+
+    let rotated = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: 1,
+        affine_matrix: Some([SCALE / 2, -SCALE / 2, SCALE / 2, SCALE / 2]),
+        translation: (0, 0),
+    };
+    assert_eq!(rotated.profile_axis_for_native(0), None);
+    assert_eq!(rotated.profile_axis_for_native(1), None);
+    assert_eq!(direct.profile_axis_for_native(2), None);
+}
+
+#[test]
 fn rotated_sketch_frame_projects_native_plane_coordinates() {
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     let sketch = Sketch {

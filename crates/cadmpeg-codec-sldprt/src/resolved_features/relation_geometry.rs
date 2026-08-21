@@ -9,16 +9,17 @@ use super::operands::{
 };
 use super::relation_loci::{
     line_line_angle, line_line_distance, marker_point_locus,
-    marker_transform_candidates_by_feature, point_line_distance_value, profile_loci_by_marker,
-    profile_locus_point, relation_constraint_is_inactive, relation_operand_marker,
-    same_dimension_angle, same_dimension_length, typed_relation_definition,
+    marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
+    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
+    relation_operand_marker, same_dimension_angle, same_dimension_length,
+    typed_relation_definition, typed_relation_definition_with_profile_axis,
     unoriented_line_line_angle,
 };
 use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform,
+    marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -969,6 +970,12 @@ pub(crate) fn project_relation_solved_point_geometry(
             else {
                 continue;
             };
+            let profile_axis = profile_axis_for_relation(
+                relation,
+                transforms
+                    .get(relation.feature_ref.as_str())
+                    .map(Vec::as_slice),
+            );
             if relation_uses_solver_points(relation) {
                 let coordinates_by_index =
                     inferred_point_coordinates_by_index(lane, relation.feature_ref.as_str());
@@ -1085,10 +1092,16 @@ pub(crate) fn project_relation_solved_point_geometry(
                             (point.u - known_point.u).hypot(point.v - known_point.v)
                         }
                         FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                            (point.u - known_point.u).abs()
+                            match profile_axis? {
+                                ProfileAxis::U => (point.u - known_point.u).abs(),
+                                ProfileAxis::V => (point.v - known_point.v).abs(),
+                            }
                         }
                         FeatureInputRelationFamily::PointPointVerticalDistance => {
-                            (point.v - known_point.v).abs()
+                            match profile_axis? {
+                                ProfileAxis::U => (point.u - known_point.u).abs(),
+                                ProfileAxis::V => (point.v - known_point.v).abs(),
+                            }
                         }
                         _ => unreachable!("relation family was filtered above"),
                     };
@@ -1867,6 +1880,8 @@ pub(crate) fn project_relation_bindings(
             Some((feature.native_ref.as_deref()?, sketch))
         })
         .collect::<HashMap<_, _>>();
+    let transforms =
+        marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
     let loci_by_marker = profile_loci_by_marker(features, sketches, sketch_entities, lanes);
     let markers_by_id = lanes
         .iter()
@@ -1935,14 +1950,36 @@ pub(crate) fn project_relation_bindings(
                 .collect::<Vec<_>>();
             entities.sort_by(|left, right| left.0.cmp(&right.0));
             entities.dedup();
-            let definition = typed_relation_definition(
-                relation,
-                parameter,
-                sketch,
-                sketch_entities,
-                &markers_by_id,
-                &loci_by_marker,
-            )
+            let definition = match relation.family {
+                FeatureInputRelationFamily::PointPointHorizontalDistance
+                | FeatureInputRelationFamily::PointPointVerticalDistance => {
+                    profile_axis_for_relation(
+                        relation,
+                        transforms
+                            .get(relation.feature_ref.as_str())
+                            .map(Vec::as_slice),
+                    )
+                    .and_then(|profile_axis| {
+                        typed_relation_definition_with_profile_axis(
+                            relation,
+                            parameter,
+                            sketch,
+                            sketch_entities,
+                            &markers_by_id,
+                            &loci_by_marker,
+                            Some(profile_axis),
+                        )
+                    })
+                }
+                _ => typed_relation_definition(
+                    relation,
+                    parameter,
+                    sketch,
+                    sketch_entities,
+                    &markers_by_id,
+                    &loci_by_marker,
+                ),
+            }
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: native_kind.into(),
                 native_state: None,
