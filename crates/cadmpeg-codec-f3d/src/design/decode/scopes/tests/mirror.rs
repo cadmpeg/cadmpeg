@@ -8,7 +8,10 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use super::{compact_feature_reference, exact_legacy_mirror_scope_tolerance};
+use super::{
+    compact_feature_reference, exact_legacy_mirror_scope_count, exact_legacy_mirror_scope_tolerance,
+};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
     let start = bytes.len();
@@ -116,4 +119,67 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     assert_eq!(carrier.marker, 100);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
+}
+
+#[test]
+fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
+    let mut bytes = vec![0; 84];
+    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    scope.class_tag = "441".into();
+    scope.paired_class_tag = "267".into();
+    scope.kind_offset = 0;
+    scope.previous_history_state_id_offset = 42;
+    scope.frame_length = 84;
+    scope.paired_byte_offset = 84;
+    bytes[46..50].copy_from_slice(&61_u32.to_le_bytes());
+    bytes[50..58].copy_from_slice(&0.125_f64.to_le_bytes());
+    bytes[58] = 1;
+    bytes[59..63].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[71] = 1;
+    bytes[72..76].copy_from_slice(&11_u32.to_le_bytes());
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-441 tolerance");
+    assert_eq!(value, 0.125);
+    assert_eq!(offset, 50);
+    assert_eq!(carrier.marker, 61);
+    assert_eq!(carrier.repeated_marker_offset, None);
+    assert_eq!(carrier.first_reference, 12);
+    assert_eq!(carrier.second_reference, 11);
+}
+
+#[test]
+fn class_441_mirror_scope_decodes_the_inline_count_owner() {
+    let scope_record_index: u32 = 65;
+    let count_record_index: u32 = 80;
+    let mut bytes = vec![0; 99];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"426");
+    bytes[7..11].copy_from_slice(&count_record_index.to_le_bytes());
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[24] = 1;
+    bytes[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[35..39].copy_from_slice(&0_u32.to_le_bytes());
+    bytes[40..44].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[44] = 1;
+    bytes[45..49].copy_from_slice(&(count_record_index + 2).to_le_bytes());
+    bytes[55..59].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[63] = 1;
+    bytes[64..68].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[76] = 1;
+    bytes[77..81].copy_from_slice(&(count_record_index + 1).to_le_bytes());
+    bytes[88] = 1;
+    bytes[89..93].copy_from_slice(&scope_record_index.to_le_bytes());
+    indexed_header(&mut bytes, *b"267", count_record_index);
+
+    let mut scope = DesignParameterScope::empty("scope", "Mirror", scope_record_index);
+    scope.class_tag = "441".into();
+    scope.paired_class_tag = "267".into();
+    scope.reference_members = vec![1, 2, 3, count_record_index];
+    let records = IndexedRecordOffsets::build(&bytes);
+
+    assert_eq!(
+        exact_legacy_mirror_scope_count(&bytes, &records, &scope),
+        Some((2, count_record_index, 40))
+    );
 }

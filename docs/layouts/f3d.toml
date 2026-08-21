@@ -955,6 +955,239 @@ anchor = "the references at offsets 51 and 64 name scope index plus two and plus
 
 
 [[record]]
+name = "design_mirror_scope_class441_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A class-441 Mirror scope has primary class `441` and paired class `267`"
+size = 72
+note = "Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-441 reference-table prefix precedes this fixed tail."
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0 stores the feature ordinal"
+
+[[record.gap]]
+offset = 4
+size = 26
+note = "The class-441 tail reserves the span before the preceding-history state."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "offset 30 stores the preceding-history state"
+
+[[record.field]]
+name = "scalar_marker"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "offset 34 stores u32 marker `61`"
+value = 61
+
+[[record.field]]
+name = "stitch_tolerance"
+offset = 38
+type = "f64"
+source = "spec"
+anchor = "offset 38 stores the positive stitch tolerance as an f64 in source centimetres"
+
+[[record.field]]
+name = "first_reference"
+offset = 46
+type = "bytes[13]"
+source = "spec"
+anchor = "Offset 46 stores a marked reference to scope index plus two followed by two zero bytes"
+
+[[record.field]]
+name = "second_reference"
+offset = 59
+type = "bytes[13]"
+source = "spec"
+anchor = "offset 59 stores a marked reference to scope index plus one followed by two zero bytes"
+
+
+[[record]]
+name = "design_mirror_scope_class441_count_owner"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The scope reference at ordinal 3 names a class-426 primary frame paired with class `267`"
+size = 99
+note = "Offsets are relative to the class-426 primary indexed header. The paired class-267 indexed header begins at offset 99."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+
+[[record.gap]]
+offset = 11
+size = 8
+note = "The class-426 count-owner prefix reserves eight zero bytes before the first marker."
+
+[[record.field]]
+name = "one_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+value = 1
+
+[[record.field]]
+name = "one_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+value = 1
+
+[[record.field]]
+name = "scope_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+value = 1
+
+[[record.field]]
+name = "scope_record_index"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+
+[[record.gap]]
+offset = 29
+size = 6
+note = "The class-426 count-owner prefix reserves six zero bytes before the local ordinal."
+
+[[record.field]]
+name = "local_ordinal"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "owned ordinal `1` at offset 55"
+value = 0
+
+[[record.field]]
+name = "scalar_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+value = 0
+
+[[record.field]]
+name = "count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "its 99-byte frame stores the exact count `2` at offset 40"
+value = 2
+
+[[record.field]]
+name = "parameter_marker"
+offset = 44
+type = "u8"
+source = "spec"
+anchor = "a parameter reference to count-record index plus two at offset 45"
+value = 1
+
+[[record.field]]
+name = "parameter_record_index"
+offset = 45
+type = "u32"
+source = "spec"
+anchor = "a parameter reference to count-record index plus two at offset 45"
+
+[[record.gap]]
+offset = 49
+size = 6
+note = "The parameter reference closes before the owned ordinal."
+
+[[record.field]]
+name = "owned_ordinal"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "owned ordinal `1` at offset 55"
+value = 1
+
+[[record.gap]]
+offset = 59
+size = 4
+note = "The class-426 count-owner frame reserves four zero bytes before the repeated scope reference."
+
+[[record.field]]
+name = "repeated_scope_marker"
+offset = 63
+type = "u8"
+source = "spec"
+anchor = "scope-record index at offset 64"
+value = 1
+
+[[record.field]]
+name = "repeated_scope_record_index"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "scope-record index at offset 64"
+
+[[record.gap]]
+offset = 68
+size = 8
+note = "The repeated scope reference closes before the companion reference."
+
+[[record.field]]
+name = "companion_marker"
+offset = 76
+type = "u8"
+source = "spec"
+anchor = "companion-record index plus one at offset 77"
+value = 1
+
+[[record.field]]
+name = "companion_record_index"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "companion-record index plus one at offset 77"
+
+[[record.gap]]
+offset = 81
+size = 7
+note = "The companion reference closes before the final scope reference."
+
+[[record.field]]
+name = "final_scope_marker"
+offset = 88
+type = "u8"
+source = "spec"
+anchor = "scope-record index at offset 89"
+value = 1
+
+[[record.field]]
+name = "final_scope_record_index"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "scope-record index at offset 89"
+
+[[record.gap]]
+offset = 93
+size = 6
+note = "The final scope reference closes immediately before the paired class-267 header."
+
+
+[[record]]
 name = "design_draft_scope_class318_compact"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

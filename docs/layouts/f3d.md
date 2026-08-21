@@ -299,6 +299,67 @@ Unstated regions:
 
 - `4..31` (27 B): The class-440 tail reserves the span before the preceding-history state.
 
+## `design_mirror_scope_class441_tail`
+
+Spec §3.1 · layout: byte offsets · size: 72 B
+
+Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-441 reference-table prefix precedes this fixed tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | offset 0 stores the feature ordinal |
+| 30 | 4 | `previous_history_state` | `u32` | little | spec | offset 30 stores the preceding-history state |
+| 34 | 4 | `scalar_marker` | `u32` | little | spec | offset 34 stores u32 marker `61` · value `61` |
+| 38 | 8 | `stitch_tolerance` | `f64` | little | spec | offset 38 stores the positive stitch tolerance as an f64 in source centimetres |
+| 46 | 13 | `first_reference` | `bytes[13]` | little | spec | Offset 46 stores a marked reference to scope index plus two followed by two zero bytes |
+| 59 | 13 | `second_reference` | `bytes[13]` | little | spec | offset 59 stores a marked reference to scope index plus one followed by two zero bytes |
+
+Unstated regions:
+
+- `4..30` (26 B): The class-441 tail reserves the span before the preceding-history state.
+
+## `design_mirror_scope_class441_count_owner`
+
+Spec §3.1 · layout: byte offsets · size: 99 B
+
+Offsets are relative to the class-426 primary indexed header. The paired class-267 indexed header begins at offset 99.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 |
+| 19 | 1 | `one_marker` | `u8` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 · value `1` |
+| 20 | 4 | `one_value` | `u32` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 · value `1` |
+| 24 | 1 | `scope_marker` | `u8` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 · value `1` |
+| 25 | 4 | `scope_record_index` | `u32` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 |
+| 35 | 4 | `local_ordinal` | `u32` | little | spec | owned ordinal `1` at offset 55 · value `0` |
+| 39 | 1 | `scalar_marker` | `u8` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 · value `0` |
+| 40 | 4 | `count` | `u32` | little | spec | its 99-byte frame stores the exact count `2` at offset 40 · value `2` |
+| 44 | 1 | `parameter_marker` | `u8` | little | spec | a parameter reference to count-record index plus two at offset 45 · value `1` |
+| 45 | 4 | `parameter_record_index` | `u32` | little | spec | a parameter reference to count-record index plus two at offset 45 |
+| 55 | 4 | `owned_ordinal` | `u32` | little | spec | owned ordinal `1` at offset 55 · value `1` |
+| 63 | 1 | `repeated_scope_marker` | `u8` | little | spec | scope-record index at offset 64 · value `1` |
+| 64 | 4 | `repeated_scope_record_index` | `u32` | little | spec | scope-record index at offset 64 |
+| 76 | 1 | `companion_marker` | `u8` | little | spec | companion-record index plus one at offset 77 · value `1` |
+| 77 | 4 | `companion_record_index` | `u32` | little | spec | companion-record index plus one at offset 77 |
+| 88 | 1 | `final_scope_marker` | `u8` | little | spec | scope-record index at offset 89 · value `1` |
+| 89 | 4 | `final_scope_record_index` | `u32` | little | spec | scope-record index at offset 89 |
+
+Unstated regions:
+
+- `11..19` (8 B): The class-426 count-owner prefix reserves eight zero bytes before the first marker.
+- `29..35` (6 B): The class-426 count-owner prefix reserves six zero bytes before the local ordinal.
+- `49..55` (6 B): The parameter reference closes before the owned ordinal.
+- `59..63` (4 B): The class-426 count-owner frame reserves four zero bytes before the repeated scope reference.
+- `68..76` (8 B): The repeated scope reference closes before the companion reference.
+- `81..88` (7 B): The companion reference closes before the final scope reference.
+- `93..99` (6 B): The final scope reference closes immediately before the paired class-267 header.
+
 ## `design_draft_scope_class318_compact`
 
 Spec §3.1 · layout: byte offsets · size: 336 B

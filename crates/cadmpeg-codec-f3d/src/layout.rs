@@ -410,6 +410,100 @@ pub(crate) mod design_mirror_scope_class440_tail {
     pub(crate) const SECOND_REFERENCE: usize = 64;
 }
 
+/// Byte offsets for the `design_mirror_scope_class441_tail` record.
+///
+/// Spec §3.1. Record length 72 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-441 reference-table prefix precedes this fixed tail.
+/// ```
+pub(crate) mod design_mirror_scope_class441_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 72;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 0;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 30;
+    /// Offset of `scalar_marker` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 34;
+    /// Stated value of `scalar_marker` (`u32`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u32 = 0x0000_003d;
+    /// Offset of `stitch_tolerance` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const STITCH_TOLERANCE: usize = 38;
+    /// Offset of `first_reference` (`bytes[13]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 46;
+    /// Offset of `second_reference` (`bytes[13]`). Spec §3.1.
+    pub(crate) const SECOND_REFERENCE: usize = 59;
+}
+
+/// Byte offsets for the `design_mirror_scope_class441_count_owner` record.
+///
+/// Spec §3.1. Record length 99 B.
+///
+/// ```text
+/// Offsets are relative to the class-426 primary indexed header. The paired class-267 indexed header begins at offset 99.
+/// ```
+pub(crate) mod design_mirror_scope_class441_count_owner {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 99;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `one_marker` (`u8`). Spec §3.1.
+    pub(crate) const ONE_MARKER: usize = 19;
+    /// Stated value of `one_marker` (`u8`). Spec §3.1.
+    pub(crate) const ONE_MARKER_VALUE: u8 = 1;
+    /// Offset of `one_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE_VALUE: usize = 20;
+    /// Stated value of `one_value` (`u32`). Spec §3.1.
+    pub(crate) const ONE_VALUE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER: usize = 24;
+    /// Stated value of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_RECORD_INDEX: usize = 25;
+    /// Offset of `local_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOCAL_ORDINAL: usize = 35;
+    /// Stated value of `local_ordinal` (`u32`). Spec §3.1.
+    pub(crate) const LOCAL_ORDINAL_VALUE: u32 = 0x0000_0000;
+    /// Offset of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 39;
+    /// Stated value of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u8 = 0;
+    /// Offset of `count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COUNT: usize = 40;
+    /// Stated value of `count` (`u32`). Spec §3.1.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `parameter_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_MARKER: usize = 44;
+    /// Stated value of `parameter_marker` (`u8`). Spec §3.1.
+    pub(crate) const PARAMETER_MARKER_VALUE: u8 = 1;
+    /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_RECORD_INDEX: usize = 45;
+    /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNED_ORDINAL: usize = 55;
+    /// Stated value of `owned_ordinal` (`u32`). Spec §3.1.
+    pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
+    /// Offset of `repeated_scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_MARKER: usize = 63;
+    /// Stated value of `repeated_scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `repeated_scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_RECORD_INDEX: usize = 64;
+    /// Offset of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER: usize = 76;
+    /// Stated value of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER_VALUE: u8 = 1;
+    /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_RECORD_INDEX: usize = 77;
+    /// Offset of `final_scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const FINAL_SCOPE_MARKER: usize = 88;
+    /// Stated value of `final_scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const FINAL_SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `final_scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FINAL_SCOPE_RECORD_INDEX: usize = 89;
+}
+
 /// Byte offsets for the `design_draft_scope_class318_compact` record.
 ///
 /// Spec §3.1. Record length 336 B.

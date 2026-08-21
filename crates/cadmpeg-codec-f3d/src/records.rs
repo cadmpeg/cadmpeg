@@ -1864,8 +1864,10 @@ pub struct DesignMirrorScopeTolerance {
     pub marker: u32,
     /// Byte offset of the first scalar-lane marker.
     pub marker_offset: u64,
-    /// Byte offset of the repeated scalar-lane marker.
-    pub repeated_marker_offset: u64,
+    /// Byte offset of the repeated scalar-lane marker, when this generation
+    /// carries the marker twice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeated_marker_offset: Option<u64>,
     /// First marked reference in the scalar lane.
     pub first_reference: u32,
     /// Byte offset of the first marked reference.

@@ -61,6 +61,8 @@ use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::design_mirror_scope_class413_tail as mirror_413;
 use crate::layout::design_mirror_scope_class440_tail as mirror_440;
+use crate::layout::design_mirror_scope_class441_count_owner as mirror_441_count;
+use crate::layout::design_mirror_scope_class441_tail as mirror_441;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
@@ -3074,7 +3076,60 @@ fn exact_pattern_identity_wrapper(
     ))
 }
 
-/// Parse the legacy Mirror scalar lane.
+/// Parse the class-441 Mirror count owner carried outside the ordinary owner
+/// arena.
+///
+/// The scope's fourth reference names a class-426 frame paired with class 267.
+/// Its exact compact scalar envelope carries count two and has no decoded
+/// Design-parameter backlink.
+pub(super) fn exact_legacy_mirror_scope_count(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<(u32, u32, u64)> {
+    if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
+        return None;
+    }
+    let count_record_index = *scope.reference_members.get(3)?;
+    let [start, paired] = records.offsets(count_record_index) else {
+        return None;
+    };
+    if paired.checked_sub(*start)? != mirror_441_count::LEN {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered(bytes, *paired, 0..=2000, u8::is_ascii_graphic)?;
+    if paired_class_tag != "267"
+        || paired_after_tag != paired.checked_add(7)?
+        || View::u32_le_at(bytes, paired_after_tag) != Some(count_record_index)
+    {
+        return None;
+    }
+    let frame = bytes.get(*start..*paired)?;
+    let owner = crate::design::decode::parameters::parse_parameter_owner(frame)?;
+    if owner.class_tag != "426"
+        || owner.record_index != count_record_index
+        || owner.scope_record_index != scope.record_index
+        || owner.local_ordinal != mirror_441_count::LOCAL_ORDINAL_VALUE
+        || owner.owned_ordinal != mirror_441_count::OWNED_ORDINAL_VALUE
+        || owner.evaluated_value != f64::from(mirror_441_count::COUNT_VALUE)
+        || owner.frame_length != u64::try_from(mirror_441_count::LEN).ok()?
+        || owner.parameter_record_index != count_record_index.checked_add(2)?
+        || owner.companion_record_index != count_record_index.checked_add(1)?
+        || owner.evaluated_value_offset != u64::try_from(mirror_441_count::COUNT).ok()?
+    {
+        return None;
+    }
+    Some((
+        mirror_441_count::COUNT_VALUE,
+        count_record_index,
+        u64::try_from(*start)
+            .ok()?
+            .checked_add(owner.evaluated_value_offset)?,
+    ))
+}
+
+/// Parse a legacy Mirror scalar lane.
 ///
 /// These forms have no ordinal-one parameter owner. Their positive stitch
 /// tolerance is carried after the preceding-history field, with two marked
@@ -3084,9 +3139,46 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<(f64, u64, DesignMirrorScopeTolerance)> {
-    let marker_value = match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
-        ("413", "262") => mirror_413::SCALAR_MARKER_VALUE,
-        ("440", "258") => mirror_440::SCALAR_MARKER_VALUE,
+    let (
+        tail_length,
+        previous_state,
+        scalar_marker,
+        stitch_tolerance,
+        repeated_marker,
+        first_reference,
+        second_reference,
+        marker_value,
+    ) = match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
+        ("413", "262") => (
+            mirror_413::LEN,
+            mirror_413::PREVIOUS_HISTORY_STATE,
+            mirror_413::SCALAR_MARKER,
+            mirror_413::STITCH_TOLERANCE,
+            Some(mirror_413::REPEATED_SCALAR_MARKER),
+            mirror_413::FIRST_REFERENCE,
+            mirror_413::SECOND_REFERENCE,
+            mirror_413::SCALAR_MARKER_VALUE,
+        ),
+        ("440", "258") => (
+            mirror_440::LEN,
+            mirror_440::PREVIOUS_HISTORY_STATE,
+            mirror_440::SCALAR_MARKER,
+            mirror_440::STITCH_TOLERANCE,
+            Some(mirror_440::REPEATED_SCALAR_MARKER),
+            mirror_440::FIRST_REFERENCE,
+            mirror_440::SECOND_REFERENCE,
+            mirror_440::SCALAR_MARKER_VALUE,
+        ),
+        ("441", "267") => (
+            mirror_441::LEN,
+            mirror_441::PREVIOUS_HISTORY_STATE,
+            mirror_441::SCALAR_MARKER,
+            mirror_441::STITCH_TOLERANCE,
+            None,
+            mirror_441::FIRST_REFERENCE,
+            mirror_441::SECOND_REFERENCE,
+            mirror_441::SCALAR_MARKER_VALUE,
+        ),
         _ => return None,
     };
     let kind_code_units = scope.kind.encode_utf16().count();
@@ -3094,30 +3186,35 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
     let previous = usize::try_from(scope.previous_history_state_id_offset).ok()?;
-    if previous != kind_end.checked_add(mirror_413::PREVIOUS_HISTORY_STATE)? {
+    if previous != kind_end.checked_add(previous_state)? {
         return None;
     }
     let paired = usize::try_from(scope.paired_byte_offset).ok()?;
-    if paired != kind_end.checked_add(mirror_413::LEN)?
+    if paired != kind_end.checked_add(tail_length)?
         || paired.checked_sub(usize::try_from(scope.byte_offset).ok()?)?
             != usize::try_from(scope.frame_length).ok()?
     {
         return None;
     }
-    let marker_offset = kind_end.checked_add(mirror_413::SCALAR_MARKER)?;
-    let value_offset = kind_end.checked_add(mirror_413::STITCH_TOLERANCE)?;
-    let repeated_marker_offset = kind_end.checked_add(mirror_413::REPEATED_SCALAR_MARKER)?;
+    let marker_offset = kind_end.checked_add(scalar_marker)?;
+    let value_offset = kind_end.checked_add(stitch_tolerance)?;
+    let repeated_marker_offset = repeated_marker.and_then(|offset| kind_end.checked_add(offset));
     let marker = View::u32_le_at(bytes, marker_offset)?;
-    if marker != marker_value || View::u32_le_at(bytes, repeated_marker_offset)? != marker_value {
+    if marker != marker_value {
         return None;
+    }
+    if let Some(repeated_marker_offset) = repeated_marker_offset {
+        if View::u32_le_at(bytes, repeated_marker_offset)? != marker_value {
+            return None;
+        }
     }
     let value = View::f64_le_at(bytes, value_offset)?;
     if !value.is_finite() || value <= 0.0 {
         return None;
     }
-    let first_reference_offset = kind_end.checked_add(mirror_413::FIRST_REFERENCE)?;
-    let second_reference_offset = kind_end.checked_add(mirror_413::SECOND_REFERENCE)?;
-    let reference_slot = mirror_413::SECOND_REFERENCE - mirror_413::FIRST_REFERENCE;
+    let first_reference_offset = kind_end.checked_add(first_reference)?;
+    let second_reference_offset = kind_end.checked_add(second_reference)?;
+    let reference_slot = second_reference - first_reference;
     if bytes.get(first_reference_offset + 11..first_reference_offset + reference_slot)? != [0; 2]
         || bytes.get(second_reference_offset + 11..second_reference_offset + reference_slot)?
             != [0; 2]
@@ -3138,7 +3235,7 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         DesignMirrorScopeTolerance {
             marker,
             marker_offset: u64::try_from(marker_offset).ok()?,
-            repeated_marker_offset: u64::try_from(repeated_marker_offset).ok()?,
+            repeated_marker_offset: repeated_marker_offset.map(u64::try_from).transpose().ok()?,
             first_reference,
             first_reference_offset: u64::try_from(first_reference_offset).ok()?,
             second_reference,
@@ -3272,6 +3369,9 @@ pub fn bind_mirror_constructions(
                     && owner.scope_record_index == scope_record_index
             })
             .collect::<Vec<_>>();
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let count = scope_owners
             .iter()
             .copied()
@@ -3281,6 +3381,7 @@ pub fn bind_mirror_constructions(
                     && owner.evaluated_value.is_finite()
             })
             .collect::<Vec<_>>();
+        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
         let tolerance = scope_owners
             .iter()
             .copied()
@@ -3290,8 +3391,16 @@ pub fn bind_mirror_constructions(
                     && owner.evaluated_value > 0.0
             })
             .collect::<Vec<_>>();
-        let ([count], tolerance_source) = (
-            count.as_slice(),
+        let (count, tolerance_source) = (
+            match (count.as_slice(), inline_count) {
+                ([count], None) => Some((
+                    count.evaluated_value as u32,
+                    count.record_index,
+                    count.evaluated_value_offset,
+                )),
+                ([], Some(count)) => Some(count),
+                _ => None,
+            },
             match (
                 tolerance.as_slice(),
                 exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]),
@@ -3307,7 +3416,8 @@ pub fn bind_mirror_constructions(
                 }
                 _ => None,
             },
-        ) else {
+        );
+        let Some((count, count_record_index, count_offset)) = count else {
             continue;
         };
         let Some((
@@ -3320,9 +3430,9 @@ pub fn bind_mirror_constructions(
             continue;
         };
         scopes[index].mirror_construction = Some(DesignMirrorConstruction {
-            count: 2,
-            count_record_index: count.record_index,
-            count_offset: count.evaluated_value_offset,
+            count,
+            count_record_index,
+            count_offset,
             stitch_tolerance,
             stitch_tolerance_record_index,
             stitch_tolerance_offset,
