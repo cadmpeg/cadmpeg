@@ -33,8 +33,31 @@ use crate::solve::UnionFind;
 
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
 const EPS_AXIS_ALIGN: f64 = 1e-8;
+const E5_ISOPARAMETRIC_DIRECTION_TOLERANCE: f64 = 1e-8;
 const E5_PARAMETER_RELATIVE_TOLERANCE: f64 = 1e-9;
 const E5_CARRIER_AXIS_COSINE_TOLERANCE: f64 = 1e-9;
+
+#[derive(Clone, Copy)]
+enum E5IsoparametricDirection {
+    ConstantU,
+    ConstantV,
+}
+
+fn e5_isoparametric_direction(direction: Point2) -> Option<E5IsoparametricDirection> {
+    let scale = direction.u.abs().max(direction.v.abs());
+    if !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
+    let normalized = Point2::new(direction.u / scale, direction.v / scale);
+    match (
+        normalized.u.abs() <= E5_ISOPARAMETRIC_DIRECTION_TOLERANCE,
+        normalized.v.abs() <= E5_ISOPARAMETRIC_DIRECTION_TOLERANCE,
+    ) {
+        (true, false) => Some(E5IsoparametricDirection::ConstantU),
+        (false, true) => Some(E5IsoparametricDirection::ConstantV),
+        (true, true) | (false, false) => None,
+    }
+}
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -1251,9 +1274,16 @@ fn plan_e5_boundary(
         let (Some(left), Some(right)) = (sides.get(left_ref), sides.get(right_ref)) else {
             continue;
         };
-        if !equivalent_e5_curve_carriers(&left.curve, &right.curve)
-            || parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_none()
-        {
+        let same_parameterization =
+            parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_some();
+        let same_carrier = equivalent_e5_curve_carriers(&left.curve, &right.curve);
+        let same_ordered_sweep = e5_circle_carriers_have_same_ordered_sweep(
+            &left.curve,
+            left.curve_range,
+            &right.curve,
+            right.curve_range,
+        );
+        if !(same_carrier && same_parameterization || same_ordered_sweep) {
             continue;
         }
         edge_curve_plan.insert(edge_ref, (left.curve.clone(), left.curve_range));
@@ -2207,12 +2237,10 @@ pub(crate) fn e5_boundary_curve(
         return None;
     }
 
-    let circle = if direction.v == 0.0 && direction.u != 0.0 {
-        e5_constant_v_circle(surface, start_uv.v)
-    } else if direction.u == 0.0 && direction.v != 0.0 {
-        e5_constant_u_circle(surface, start_uv.u)
-    } else {
-        None
+    let circle = match e5_isoparametric_direction(*direction) {
+        Some(E5IsoparametricDirection::ConstantV) => e5_constant_v_circle(surface, start_uv.v),
+        Some(E5IsoparametricDirection::ConstantU) => e5_constant_u_circle(surface, start_uv.u),
+        None => None,
     };
     if let Some((center, radius, axis)) = circle {
         if !finite_point(center) || !finite_vector(axis) || !radius.is_finite() || radius <= 0.0 {
@@ -3597,6 +3625,37 @@ mod route_tests {
             } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
         ));
         assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn e5_nearly_isoparametric_boundary_lifts_to_circle_carrier() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let transverse_noise = f64::EPSILON;
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 3.0),
+            direction: Point2::new(1.0, transverse_noise),
+        };
+        let native = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 3.0],
+            direction: [1.0, transverse_noise],
+            range: [0.0, std::f64::consts::FRAC_PI_2],
+        };
+        let (curve, _) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
+            [1.0, 1.0],
+        )
+        .expect("near-isoparametric cylinder boundary circle");
+        assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
     }
 
     #[test]
