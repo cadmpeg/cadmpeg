@@ -140,6 +140,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
+**Note.** Verdict: remains open; named saved views and native configuration/view classes occur at field offsets 1202658, 1202777, 1202941, and 1638628 in the six-control set, while every neutral decode reports `model.configurations=0`.
+
 ### DI-14. Schema-configuration row semantics
 
 **Question.** What does each entity in an open `configrow`-to-successor interval represent?
@@ -180,6 +182,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the owning incidence and semantic subtype and target for every `Range`-only and larger selector production. The transferred two-selector dimension remains targetless until its target grammar is established.
 
+**Note.** Verdict: remains open; one control retains 14 complete `Range` intervals with zero finite nominal values, another retains `Range` class evidence at field offset 822528, and no owner relation reaches a transferred sketch, feature, or PMI object.
+
 ### DI-19. Sketch placement
 
 **Question.** Which fields give a constructed sketch placement frame? Which fields give a support-face sketch placement frame?
@@ -212,6 +216,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to transfer and solve the constraints.
 
+**Note.** Verdict: remains open; `DimInst`/`DimLine` evidence occurs at field offsets 1318578 and 1319845, and `CATTPSDimensionData` at 725993 and 726759, but both controls emit zero neutral sketch constraints.
+
 ### DI-23. Feature-instance grammar
 
 **Question.** How do operation fields, definition-bound values, and structurally owned operand objects form one feature instance?
@@ -219,6 +225,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines each incidence independently. Paired entity tables admit opaque childless object records and preserve their complete bodies, but do not assign roles inside those bodies. A complete two-definition value chain with a supported second role transfers one typed parameter, but it does not assign that parameter to an operation role. Operation-named field records can share one class identity across several structural owner groups. A `Hole` class cohort contains one empty self-classified record plus list, atom-vector, mixed, or empty records under other owners. The shared class identity does not establish whether the cohort is a schema object, one feature instance, or a field program reused by multiple instances. An operation-named field class or field vocabulary does not assign feature identity, operands, outputs, or replay order. An exact separator-form owner declaration for `GSMPlaneAngle` or `GSMPlaneOffset`, with matching class entry, owner entity, and structural owner, establishes an unresolved constructed-reference-plane family node; support, angle, signed offset, normal, in-plane frame, and construction dependencies remain unresolved. An exact separator-form owner declaration for an admitted operation class, with matching class entry, owner entity, and structural owner, establishes the corresponding unresolved family node: `Prism_EndLimit_Length`, `Prism_ThickThin1`, and `Prism_ThickThin2` are unresolved extrusions, `Revol_ThickThin1` is an unresolved revolution, `Sweep_ThickThin1` is a sweep with unresolved section, path, and result mode, `EdgeFillet` is an unresolved fillet, and `CircPattern_RadialNumber` is an unresolved circular pattern. Definition-bound values remain source properties and feature-owned expressions remain typed model parameters plus source-property copies. These family and value assignments do not assign profiles, directions, axes, extents, outputs, edge groups, radii, pattern seeds, pattern axis, pattern angle, pattern count, operation-specific dependency roles, or replay order. An exact payload reference from a transferred feature object's field to a different transferred feature, or to a target whose complete owner-design-object chain reaches that feature, with an earlier feature ordinal transfers one deduplicated structural dependency in relation order. Storage selectors, unresolved targets, incomplete or cyclic owner chains, self-links, and forward targets do not. This structural edge does not identify an operation-specific input role.
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and dependency roles for each admitted feature family, including regeneration semantics.
+
+**Note.** Verdict: remains open; operation class vocabulary is retained at field offsets 1201859 and 1204203 in one control and 580441 and 584416 in another, but the neutral output contains only unresolved datum/extrusion evidence rather than typed operation instances.
 
 ### DI-27. Feature-local parameter order
 
@@ -229,6 +237,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the field to order the parameter list of one feature.
 
 **Note.** Recovered from a 2026-08-08 audit pass whose ledger commits are reachable from no ref. The identifier is the original one. The document-scope half of the original item is settled: `crates/cadmpeg-codec-catia/src/design_feature.rs:295-315` gives the parameters that no feature owns their own contiguous scope.
+
+### DI-28. Saved-view and annotation ownership
+
+**Question.** Which source relation assigns saved-view configurations and PMI annotation records to their active configuration and typed owner?
+
+**Known.** `catia.md` §7.3 defines schema-local configuration records and row links, but does not define document design configurations, active saved-view state, or the owner relation for dimensional and feature-control annotations. The neutral model separates configurations and PMI from native design-object records.
+
+**Need.** We must identify the configuration/view and annotation owner relations before transferring saved-view state, note ownership, datum ownership, or typed PMI.
+
+**Note.** Six controls expose named saved views and native view, note, datum, dimension, and tolerance classes at field offsets 1202658, 1318578, 1638479, 580441, 592862, and 597464, but all six neutral decodes emit zero configurations and zero PMI. The configuration and annotation owner joins remain open.
 
 ## 3. Standard nested `V5_CFV2`
 
@@ -488,7 +506,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the quantity to transfer the value. An angular dimension in radians and a length in millimetres are not distinguishable in the current output.
 
-**Note.** `catia.md` §7.1 "A legacy scalar prefix is" resolves a scalar's declared type from its type descriptor and gives `LENGTH` values in millimetres and `ANGLE` values in radians. The `Range` transfer resolves no type and assigns the length quantity to every production.
+**Note.** `catia.md` §7.1 "A legacy scalar prefix is" resolves a scalar's declared type from its type descriptor and gives `LENGTH` values in millimetres and `ANGLE` values in radians. The `Range` transfer resolves no type and assigns the length quantity to every production. Verdict: remains open; one control emits 31 untyped `Length` parameters and another emits 8 untyped `TolNumValue` parameters while both have zero neutral PMI; native dimensional/tolerance classes occur at field offsets 725993, 730648, 592815, and 1638479.
 
 ### DI-25. Compact `1A` operation-class declaration
 
@@ -530,7 +548,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** None.
 
-**Note.** No concrete assignment is inferred from allocation order or from a topology that is only internally consistent.
+**Note.** No concrete assignment is inferred from allocation order or from a topology that is only internally consistent. Verdict: remains open; controls with 304, 270, and 264 FBB face rows at inner offsets 1137656, 1699598, and 1410531 have no complete joint topology solution or exhaust the bounded search, while the three controls that emit topology do not establish the source rule for alternate face slots.
 
 ## 4. Object stream
 
