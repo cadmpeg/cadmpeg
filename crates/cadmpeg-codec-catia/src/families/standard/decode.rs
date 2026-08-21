@@ -7599,20 +7599,18 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
                 standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
             })
             .collect::<Vec<_>>();
-        let Some(axis) = axes.first().copied() else {
+        let Some(axis) = axes.first().copied().and_then(canonical_unoriented_axis) else {
             continue;
         };
-        if axes
-            .iter()
-            .skip(1)
-            .any(|other| axis.dot(*other).abs() < 0.9999)
-        {
+        if axes.iter().skip(1).any(|other| {
+            canonical_unoriented_axis(*other).is_none_or(|other| axis.dot(other).abs() < 0.9999)
+        }) {
             return false;
         }
         let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
-            .filter_map(|axis| {
-                let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
+            .filter_map(|candidate_axis| {
+                let reference = cadmpeg_ir::geometry::derive_reference_direction(candidate_axis);
                 let range = standard_circle_param_range(
                     ir,
                     bindings,
@@ -7621,12 +7619,12 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
                     support,
                     *center,
                     *radius,
-                    axis,
+                    candidate_axis,
                     reference,
                     start,
                     end,
                 )?;
-                crate::nurbs::canonical_periodic_range(range)
+                rebase_circle_range_to_axis(range, candidate_axis, axis)
             })
             .collect::<Vec<_>>();
         let [range] = candidates.as_slice() else {
@@ -8185,6 +8183,37 @@ fn full_circle_frame(
     (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
 }
 
+fn canonical_unoriented_axis(axis: Vector3) -> Option<Vector3> {
+    let axis = unit_vector(axis)?;
+    let value = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .max_by(|left, right| left.abs().total_cmp(&right.abs()))?;
+    Some(if value.is_sign_negative() {
+        axis.scale(-1.0)
+    } else {
+        axis
+    })
+}
+
+fn rebase_circle_range_to_axis(
+    range: [f64; 2],
+    range_axis: Vector3,
+    target_axis: Vector3,
+) -> Option<[f64; 2]> {
+    let range_axis = unit_vector(range_axis)?;
+    let target_axis = unit_vector(target_axis)?;
+    let alignment = range_axis.dot(target_axis);
+    if alignment.abs() < 0.9999 {
+        return None;
+    }
+    let range = if alignment < 0.0 {
+        [-range[1], -range[0]]
+    } else {
+        range
+    };
+    crate::nurbs::canonical_periodic_range(range)
+}
+
 fn standard_circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
@@ -8499,5 +8528,30 @@ mod circle_axis_tests {
             standard_circle_axis_from_carrier(center, 3.175, &cylinder),
             Some(y())
         );
+    }
+
+    #[test]
+    fn unoriented_circle_axes_use_one_parameter_frame() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-12;
+
+        assert_eq!(super::canonical_unoriented_axis(z()), Some(z()));
+        assert_eq!(
+            super::canonical_unoriented_axis(Vector3::new(0.0, 0.0, -1.0)),
+            Some(z())
+        );
+        let axis =
+            super::canonical_unoriented_axis(Vector3::new(-2.0, 1.0, 0.0)).expect("finite axis");
+        let length = 5.0_f64.sqrt();
+        assert!((axis.x - 2.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
+        assert!((axis.y + 1.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
+
+        let rebased = super::rebase_circle_range_to_axis(
+            [0.5, 0.5 + std::f64::consts::PI],
+            Vector3::new(0.0, 0.0, -1.0),
+            z(),
+        )
+        .expect("parallel circle frames");
+        assert!((rebased[0] - (std::f64::consts::PI - 0.5)).abs() < AXIS_COMPONENT_TOLERANCE);
+        assert!((rebased[1] - (2.0 * std::f64::consts::PI - 0.5)).abs() < AXIS_COMPONENT_TOLERANCE);
     }
 }

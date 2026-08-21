@@ -18,6 +18,11 @@ use crate::layout::analytic_surface_torus as analytic_torus;
 use crate::layout::freeform_surface_core as freeform_core;
 use crate::layout::vertex_roster_row as vertex_roster;
 
+/// Binary32 multiplication and addition can leave a unit XY direction just
+/// below the unit circle.  Treat that deficit as roundoff instead of creating
+/// a false binary64 Z component when the carrier stores only the Z sign.
+const F32_UNIT_NORM2_ROUNDING_TOLERANCE: f64 = 4.0 * (f32::EPSILON as f64);
+
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
 #[derive(Debug, Clone)]
@@ -844,8 +849,13 @@ fn pt(x: f32, y: f32, z: f32) -> Point3 {
 /// sign from a companion signed field (the cone/cylinder store `sign(az)` in the
 /// sign of the semi-angle / radius).
 fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
-    let az2 = (1.0 - (ax * ax + ay * ay) as f64).max(0.0);
-    let az = az2.sqrt().copysign(signed as f64);
+    let norm2 = f64::from(ax).mul_add(f64::from(ax), f64::from(ay) * f64::from(ay));
+    let residual = 1.0 - norm2;
+    let az = if residual > F32_UNIT_NORM2_ROUNDING_TOLERANCE {
+        residual.sqrt().copysign(signed as f64)
+    } else {
+        0.0
+    };
     unit_vector(Vector3::new(ax as f64, ay as f64, az))
 }
 
@@ -873,7 +883,7 @@ fn all_finite(vs: &[f32]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::unit_vector;
+    use super::{axis_from_xy, unit_vector};
     use cadmpeg_ir::math::Vector3;
 
     #[test]
@@ -884,5 +894,28 @@ mod tests {
         );
         assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
         assert_eq!(unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)), None);
+    }
+
+    #[test]
+    fn axis_from_xy_discards_binary32_equatorial_norm_roundoff() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-7;
+        let axis = axis_from_xy(0.707_106_77_f32, -0.707_106_77_f32, 1.0).expect("axis");
+
+        assert_eq!(axis.z, 0.0);
+        assert!((axis.x - std::f64::consts::FRAC_1_SQRT_2).abs() < AXIS_COMPONENT_TOLERANCE);
+        assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < AXIS_COMPONENT_TOLERANCE);
+    }
+
+    #[test]
+    fn axis_from_xy_preserves_a_genuine_third_component() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-15;
+        let x = 0.8_f32;
+        let y = 0.5_f32;
+        let axis = axis_from_xy(x, y, -1.0).expect("axis");
+        let x = f64::from(x);
+        let y = f64::from(y);
+        let expected = (1.0 - x * x - y * y).sqrt();
+
+        assert!((axis.z + expected).abs() < AXIS_COMPONENT_TOLERANCE);
     }
 }
