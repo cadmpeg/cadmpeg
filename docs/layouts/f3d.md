@@ -293,6 +293,29 @@ Unstated regions:
 - `218..245` (27 B): The generic fixed scope tail precedes the preceding history-state identity.
 - `249..291` (42 B): The generic fixed scope tail closes immediately before the paired header at offset 291.
 
+## `design_mirror_scope_class369_tail`
+
+Spec §3.1 · layout: byte offsets · size: 77 B
+
+Offsets are relative to the first byte after the UTF-16LE Mirror kind. The variable class-369 reference-table prefix precedes this fixed tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | offset 0 stores the feature ordinal |
+| 31 | 4 | `previous_history_state` | `u32` | little | spec | offset 31 stores the preceding-history state |
+| 35 | 4 | `scalar_marker` | `u32` | little | spec | offset 35 stores u32 marker `89` · value `89` |
+| 39 | 8 | `stitch_tolerance` | `f64` | little | spec | offset 39 stores the positive stitch tolerance as an f64 in source centimetres |
+| 47 | 4 | `repeated_scalar_marker` | `u32` | little | spec | offset 47 repeats marker `89` · value `89` |
+| 51 | 13 | `first_reference` | `bytes[13]` | little | spec | Offset 51 stores a marked reference to scope index plus two followed by two zero bytes |
+| 64 | 13 | `second_reference` | `bytes[13]` | little | spec | offset 64 stores a marked reference to scope index plus one followed by two zero bytes |
+
+Unstated regions:
+
+- `4..31` (27 B): The class-369 tail reserves the span before the preceding-history state.
+
 ## `design_mirror_scope_class413_tail`
 
 Spec §3.1 · layout: byte offsets · size: 77 B
