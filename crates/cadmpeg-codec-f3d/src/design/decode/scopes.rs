@@ -66,6 +66,7 @@ use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
+use crate::layout::design_mirror_scope_class391_tail as mirror_391;
 use crate::layout::design_mirror_scope_class413_tail as mirror_413;
 use crate::layout::design_mirror_scope_class440_tail as mirror_440;
 use crate::layout::design_mirror_scope_class441_count_owner as mirror_441_count;
@@ -3158,6 +3159,16 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         second_reference,
         marker_value,
     ) = match (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) {
+        ("391", "261") => (
+            mirror_391::LEN,
+            mirror_391::PREVIOUS_HISTORY_STATE,
+            mirror_391::SCALAR_MARKER,
+            mirror_391::STITCH_TOLERANCE,
+            Some(mirror_391::REPEATED_SCALAR_MARKER),
+            mirror_391::FIRST_REFERENCE,
+            mirror_391::SECOND_REFERENCE,
+            mirror_391::SCALAR_MARKER_VALUE,
+        ),
         ("413", "262") => (
             mirror_413::LEN,
             mirror_413::PREVIOUS_HISTORY_STATE,

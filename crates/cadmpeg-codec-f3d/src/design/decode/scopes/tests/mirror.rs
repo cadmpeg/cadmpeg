@@ -96,6 +96,36 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
 }
 
 #[test]
+fn class_391_mirror_scope_decodes_inline_tolerance() {
+    let mut bytes = vec![0; 88];
+    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    scope.class_tag = "391".into();
+    scope.paired_class_tag = "261".into();
+    scope.kind_offset = 0;
+    scope.previous_history_state_id_offset = 42;
+    scope.frame_length = 88;
+    scope.paired_byte_offset = 88;
+    bytes[46..50].copy_from_slice(&94_u32.to_le_bytes());
+    bytes[50..58].copy_from_slice(&0.25_f64.to_le_bytes());
+    bytes[58..62].copy_from_slice(&94_u32.to_le_bytes());
+    bytes[62] = 1;
+    bytes[63..67].copy_from_slice(&12_u32.to_le_bytes());
+    bytes[75] = 1;
+    bytes[76..80].copy_from_slice(&11_u32.to_le_bytes());
+    let (value, offset, carrier) =
+        exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-391 tolerance");
+    assert_eq!(value, 0.25);
+    assert_eq!(offset, 50);
+    assert_eq!(carrier.marker, 94);
+    assert_eq!(carrier.repeated_marker_offset, Some(58));
+    assert_eq!(carrier.first_reference, 12);
+    assert_eq!(carrier.second_reference, 11);
+
+    bytes[58..62].copy_from_slice(&95_u32.to_le_bytes());
+    assert_eq!(exact_legacy_mirror_scope_tolerance(&bytes, &scope), None);
+}
+
+#[test]
 fn class_440_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
     let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
