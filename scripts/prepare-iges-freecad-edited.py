@@ -108,7 +108,7 @@ def main() -> None:
         run(
             [
                 args.cadmpeg,
-                "decode",
+                "dump",
                 str(input_path),
                 "--limits",
                 args.limits,
