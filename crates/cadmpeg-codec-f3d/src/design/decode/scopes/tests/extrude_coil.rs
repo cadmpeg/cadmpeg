@@ -1161,6 +1161,136 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
 }
 
 #[test]
+fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
+    use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as layout;
+
+    const RECORD_INDEX: u32 = 296536;
+    const REFERENCE_MEMBERS: [u32; 13] = [
+        296501, 296504, 296507, 296510, 296513, 296516, 296519, 296522, 296525, 296528, 296531,
+        296534, 296537,
+    ];
+    const SLOT_REFERENCES: [u32; 4] = [296513, 296516, 296519, 296522];
+
+    let mut bytes = vec![0; layout::REFERENCE_COUNT + 4];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"296");
+    bytes[7..11].copy_from_slice(&RECORD_INDEX.to_le_bytes());
+    bytes[layout::PREFIX_CONSTANT..layout::PREFIX_CONSTANT + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[layout::OPERATION..layout::OPERATION + 4].copy_from_slice(&1u32.to_le_bytes());
+    bytes[layout::DIRECTION..layout::DIRECTION + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::FACE_EXTEND..layout::FACE_EXTEND + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::DIRECTION_REVERSED] = 0;
+    bytes[layout::GEOMETRY_KIND] = 1;
+    bytes[layout::START_SUPPORT] = 0;
+    bytes[layout::PROFILE_NORMAL..layout::PROFILE_NORMAL + 8]
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    bytes[layout::PROFILE_NORMAL + 8..layout::PROFILE_NORMAL + 16]
+        .copy_from_slice(&0.0f64.to_le_bytes());
+    bytes[layout::PROFILE_NORMAL + 16..layout::PROFILE_NORMAL + 24]
+        .copy_from_slice(&0.0f64.to_le_bytes());
+    let mut slot_offset = layout::REFERENCE_SLOTS;
+    for (slot_ordinal, expected_present) in [false, false, false, true, true, true, true]
+        .into_iter()
+        .enumerate()
+    {
+        if expected_present {
+            bytes[slot_offset] = 1;
+            bytes[slot_offset + 1..slot_offset + 5]
+                .copy_from_slice(&SLOT_REFERENCES[slot_ordinal - 3].to_le_bytes());
+            slot_offset += 11;
+        } else {
+            slot_offset += 1;
+        }
+    }
+    assert_eq!(slot_offset, layout::FIRST_SIDE_EXTENT);
+    bytes[layout::FIRST_SIDE_EXTENT..layout::FIRST_SIDE_EXTENT + 4]
+        .copy_from_slice(&2u32.to_le_bytes());
+    bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
+        .copy_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    for reference in REFERENCE_MEMBERS {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Extrude");
+    let mut tail = [0; 76];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[30..34].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&RECORD_INDEX.to_le_bytes());
+    assert_eq!(bytes.len(), 536 + 11);
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#class-296-two-sided-to-faces".into(),
+        record_index: RECORD_INDEX,
+        class_tag: "296".into(),
+        byte_offset: 0,
+    };
+    let parse = |bytes: &[u8]| {
+        parse_parameter_scope(bytes, &IndexedRecordOffsets::build(bytes), &header)
+            .expect("class-296 two-sided-to-faces scope envelope")
+    };
+    let scope = parse(&bytes);
+    assert_eq!(scope.frame_length, 536);
+    assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
+    assert_eq!(scope.reference_members, REFERENCE_MEMBERS);
+    assert_eq!(
+        scope.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker: None,
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: layout::OPERATION as u64,
+            direction_face_extend_values: [2, 2],
+            side_extent_discriminators: [2, 0],
+            side_extent_discriminator_offsets: [
+                layout::FIRST_SIDE_EXTENT as u64,
+                layout::SECOND_SIDE_EXTENT as u64,
+            ],
+            extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
+            direction_face_extend_offsets: [layout::DIRECTION as u64, layout::FACE_EXTEND as u64],
+            direction_reversed: false,
+            direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+            solid_operation: true,
+            solid_operation_offset: layout::GEOMETRY_KIND as u64,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: layout::START_SUPPORT as u64,
+        })
+    );
+
+    let mut alternate_face_extend = bytes.clone();
+    alternate_face_extend[layout::FACE_EXTEND..layout::FACE_EXTEND + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    assert!(matches!(
+        parse(&alternate_face_extend).extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            direction_face_extend_values: [2, 1],
+            extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
+            ..
+        })
+    ));
+
+    let mut invalid_slot = bytes.clone();
+    invalid_slot[layout::REFERENCE_SLOTS] = 1;
+    assert!(parse(&invalid_slot).extrude_prologue.is_none());
+
+    let mut invalid_profile_normal = bytes.clone();
+    invalid_profile_normal[layout::PROFILE_NORMAL..layout::PROFILE_NORMAL + 8]
+        .copy_from_slice(&2.0f64.to_le_bytes());
+    assert!(parse(&invalid_profile_normal).extrude_prologue.is_none());
+
+    let mut invalid_pair = bytes;
+    invalid_pair[536 + 4..536 + 7].copy_from_slice(b"260");
+    assert!(parse(&invalid_pair).extrude_prologue.is_none());
+}
+
+#[test]
 fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
