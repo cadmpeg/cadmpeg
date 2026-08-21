@@ -1474,6 +1474,29 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     same_dimension_length(radius, expected_radius).then_some(center)
 }
 
+fn point_dimension_marker_matches_operand(
+    marker: &SketchInputEntity,
+    feature: &str,
+    operand: &FeatureInputOperand,
+) -> bool {
+    let Some(entity_ref) = operand.entity_ref.as_deref() else {
+        return false;
+    };
+    let address = u32::from(operand.entity_index);
+    let identity_matches = match operand.kind {
+        FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
+        FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
+        _ => false,
+    };
+    marker.id == entity_ref
+        && marker.feature_ref.as_deref() == Some(feature)
+        && identity_matches
+        && matches!(
+            marker.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+}
+
 /// Resolve the explicit point-center form of a circular dimension.
 ///
 /// A native operand tag carries the point identity in the resolved operand
@@ -1490,30 +1513,75 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
         return None;
     }
-    let entity_ref = operand.entity_ref.as_deref()?;
     let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
     else {
         return None;
     };
-    let address = u32::from(operand.entity_index);
-    let marker = lane.sketch_entities.iter().find(|marker| {
-        let identity_matches = match operand.kind {
-            FeatureInputOperandKind::Native(0x814c) => marker.object_index == Some(address),
-            FeatureInputOperandKind::Native(_) => marker.local_id == Some(address),
-            _ => false,
-        };
-        marker.id == entity_ref
-            && marker.feature_ref.as_deref() == Some(feature)
-            && identity_matches
-            && matches!(
-                marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-    })?;
+    let marker = lane
+        .sketch_entities
+        .iter()
+        .find(|marker| point_dimension_marker_matches_operand(marker, feature, operand))?;
     marker
         .coordinates_m
         .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
         .then_some(marker)
+}
+
+/// Resolve a classless direct point identity for a circular dimension.
+///
+/// Some circular dimensions carry a reference cell and an explicit point
+/// marker without an `sgEntHandle` class declaration. The reference kind,
+/// feature, object index, marker identity, and marker-local address must all
+/// agree. A point that is the radial member of an encoded center/radial pair
+/// at the dimension's radius is not a circle center.
+pub(super) fn direct_point_dimension_center<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<&'a SketchInputEntity> {
+    if !matches!(operand.kind, FeatureInputOperandKind::Native(_))
+        || !expected_radius.is_finite()
+        || expected_radius <= 0.0
+    {
+        return None;
+    }
+    let mut candidates = lanes.iter().filter_map(|lane| {
+        let reference = lane
+            .references
+            .iter()
+            .find(|reference| reference.id == operand.reference_ref)?;
+        if reference.feature_ref.as_deref() != Some(feature)
+            || reference.kind != operand.kind
+            || reference.object_index != operand.entity_index
+            || reference.class_ref.is_some()
+        {
+            return None;
+        }
+        let marker = lane
+            .sketch_entities
+            .iter()
+            .find(|marker| point_dimension_marker_matches_operand(marker, feature, operand))?;
+        marker
+            .coordinates_m
+            .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+            .then_some((lane, marker))
+    });
+    let (lane, marker) = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    for [center, radial] in declared_entity_handle_pairs(lane, feature)
+        .into_iter()
+        .filter(|[_, radial]| radial.id == marker.id)
+    {
+        let [cu, cv] = center.coordinates_m?;
+        let [ru, rv] = radial.coordinates_m?;
+        if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, expected_radius) {
+            return None;
+        }
+    }
+    Some(marker)
 }
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(

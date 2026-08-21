@@ -138,6 +138,23 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         }) if *center == Point2::new(1.0, 2.0)
     ));
 
+    let mut classless_lane = lane.clone();
+    classless_lane.references[0].class_ref = None;
+    let mut classless_entities = vec![entities[0].clone()];
+    project_relation_point_dimensioned_circles(
+        &mut classless_entities,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&classless_lane),
+    );
+    assert!(matches!(
+        classless_entities.get(1).map(|entity| &entity.geometry),
+        Some(SketchGeometry::Circle {
+            center,
+            radius: Length(2.0)
+        }) if *center == Point2::new(1.0, 2.0)
+    ));
+
     let mut object_index_lane = lane.clone();
     object_index_lane.references[0].object_index = 1;
     object_index_lane.sketch_entities[0].object_index = Some(1);

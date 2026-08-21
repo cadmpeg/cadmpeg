@@ -11,8 +11,8 @@ use super::relation_geometry::{
     declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
     declared_entity_handle_indexed_circle_dimension_center, declared_entity_handle_owner,
     declared_entity_handle_point_dimension_center, declared_entity_handle_point_is_declared_radial,
-    declared_slot_handle_dimension_center, implicit_circle_marker, owned_relation_parameters,
-    DeclaredEntityHandleOwner,
+    declared_slot_handle_dimension_center, direct_point_dimension_center, implicit_circle_marker,
+    owned_relation_parameters, DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -440,6 +440,7 @@ fn dimensioned_relation_carrier<'a>(
         return None;
     }
     let construction = native_dimensioned_circle_construction_state(lanes, feature, marker, radius)
+        .or_else(|| direct_point_dimension_center(lanes, feature, operand, radius).map(|_| false))
         .or_else(|| {
             declared_entity_handle.then_some(false).or_else(|| {
                 matches!(
@@ -850,12 +851,19 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             )
             .or_else(|| {
                 let explicit_center = operand.entity_ref.is_some()
-                    && declared_entity_handle_point_dimension_center(
+                    && (declared_entity_handle_point_dimension_center(
                         lanes,
                         relation.feature_ref.as_str(),
                         operand,
                     )
                     .is_some()
+                        || direct_point_dimension_center(
+                            lanes,
+                            relation.feature_ref.as_str(),
+                            operand,
+                            radius,
+                        )
+                        .is_some())
                     && !declared_entity_handle_point_is_declared_radial(
                         lanes,
                         relation.feature_ref.as_str(),
