@@ -471,36 +471,52 @@ pub(crate) fn project_relation_solved_line_geometry(
             let [first_operand, second_operand] = relation.operands.as_slice() else {
                 continue;
             };
+            let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
+                continue;
+            };
+            let direct_line_reference = |operand: &FeatureInputOperand| {
+                let Some(entity_ref) = operand.entity_ref.as_deref() else {
+                    return false;
+                };
+                let mut matches = entities.iter().filter(|entity| {
+                    entity.sketch == *sketch
+                        && entity.native_ref.as_deref() == Some(entity_ref)
+                        && matches!(entity.geometry, SketchGeometry::Line { .. })
+                });
+                matches.next().is_some() && matches.next().is_none()
+            };
             let line_operands = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance
                     if relation_uses_solver_line_operand(relation, 0)
                         && relation_uses_solver_line_operand(relation, 1)
-                        && first_operand.entity_ref.is_none()
-                        && second_operand.entity_ref.is_none()
                         && first_operand.entity_index != second_operand.entity_index =>
                 {
-                    vec![first_operand, second_operand]
+                    [first_operand, second_operand]
+                        .into_iter()
+                        .filter(|operand| !direct_line_reference(operand))
+                        .collect::<Vec<_>>()
                 }
                 FeatureInputRelationFamily::PointLineDistance
                     if relation_uses_solver_line_operand(relation, 1)
-                        && second_operand.entity_ref.is_none() =>
+                        && !direct_line_reference(second_operand) =>
                 {
                     vec![second_operand]
                 }
                 FeatureInputRelationFamily::Angle
                     if relation_uses_solver_line_operand(relation, 0)
                         && relation_uses_solver_line_operand(relation, 1)
-                        && first_operand.entity_ref.is_none()
-                        && second_operand.entity_ref.is_none()
                         && first_operand.entity_index != second_operand.entity_index =>
                 {
-                    vec![first_operand, second_operand]
+                    [first_operand, second_operand]
+                        .into_iter()
+                        .filter(|operand| !direct_line_reference(operand))
+                        .collect::<Vec<_>>()
                 }
                 _ => continue,
             };
-            let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
+            if line_operands.is_empty() {
                 continue;
-            };
+            }
             let Some(parameter_value) = ownership
                 .get(&relation.id)
                 .and_then(Option::as_ref)
@@ -726,6 +742,71 @@ pub(crate) fn project_relation_solved_line_geometry(
                 _ => false,
             };
             if !valid {
+                if relation.family == FeatureInputRelationFamily::LineLineDistance
+                    && relation_uses_dynamic_operands(relation)
+                {
+                    let generated = lines
+                        .iter()
+                        .map(|(_, _, line)| line.clone())
+                        .collect::<Vec<_>>();
+                    if let Some([first, second]) =
+                        unique_dynamic_line_pair(expected, sketch, entities, &generated, QUANTUM)
+                    {
+                        let selected = [first, second];
+                        let aliases_match =
+                            relation
+                                .operands
+                                .iter()
+                                .zip(selected.iter())
+                                .all(|(operand, line)| {
+                                    let geometry_ref = solver_line_geometry_ref(
+                                        &relation.feature_ref,
+                                        operand.entity_index,
+                                    );
+                                    entities
+                                        .iter()
+                                        .filter(|entity| {
+                                            entity.sketch == *sketch
+                                                && entity.geometry_ref.as_deref()
+                                                    == Some(geometry_ref.as_str())
+                                        })
+                                        .all(|entity| {
+                                            dynamic_line_geometry_key(entity, QUANTUM)
+                                                == dynamic_line_geometry_key(line, QUANTUM)
+                                        })
+                                });
+                        if !aliases_match {
+                            continue;
+                        }
+                        let feature_key = relation
+                            .feature_ref
+                            .rsplit_once('#')
+                            .map_or(relation.feature_ref.as_str(), |(_, key)| key);
+                        for (operand, line) in relation.operands.iter().zip(selected) {
+                            let geometry_ref = solver_line_geometry_ref(
+                                &relation.feature_ref,
+                                operand.entity_index,
+                            );
+                            if entities.iter().any(|entity| {
+                                entity.sketch == *sketch
+                                    && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+                            }) {
+                                continue;
+                            }
+                            entities.push(SketchEntity {
+                                id: SketchEntityId(format!(
+                                    "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
+                                    operand.entity_index
+                                )),
+                                construction: true,
+                                native_ref: None,
+                                geometry_ref: Some(geometry_ref),
+                                ..line
+                            });
+                        }
+                        continue;
+                    }
+                }
                 continue;
             }
             let feature_key = relation
@@ -735,10 +816,10 @@ pub(crate) fn project_relation_solved_line_geometry(
             for (operand, markers, line) in lines {
                 let geometry_ref =
                     solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
-                if entities
-                    .iter()
-                    .any(|entity| entity.geometry_ref.as_deref() == Some(geometry_ref.as_str()))
-                {
+                if entities.iter().any(|entity| {
+                    entity.sketch == *sketch
+                        && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+                }) {
                     continue;
                 }
                 entities.push(SketchEntity {
@@ -753,6 +834,72 @@ pub(crate) fn project_relation_solved_line_geometry(
             }
         }
     }
+}
+
+fn unique_dynamic_line_pair(
+    expected: f64,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    entities: &[SketchEntity],
+    generated: &[SketchEntity],
+    quantum: f64,
+) -> Option<[SketchEntity; 2]> {
+    if generated.len() != 2 {
+        return None;
+    }
+    let mut candidates = Vec::<([(i64, i64); 2], SketchEntity)>::new();
+    for entity in generated.iter().chain(entities.iter()) {
+        if entity.sketch != *sketch || !matches!(entity.geometry, SketchGeometry::Line { .. }) {
+            continue;
+        }
+        let Some(key) = dynamic_line_geometry_key(entity, quantum) else {
+            continue;
+        };
+        if candidates.iter().any(|(candidate, _)| *candidate == key) {
+            continue;
+        }
+        candidates.push((key, entity.clone()));
+    }
+    let mut matches = Vec::new();
+    for (first_index, (first_key, first)) in candidates.iter().enumerate() {
+        for (second_key, second) in candidates.iter().skip(first_index + 1) {
+            if line_line_distance(first, second)
+                .is_some_and(|measured| same_dimension_length(measured, expected))
+            {
+                let mut pair_key = [*first_key, *second_key];
+                pair_key.sort_unstable();
+                matches.push((pair_key, [first.clone(), second.clone()]));
+            }
+        }
+    }
+    matches.sort_by_key(|(key, _)| *key);
+    matches.dedup_by(|(left, _), (right, _)| left == right);
+    let [(_, pair)] = matches.as_slice() else {
+        return None;
+    };
+    let first_key = dynamic_line_geometry_key(&generated[0], quantum)?;
+    let second_key = dynamic_line_geometry_key(&generated[1], quantum)?;
+    if dynamic_line_geometry_key(&pair[0], quantum) == Some(first_key) {
+        return Some(pair.clone());
+    }
+    if dynamic_line_geometry_key(&pair[1], quantum) == Some(first_key) {
+        return Some([pair[1].clone(), pair[0].clone()]);
+    }
+    if dynamic_line_geometry_key(&pair[0], quantum) == Some(second_key) {
+        return Some([pair[1].clone(), pair[0].clone()]);
+    }
+    if dynamic_line_geometry_key(&pair[1], quantum) == Some(second_key) {
+        return Some(pair.clone());
+    }
+    Some(pair.clone())
+}
+
+fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[(i64, i64); 2]> {
+    let SketchGeometry::Line { start, end } = &entity.geometry else {
+        return None;
+    };
+    let mut endpoints = [quantize(*start, quantum), quantize(*end, quantum)];
+    endpoints.sort_unstable();
+    Some(endpoints)
 }
 
 pub(crate) fn project_relation_solved_point_geometry(
@@ -1908,4 +2055,53 @@ pub(super) fn relation_parameter_by_display_name<'a>(
     matches
         .all(|parameter| parameter.id == first.id)
         .then_some(first)
+}
+
+#[cfg(test)]
+mod relation_geometry_tests {
+    use super::*;
+
+    const TEST_LINE_GEOMETRY_QUANTUM: f64 = 1.0 / 100_000_000.0;
+
+    #[test]
+    fn dynamic_line_pair_fallback_preserves_the_existing_solver_slot() {
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let generated = vec![
+            line("roster-4", Point2::new(-13.0, 3.0), Point2::new(0.0, 3.0)),
+            line("roster-0", Point2::new(0.0, 0.0), Point2::new(0.0, 13.0)),
+        ];
+        let existing = vec![line(
+            "profile-line",
+            Point2::new(-16.0, 3.0),
+            Point2::new(-16.0, 7.0),
+        )];
+
+        let [first, second] = unique_dynamic_line_pair(
+            16.0,
+            &sketch,
+            &existing,
+            &generated,
+            TEST_LINE_GEOMETRY_QUANTUM,
+        )
+        .expect("one existing line pairs with the roster solver line");
+        assert!(matches!(
+            first.geometry,
+            SketchGeometry::Line { start, end }
+                if start == Point2::new(-16.0, 3.0) && end == Point2::new(-16.0, 7.0)
+        ));
+        assert!(matches!(
+            second.geometry,
+            SketchGeometry::Line { start, end }
+                if start == Point2::new(0.0, 0.0) && end == Point2::new(0.0, 13.0)
+        ));
+    }
 }

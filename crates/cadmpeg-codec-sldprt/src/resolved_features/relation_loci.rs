@@ -867,18 +867,35 @@ fn solver_line_entity(
     sketch_entities: &[SketchEntity],
 ) -> Option<SketchEntityId> {
     let operand = relation.operands.get(index)?;
-    if operand.entity_ref.is_some() || !relation_uses_solver_line_operand(relation, index) {
+    if !relation_uses_solver_line_operand(relation, index) {
         return None;
     }
-    let geometry_ref = solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
-    sketch_entities
-        .iter()
-        .find(|entity| {
+    if let Some(entity_ref) = operand.entity_ref.as_deref() {
+        let mut explicit_lines = sketch_entities.iter().filter(|entity| {
             entity.sketch == *sketch
-                && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+                && entity.native_ref.as_deref() == Some(entity_ref)
                 && matches!(entity.geometry, SketchGeometry::Line { .. })
-        })
-        .map(|entity| entity.id.clone())
+        });
+        match (explicit_lines.next(), explicit_lines.next()) {
+            (Some(entity), None) => return Some(entity.id.clone()),
+            (Some(_), Some(_)) => return None,
+            (None, None) => {}
+            (None, Some(_)) => return None,
+        }
+        if !relation_uses_dynamic_operands(relation) {
+            return None;
+        }
+    }
+    let geometry_ref = solver_line_geometry_ref(&relation.feature_ref, operand.entity_index);
+    let mut solver_lines = sketch_entities.iter().filter(|entity| {
+        entity.sketch == *sketch
+            && entity.geometry_ref.as_deref() == Some(geometry_ref.as_str())
+            && matches!(entity.geometry, SketchGeometry::Line { .. })
+    });
+    match (solver_lines.next(), solver_lines.next()) {
+        (Some(entity), None) => Some(entity.id.clone()),
+        _ => None,
+    }
 }
 
 fn repeated_dimensioned_circular_entities(

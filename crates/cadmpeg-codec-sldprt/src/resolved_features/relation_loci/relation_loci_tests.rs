@@ -551,6 +551,106 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
 }
 
 #[test]
+fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
+    let sketch = SketchId("sketch".into());
+    let mut first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(1.0, 0.0),
+    );
+    first.geometry_ref = Some("feature:solver-line:0".into());
+    let mut second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(-1.0, 1.0),
+    );
+    second.geometry_ref = Some("feature:solver-line:1".into());
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    relation.operands[0].entity_ref = Some("indirect-marker".into());
+    relation.operands[1].entity_ref = Some("indirect-point".into());
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "45deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert!(matches!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first, second],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Angle { .. })
+    ));
+}
+
+#[test]
+fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
+    let sketch = SketchId("sketch".into());
+    let mut explicit = line_entity(
+        "explicit-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(1.0, 0.0),
+    );
+    explicit.native_ref = Some("line-marker".into());
+    let mut conflicting = line_entity(
+        "conflicting-solver-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 1.0),
+    );
+    conflicting.geometry_ref = Some("feature:solver-line:0".into());
+    let mut second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.866_025_403_784_438_6, 0.5),
+    );
+    second.geometry_ref = Some("feature:solver-line:1".into());
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    relation.operands[0].entity_ref = Some("line-marker".into());
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "30deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::PI / 6.0))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert!(matches!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[explicit, conflicting, second],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Angle { .. })
+    ));
+}
+
+#[test]
 fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
     let sketch = SketchId("sketch".into());
     let circle = |id: &str, center: Point2| SketchEntity {
