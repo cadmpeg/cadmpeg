@@ -28,6 +28,8 @@ The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates impleme
 
 `DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`. Classify a named `MAX_*` cap with [decode-resource-caps.md](decode-resource-caps.md) before adding a bound or a `ResourceLimits` field.
 
+Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits input bytes, temporary materialization, retained bytes, admitted entities, collection items, recursive depth, and algorithm work. File-declared counts, pointer walks, recursive definitions, and geometric recovery cannot override these limits. A refused request returns a structured resource refusal and does not return a partial semantic document. The policy is implementation admission control; no source field changes it.
+
 ## CLI stream and exit contract
 
 `dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.

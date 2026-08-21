@@ -613,21 +613,6 @@ The Fixed ASCII reader retains every physical card and every Directory/Parameter
 
 ## Decode admission
 
-Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits
-input bytes, temporary materialization, retained bytes, admitted entities,
-collection items, recursive depth, and algorithm work. File-declared counts,
-pointer walks, recursive definitions, and geometric recovery cannot override
-these limits. A refused request returns a structured resource refusal and does
-not return a partial semantic document.
-
-Under the service policy, the absolute ceilings are 256 MiB of input, 512 MiB
-of temporary materialization, 512 MiB of retained decode data, 8,000,000
-entities, 1,000,000 collection items, depth 128, and 256,000,000 work units.
-The desktop policy permits 4 GiB of input, 4 GiB of temporary materialization,
-4 GiB of retained decode data, 64,000,000 entities, 16,000,000 collection
-items, depth 256, and 4,000,000,000 work units. The policy is implementation
-admission control; no IGES field changes it.
-
 A successful semantic decode has no error-severity neutral-validation finding.
 The reader validates referential integrity, geometry domains, topology
 ownership, endpoint agreement, pcurve agreement, transforms, and document

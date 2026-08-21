@@ -22,6 +22,13 @@ The nine `ResourceLimits` fields are `max_input_bytes`,
 `max_collection_items`, `max_recursion_depth`, and `max_work_units`.
 This classification does not add fields.
 
+Under the service policy, the absolute ceilings are 256 MiB of input, 512 MiB
+of temporary materialization, 512 MiB of retained decode data, 8,000,000
+entities, 1,000,000 collection items, depth 128, and 256,000,000 work units.
+The desktop policy permits 4 GiB of input, 4 GiB of temporary materialization,
+4 GiB of retained decode data, 64,000,000 entities, 16,000,000 collection
+items, depth 256, and 4,000,000,000 work units.
+
 ## Production census
 
 | Crate                    | File                                   | Constant                                  | Value               | Kind | Action      | Notes                                                                                                                                                               |
