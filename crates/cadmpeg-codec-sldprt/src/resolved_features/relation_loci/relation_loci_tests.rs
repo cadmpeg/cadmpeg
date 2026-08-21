@@ -506,6 +506,163 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
 }
 
 #[test]
+fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
+    let sketch = SketchId("sketch".into());
+    let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
+    first_marker.object_index = Some(2);
+    let mut second_marker = marker("second-marker", 1, 20, SketchInputKind::Point, None);
+    second_marker.object_index = Some(3);
+    second_marker.links = vec![
+        SketchInputLink {
+            local_id: 0,
+            entity_ref: "second-target".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "second-near".into(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "second-other".into(),
+        },
+    ];
+    let second_target_marker = marker("second-target", 2, 30, SketchInputKind::Point, None);
+    let second_near_marker = marker("second-near", 3, 40, SketchInputKind::Point, None);
+    let second_other_marker = marker("second-other", 4, 50, SketchInputKind::Point, None);
+    let first_point = SketchEntity {
+        id: SketchEntityId("first-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("first-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let first_edge = line_entity(
+        "first-edge",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 10.0),
+    );
+    let second_target = SketchEntity {
+        id: SketchEntityId("second-target".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("second-target".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(140.0, 0.0),
+        },
+    };
+    let second_near = SketchEntity {
+        id: SketchEntityId("second-near".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("second-near".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 1.0),
+        },
+    };
+    let second_other = SketchEntity {
+        id: SketchEntityId("second-other".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("second-other".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 2.0),
+        },
+    };
+    let markers = [
+        first_marker,
+        second_marker,
+        second_target_marker,
+        second_near_marker,
+        second_other_marker,
+    ];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([(
+        "first-marker".into(),
+        vec![SketchLocus::Start(first_edge.id.clone())],
+    )]);
+    let entities = vec![
+        first_point,
+        first_edge,
+        second_target.clone(),
+        second_near,
+        second_other,
+    ];
+    let first_locus = SketchLocus::Entity(SketchEntityId("first-point".into()));
+    let second_locus = SketchLocus::Entity(second_target.id.clone());
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [2, 3]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(140.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: first_locus.clone(),
+            second: second_locus.clone(),
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+
+    let horizontal = dynamic_relation(
+        FeatureInputRelationFamily::PointPointHorizontalDistance,
+        [2, 3],
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &horizontal,
+            Some(&length_parameter(140.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance {
+            first: first_locus.clone(),
+            second: second_locus.clone(),
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+
+    let vertical = dynamic_relation(
+        FeatureInputRelationFamily::PointPointVerticalDistance,
+        [2, 3],
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &vertical,
+            Some(&length_parameter(0.0)),
+            &sketch,
+            &entities,
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::VerticalDistance {
+            first: first_locus,
+            second: second_locus,
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
 fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let sketch = SketchId("sketch".into());
     let point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);

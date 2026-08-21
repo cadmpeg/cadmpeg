@@ -354,6 +354,25 @@ pub(super) fn typed_relation_definition(
         })
     };
     let dynamic = relation_uses_dynamic_operands(relation);
+    let dynamic_point_pair = if dynamic {
+        match relation.family {
+            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
+                unique_dynamic_marker_point_pair(
+                    relation,
+                    sketch,
+                    parameter,
+                    point(0),
+                    point(1),
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                )
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     let dynamic_point_line_pair = if dynamic && relation.family == PointLineDistance {
         unique_dynamic_marker_point_line_pair(
             relation,
@@ -394,7 +413,7 @@ pub(super) fn typed_relation_definition(
     if dynamic {
         let witnessed = match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
-                point(0).is_some() && point(1).is_some()
+                dynamic_point_pair.is_some() || (point(0).is_some() && point(1).is_some())
             }
             PointLineDistance => {
                 dynamic_point_line_pair.is_some() || (point(0).is_some() && curve(1).is_some())
@@ -414,41 +433,54 @@ pub(super) fn typed_relation_definition(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match (first, second) {
-                (Some(first), Some(second)) => (first, second),
-                (Some(known), None) => doubled_profile_distance_loci(
-                    relation,
-                    0,
-                    1,
-                    sketch,
-                    parameter,
-                    sketch_entities,
-                    markers_by_id,
-                )
-                .or_else(|| {
-                    Some((
-                        known.clone(),
-                        unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
-                    ))
-                })?,
-                (None, Some(known)) => doubled_profile_distance_loci(
-                    relation,
-                    1,
-                    0,
-                    sketch,
-                    parameter,
-                    sketch_entities,
-                    markers_by_id,
-                )
-                .or_else(|| {
-                    Some((
-                        unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
-                        known,
-                    ))
-                })?,
-                (None, None) => {
-                    unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
-                }
+            let (mut first, mut second) = match dynamic_point_pair {
+                Some(pair) => pair,
+                None => match (first, second) {
+                    (Some(first), Some(second)) => (first, second),
+                    (Some(known), None) => doubled_profile_distance_loci(
+                        relation,
+                        0,
+                        1,
+                        sketch,
+                        parameter,
+                        sketch_entities,
+                        markers_by_id,
+                    )
+                    .or_else(|| {
+                        Some((
+                            known.clone(),
+                            unique_profile_distance_locus(
+                                sketch,
+                                &known,
+                                parameter,
+                                sketch_entities,
+                            )?,
+                        ))
+                    })?,
+                    (None, Some(known)) => doubled_profile_distance_loci(
+                        relation,
+                        1,
+                        0,
+                        sketch,
+                        parameter,
+                        sketch_entities,
+                        markers_by_id,
+                    )
+                    .or_else(|| {
+                        Some((
+                            unique_profile_distance_locus(
+                                sketch,
+                                &known,
+                                parameter,
+                                sketch_entities,
+                            )?,
+                            known,
+                        ))
+                    })?,
+                    (None, None) => {
+                        unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
+                    }
+                },
             };
             if first == second {
                 return None;
@@ -518,34 +550,37 @@ pub(super) fn typed_relation_definition(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match (first, second) {
-                (Some(first), Some(second)) => (first, second),
-                (Some(known), None) => (
-                    known.clone(),
-                    unique_profile_axis_distance_locus(
+            let (mut first, mut second) = match dynamic_point_pair {
+                Some(pair) => pair,
+                None => match (first, second) {
+                    (Some(first), Some(second)) => (first, second),
+                    (Some(known), None) => (
+                        known.clone(),
+                        unique_profile_axis_distance_locus(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                            horizontal,
+                        )?,
+                    ),
+                    (None, Some(known)) => (
+                        unique_profile_axis_distance_locus(
+                            sketch,
+                            &known,
+                            parameter,
+                            sketch_entities,
+                            horizontal,
+                        )?,
+                        known,
+                    ),
+                    (None, None) => unique_profile_axis_distance_pair(
                         sketch,
-                        &known,
                         parameter,
                         sketch_entities,
                         horizontal,
                     )?,
-                ),
-                (None, Some(known)) => (
-                    unique_profile_axis_distance_locus(
-                        sketch,
-                        &known,
-                        parameter,
-                        sketch_entities,
-                        horizontal,
-                    )?,
-                    known,
-                ),
-                (None, None) => unique_profile_axis_distance_pair(
-                    sketch,
-                    parameter,
-                    sketch_entities,
-                    horizontal,
-                )?,
+                },
             };
             if first == second {
                 return None;
@@ -1527,6 +1562,88 @@ fn unique_dynamic_marker_line_angle_pair(
         }
     }
     sole_sorted(pairs)
+}
+
+#[allow(clippy::too_many_arguments)] // Keeps the two operand loci explicit beside the shared marker indexes.
+fn unique_dynamic_marker_point_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    known_first: Option<SketchLocus>,
+    known_second: Option<SketchLocus>,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<(SketchLocus, SketchLocus)> {
+    let cadmpeg_ir::features::ParameterValue::Length(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let measure = |first: &SketchLocus, second: &SketchLocus| {
+        let first_point = profile_locus_point(first, sketch_entities)?;
+        let second_point = profile_locus_point(second, sketch_entities)?;
+        Some(match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => {
+                (second_point.u - first_point.u).hypot(second_point.v - first_point.v)
+            }
+            FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                (second_point.u - first_point.u).abs()
+            }
+            FeatureInputRelationFamily::PointPointVerticalDistance => {
+                (second_point.v - first_point.v).abs()
+            }
+            _ => return None,
+        })
+    };
+    if let (Some(first), Some(second)) = (&known_first, &known_second) {
+        if measure(first, second).is_some_and(|value| same_dimension_length(value, expected.0)) {
+            return Some((first.clone(), second.clone()));
+        }
+    }
+    let candidates = |index: usize, known: Option<SketchLocus>| {
+        let mut candidates = known.into_iter().collect::<Vec<_>>();
+        if let Some(marker) = relation_operand_marker(relation, index, sketch, markers_by_id) {
+            candidates.extend(dynamic_marker_point_candidates(
+                marker,
+                sketch,
+                markers_by_id,
+                loci_by_marker,
+                sketch_entities,
+            ));
+        }
+        candidates
+    };
+    let mut first_candidates = candidates(0, known_first);
+    let mut second_candidates = candidates(1, known_second);
+    deduplicate_physical_loci(&mut first_candidates, sketch_entities);
+    deduplicate_physical_loci(&mut second_candidates, sketch_entities);
+    if first_candidates.is_empty() || second_candidates.is_empty() {
+        return None;
+    }
+    let mut pairs = Vec::new();
+    for first in &first_candidates {
+        for second in &second_candidates {
+            if first == second {
+                continue;
+            }
+            if measure(first, second).is_some_and(|value| same_dimension_length(value, expected.0))
+            {
+                let mut pair = [first.clone(), second.clone()];
+                pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+                pairs.push((pair[0].clone(), pair[1].clone()));
+            }
+        }
+    }
+    sole_locus_pair(pairs)
+}
+
+const DYNAMIC_POINT_LOCUS_QUANTUM: f64 = 1.0e-8;
+
+fn deduplicate_physical_loci(candidates: &mut Vec<SketchLocus>, sketch_entities: &[SketchEntity]) {
+    let mut points = HashSet::new();
+    candidates.retain(|locus| {
+        profile_locus_point(locus, sketch_entities)
+            .is_none_or(|point| points.insert(quantize(point, DYNAMIC_POINT_LOCUS_QUANTUM)))
+    });
 }
 
 fn unique_dynamic_marker_point_line_pair(
