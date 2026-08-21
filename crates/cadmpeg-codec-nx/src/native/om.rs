@@ -326,6 +326,170 @@ pub(crate) fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) ->
     )
 }
 
+/// Return position-independent identities for one indexed object-record graph.
+///
+/// `RecordOrdinal16` values are local to one indexed section. The canonical
+/// graph replaces those values with links to records in traversal order, so a
+/// directory reorder does not change the identity. The traversal is explicit
+/// rather than recursive because malformed or adversarial records must not
+/// turn identity extraction into a stack overflow. Persistent handles remain
+/// serialized bytes: no cross-record owner relation proves that they are
+/// position-independent. A shared finite work budget returns no identity when
+/// canonicalization would exceed the decoder's bounded resource policy.
+fn stable_object_record_identities(
+    source_entry: &str,
+    records: &[crate::om::EntityRecord<'_>],
+) -> Vec<Option<String>> {
+    const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
+
+    let references = records
+        .iter()
+        .map(|record| {
+            crate::om::counted_record_references(record.bytes, 0, records.len())
+                .into_iter()
+                .map(|reference| (reference.offset, reference.value as usize))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut graph_work = MAX_GRAPH_WORK;
+
+    (0..records.len())
+        .map(|root| {
+            if references[root].is_empty() {
+                return Some(stable_object_record_identity(
+                    source_entry,
+                    records[root].bytes,
+                ));
+            }
+            stable_object_record_graph_identity(
+                source_entry,
+                records,
+                &references,
+                root,
+                &mut graph_work,
+            )
+        })
+        .collect()
+}
+
+fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
+    *work = work.checked_sub(amount)?;
+    Some(())
+}
+
+fn append_stable_object_graph_node(
+    seed: &mut Vec<u8>,
+    graph_work: &mut usize,
+    node_id: u64,
+) -> Option<()> {
+    consume_stable_object_graph_work(graph_work, 9)?;
+    seed.push(STABLE_GRAPH_NODE_START);
+    seed.extend_from_slice(&node_id.to_le_bytes());
+    Some(())
+}
+
+const STABLE_GRAPH_NODE_START: u8 = 0xf0;
+
+/// Encode one rooted object-record graph without depending on local ordinals.
+fn stable_object_record_graph_identity(
+    source_entry: &str,
+    records: &[crate::om::EntityRecord<'_>],
+    references: &[Vec<(usize, usize)>],
+    root: usize,
+    graph_work: &mut usize,
+) -> Option<String> {
+    #[derive(Debug)]
+    struct Frame {
+        record: usize,
+        next_reference: usize,
+        raw_cursor: usize,
+    }
+
+    const NODE_END: u8 = 0xf1;
+    const RAW: u8 = 0xf2;
+    const REFERENCE_NEW: u8 = 0xf3;
+    const REFERENCE_BACK: u8 = 0xf4;
+
+    let mut seed = Vec::new();
+    consume_stable_object_graph_work(graph_work, source_entry.len().checked_add(32)?)?;
+    seed.extend_from_slice(b"nx:om:object-record-graph\0");
+    seed.extend_from_slice(&(source_entry.len() as u64).to_le_bytes());
+    seed.extend_from_slice(source_entry.as_bytes());
+
+    let mut node_ids = BTreeMap::<usize, u64>::new();
+    let mut next_node_id = 0_u64;
+    let mut stack = Vec::new();
+
+    node_ids.insert(root, next_node_id);
+    append_stable_object_graph_node(&mut seed, graph_work, next_node_id)?;
+    next_node_id = next_node_id.checked_add(1)?;
+    stack.push(Frame {
+        record: root,
+        next_reference: 0,
+        raw_cursor: 0,
+    });
+
+    while let Some(frame_index) = stack.len().checked_sub(1) {
+        let (record, next_reference, raw_cursor) = {
+            let frame = stack.get(frame_index)?;
+            (frame.record, frame.next_reference, frame.raw_cursor)
+        };
+        let record_bytes = records.get(record)?.bytes;
+        let record_references = references.get(record)?;
+        if let Some(&(reference_offset, target)) = record_references.get(next_reference) {
+            let reference_end = reference_offset.checked_add(3)?;
+            if reference_offset < raw_cursor
+                || reference_end > record_bytes.len()
+                || target >= records.len()
+            {
+                return None;
+            }
+            let raw = record_bytes.get(raw_cursor..reference_offset)?;
+            consume_stable_object_graph_work(graph_work, raw.len().checked_add(9)?)?;
+            seed.push(RAW);
+            seed.extend_from_slice(&(raw.len() as u64).to_le_bytes());
+            seed.extend_from_slice(raw);
+
+            let frame = stack.get_mut(frame_index)?;
+            frame.next_reference = frame.next_reference.checked_add(1)?;
+            frame.raw_cursor = reference_end;
+
+            if let Some(&target_id) = node_ids.get(&target) {
+                consume_stable_object_graph_work(graph_work, 9)?;
+                seed.push(REFERENCE_BACK);
+                seed.extend_from_slice(&target_id.to_le_bytes());
+            } else {
+                node_ids.insert(target, next_node_id);
+                seed.push(REFERENCE_NEW);
+                seed.extend_from_slice(&next_node_id.to_le_bytes());
+                append_stable_object_graph_node(&mut seed, graph_work, next_node_id)?;
+                next_node_id = next_node_id.checked_add(1)?;
+                stack.push(Frame {
+                    record: target,
+                    next_reference: 0,
+                    raw_cursor: 0,
+                });
+            }
+        } else {
+            if raw_cursor > record_bytes.len() {
+                return None;
+            }
+            let raw = record_bytes.get(raw_cursor..)?;
+            consume_stable_object_graph_work(graph_work, raw.len().checked_add(1)?)?;
+            seed.push(RAW);
+            seed.extend_from_slice(&(raw.len() as u64).to_le_bytes());
+            seed.extend_from_slice(raw);
+            seed.push(NODE_END);
+            stack.pop();
+        }
+    }
+
+    Some(format!(
+        "nx:om:object-record:{}",
+        cadmpeg_ir::hash::sha256_hex(&seed)
+    ))
+}
+
 /// Counted active-object membership table from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RmFastLoadObjectIdTable {
@@ -2020,6 +2184,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
         }
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
+        let stable_identities = stable_object_record_identities(&entry.name, &section.records);
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, _, _, reference) in section.references() {
@@ -2046,6 +2211,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 entry_offset,
                 entry.name.clone(),
                 record,
+                stable_identities[record_ordinal].clone(),
                 dependencies
                     .get(&record_ordinal)
                     .into_iter()
@@ -2063,8 +2229,11 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
     }
 
     let mut identity_counts = BTreeMap::<String, usize>::new();
-    for (_, _, _, _, source_entry, record, _, _) in &candidates {
-        let identity = stable_object_record_identity(source_entry, record.bytes);
+    for (_, _, _, _, source_entry, _, stable_identity, _, _) in &candidates {
+        let Some(stable_identity) = stable_identity else {
+            continue;
+        };
+        let identity = format!("{source_entry}\0{stable_identity}");
         *identity_counts.entry(identity).or_default() += 1;
     }
 
@@ -2078,10 +2247,14 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 entry_offset,
                 source_entry,
                 record,
+                stable_identity,
                 dependencies,
                 dependents,
             )| {
-                let stable_identity = stable_object_record_identity(&source_entry, record.bytes);
+                let stable_identity = stable_identity.filter(|identity| {
+                    let key = format!("{source_entry}\0{identity}");
+                    identity_counts.get(&key) == Some(&1)
+                });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
                     object_id: record.object_id,
@@ -2093,8 +2266,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                     section_offset,
                     byte_len: record.bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
-                    stable_identity: (identity_counts.get(&stable_identity) == Some(&1))
-                        .then_some(stable_identity),
+                    stable_identity,
                     dependencies,
                     dependents,
                     source_entry,
@@ -5871,6 +6043,7 @@ mod tests {
 
 #[cfg(test)]
 mod object_record_identity_tests {
+    use crate::om::EntityRecord;
     use crate::test_support::prt_with_indexed_om_section;
 
     #[test]
@@ -5901,5 +6074,80 @@ mod object_record_identity_tests {
             .iter()
             .all(|record| record.stable_identity.is_some()));
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
+    }
+
+    #[test]
+    fn graph_identity_ignores_same_section_record_reordering() {
+        let first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
+        let second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xb0];
+        let original = [
+            EntityRecord {
+                object_id: Some(11),
+                object_id_offset: Some(0),
+                offset: 0,
+                bytes: &first,
+            },
+            EntityRecord {
+                object_id: Some(12),
+                object_id_offset: Some(4),
+                offset: 6,
+                bytes: &second,
+            },
+        ];
+
+        let reordered_first = [0x01, 0x02, 0x90, 0x00, 0x01, 0xb0];
+        let reordered_second = [0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
+        let reordered = [
+            EntityRecord {
+                object_id: Some(12),
+                object_id_offset: Some(0),
+                offset: 0,
+                bytes: &reordered_first,
+            },
+            EntityRecord {
+                object_id: Some(11),
+                object_id_offset: Some(4),
+                offset: 6,
+                bytes: &reordered_second,
+            },
+        ];
+
+        let original_identities = super::stable_object_record_identities("/entry", &original);
+        let reordered_identities = super::stable_object_record_identities("/entry", &reordered);
+        assert_eq!(original_identities[0], reordered_identities[1]);
+        assert_eq!(original_identities[1], reordered_identities[0]);
+
+        let unrelated = [0xd0];
+        let with_unrelated = [
+            original[0].clone(),
+            original[1].clone(),
+            EntityRecord {
+                object_id: Some(13),
+                object_id_offset: Some(8),
+                offset: 12,
+                bytes: &unrelated,
+            },
+        ];
+        let with_unrelated_identities =
+            super::stable_object_record_identities("/entry", &with_unrelated);
+        assert_eq!(original_identities[0], with_unrelated_identities[0]);
+        assert_eq!(original_identities[1], with_unrelated_identities[1]);
+
+        let changed = [
+            EntityRecord {
+                object_id: Some(12),
+                object_id_offset: Some(0),
+                offset: 0,
+                bytes: &reordered_first,
+            },
+            EntityRecord {
+                object_id: Some(11),
+                object_id_offset: Some(4),
+                offset: 6,
+                bytes: &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0],
+            },
+        ];
+        let changed_identities = super::stable_object_record_identities("/entry", &changed);
+        assert_ne!(original_identities[0], changed_identities[1]);
     }
 }

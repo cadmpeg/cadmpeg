@@ -1347,11 +1347,14 @@ object_id(i) = object_id_table[i]
 
 Each bounded record retains the decoded object ID, exact source offset of its four-byte object-ID table word, exact payload boundary, and payload byte identity.
 
-An ID-bounded record also has a content-backed identity when its exact bytes
-are unique within the containing directory entry. The identity hashes the
-directory-entry name and exact record bytes, and does not include section or
-record position. Equal record bytes in the same directory entry remain
-position-dependent because no serialized owner distinguishes them.
+An ID-bounded record also has a content-backed identity when its canonical
+rooted record graph is unique within the containing directory entry. The
+canonical graph retains every non-reference byte and replaces each validated
+same-section `RecordOrdinal16` token with the referenced record's traversal
+edge. The graph includes cycles through back-edges, does not include section
+or record position, and retains persistent-handle bytes as serialized. Equal
+canonical graphs in the same directory entry remain position-dependent because
+no serialized owner distinguishes them.
 
 The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. A **type registry** declaration is `declared_len:u8, name[declared_len-1], trailing_code:u8`; `name` is printable ASCII beginning with `UGS::`. The zero-based declaration ordinal is the class identity. A **field registry** declaration has the same core framing with a printable name beginning `m_`. The bytes from its trailing code through the next length-framed `m_` declaration form that field's registry suffix. The final declaration has no next-declaration boundary and therefore no bounded suffix.
 
