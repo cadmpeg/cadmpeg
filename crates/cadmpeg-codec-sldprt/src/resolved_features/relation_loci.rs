@@ -319,6 +319,7 @@ pub(super) fn typed_relation_definition(
     let parameter = parameter?;
     let parameter_id = parameter.id.clone();
     let marker = |index: usize| relation_operand_marker(relation, index, sketch, markers_by_id);
+    let dynamic = relation_uses_dynamic_operands(relation);
     let point = |index: usize| {
         let scoped_ref = relation_operand_geometry_ref(relation, index);
         sketch_entities
@@ -341,6 +342,14 @@ pub(super) fn typed_relation_definition(
                     loci_by_marker
                         .get(&qualified_point_marker_key(marker))
                         .and_then(|loci| unique_locus(loci))
+                } else if dynamic && dynamic_point_operand(relation, index) {
+                    dynamic_marker_point_locus(
+                        marker,
+                        sketch,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
                 } else {
                     marker_point_locus(marker, markers_by_id, loci_by_marker)
                 }
@@ -353,7 +362,6 @@ pub(super) fn typed_relation_definition(
             })
         })
     };
-    let dynamic = relation_uses_dynamic_operands(relation);
     let dynamic_point_pair = if dynamic {
         match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
@@ -1809,18 +1817,35 @@ fn dynamic_marker_point_candidates(
 ) -> Vec<SketchLocus> {
     let mut marker_ids = HashSet::new();
     collect_marker_identity_ids(marker, markers_by_id, &mut marker_ids, &mut HashSet::new());
-    let mut candidates = marker_point_locus(marker, markers_by_id, loci_by_marker)
-        .into_iter()
-        .filter(|locus| {
-            sketch_entities
-                .iter()
-                .find(|entity| entity.id == locus_entity(locus))
-                .is_some_and(|entity| {
-                    entity.sketch == *sketch
-                        && profile_locus_point(locus, sketch_entities).is_some()
-                })
-        })
-        .collect::<Vec<_>>();
+    let center_candidates = dynamic_marker_center_candidates(
+        marker,
+        sketch,
+        markers_by_id,
+        loci_by_marker,
+        sketch_entities,
+    );
+    let center_candidates = center_candidates.filter(|candidates| !candidates.is_empty());
+    let has_center_carrier = center_candidates.is_some();
+    let mut candidates = match center_candidates {
+        Some(center_candidates) => unique_locus(&center_candidates).into_iter().collect(),
+        None => marker_point_locus(marker, markers_by_id, loci_by_marker)
+            .into_iter()
+            .filter(|locus| {
+                sketch_entities
+                    .iter()
+                    .find(|entity| entity.id == locus_entity(locus))
+                    .is_some_and(|entity| {
+                        entity.sketch == *sketch
+                            && profile_locus_point(locus, sketch_entities).is_some()
+                    })
+            })
+            .collect::<Vec<_>>(),
+    };
+    if has_center_carrier {
+        candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        candidates.dedup();
+        return candidates;
+    }
     candidates.extend(sketch_entities.iter().filter_map(|entity| {
         if entity.sketch != *sketch || !matches!(entity.geometry, SketchGeometry::Point { .. }) {
             return None;
@@ -1842,6 +1867,62 @@ fn dynamic_marker_point_candidates(
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     candidates.dedup();
     candidates
+}
+
+fn dynamic_marker_point_locus(
+    marker: &str,
+    sketch: &SketchId,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchLocus> {
+    match dynamic_marker_center_candidates(
+        marker,
+        sketch,
+        markers_by_id,
+        loci_by_marker,
+        sketch_entities,
+    ) {
+        Some(candidates) if !candidates.is_empty() => unique_locus(&candidates),
+        Some(_) | None => marker_point_locus(marker, markers_by_id, loci_by_marker),
+    }
+}
+
+fn dynamic_marker_center_candidates(
+    marker: &str,
+    sketch: &SketchId,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<Vec<SketchLocus>> {
+    let mut marker_ids = HashSet::new();
+    collect_marker_identity_ids(marker, markers_by_id, &mut marker_ids, &mut HashSet::new());
+    let has_arc_marker = marker_ids.iter().any(|marker_id| {
+        markers_by_id
+            .get(marker_id.as_str())
+            .is_some_and(|marker| matches!(marker.kind, SketchInputKind::Arc))
+    });
+    if !has_arc_marker {
+        return None;
+    }
+    let mut centers = marker_ids
+        .iter()
+        .filter_map(|marker_id| {
+            let marker = markers_by_id.get(marker_id.as_str())?;
+            if !matches!(marker.kind, SketchInputKind::Arc) {
+                return None;
+            }
+            let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
+            let entity = sketch_entities
+                .iter()
+                .find(|entity| entity.id == locus_entity(&locus))?;
+            (entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Arc { .. }))
+                .then(|| SketchLocus::Center(entity.id.clone()))
+        })
+        .collect::<Vec<_>>();
+    centers.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    centers.dedup();
+    Some(centers)
 }
 
 fn dynamic_marker_line_candidates(
@@ -2181,6 +2262,18 @@ pub(super) fn relation_operand_marker<'a>(
         .or_else(|| dynamic_relation_marker(relation, index, markers_by_id))
 }
 
+fn dynamic_point_operand(relation: &FeatureInputRelationInstance, index: usize) -> bool {
+    matches!(
+        (relation.family, index),
+        (
+            FeatureInputRelationFamily::PointPointDistance
+                | FeatureInputRelationFamily::PointPointHorizontalDistance
+                | FeatureInputRelationFamily::PointPointVerticalDistance,
+            0 | 1
+        ) | (FeatureInputRelationFamily::PointLineDistance, 0)
+    )
+}
+
 fn dynamic_relation_marker<'a>(
     relation: &FeatureInputRelationInstance,
     index: usize,
@@ -2189,15 +2282,7 @@ fn dynamic_relation_marker<'a>(
     if !relation_uses_dynamic_operands(relation) {
         return None;
     }
-    let point_role = matches!(
-        (relation.family, index),
-        (
-            FeatureInputRelationFamily::PointPointDistance
-                | FeatureInputRelationFamily::PointPointHorizontalDistance
-                | FeatureInputRelationFamily::PointPointVerticalDistance,
-            0 | 1
-        ) | (FeatureInputRelationFamily::PointLineDistance, 0)
-    );
+    let point_role = dynamic_point_operand(relation, index);
     let line_role = matches!(
         (relation.family, index),
         (
@@ -2224,7 +2309,9 @@ fn dynamic_relation_marker<'a>(
         }
     };
     let address_kind = |marker: &SketchInputEntity| {
-        direct_kind(marker) || matches!(marker.kind, SketchInputKind::Relation(_))
+        direct_kind(marker)
+            || (point_role && matches!(marker.kind, SketchInputKind::Arc))
+            || matches!(marker.kind, SketchInputKind::Relation(_))
     };
     let mut by_object = markers_by_id
         .values()
@@ -2233,6 +2320,24 @@ fn dynamic_relation_marker<'a>(
         .filter(|marker| marker.object_index == Some(address) && address_kind(marker))
         .collect::<Vec<_>>();
     if !by_object.is_empty() {
+        if point_role {
+            let mut direct = by_object
+                .iter()
+                .copied()
+                .filter(|marker| direct_kind(marker))
+                .collect::<Vec<_>>();
+            if let Some(marker) = unique_dynamic_marker(&mut direct) {
+                return Some(marker);
+            }
+            let mut arcs = by_object
+                .iter()
+                .copied()
+                .filter(|marker| matches!(marker.kind, SketchInputKind::Arc))
+                .collect::<Vec<_>>();
+            if let Some(marker) = unique_dynamic_marker(&mut arcs) {
+                return Some(marker);
+            }
+        }
         return unique_dynamic_marker(&mut by_object);
     }
     let mut by_local = markers_by_id
@@ -2242,6 +2347,24 @@ fn dynamic_relation_marker<'a>(
         .filter(|marker| marker.local_id == Some(address) && address_kind(marker))
         .collect::<Vec<_>>();
     if !by_local.is_empty() {
+        if point_role {
+            let mut direct = by_local
+                .iter()
+                .copied()
+                .filter(|marker| direct_kind(marker))
+                .collect::<Vec<_>>();
+            if let Some(marker) = unique_dynamic_marker(&mut direct) {
+                return Some(marker);
+            }
+            let mut arcs = by_local
+                .iter()
+                .copied()
+                .filter(|marker| matches!(marker.kind, SketchInputKind::Arc))
+                .collect::<Vec<_>>();
+            if let Some(marker) = unique_dynamic_marker(&mut arcs) {
+                return Some(marker);
+            }
+        }
         return unique_dynamic_marker(&mut by_local);
     }
     let mut ordinal = markers_by_id

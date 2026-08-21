@@ -7,6 +7,7 @@ use super::{
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
+    SketchRelationKind,
 };
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, Length, ParameterId, ParameterValue,
@@ -659,6 +660,173 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
             second: second_locus,
             parameter: ParameterId("parameter".into()),
         })
+    );
+}
+
+#[test]
+fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
+    let sketch = SketchId("sketch".into());
+    let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
+    point_marker.object_index = Some(0);
+    let mut arc_marker = marker("arc-marker", 1, 20, SketchInputKind::Arc, None);
+    arc_marker.object_index = Some(4);
+    let mut wrapper_marker = marker(
+        "arc-wrapper",
+        2,
+        30,
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+        None,
+    );
+    wrapper_marker.object_index = Some(4);
+    wrapper_marker.links = vec![SketchInputLink {
+        local_id: 0,
+        entity_ref: arc_marker.id.clone(),
+    }];
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(point_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let arc = SketchEntity {
+        id: SketchEntityId("arc".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(0.0, 52.0),
+            radius: Length(10.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+    };
+    let markers = [point_marker, arc_marker, wrapper_marker];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([(
+        "arc-marker".into(),
+        vec![SketchLocus::Entity(arc.id.clone())],
+    )]);
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 4]);
+    let parameter = length_parameter(52.0);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[point.clone(), arc.clone()],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Center(arc.id),
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
+fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
+    let sketch = SketchId("sketch".into());
+    let mut point_marker = marker("point-marker", 0, 10, SketchInputKind::Point, None);
+    point_marker.object_index = Some(0);
+    let first_marker = marker("first-arc", 1, 20, SketchInputKind::Arc, None);
+    let second_marker = marker("second-arc", 2, 30, SketchInputKind::Arc, None);
+    let mut wrapper_marker = marker(
+        "arc-wrapper",
+        3,
+        40,
+        SketchInputKind::Relation(SketchRelationKind::Distance),
+        None,
+    );
+    wrapper_marker.object_index = Some(4);
+    wrapper_marker.links = vec![
+        SketchInputLink {
+            local_id: 0,
+            entity_ref: first_marker.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: second_marker.id.clone(),
+        },
+    ];
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(point_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let first_arc = SketchEntity {
+        id: SketchEntityId("first-arc-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(0.0, 52.0),
+            radius: Length(10.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+    };
+    let second_arc = SketchEntity {
+        id: SketchEntityId("second-arc-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(0.0, 53.0),
+            radius: Length(10.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+    };
+    let markers = [point_marker, first_marker, second_marker, wrapper_marker];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([
+        (
+            "first-arc".into(),
+            vec![SketchLocus::Entity(first_arc.id.clone())],
+        ),
+        (
+            "second-arc".into(),
+            vec![SketchLocus::Entity(second_arc.id.clone())],
+        ),
+    ]);
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 4]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(52.0)),
+            &sketch,
+            &[point, first_arc, second_arc],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        None
     );
 }
 
