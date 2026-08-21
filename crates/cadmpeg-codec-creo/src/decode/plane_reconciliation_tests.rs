@@ -498,3 +498,66 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
     assert_eq!(u_axis, [0.0, 0.0, 1.0]);
 }
+
+#[test]
+fn matrix_frame_owns_conflicting_held_coordinate_plane() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 42,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.planes.envelopes.push(PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-1.0), Some(0.0), Some(1.0)],
+                [Some(1.0), Some(0.0), Some(-1.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    });
+    let component = std::f64::consts::FRAC_1_SQRT_2;
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: vec![
+            Some(1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+        origin: Some([0.0, 0.0, 0.0]),
+        u_axis: Some([component, 0.0, -component]),
+        normal: Some([component, 0.0, component]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    });
+    scan.planes.outlines =
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&42).expect("plane candidates");
+    let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
+    assert_eq!(plane.normal, [component, 0.0, component]);
+    assert_eq!(u_axis, [component, 0.0, -component]);
+}

@@ -452,6 +452,13 @@ pub fn agreed_plane_surface(
 }
 
 pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+    let matrix_frame_ids = scan
+        .planes
+        .local_systems
+        .iter()
+        .filter(|frame| crate::surface::uses_matrix_column_frame(frame))
+        .map(|frame| frame.surface_id)
+        .collect::<BTreeSet<_>>();
     let held_planes = scan
         .planes
         .envelopes
@@ -527,6 +534,9 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
     for outline in &scan.planes.outlines {
+        if matrix_frame_ids.contains(&outline.surface_id) {
+            continue;
+        }
         candidates
             .entry(outline.surface_id)
             .or_default()
@@ -544,6 +554,9 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
             });
     }
     for envelope in &scan.planes.envelopes {
+        if matrix_frame_ids.contains(&envelope.surface_id) {
+            continue;
+        }
         let Some(equation) = held_coordinate_plane(envelope) else {
             continue;
         };

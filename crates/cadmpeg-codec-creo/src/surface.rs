@@ -1673,6 +1673,37 @@ pub struct PlaneLocalSystem {
     pub offset: usize,
 }
 
+/// Return whether a retained plane frame agrees with the strict matrix form.
+///
+/// The matrix form carries an explicit zero rank column. Its frame is
+/// authoritative over envelope coordinates that merely hold one coordinate
+/// equal across two stored corners; treating that bound as a second plane
+/// equation would reject valid oblique planes.
+pub(crate) fn uses_matrix_column_frame(frame: &PlaneLocalSystem) -> bool {
+    let Ok(slots) = <[Option<f64>; 12]>::try_from(frame.slots.as_slice()) else {
+        return false;
+    };
+    let matrix = plane_matrix_frame(&slots);
+    let Some(matrix_u_axis) = matrix.u_axis else {
+        return false;
+    };
+    let Some(matrix_normal) = matrix.normal else {
+        return false;
+    };
+    let directions_agree = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter().zip(right).all(|(left, right)| {
+            (left - right).abs() <= EPS_PLANE_FRAME_SCALE * left.abs().max(right.abs()).max(1.0)
+        })
+    };
+    frame.origin == matrix.origin
+        && frame
+            .u_axis
+            .is_some_and(|u_axis| directions_agree(u_axis, matrix_u_axis))
+        && frame
+            .normal
+            .is_some_and(|normal| directions_agree(normal, matrix_normal))
+}
+
 /// Plane-specific positional envelope layout.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaneEnvelope {
@@ -2035,9 +2066,17 @@ pub fn placed_outline_planes(
         .iter()
         .map(|plane| plane.surface_id)
         .collect::<BTreeSet<_>>();
+    let matrix_frame_ids = frames
+        .iter()
+        .filter(|frame| uses_matrix_column_frame(frame))
+        .map(|frame| frame.surface_id)
+        .collect::<BTreeSet<_>>();
     let mut result = outline_planes(envelopes)
         .into_iter()
-        .filter(|plane| !frame_bound_ids.contains(&plane.surface_id))
+        .filter(|plane| {
+            !frame_bound_ids.contains(&plane.surface_id)
+                && !matrix_frame_ids.contains(&plane.surface_id)
+        })
         .collect::<Vec<_>>();
     result.extend(frame_bound);
     result.sort_by_key(|plane| plane.offset);
