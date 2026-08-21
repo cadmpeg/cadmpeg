@@ -7371,80 +7371,46 @@ fn numeric_expression_at(
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.
 /// Names and function calls fail; they need the parameter graph.
 pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
+    // This is the expression grammar's explicit operator stack. Do not turn
+    // nested parentheses or unary signs back into recursive descent: formula
+    // text is untrusted input, and a valid bounded record must not consume the
+    // decoder stack merely because its nesting is deep.
+    #[derive(Debug, Clone, Copy)]
+    enum Operator {
+        OpenParen,
+        Unary(u8),
+        Binary(u8),
+    }
+
+    impl Operator {
+        fn precedence(self) -> u8 {
+            match self {
+                Self::OpenParen => 0,
+                Self::Binary(b'+' | b'-') => 1,
+                Self::Binary(b'*' | b'/') => 2,
+                Self::Unary(_) => 3,
+                Self::Binary(b'^') => 4,
+                Self::Binary(_) => 0,
+            }
+        }
+
+        fn is_right_associative(self) -> bool {
+            matches!(self, Self::Unary(_) | Self::Binary(b'^'))
+        }
+    }
+
     struct Parser<'a> {
         bytes: &'a [u8],
         at: usize,
+        values: Vec<f64>,
+        operators: Vec<Operator>,
+        expect_operand: bool,
     }
 
     impl Parser<'_> {
         fn spaces(&mut self) {
             while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
                 self.at += 1;
-            }
-        }
-
-        fn take(&mut self, byte: u8) -> bool {
-            self.spaces();
-            if self.bytes.get(self.at) == Some(&byte) {
-                self.at += 1;
-                true
-            } else {
-                false
-            }
-        }
-
-        fn sum(&mut self) -> Option<f64> {
-            let mut value = self.product()?;
-            loop {
-                if self.take(b'+') {
-                    value += self.product()?;
-                } else if self.take(b'-') {
-                    value -= self.product()?;
-                } else {
-                    return value.is_finite().then_some(value);
-                }
-            }
-        }
-
-        fn product(&mut self) -> Option<f64> {
-            let mut value = self.unary()?;
-            loop {
-                if self.take(b'*') {
-                    value *= self.unary()?;
-                } else if self.take(b'/') {
-                    value /= self.unary()?;
-                } else {
-                    return value.is_finite().then_some(value);
-                }
-            }
-        }
-
-        fn power(&mut self) -> Option<f64> {
-            let value = self.primary()?;
-            if self.take(b'^') {
-                let result = value.powf(self.unary()?);
-                result.is_finite().then_some(result)
-            } else {
-                Some(value)
-            }
-        }
-
-        fn unary(&mut self) -> Option<f64> {
-            if self.take(b'+') {
-                self.unary()
-            } else if self.take(b'-') {
-                Some(-self.unary()?)
-            } else {
-                self.power()
-            }
-        }
-
-        fn primary(&mut self) -> Option<f64> {
-            if self.take(b'(') {
-                let value = self.sum()?;
-                self.take(b')').then_some(value)
-            } else {
-                self.number()
             }
         }
 
@@ -7478,20 +7444,125 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
                 (self.at > exponent).then_some(())?;
             }
             (self.at > start).then_some(())?;
-            std::str::from_utf8(&self.bytes[start..self.at])
+            let value: f64 = std::str::from_utf8(&self.bytes[start..self.at])
                 .ok()?
                 .parse()
-                .ok()
+                .ok()?;
+            value.is_finite().then_some(value)
+        }
+
+        fn apply_top(&mut self) -> Option<()> {
+            let operator = self.operators.pop()?;
+            let value = match operator {
+                Operator::OpenParen => return None,
+                Operator::Unary(operator) => {
+                    let value = self.values.pop()?;
+                    match operator {
+                        b'+' => value,
+                        b'-' => -value,
+                        _ => return None,
+                    }
+                }
+                Operator::Binary(operator) => {
+                    let right = self.values.pop()?;
+                    let left = self.values.pop()?;
+                    match operator {
+                        b'+' => left + right,
+                        b'-' => left - right,
+                        b'*' => left * right,
+                        b'/' => left / right,
+                        b'^' => left.powf(right),
+                        _ => return None,
+                    }
+                }
+            };
+            value.is_finite().then(|| self.values.push(value))
+        }
+
+        fn push_binary(&mut self, operator: u8) -> Option<()> {
+            let incoming = Operator::Binary(operator);
+            while self.operators.last().is_some_and(|top| {
+                !matches!(top, Operator::OpenParen)
+                    && (top.precedence() > incoming.precedence()
+                        || (top.precedence() == incoming.precedence()
+                            && !incoming.is_right_associative()))
+            }) {
+                self.apply_top()?;
+            }
+            self.operators.push(incoming);
+            self.expect_operand = true;
+            Some(())
+        }
+
+        fn close_group(&mut self) -> Option<()> {
+            while self
+                .operators
+                .last()
+                .is_some_and(|operator| !matches!(operator, Operator::OpenParen))
+            {
+                self.apply_top()?;
+            }
+            matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(())
+        }
+
+        fn parse(mut self) -> Option<f64> {
+            while self.at < self.bytes.len() {
+                self.spaces();
+                if self.at == self.bytes.len() {
+                    break;
+                }
+                let byte = *self.bytes.get(self.at)?;
+                if self.expect_operand {
+                    match byte {
+                        b'+' | b'-' => {
+                            self.operators.push(Operator::Unary(byte));
+                            self.at += 1;
+                        }
+                        b'(' => {
+                            self.operators.push(Operator::OpenParen);
+                            self.at += 1;
+                        }
+                        _ => {
+                            let value = self.number()?;
+                            self.values.push(value);
+                            self.expect_operand = false;
+                        }
+                    }
+                } else {
+                    match byte {
+                        b'+' | b'-' | b'*' | b'/' | b'^' => {
+                            self.push_binary(byte)?;
+                            self.at += 1;
+                        }
+                        b')' => {
+                            self.close_group()?;
+                            self.at += 1;
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            if self.expect_operand {
+                return None;
+            }
+            while let Some(operator) = self.operators.last() {
+                if matches!(operator, Operator::OpenParen) {
+                    return None;
+                }
+                self.apply_top()?;
+            }
+            (self.values.len() == 1).then(|| self.values[0])
         }
     }
 
-    let mut parser = Parser {
+    Parser {
         bytes: text.as_bytes(),
         at: 0,
-    };
-    let value = parser.sum()?;
-    parser.spaces();
-    (parser.at == parser.bytes.len() && value.is_finite()).then_some(value)
+        values: Vec::new(),
+        operators: Vec::new(),
+        expect_operand: true,
+    }
+    .parse()
 }
 
 /// Parse one complete canonical `p<decimal>[_qualifier]` parameter name.

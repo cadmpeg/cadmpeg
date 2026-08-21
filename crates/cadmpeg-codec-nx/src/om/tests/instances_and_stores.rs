@@ -1593,6 +1593,20 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
 }
 
 #[test]
+fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
+    const DEPTH: usize = 16 * 1024;
+
+    let nested = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&nested), Some(1.0));
+
+    let unary = format!("{}1", "+".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&unary), Some(1.0));
+
+    let malformed = format!("{}1", "(".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&malformed), None);
+}
+
+#[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
     let values = super::string_values(bytes, 100);
