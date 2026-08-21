@@ -107,6 +107,7 @@ use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
 use crate::records::{
@@ -6040,6 +6041,14 @@ pub(crate) fn exact_work_plane_frame(
                         ) =>
                 {
                     (start + work_plane_class_337_325::MATRIX, None)
+                }
+                work_plane_class_322_332::LEN
+                    if bytes.get(start + 4..start + 7) == Some(b"322")
+                        && bytes.get(paired + 4..paired + 7) == Some(b"261")
+                        && bytes.get(start + 11..start + work_plane_class_322_332::MATRIX)
+                            == Some(&[0u8; work_plane_class_322_332::MATRIX - 11][..]) =>
+                {
+                    (start + work_plane_class_322_332::MATRIX, None)
                 }
                 321 if bytes.get(start + 11..start + 49) == Some(&[0u8; 38][..]) => {
                     (start + 49, None)

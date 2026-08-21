@@ -13,6 +13,7 @@ use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 
 #[test]
@@ -1943,6 +1944,50 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         assert_eq!(decoded.transform_offset, work_plane_325::MATRIX as u64);
         assert_eq!(decoded.reference, None);
     }
+}
+
+#[test]
+fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair() {
+    let transform: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = vec![0; work_plane_class_322_332::LEN];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"322");
+    bytes[7..11].copy_from_slice(&85u32.to_le_bytes());
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = work_plane_class_322_332::MATRIX + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&85u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#322", "WorkPlane", 1);
+    scope.reference_members = vec![85];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-322/261 WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(
+        decoded.transform_offset,
+        work_plane_class_322_332::MATRIX as u64
+    );
+    assert_eq!(decoded.reference, None);
+
+    let mut wrong_pair = bytes;
+    wrong_pair[work_plane_class_322_332::LEN + 4..work_plane_class_322_332::LEN + 7]
+        .copy_from_slice(b"262");
+    assert_eq!(
+        exact_work_plane_frame(
+            &wrong_pair,
+            &IndexedRecordOffsets::build(&wrong_pair),
+            &scope,
+        ),
+        None
+    );
 }
 
 #[test]

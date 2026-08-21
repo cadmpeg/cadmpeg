@@ -7064,6 +7064,36 @@ size = 148
 note = "The placement carrier tail is retained as a named opaque carrier."
 
 [[record]]
+name = "work_plane_legacy_class_322_332_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-322/261 WorkPlane placement frame is 332 bytes"
+size = 332
+note = "Offsets are relative to the class-322 primary indexed placement header paired with class 261. The zero prefix and matrix match the compact placement family; the remaining tail is opaque."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 38
+note = "Bytes 11 through 48 are zero."
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "The frame stores a row-major 4×4 f64 local-to-model matrix at offset 49"
+
+[[record.gap]]
+offset = 177
+size = 155
+note = "The placement carrier tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_plane_legacy_class_256_matrix_frame"
 kind = "byte"
 section = "3.1"
