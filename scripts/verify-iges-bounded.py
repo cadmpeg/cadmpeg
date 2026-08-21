@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Run the bounded IGES decode, validation, and optional round-trip gate.
+"""Run the bounded IGES dump, check, and optional round-trip gate.
 
-Each input receives an independent timeout for every command. An initial
-decode exit is accepted only when it is exit code 1 and the command wrote a
+Each input receives an independent timeout for every command. An initial dump
+exit is accepted only when it is exit code 1 and the command wrote a
 schema-versioned decode refusal report. A timeout, crash, launcher failure,
-unclassified decode exit, missing output, validation failure, conversion
-failure, or generated-file validation failure fails the gate. ``--roundtrip``
-adds conversion to IGES 5.3 and decode plus validation of the generated file.
+unclassified dump exit, missing output, check failure, conversion failure, or
+generated-file check failure fails the gate. ``--roundtrip`` adds conversion
+to IGES 5.3 and dump plus check of the generated file.
 
 Temporary decoded artifacts are created below ``$HOME/side2/tmp/iges-l9`` by
 default. Set ``--scratch`` when a CI runner needs another dedicated scratch
@@ -87,7 +87,7 @@ def run_command(command: Sequence[str], timeout: float, stderr_path: Path) -> Co
 
 
 def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, str | None]:
-    """Read and validate the v6 refusal envelope emitted by ``decode``."""
+    """Read and validate the v6 refusal envelope emitted by ``dump``."""
 
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -97,8 +97,8 @@ def load_decode_refusal(report_path: Path) -> tuple[dict[str, object] | None, st
         return None, "decode refusal report is not a JSON object"
     if payload.get("schema_version") != 6:
         return None, "decode refusal report does not use schema_version 6"
-    if payload.get("command") != "decode":
-        return None, "decode refusal report command is not decode"
+    if payload.get("command") != "dump":
+        return None, "decode refusal report command is not dump"
     if payload.get("status") != "refused":
         return None, "decode refusal report status is not refused"
     refusal = payload.get("refusal")
@@ -137,11 +137,11 @@ def verify_file(
     with tempfile.TemporaryDirectory(prefix="iges-bounded-", dir=scratch) as directory:
         temporary = Path(directory)
         cadir = temporary / "decoded.cadir.json"
-        decode_stderr = temporary / "decode.stderr"
-        decode_report = temporary / "decode.report.json"
-        decode_command = [
+        dump_stderr = temporary / "dump.stderr"
+        dump_report = temporary / "dump.report.json"
+        dump_command = [
             cadmpeg,
-            "decode",
+            "dump",
             str(path),
             "--limits",
             limits,
@@ -149,46 +149,46 @@ def verify_file(
             str(cadir),
             "--force",
             "--report",
-            str(decode_report),
+            str(dump_report),
         ]
-        decode = run_command(decode_command, timeout, decode_stderr)
+        dump = run_command(dump_command, timeout, dump_stderr)
         result: dict[str, object] = {
             "filename": relative_name,
             "gate_pass": False,
-            "decode": asdict(decode),
+            "dump": asdict(dump),
         }
 
-        if decode.status != "exited":
-            result["status"] = f"decode_{decode.status}"
+        if dump.status != "exited":
+            result["status"] = f"dump_{dump.status}"
             return result
-        if decode.returncode != 0:
-            refusal, report_error = load_decode_refusal(decode_report)
-            if decode.returncode == 1 and refusal is not None:
+        if dump.returncode != 0:
+            refusal, report_error = load_decode_refusal(dump_report)
+            if dump.returncode == 1 and refusal is not None:
                 result["gate_pass"] = True
-                result["status"] = "decode_refused"
+                result["status"] = "dump_refused"
                 result["refusal"] = refusal
             else:
                 result["status"] = (
-                    "decode_unclassified_refusal"
-                    if decode.returncode == 1
-                    else "decode_error"
+                    "dump_unclassified_refusal"
+                    if dump.returncode == 1
+                    else "dump_error"
                 )
                 if report_error is not None:
                     result["classification_error"] = report_error
             return result
         if not cadir.is_file() or cadir.stat().st_size == 0:
-            result["status"] = "decode_missing_output"
+            result["status"] = "dump_missing_output"
             return result
 
-        validate_stderr = temporary / "validate.stderr"
-        validate_command = [cadmpeg, "validate", str(cadir), "--limits", limits]
-        validate = run_command(validate_command, timeout, validate_stderr)
-        result["validate"] = asdict(validate)
-        if validate.status != "exited":
-            result["status"] = f"validation_{validate.status}"
+        check_stderr = temporary / "check.stderr"
+        check_command = [cadmpeg, "check", str(cadir), "--limits", limits]
+        check = run_command(check_command, timeout, check_stderr)
+        result["check"] = asdict(check)
+        if check.status != "exited":
+            result["status"] = f"check_{check.status}"
             return result
-        if validate.returncode != 0:
-            result["status"] = "validation_error"
+        if check.returncode != 0:
+            result["status"] = "check_error"
             return result
 
         if roundtrip:
@@ -221,48 +221,48 @@ def verify_file(
                 result["status"] = "convert_missing_output"
                 return result
 
-            redecoded = temporary / "redecoded.cadir.json"
-            redecode_stderr = temporary / "redecode.stderr"
-            redecode_report = temporary / "redecode.report.json"
-            redecode_command = [
+            redumped = temporary / "redumped.cadir.json"
+            redump_stderr = temporary / "redump.stderr"
+            redump_report = temporary / "redump.report.json"
+            redump_command = [
                 cadmpeg,
-                "decode",
+                "dump",
                 str(generated),
                 "--limits",
                 limits,
                 "--output",
-                str(redecoded),
+                str(redumped),
                 "--force",
                 "--report",
-                str(redecode_report),
+                str(redump_report),
             ]
-            redecode = run_command(redecode_command, timeout, redecode_stderr)
-            result["redecode"] = asdict(redecode)
-            if redecode.status != "exited":
-                result["status"] = f"redecode_{redecode.status}"
+            redump = run_command(redump_command, timeout, redump_stderr)
+            result["redump"] = asdict(redump)
+            if redump.status != "exited":
+                result["status"] = f"redump_{redump.status}"
                 return result
-            if redecode.returncode != 0:
-                result["status"] = "redecode_error"
+            if redump.returncode != 0:
+                result["status"] = "redump_error"
                 return result
-            if not redecoded.is_file() or redecoded.stat().st_size == 0:
-                result["status"] = "redecode_missing_output"
+            if not redumped.is_file() or redumped.stat().st_size == 0:
+                result["status"] = "redump_missing_output"
                 return result
 
-            revalidate_stderr = temporary / "revalidate.stderr"
-            revalidate_command = [
+            recheck_stderr = temporary / "recheck.stderr"
+            recheck_command = [
                 cadmpeg,
-                "validate",
-                str(redecoded),
+                "check",
+                str(redumped),
                 "--limits",
                 limits,
             ]
-            revalidate = run_command(revalidate_command, timeout, revalidate_stderr)
-            result["revalidate"] = asdict(revalidate)
-            if revalidate.status != "exited":
-                result["status"] = f"revalidation_{revalidate.status}"
+            recheck = run_command(recheck_command, timeout, recheck_stderr)
+            result["recheck"] = asdict(recheck)
+            if recheck.status != "exited":
+                result["status"] = f"recheck_{recheck.status}"
                 return result
-            if revalidate.returncode != 0:
-                result["status"] = "revalidation_error"
+            if recheck.returncode != 0:
+                result["status"] = "recheck_error"
                 return result
 
         result["gate_pass"] = True
@@ -304,7 +304,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--roundtrip",
         action="store_true",
-        help="convert each successful decode to IGES 5.3 and re-decode and validate it",
+        help="convert each successful dump to IGES 5.3 and dump and check it again",
     )
     args = parser.parse_args(argv)
     if args.timeout <= 0:

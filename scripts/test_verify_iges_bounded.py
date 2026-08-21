@@ -24,7 +24,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def setUp(self) -> None:
         MODULE.DEFAULT_SCRATCH.mkdir(parents=True, exist_ok=True)
         self.directory = tempfile.TemporaryDirectory(dir=MODULE.DEFAULT_SCRATCH)
-        self.path = Path(self.directory.name) / "decode.report.json"
+        self.path = Path(self.directory.name) / "dump.report.json"
 
     def tearDown(self) -> None:
         self.directory.cleanup()
@@ -47,7 +47,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.write(
             {
                 "schema_version": 6,
-                "command": "decode",
+                "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
             }
@@ -62,7 +62,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.write(
             {
                 "schema_version": 6,
-                "command": "decode",
+                "command": "dump",
                 "status": "ok",
                 "refusal": None,
             }
@@ -77,7 +77,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.write(
             {
                 "schema_version": 5,
-                "command": "decode",
+                "command": "dump",
                 "status": "refused",
                 "refusal": {
                     "stage": "decode",
@@ -108,7 +108,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         )
 
         self.assertFalse(result["gate_pass"])
-        self.assertEqual(result["status"], "decode_error")
+        self.assertEqual(result["status"], "dump_error")
 
     def test_gate_accepts_only_structured_decode_refusal(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -119,9 +119,10 @@ import pathlib
 import sys
 
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
+assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
     'schema_version': 6,
-    'command': 'decode',
+    'command': 'dump',
     'status': 'refused',
     'refusal': {
         'stage': 'decode',
@@ -144,7 +145,7 @@ sys.exit(1)
         )
 
         self.assertTrue(result["gate_pass"])
-        self.assertEqual(result["status"], "decode_refused")
+        self.assertEqual(result["status"], "dump_refused")
 
 
 if __name__ == "__main__":
