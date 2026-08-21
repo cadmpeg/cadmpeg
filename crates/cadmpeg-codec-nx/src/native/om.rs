@@ -518,6 +518,9 @@ pub struct RmFastLoadObjectId {
     pub ordinal: u32,
     /// Decoded active object identifier.
     pub value: u32,
+    /// Record-order-independent identity when the value is unique in the table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Exact serialized little-endian object-id word.
     pub raw: [u8; 4],
     /// Absolute file offset of the four-byte object-id word.
@@ -2284,7 +2287,7 @@ pub fn rmfastload_object_id_table(
     let (entry, table) = container.rmfastload_object_id_table()?;
     let entry_offset = entry.file_span?.0;
     let table_id = "nx:rmfastload:object-id-table#0".to_string();
-    let object_ids = table
+    let mut object_ids = table
         .object_ids
         .into_iter()
         .enumerate()
@@ -2293,10 +2296,12 @@ pub fn rmfastload_object_id_table(
             table: table_id.clone(),
             ordinal: ordinal as u32,
             value: object_id.value,
+            stable_identity: None,
             raw: object_id.raw,
             source_offset: entry_offset + object_id.offset as u64,
         })
         .collect::<Vec<_>>();
+    assign_rmfastload_object_id_identities(&mut object_ids);
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
         members: object_ids
@@ -2309,6 +2314,20 @@ pub fn rmfastload_object_id_table(
         source_offset: entry_offset + table.count_offset as u64,
     };
     Some((native_table, object_ids))
+}
+
+/// Assign value-backed witnesses only when an active membership value is
+/// unique in its owning table. The ordinal identity remains authoritative for
+/// table-indexed references such as display targets.
+fn assign_rmfastload_object_id_identities(entries: &mut [RmFastLoadObjectId]) {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for entry in entries.iter() {
+        *counts.entry(entry.value).or_default() += 1;
+    }
+    for entry in entries.iter_mut() {
+        entry.stable_identity = (counts.get(&entry.value) == Some(&1))
+            .then(|| format!("{}:value#{}", entry.table, entry.value));
+    }
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
@@ -5812,6 +5831,10 @@ mod tests {
         );
         assert_eq!(object_ids[0].table, table.id);
         assert_eq!(object_ids[0].value, 1);
+        assert_eq!(
+            object_ids[0].stable_identity.as_deref(),
+            Some("nx:rmfastload:object-id-table#0:value#1")
+        );
         assert_eq!(object_ids[0].raw, 1u32.to_le_bytes());
         assert_eq!(object_ids[0].source_offset, table.source_offset + 4);
         assert_eq!(object_ids[49].ordinal, 49);
@@ -6040,6 +6063,9 @@ mod tests {
         assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
     }
 }
+
+#[cfg(test)]
+mod rmfastload;
 
 #[cfg(test)]
 mod object_record_identity_tests {

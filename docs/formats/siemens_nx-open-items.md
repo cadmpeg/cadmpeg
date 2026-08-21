@@ -742,7 +742,7 @@ unresolved.
 
 **Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
 
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
+**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, the order-independent witness for a unique table value, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
 
 **Need.** We must know the condition to select the active bodies. The current decoder retains every image whose complete nonempty FACE, EDGE, and VERTEX node-ID set is a subset of the active set, but the format does not establish whether that subset relation is decisive, whether active IDs may be stale or unioned, or how multiple matching images should be handled. The selection deletes other bodies and their complete topology and geometry from the model, so an unsupported membership rule removes a current body permanently. The exact feature-history rule runs only when this condition declines, so membership semantics take precedence over it.
 
