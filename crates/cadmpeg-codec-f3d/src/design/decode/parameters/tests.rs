@@ -660,6 +660,17 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     assert_eq!(parsed.companion_record_index, 102);
     assert_eq!(parsed.evaluated_value, 2.5);
 
+    for class_tag in ["282", "336", "325", "297"] {
+        assert!(
+            parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame(class_tag), 2.5)
+                .is_some(),
+            "class {class_tag} must use the admitted 88-byte owner grammar"
+        );
+    }
+    assert!(
+        parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("268"), 2.5).is_none()
+    );
+
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(&mismatched, 2.5).is_none());
