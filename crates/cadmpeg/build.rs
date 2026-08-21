@@ -2,6 +2,13 @@
 //! Embeds the git revision so command reports can name the binary that
 //! wrote them (stale-artifact detection). Falls back to "unknown" when
 //! git or the repository is unavailable (for example a crates.io build).
+//!
+//! The rerun stamps watch two paths, resolved through `--git-path` so a
+//! worktree stamps its own `HEAD`: `HEAD` itself and the checked-out ref
+//! file, or `packed-refs` when that file is absent. Only paths that exist
+//! are emitted, because printing a missing path is cargo's always-rerun
+//! trick. A ref that is only packed still misses the first commit that
+//! creates its loose file; that gap is accepted.
 
 fn git(args: &[&str]) -> Option<String> {
     std::process::Command::new("git")

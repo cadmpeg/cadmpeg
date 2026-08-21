@@ -4,6 +4,8 @@
 
 use std::fmt::Write as _;
 
+// A card is columns 1-72 of data, the section letter in column 73, the
+// right-aligned sequence in columns 74-80, and then the line ending.
 pub(crate) const CARD_COLUMNS: usize = 80;
 pub(crate) const CARD_DATA_COLUMNS: usize = 72;
 pub(crate) const CARD_LINE_BYTES: usize = CARD_COLUMNS + 1;

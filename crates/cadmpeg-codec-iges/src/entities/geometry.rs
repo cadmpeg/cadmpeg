@@ -520,11 +520,17 @@ pub(crate) fn enforce_transform_depth(
     Ok(())
 }
 
+/// One sub-projector's result: the directory sequences whose records emitted
+/// a neutral entity, and the losses the pass charged. The generic retention
+/// pass spares a record only when it is decoded, consumed, or already
+/// attributed, so membership in `decoded` is what marks projection success.
 pub(super) struct ProjectionOutcome {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
 }
 
+/// A curve projector's result: the two-field outcome extended with the edges
+/// the caller collects into the free-geometry wire shell.
 pub(super) struct WireProjectionOutcome {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,

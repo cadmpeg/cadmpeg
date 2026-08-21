@@ -194,7 +194,7 @@ fn project_pcurve_uses(
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
 fn pcurves_agree<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],

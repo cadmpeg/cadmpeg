@@ -356,6 +356,8 @@ fn decode_new_general_note_resolves_only_the_text_font_pointer_that_names_a_type
         .collect::<Vec<_>>();
 
     assert_eq!(pointers.len(), fonts.len());
+    // The font pointer sits eleven tokens into each twenty-token 213 string
+    // block: the eight-token prefix plus the text run's three-slot offset.
     assert_eq!(pointers[0]["parameter_index"], 24);
     assert_eq!(pointers[0]["resolution"], "resolved");
     assert_eq!(pointers[1]["parameter_index"], 44);
