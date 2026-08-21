@@ -28,7 +28,7 @@ pub(super) use crate::solve::incidence::{
 pub(super) use crate::solve::matching::unique_coordinate_bijection;
 pub(super) use crate::solve::mesh_gauge::{
     canonicalize_mesh_vertex_labels, mesh_candidates_equivalent,
-    mesh_candidates_equivalent_with_gauge,
+    mesh_candidates_equivalent_with_gauge, MeshEdgeGeometry,
 };
 pub(super) use crate::solve::mesh_quotient::{
     deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,

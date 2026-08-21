@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
     canonicalize_endpoint_relation_state, canonicalize_mesh_candidate_for_output,
-    mesh_candidates_equivalent_with_context, MeshCandidateGauge,
+    mesh_candidates_equivalent_with_context, MeshCandidateGauge, MeshEdgeGeometry,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -9332,6 +9332,7 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_classes: &[usize],
+    edge_geometry: &[MeshEdgeGeometry],
     edge_identity_evidence: &[bool],
     partial_constraint_edges: &[bool],
     preferred_assignment_edges: &[bool],
@@ -9382,14 +9383,14 @@ where
         vertex_points.len(),
         &edge_rows,
         edge_faces,
-        edge_classes,
+        edge_geometry,
         edge_candidates,
         edge_identity_evidence,
     );
     let candidate_gauge = Some(MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces,
-        edge_classes,
+        edge_geometry,
         edge_candidates,
         edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
@@ -9397,6 +9398,7 @@ where
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != edge_classes.len()
+        || edge_rows.len() != edge_geometry.len()
         || edge_rows.len() != partial_constraint_edges.len()
         || edge_rows.len() != preferred_assignment_edges.len()
         || priority_edges.is_some_and(|edges| edges.len() != edge_rows.len())
@@ -9795,6 +9797,7 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(matches!(
         parse_standard_mesh_candidate_outcome(
+            &[],
             &[],
             &[],
             &[],

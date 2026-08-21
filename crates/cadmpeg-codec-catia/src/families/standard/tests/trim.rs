@@ -447,7 +447,7 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     };
     let left = (topology(false), vec![0, 1, 2]);
     let right = (topology(true), vec![0, 1, 2]);
-    let edge_classes = [7, 7];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     let edge_identity_evidence = [false, false];
 
@@ -455,7 +455,7 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     assert!(mesh_candidates_equivalent_with_gauge(
         &left,
         &right,
-        &edge_classes,
+        &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
     ));

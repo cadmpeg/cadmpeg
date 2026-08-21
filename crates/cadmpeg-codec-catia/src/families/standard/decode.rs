@@ -36,7 +36,7 @@ use crate::families::freeform::{
 };
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
-use crate::solve::{mesh_quotient, missing_edge};
+use crate::solve::{mesh_gauge::MeshEdgeGeometry, mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
 
@@ -3129,6 +3129,7 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_classes = standard_curve_edge_classes(&supports);
+    let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
     let topology_graph = crate::families::b5::graph::parse(source);
     let native_edges = topology_graph
         .as_ref()
@@ -3853,6 +3854,7 @@ fn attach_standard_topology(
                     selected_edge_faces,
                     &solver_options,
                     selected_edge_classes,
+                    &edge_geometry,
                     &edge_identity_evidence,
                     &partial_constraint_edges,
                     &branch_preferred_edges,
@@ -3901,6 +3903,7 @@ fn attach_standard_topology(
                         selected_edge_faces,
                         &solver_options,
                         selected_edge_classes,
+                        &edge_geometry,
                         &edge_identity_evidence,
                         &partial_constraint_edges,
                         &branch_preferred_edges,
@@ -5437,6 +5440,29 @@ fn standard_curve_edge_classes(
         classes.push(class);
     }
     classes
+}
+
+fn standard_curve_geometry_gauge_keys(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+) -> Vec<MeshEdgeGeometry> {
+    supports
+        .iter()
+        .map(|support| match &support.geometry {
+            crate::families::standard::records::StandardCurveGeometry::Line => {
+                MeshEdgeGeometry::Line
+            }
+            crate::families::standard::records::StandardCurveGeometry::Circle {
+                center,
+                radius,
+            } => MeshEdgeGeometry::Circle {
+                center: [center.x.to_bits(), center.y.to_bits(), center.z.to_bits()],
+                radius: radius.to_bits(),
+            },
+            crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                MeshEdgeGeometry::Bspline
+            }
+        })
+        .collect()
 }
 
 struct StandardCurveBranchGroup {

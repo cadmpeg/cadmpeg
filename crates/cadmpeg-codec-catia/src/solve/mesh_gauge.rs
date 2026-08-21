@@ -9,10 +9,17 @@ use crate::families::standard::topology::{
     CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology,
 };
 
-type MeshEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, usize, usize, [usize; 2]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum MeshEdgeGeometry {
+    Line,
+    Circle { center: [u64; 3], radius: u64 },
+    Bspline,
+}
+
+type MeshEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, MeshEdgeGeometry, usize, [usize; 2]);
 
 type MeshEdgeGaugeKey = (MeshEdgeGaugeBaseKey, Vec<[usize; 2]>);
-type MeshTopologyEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, usize, usize, Vec<usize>);
+type MeshTopologyEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, MeshEdgeGeometry, usize, Vec<usize>);
 type MeshTopologyEdgeGaugeKey = (MeshTopologyEdgeGaugeBaseKey, Vec<[usize; 2]>);
 
 pub(crate) struct MeshCoordinateGauge {
@@ -23,7 +30,7 @@ pub(crate) struct MeshCoordinateGauge {
 pub(crate) struct MeshCandidateGauge<'a> {
     pub(crate) edge_rows: &'a [EdgeRow],
     pub(crate) edge_faces: &'a [[usize; 2]],
-    pub(crate) edge_classes: &'a [usize],
+    pub(crate) edge_geometry: &'a [MeshEdgeGeometry],
     pub(crate) edge_candidates: &'a [Vec<[usize; 2]>],
     pub(crate) edge_identity_evidence: &'a [bool],
     pub(crate) coordinate_gauge: Option<&'a MeshCoordinateGauge>,
@@ -106,7 +113,7 @@ fn mesh_edge_gauge_base_key(
     edge: usize,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
-    edge_classes: &[usize],
+    edge_geometry: &[MeshEdgeGeometry],
 ) -> Option<MeshEdgeGaugeBaseKey> {
     let row = edge_rows.get(edge)?;
     let mut faces = *edge_faces.get(edge)?;
@@ -114,7 +121,7 @@ fn mesh_edge_gauge_base_key(
     Some((
         row.kind,
         row.boundary_layout,
-        *edge_classes.get(edge)?,
+        *edge_geometry.get(edge)?,
         row.handles.len(),
         faces,
     ))
@@ -197,7 +204,7 @@ pub(crate) fn build_mesh_coordinate_gauge(
     point_count: usize,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
-    edge_classes: &[usize],
+    edge_geometry: &[MeshEdgeGeometry],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
 ) -> MeshCoordinateGauge {
@@ -206,7 +213,7 @@ pub(crate) fn build_mesh_coordinate_gauge(
         components: Vec::new(),
     };
     if edge_rows.len() != edge_faces.len()
-        || edge_rows.len() != edge_classes.len()
+        || edge_rows.len() != edge_geometry.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != edge_identity_evidence.len()
     {
@@ -216,7 +223,7 @@ pub(crate) fn build_mesh_coordinate_gauge(
     let mut edge_bases = Vec::with_capacity(edge_rows.len());
     let mut groups = BTreeMap::<MeshEdgeGaugeBaseKey, Vec<usize>>::new();
     for edge in 0..edge_rows.len() {
-        let Some(key) = mesh_edge_gauge_base_key(edge, edge_rows, edge_faces, edge_classes) else {
+        let Some(key) = mesh_edge_gauge_base_key(edge, edge_rows, edge_faces, edge_geometry) else {
             return identity();
         };
         edge_bases.push(key);
@@ -481,7 +488,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
     }
     if gauge.edge_rows.len() != edge_count
         || gauge.edge_faces.len() != edge_count
-        || gauge.edge_classes.len() != edge_count
+        || gauge.edge_geometry.len() != edge_count
         || gauge.edge_candidates.len() != edge_count
         || gauge.edge_identity_evidence.len() != edge_count
     {
@@ -495,7 +502,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
             continue;
         }
         let base =
-            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_classes)?;
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?;
         let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
         let target_options = match permutation {
             Some(permutation) => {
@@ -580,7 +587,7 @@ fn canonicalize_mesh_edge_row_gauges(
     permutation: Option<&[usize]>,
 ) -> Option<StandardTopology> {
     let edge_count = topology.edge_rows.len();
-    if gauge.edge_classes.len() != edge_count
+    if gauge.edge_geometry.len() != edge_count
         || gauge.edge_candidates.len() != edge_count
         || gauge.edge_identity_evidence.len() != edge_count
     {
@@ -658,7 +665,7 @@ fn canonicalize_mesh_edge_row_gauges(
         let base = (
             row.kind,
             row.boundary_layout,
-            gauge.edge_classes[edge],
+            gauge.edge_geometry[edge],
             row.handles.len(),
             incident_faces[edge].clone(),
         );
@@ -912,7 +919,7 @@ pub(crate) fn mesh_candidates_equivalent(
 pub(crate) fn mesh_candidates_equivalent_with_gauge(
     left: &(StandardTopology, Vec<usize>),
     right: &(StandardTopology, Vec<usize>),
-    edge_classes: &[usize],
+    edge_geometry: &[MeshEdgeGeometry],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
 ) -> bool {
@@ -922,7 +929,7 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
         Some(MeshCandidateGauge {
             edge_rows: &[],
             edge_faces: &[],
-            edge_classes,
+            edge_geometry,
             edge_candidates,
             edge_identity_evidence,
             coordinate_gauge: None,
@@ -959,13 +966,13 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
         },
     ];
     let edge_faces = [[0, 1], [0, 1]];
-    let edge_classes = [0, 0];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
     let edge_identity_evidence = [false, false];
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: None,
@@ -994,7 +1001,7 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
         },
     ];
     let edge_faces = vec![[0, 1], [0, 1]];
-    let edge_classes = vec![0, 0];
+    let edge_geometry = vec![MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
     let edge_identity_evidence = vec![false, false];
     let coordinate_permutation = vec![2, 3, 0, 1];
@@ -1005,7 +1012,7 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
@@ -1091,9 +1098,20 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         })
         .collect::<Vec<_>>();
     let edge_faces = (0..COMPONENT_COUNT * 2).map(|_| [0, 1]).collect::<Vec<_>>();
-    let edge_classes = (0..COMPONENT_COUNT)
-        .flat_map(|class| [class, class])
-        .collect::<Vec<_>>();
+    let edge_geometry = [
+        MeshEdgeGeometry::Line,
+        MeshEdgeGeometry::Line,
+        MeshEdgeGeometry::Circle {
+            center: [0, 0, 0],
+            radius: 1,
+        },
+        MeshEdgeGeometry::Circle {
+            center: [0, 0, 0],
+            radius: 1,
+        },
+        MeshEdgeGeometry::Bspline,
+        MeshEdgeGeometry::Bspline,
+    ];
     let edge_candidates = (0..COMPONENT_COUNT)
         .flat_map(|component| {
             let point = component * 4;
@@ -1106,7 +1124,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
-        &edge_classes,
+        &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
     );
@@ -1126,7 +1144,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
@@ -1195,6 +1213,35 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         &left,
         &(displaced, identity),
         Some(gauge)
+    ));
+
+    let mut mismatched_geometry = edge_geometry;
+    mismatched_geometry[1] = MeshEdgeGeometry::Circle {
+        center: [1, 0, 0],
+        radius: 1,
+    };
+    let mismatched_coordinate_gauge = build_mesh_coordinate_gauge(
+        COMPONENT_COUNT * 4,
+        &edge_rows,
+        &edge_faces,
+        &mismatched_geometry,
+        &edge_candidates,
+        &edge_identity_evidence,
+    );
+    let mismatched_gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &edge_faces,
+        edge_geometry: &mismatched_geometry,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&mismatched_coordinate_gauge),
+    };
+    let mut row_swapped = topology(0);
+    row_swapped.edge_rows.swap(0, 1);
+    assert!(!mesh_candidates_equivalent_with_context(
+        &left,
+        &(row_swapped, (0..COMPONENT_COUNT * 4).collect()),
+        Some(mismatched_gauge),
     ));
 }
 
@@ -1340,7 +1387,7 @@ fn relation_row_gauge_mapping(
     let identity = || (0..edge_count).collect::<Vec<_>>();
     if gauge.edge_rows.len() != edge_count
         || gauge.edge_faces.len() != edge_count
-        || gauge.edge_classes.len() != edge_count
+        || gauge.edge_geometry.len() != edge_count
         || gauge.edge_candidates.len() != edge_count
         || gauge.edge_identity_evidence.len() != edge_count
     {
@@ -1354,7 +1401,7 @@ fn relation_row_gauge_mapping(
             continue;
         }
         let base =
-            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_classes)?;
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?;
         let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
         let target_options =
             mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?;
@@ -1443,7 +1490,7 @@ fn relation_state_memo_collapses_coordinate_gauge() {
         },
     ];
     let edge_faces = [[0, 1], [0, 1]];
-    let edge_classes = [0, 0];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 1], [2, 3]], vec![[0, 1], [2, 3]]];
     let edge_identity_evidence = [true, true];
     let coordinate_gauge = MeshCoordinateGauge {
@@ -1452,7 +1499,7 @@ fn relation_state_memo_collapses_coordinate_gauge() {
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
@@ -1494,7 +1541,7 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
         },
     ];
     let edge_faces = [[0, 1], [0, 1]];
-    let edge_classes = [0, 0];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
     let edge_identity_evidence = [true, true];
     let coordinate_gauge = MeshCoordinateGauge {
@@ -1503,7 +1550,7 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
@@ -1541,21 +1588,21 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
         },
     ];
     let edge_faces = [[0, 1], [0, 1]];
-    let edge_classes = [0, 0];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
     let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
     let edge_identity_evidence = [false, false];
     let coordinate_gauge = build_mesh_coordinate_gauge(
         4,
         &edge_rows,
         &edge_faces,
-        &edge_classes,
+        &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
     );
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
-        edge_classes: &edge_classes,
+        edge_geometry: &edge_geometry,
         edge_candidates: &edge_candidates,
         edge_identity_evidence: &edge_identity_evidence,
         coordinate_gauge: Some(&coordinate_gauge),
