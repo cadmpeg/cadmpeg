@@ -12,6 +12,12 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// One admitted annotation shape per variant.
+///
+/// [`classify`] is the single owner of annotation admission: the native
+/// retention pass and the semantic projection both dispatch on its result,
+/// so a new form is admitted by adding one `classify` arm and handling the
+/// variant everywhere the compiler then requires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AnnotationKind {
     AngularDimension,
@@ -30,6 +36,8 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
+/// Maps a directory entry's type and form to its annotation kind, or `None`
+/// for every shape the annotation concern does not admit.
 pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
     match (entity_type, form) {
         (202, 0) => Some(AnnotationKind::AngularDimension),

@@ -467,6 +467,9 @@ fn decode_with_occurrence_limits(
         } else if projection.consumed.contains(&entry.sequence) {
             "native record retained; record was consumed as construction support"
         } else {
+            // The generic pass attributes every envelope-admitted record that
+            // is neither decoded nor consumed, so no decode reaches this arm;
+            // it names that state truthfully if a later pass admits it.
             "native record retained; no standalone neutral projection was required"
         };
         transfer_ledger.record(

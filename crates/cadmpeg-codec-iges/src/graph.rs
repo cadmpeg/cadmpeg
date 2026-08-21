@@ -83,6 +83,10 @@ impl<'a> ParameterResolver<'a> {
         }
     }
 
+    /// Resolves a raw pointer to its target sequence, recording the
+    /// reference edge. A zero raw pointer resolves to `None` before any edge
+    /// is recorded or predicate runs; this check is the single owner of that
+    /// rule, and link builders pass raw pointer fields unguarded.
     pub(crate) fn resolve(
         &self,
         source: u32,

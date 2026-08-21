@@ -343,6 +343,16 @@ pub(crate) fn trailing_pointer_groups(
         .filter(|groups| groups.fully_valid)
 }
 
+/// Return the boundary where the record's trailing pointer groups begin, or
+/// the record's parameter end when it has none.
+///
+/// Semantic validators admit counted lists against this boundary. It is
+/// deliberately stricter than the native reader's `clamped_primary_end`,
+/// which also honors `entity_primary_end`: a record with surplus tokens
+/// after its complete declared list keeps those items in the native record
+/// while its semantic projection is refused. `assemble_with_context` derives
+/// the same boundary once more when it seals `parameter_end`, so this is the
+/// shared spelling, not the sole derivation.
 pub(crate) fn end_before_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,

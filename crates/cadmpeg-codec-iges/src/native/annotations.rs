@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//! Native retention of annotation records: the arena types, the text-run
+//! builder, and the pass that fills the `annotations` arena while recording
+//! counted-tail verdicts.
+
 use super::OverdeclaredCounts;
 use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{
@@ -170,6 +174,9 @@ pub(super) enum NativeAnnotation {
     },
 }
 
+/// One admitted directory entry under construction: its record, its
+/// precomputed clamped primary end, and the resolver context the link
+/// builders read.
 struct Subject<'a> {
     sequence: u32,
     form: i64,
@@ -462,6 +469,8 @@ fn new_general_note(
                     control_codes: record
                         .and_then(|record| record.string(start + 7))
                         .map(<[u8]>::to_vec),
+                    // A 213 text block is the 212 layout shifted by its
+                    // eight-token prefix.
                     text: subject.text_run(start + 8),
                 }
             })
@@ -548,6 +557,8 @@ fn general_label(
 fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
     let end = subject.primary_end;
+    // On any checked failure the tuple defaults to (0, 0, 0), so
+    // leader_count_index is read only when leader_count > 0 admitted it.
     let (geometry_count, leader_count_index, leader_count) = record
         .and_then(|record| record.count_with_stride_before(2, 1, end))
         .and_then(|geometry_count| {

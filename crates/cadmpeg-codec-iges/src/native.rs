@@ -1468,6 +1468,10 @@ pub(crate) fn store(
         .iter()
         .map(|(sequence, record)| (*sequence, trailing_pointer_groups(record, &entries)))
         .collect::<BTreeMap<_, _>>();
+    // The native reading boundary: the trailing-group boundary clamped to
+    // `entity_primary_end`. It reads the memoized trailing-group map, which
+    // is why it re-spells the unclamped half instead of calling
+    // `end_before_trailing_pointer_groups`.
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
         trailing_by_directory
             .get(&sequence)

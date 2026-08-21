@@ -523,7 +523,8 @@ pub(crate) fn enforce_transform_depth(
 pub(crate) struct Projection {
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
-    /// neutral entity.
+    /// neutral entity. The generic retention pass suppresses its loss for
+    /// these records; membership here is the only suppression channel.
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
 }
