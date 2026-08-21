@@ -47,6 +47,23 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
 }
 
 #[test]
+fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
+    let bytes = legacy_cfb_with_partial_ug_part();
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("legacy CFB with a partial stream sector is inspectable");
+    assert_eq!(summary.container_kind, "cfb");
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == "parasolid-stream"));
+
+    let result = decode(bytes);
+    assert!(!result.report().geometry_transferred);
+    assert!(!result.source_fidelity().retained_records.is_empty());
+}
+
+#[test]
 fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
     let mut bytes = legacy_cfb_with_ug_part();
     let directory_entry = &mut bytes[512 + 2 * 128..512 + 3 * 128];
@@ -129,6 +146,26 @@ fn legacy_cfb_with_ug_part() -> Vec<u8> {
         );
     }
     put_u32(fat, FAT_SECTOR * 4, FAT);
+    file
+}
+
+fn legacy_cfb_with_partial_ug_part() -> Vec<u8> {
+    const SECTOR: usize = 512;
+    const END: u32 = 0xffff_fffe;
+    const STREAM_LAST: usize = 10;
+    const FAT_SECTOR: usize = 11;
+    let mut file = legacy_cfb_with_ug_part();
+    file.resize(file.len() + SECTOR, 0);
+    let directory_entry = &mut file[SECTOR + 2 * 128..SECTOR + 3 * 128];
+    directory_entry[120..128].copy_from_slice(&5133_u64.to_le_bytes());
+    let unallocated_entry = &mut file[SECTOR + 3 * 128..SECTOR + 4 * 128];
+    unallocated_entry[..64].fill(0xa5);
+    unallocated_entry[68..80].fill(0xa5);
+    unallocated_entry[120..128].fill(0xa5);
+    let fat = sector_mut(&mut file, FAT_SECTOR);
+    put_u32(fat, STREAM_LAST * 4, 12);
+    put_u32(fat, 12 * 4, END);
+    file.truncate(SECTOR * 13 + 13);
     file
 }
 

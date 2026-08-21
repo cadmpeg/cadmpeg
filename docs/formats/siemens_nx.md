@@ -491,6 +491,17 @@ signature `d0 cf 11 e0 a1 b1 1a e1`. The CFB directory contains the
 `UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
 `UG_PART/UG_PART` directory path is required.
 
+The physical CFB image has one header sector followed by regular sectors. Its
+physical sector count is the ceiling of `(file_length - header_sector_size) /
+sector_size`; therefore the file may end inside its final regular sector. The
+bytes present in that final sector are addressable physical bytes. FAT, DIFAT,
+directory, and mini-FAT sectors are complete sectors and cannot use a partial
+final sector. A regular stream may use the partial sector, but its declared
+logical size must not exceed the bytes available through its sector chain.
+Unallocated directory entries carry no semantic fields; their retained bytes
+are ignored, and only reachable storage and stream entries participate in the
+directory tree.
+
 The opened `UG_PART/UG_PART` payload begins with:
 
 ```text
