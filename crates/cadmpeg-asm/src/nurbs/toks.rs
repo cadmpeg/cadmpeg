@@ -7,6 +7,7 @@
 //! positions. Token positions identify fields within a record payload without
 //! depending on serialized byte offsets.
 
+use crate::nurbs::reader::checked_knot_layout;
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
@@ -216,21 +217,14 @@ pub(crate) fn take_knot_table(
         values.push(cur.take_f64()?);
         mults.push(cur.take_long()?);
     }
-    let sum = mults
-        .iter()
-        .try_fold(0_i64, |sum, &multiplicity| sum.checked_add(multiplicity))?;
-    let n_poles = sum.checked_sub(degree.checked_sub(1)?)?;
-    if !(2..=100_000).contains(&n_poles) {
-        return None;
-    }
-    let mut expanded = Vec::new();
-    for (i, (value, mult)) in values.iter().zip(&mults).enumerate() {
-        let extra = i64::from(i == 0 || i == n - 1);
-        for _ in 0..usize::try_from(mult.checked_add(extra)?.max(0)).ok()? {
+    let expansion = checked_knot_layout(&mults, degree)?;
+    let mut expanded = Vec::with_capacity(expansion.expanded_len);
+    for (value, &run_length) in values.iter().zip(&expansion.expanded_run_lengths) {
+        for _ in 0..run_length {
             expanded.push(*value);
         }
     }
-    Some((expanded, n_poles as usize))
+    Some((expanded, expansion.n_poles))
 }
 
 /// A B-spline block marker: `nubs` introduces a non-rational block, `nurbs` a
@@ -606,6 +600,17 @@ mod tests {
             Token::Long(2),
         ];
         let mut cur = Cur::at(&overflowing_endpoint, 0);
+        assert!(take_knot_table(&mut cur, 3, 1).is_none());
+
+        let cancellation = [
+            Token::Double(0.0),
+            Token::Long(i64::MAX - 1),
+            Token::Double(1.0),
+            Token::Long(i64::MIN + 4),
+            Token::Double(2.0),
+            Token::Long(0),
+        ];
+        let mut cur = Cur::at(&cancellation, 0);
         assert!(take_knot_table(&mut cur, 3, 1).is_none());
     }
 

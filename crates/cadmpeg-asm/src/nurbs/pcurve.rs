@@ -438,6 +438,11 @@ mod width_tests {
             &[i64::MAX, i64::MIN + 1, 2],
         ))
         .is_none());
+        assert!(decode_curve_cache(&curve_block_with_multiplicities(
+            8,
+            &[i64::MAX - 1, i64::MIN + 4, 0],
+        ))
+        .is_none());
 
         // The 4-byte stream's largest multiplicity cannot overflow the i64
         // accumulator, but it must still be rejected by the pole-count bound.

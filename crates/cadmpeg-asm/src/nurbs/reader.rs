@@ -91,6 +91,51 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
     out
 }
 
+/// Bounds for the shared ASM NURBS knot expansion check.
+const MAX_NURBS_POLES: usize = 100_000;
+const MAX_NURBS_DEGREE: usize = 20;
+const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
+
+/// Checked expansion metadata for one unique-knot multiplicity table.
+pub(crate) struct KnotExpansionLayout {
+    pub(crate) n_poles: usize,
+    pub(crate) expanded_len: usize,
+    pub(crate) expanded_run_lengths: Vec<usize>,
+}
+
+pub(crate) fn checked_knot_layout(
+    multiplicities: &[i64],
+    degree: i64,
+) -> Option<KnotExpansionLayout> {
+    let degree = usize::try_from(degree)
+        .ok()
+        .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
+    let mut sum = 0usize;
+    let mut expanded_len = 0usize;
+    let mut expanded_run_lengths = Vec::with_capacity(multiplicities.len());
+    for (index, &multiplicity) in multiplicities.iter().enumerate() {
+        let multiplicity = usize::try_from(multiplicity).ok()?;
+        sum = sum.checked_add(multiplicity)?;
+        let endpoint_extra = usize::from(index == 0 || index + 1 == multiplicities.len());
+        let run_length = multiplicity.checked_add(endpoint_extra)?;
+        expanded_len = expanded_len.checked_add(run_length)?;
+        if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
+            return None;
+        }
+        expanded_run_lengths.push(run_length);
+    }
+    let n_poles = sum.checked_sub(degree - 1)?;
+    if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
+        return None;
+    }
+    let derived_max = n_poles.checked_add(degree)?.checked_add(1)?;
+    (expanded_len <= derived_max).then_some(KnotExpansionLayout {
+        n_poles,
+        expanded_len,
+        expanded_run_lengths,
+    })
+}
+
 /// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
 /// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
 pub(crate) struct KnotLayout {
@@ -120,30 +165,20 @@ pub(crate) fn read_knots(
         multiplicity_offsets.push(*pos + 1);
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
-    let sum = mults
-        .iter()
-        .try_fold(0_i64, |sum, &multiplicity| sum.checked_add(multiplicity))?;
-    let n_poles = sum.checked_sub(degree.checked_sub(1)?)?;
-    if !(2..=100_000).contains(&n_poles) {
-        return None;
-    }
-    let mut expanded = Vec::new();
-    let mut expanded_run_lengths = Vec::new();
-    for (i, (kv, m)) in knots.iter().zip(&mults).enumerate() {
-        let extra = i64::from(i == 0 || i == n - 1);
-        let run_length = usize::try_from(m.checked_add(extra)?.max(0)).ok()?;
-        expanded_run_lengths.push(run_length);
+    let expansion = checked_knot_layout(&mults, degree)?;
+    let mut expanded = Vec::with_capacity(expansion.expanded_len);
+    for (kv, &run_length) in knots.iter().zip(&expansion.expanded_run_lengths) {
         for _ in 0..run_length {
             expanded.push(*kv);
         }
     }
     Some((
         expanded,
-        n_poles as usize,
+        expansion.n_poles,
         KnotLayout {
             value_offsets,
             multiplicity_offsets,
-            expanded_run_lengths,
+            expanded_run_lengths: expansion.expanded_run_lengths,
         },
     ))
 }
