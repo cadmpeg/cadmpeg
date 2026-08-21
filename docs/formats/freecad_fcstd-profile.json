@@ -84,7 +84,7 @@
     {
       "filename": "binary_exact_shape.FCStd",
       "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
-      "canonical_cadir_sha256": "d8db67cc9003fceb6568bc37b4ed464c0a0e0d5476a65d0d5fcd811f03a41e49",
+      "canonical_cadir_sha256": "7e0b37dfbc13378ce5110cbba27094fe12741b30f9222b7f22a8b071a6c84d69",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -155,7 +155,7 @@
     {
       "filename": "core_design_product.FCStd",
       "sha256": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
-      "canonical_cadir_sha256": "5d9ef7e59f53723ba812bd91b18b50e0612f041521b55638772ca74c1b7b049d",
+      "canonical_cadir_sha256": "975f358b3349cba2a741f19baa4fe1f220d4be141509d8dfa810e0837a171531",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -229,7 +229,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "f6ea6511cd37ea8afd013f874fdcb650248a0fa4dab2abc9edd8389ad86854b9",
+      "canonical_cadir_sha256": "fad80a6d0538b2ef402815ec0bab2eb73ad3b14bb7e61cbaadedcde32d4bf514",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -302,7 +302,7 @@
     {
       "filename": "design_history.FCStd",
       "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
-      "canonical_cadir_sha256": "6da4b9f728eb7e3c8c42b81f9e88b1d8d73d94aafba5fa5d03462d6e6177027b",
+      "canonical_cadir_sha256": "08588eff84bd35b0f6e62f5fd06a01b6211c65d907e52ec3bd224b685b47c2a6",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -446,7 +446,7 @@
     {
       "filename": "geometry_topology.FCStd",
       "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
-      "canonical_cadir_sha256": "31c74ae22e8582edb9122298caa7a386d37ccf76efa2d93a63dca90d151b939f",
+      "canonical_cadir_sha256": "9a087730ab69549b0487796c53b1d1c11ee6115a3ac60f1acdf6fdad0d26eb3f",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,

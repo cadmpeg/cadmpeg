@@ -21,7 +21,7 @@ pub struct CameraState {
     /// Camera position in document coordinates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<[f64; 3]>,
-    /// Persisted orientation quaternion in source component order.
+    /// Persisted Inventor axis-angle orientation as X, Y, Z, angle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<[f64; 4]>,
     /// Other camera fields retained by exact source name.

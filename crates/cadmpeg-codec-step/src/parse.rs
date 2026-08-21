@@ -1970,6 +1970,9 @@ fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<
             offset: payload.start,
             message: format!("invalid SIGNATURE Base64 payload: {error}"),
         })?;
+    // SG-04: this is a structural detached-CMS gate. It does not compute the
+    // Part 21 alphabet digest, verify a signer key, or apply caller policy;
+    // the codec retains an admitted signature as opaque source data.
     crate::signature::validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
         offset: payload.start,
         message: format!("invalid detached CMS SIGNATURE payload: {message}"),

@@ -123,8 +123,8 @@ pub(crate) fn project_loft(
             Some(NativeClassKind::SurfaceLoft)
         ),
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     })
 }

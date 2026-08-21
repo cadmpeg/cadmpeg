@@ -17,7 +17,7 @@ use std::path::Path;
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::compare::floats_agree;
+use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::FcstdCodec;
@@ -63,19 +63,19 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too. Native arenas are pinned by digest.
+/// fidelity. A decode error is frozen too. Native arena values are omitted;
+/// namespace versions, arena populations, and record identities are pinned.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
+            let native_shape = native_shape(&result.ir().native);
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = serde_json::json!({
-                    "__elided": "native arenas are pinned by digest, not by value",
-                    "__serialized_len": serde_json::to_string(native)
-                        .expect("serialize native arenas")
-                        .len(),
-                    "__sha256": cadmpeg_ir::hash::canonical_json_sha256(native),
+                    "__elided": "native arena values are omitted; structure is pinned by identity",
+                    "__arena_counts": native_shape["counts"].clone(),
+                    "__shape_sha256": native_shape["sha256"].clone(),
                 });
             }
             serde_json::json!({
@@ -88,6 +88,44 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
+}
+
+/// Summarizes native arena structure without hashing platform-dependent values.
+fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
+    let mut counts = serde_json::Map::new();
+    let mut shape = serde_json::Map::new();
+    for (format, namespace) in &native.0 {
+        let mut namespace_counts = serde_json::Map::new();
+        let mut namespace_shape = serde_json::Map::new();
+        for (arena, records) in &namespace.arenas {
+            let mut ids = records
+                .iter()
+                .map(|record| record.id().to_owned())
+                .collect::<Vec<_>>();
+            ids.sort_unstable();
+            namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
+            namespace_shape.insert(
+                arena.clone(),
+                serde_json::json!({
+                    "count": records.len(),
+                    "ids": ids,
+                }),
+            );
+        }
+        counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
+        shape.insert(
+            format.clone(),
+            serde_json::json!({
+                "version": namespace.version,
+                "arenas": namespace_shape,
+            }),
+        );
+    }
+    let shape = serde_json::Value::Object(shape);
+    serde_json::json!({
+        "counts": counts,
+        "sha256": cadmpeg_ir::hash::canonical_json_sha256(&shape),
+    })
 }
 
 /// Serializes one re-encoded document by archive membership: entry names in
@@ -229,88 +267,9 @@ fn step_texts_agree(expected: &str, actual: &str) -> Result<(), String> {
     }
 }
 
-/// Whether two STEP lines agree, tolerating only last-place disagreement between
-/// two numeric literals in the same position.
+/// Whether two STEP lines agree, tolerating only platform-scale numeric drift.
 fn lines_agree(left: &str, right: &str) -> bool {
-    if left == right {
-        return true;
-    }
-    let mut left = step_tokens(left).into_iter();
-    let mut right = step_tokens(right).into_iter();
-    loop {
-        match (left.next(), right.next()) {
-            (None, None) => return true,
-            (Some(StepToken::Number(one)), Some(StepToken::Number(two))) => {
-                if !floats_agree(one, two) {
-                    return false;
-                }
-            }
-            (Some(StepToken::Text(one)), Some(StepToken::Text(two))) => {
-                if one != two {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
-}
-
-/// One run of a STEP line: a numeric literal, or the text between two of them.
-#[derive(Debug, PartialEq)]
-enum StepToken<'a> {
-    /// A real or integer literal.
-    Number(f64),
-    /// Everything else, compared exactly.
-    Text(&'a str),
-}
-
-/// Splits a STEP line into numeric literals and the text around them.
-fn step_tokens(line: &str) -> Vec<StepToken<'_>> {
-    let bytes = line.as_bytes();
-    let mut tokens = Vec::new();
-    let mut text_start = 0usize;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        if !bytes[index].is_ascii_digit() {
-            index += 1;
-            continue;
-        }
-        let start = index;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
-        }
-        if index < bytes.len() && bytes[index] == b'.' {
-            index += 1;
-            while index < bytes.len() && bytes[index].is_ascii_digit() {
-                index += 1;
-            }
-            if index < bytes.len() && (bytes[index] == b'E' || bytes[index] == b'e') {
-                let exponent = index;
-                index += 1;
-                if index < bytes.len() && (bytes[index] == b'+' || bytes[index] == b'-') {
-                    index += 1;
-                }
-                if index < bytes.len() && bytes[index].is_ascii_digit() {
-                    while index < bytes.len() && bytes[index].is_ascii_digit() {
-                        index += 1;
-                    }
-                } else {
-                    index = exponent;
-                }
-            }
-        }
-        if start > 0 && bytes[start - 1] == b'#' {
-            continue;
-        }
-        let Ok(value) = line[start..index].parse::<f64>() else {
-            continue;
-        };
-        tokens.push(StepToken::Text(&line[text_start..start]));
-        tokens.push(StepToken::Number(value));
-        text_start = index;
-    }
-    tokens.push(StepToken::Text(&line[text_start..]));
-    tokens
+    texts_agree(left, right)
 }
 
 /// Compares every fixture's STEP export against `tests/golden/step/`.
@@ -390,6 +349,13 @@ mod step_comparison {
     #[test]
     fn last_place_disagreement_agrees() {
         assert!(step_texts_agree(LINUX_VECTOR, PERTURBED_VECTOR).is_ok());
+    }
+
+    #[test]
+    fn tiny_signed_residual_agrees() {
+        let positive = "#329 = DIRECTION('',(1.,0.,0.0000000000000002));\n";
+        let negative = "#329 = DIRECTION('',(1.,0.,-0.0000000000000002));\n";
+        assert!(step_texts_agree(positive, negative).is_ok());
     }
 
     #[test]

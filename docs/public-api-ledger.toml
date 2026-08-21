@@ -322,6 +322,20 @@ item = "cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: bool -> Option<b
 reason = "optional native side flag; omit when the source does not declare reverse"
 
 [[change]]
+commit = "a49fb0791dad979a82ff49222d891feb8cc26511"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::FeatureDefinition::Loft::linearize"
+reason = "FreeCAD Part::Loft persists an explicit post-construction linearization flag"
+
+[[change]]
+commit = "0e8054c68f852931fec5f6a15a2ba8c2cd0adaf4"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::FeatureDefinition::Loft::check_compatibility"
+reason = "FreeCAD has no Loft persistence carrier with this name; CADIR retains any same-named native property without projecting it"
+
+[[change]]
 commit = "31894f1dcb4933048ae98588eb354a47511aed64"
 crate = "cadmpeg-ir"
 kind = "field"

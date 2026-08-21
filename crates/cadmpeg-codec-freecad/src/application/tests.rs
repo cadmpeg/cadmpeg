@@ -4,6 +4,7 @@
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 #[test]
@@ -134,5 +135,134 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
     assert_eq!(span.classification, "named_opaque");
     assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
     assert_eq!(entry.data, payload);
+    assert!(crate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered() {
+    let cases = [
+        (
+            "Distances",
+            "Inspection::PropertyDistanceList",
+            r#"<FloatList file="Distances"/>"#,
+            b"\x02\x00\x00\x00\x00\x00\xc0?\x00\x00 @".as_slice(),
+        ),
+        (
+            "FilletEdges",
+            "Part::PropertyFilletEdges",
+            r#"<FilletEdges file="FilletEdges"/>"#,
+            b"fillet-side-entry".as_slice(),
+        ),
+        (
+            "Shapes.0.brp",
+            "Part::PropertyTopoShapeList",
+            r#"<ShapeList count="1"><TopoShape file="Shapes.0.brp"/></ShapeList>"#,
+            b"shape-side-entry".as_slice(),
+        ),
+        (
+            "GreyValues",
+            "Points::PropertyGreyValueList",
+            r#"<FloatList file="GreyValues"/>"#,
+            b"grey-side-entry".as_slice(),
+        ),
+        (
+            "PointNormals",
+            "Points::PropertyNormalList",
+            r#"<VectorList file="PointNormals"/>"#,
+            b"point-normal-side-entry".as_slice(),
+        ),
+        (
+            "MeshNormals",
+            "Mesh::PropertyNormalList",
+            r#"<VectorList file="MeshNormals"/>"#,
+            b"mesh-normal-side-entry".as_slice(),
+        ),
+        (
+            "PointCurvatures",
+            "Points::PropertyCurvatureList",
+            r#"<CurvatureList file="PointCurvatures"/>"#,
+            b"point-curvature-side-entry".as_slice(),
+        ),
+        (
+            "MeshCurvatures",
+            "Mesh::PropertyCurvatureList",
+            r#"<CurvatureList file="MeshCurvatures"/>"#,
+            b"mesh-curvature-side-entry".as_slice(),
+        ),
+        (
+            "Material",
+            "Mesh::PropertyMaterial",
+            r#"<Material file="Material"/>"#,
+            b"material-side-entry".as_slice(),
+        ),
+        (
+            "FemMesh.unv",
+            "Fem::PropertyFemMesh",
+            r#"<FemMesh file="FemMesh.unv"/>"#,
+            b"fem-side-entry".as_slice(),
+        ),
+        (
+            "Data.vtu",
+            "Fem::PropertyPostDataObject",
+            r#"<Data file="Data.vtu"/>"#,
+            b"data-side-entry".as_slice(),
+        ),
+        (
+            "Toolpath.nc",
+            "Path::PropertyPath",
+            r#"<Path file="Toolpath.nc" version="1"><Center x="0" y="0" z="0"/></Path>"#,
+            b"path-side-entry".as_slice(),
+        ),
+    ];
+    let properties = cases.iter().enumerate().fold(
+        String::new(),
+        |mut properties, (index, (_, type_name, value, _))| {
+            write!(
+                properties,
+                "<Property name=\"Payload{index}\" type=\"{type_name}\">{value}</Property>"
+            )
+            .expect("writing a String cannot fail");
+            properties
+        },
+    );
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Vendor::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="{}">{properties}</Properties></Object></ObjectData>
+</Document>"#,
+        cases.len()
+    );
+    let mut archive = vec![("Document.xml", document.as_bytes())];
+    archive.extend(cases.iter().map(|(name, _, _, payload)| (*name, *payload)));
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&archive)),
+            &DecodeOptions::default(),
+        )
+        .expect("producer-specific opaque side entries");
+
+    let namespace = result.ir().native.namespace("fcstd").expect("namespace");
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let spans = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    for (name, _, _, payload) in cases {
+        let entry = entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .expect("side entry");
+        assert_eq!(entry.data, payload);
+        assert_eq!(entry.byte_len, payload.len() as u64);
+        let span = spans
+            .iter()
+            .find(|span| span.entry == name)
+            .expect("side-entry span");
+        assert_eq!(span.start, 0);
+        assert_eq!(span.end, payload.len() as u64);
+        assert_eq!(span.classification, "named_opaque");
+        assert_eq!(span.owner.as_deref(), Some(entry.id.as_str()));
+    }
     assert!(crate::validate_native(result.ir()).is_empty());
 }

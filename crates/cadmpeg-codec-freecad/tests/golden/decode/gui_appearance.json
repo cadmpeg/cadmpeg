@@ -2241,6 +2241,17 @@
       "presentation_documents": [
         {
           "camera": {
+            "orientation": [
+              0.74290609,
+              0.30772209,
+              0.59447283,
+              1.2171158
+            ],
+            "position": [
+              17.311642,
+              -2.3116379,
+              17.811638
+            ],
             "properties": {
               "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
             }
@@ -2640,9 +2651,35 @@
       ]
     },
     "native": {
-      "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 262989,
-      "__sha256": "f14903cbcb3561496e512b8c701635167ace9fa168a64f9732e6beec25356f41"
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 0,
+          "applications": 2,
+          "attachments": 1,
+          "byte_coverage": 1,
+          "carrier_census": 1,
+          "design_census": 1,
+          "document": 1,
+          "drawings": 0,
+          "element_maps": 0,
+          "entries": 7,
+          "extensions": 0,
+          "gui_documents": 1,
+          "gui_properties": 29,
+          "gui_view_providers": 2,
+          "joints": 0,
+          "logical_ledger": 141,
+          "objects": 2,
+          "physical_ledger": 50,
+          "product_nodes": 0,
+          "properties": 36,
+          "shape_payloads": 1,
+          "string_tables": 1,
+          "unknowns": 1
+        }
+      },
+      "__elided": "native arena values are omitted; structure is pinned by identity",
+      "__shape_sha256": "c83e9ef02f90437df0502f2d626bb038d67258905b1670dbd4f9fdbb73e36982"
     },
     "source": {
       "attributes": {
