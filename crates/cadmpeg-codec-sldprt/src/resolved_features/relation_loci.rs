@@ -552,8 +552,7 @@ pub(super) fn typed_relation_definition(
             })
         }
         PointLineDistance => {
-            let point = marker(0)
-                .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
+            let point = point(0);
             let line = curve(1);
             let authoritative = point.is_some() && line.is_some();
             let (mut point, mut line) = match (point, line) {

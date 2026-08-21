@@ -541,6 +541,77 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let pair = usize::from(index).checked_mul(2)?;
                 Some([*points.get(pair)?, *points.get(pair + 1)?])
             };
+            let point_marker = (relation.family == FeatureInputRelationFamily::PointLineDistance)
+                .then(|| {
+                    first_operand
+                        .entity_ref
+                        .as_deref()
+                        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id == id))
+                        .or_else(|| {
+                            relation_operand_marker(relation, 0, sketch, &markers_by_id).and_then(
+                                |id| lane.sketch_entities.iter().find(|marker| marker.id == id),
+                            )
+                        })
+                        .or_else(|| {
+                            (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
+                                .then(|| {
+                                    points.get(usize::from(first_operand.entity_index)).copied()
+                                })
+                                .flatten()
+                        })
+                })
+                .flatten();
+            let point_position = point_marker.and_then(|marker| {
+                let resolved = entities
+                    .iter()
+                    .find(|entity| {
+                        entity.sketch == *sketch
+                            && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                    })
+                    .and_then(|entity| match &entity.geometry {
+                        SketchGeometry::Point { position } => Some(*position),
+                        _ => None,
+                    });
+                if resolved.is_some() {
+                    return resolved;
+                }
+                let [u, v] = marker.coordinates_m?;
+                let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                let candidates = transforms
+                    .get(relation.feature_ref.as_str())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|transform| transform.apply(native))
+                    .collect::<HashSet<_>>();
+                let candidates = if candidates.len() == 1 {
+                    candidates
+                } else {
+                    sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                        .and_then(|transform| transform.apply(native))
+                        .map(|position| HashSet::from([position]))
+                        .unwrap_or(candidates)
+                };
+                let candidates = candidates.into_iter().collect::<Vec<_>>();
+                let [position] = candidates.as_slice() else {
+                    return None;
+                };
+                Some(Point2::new(
+                    position.0 as f64 * QUANTUM,
+                    position.1 as f64 * QUANTUM,
+                ))
+            });
+            let candidate = |id: &str, start, end| SketchEntity {
+                id: SketchEntityId(id.into()),
+                sketch: sketch.clone(),
+                construction: true,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line { start, end },
+            };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
                     let [u, v] = marker
@@ -556,8 +627,55 @@ pub(crate) fn project_relation_solved_line_geometry(
                         Some((transform.apply(native[0])?, transform.apply(native[1])?))
                     })
                     .filter(|(start, end)| start != end)
-                    .collect::<HashSet<_>>();
-                let candidates = candidates.into_iter().collect::<Vec<_>>();
+                    .fold(Vec::new(), |mut candidates, candidate| {
+                        if !candidates.contains(&candidate) {
+                            candidates.push(candidate);
+                        }
+                        candidates
+                    });
+                let candidates = if relation.family == FeatureInputRelationFamily::PointLineDistance
+                {
+                    let mut candidates = candidates
+                        .into_iter()
+                        .filter(|(start, end)| {
+                            let line = candidate(
+                                "solver-line",
+                                Point2::new(start.0 as f64 * QUANTUM, start.1 as f64 * QUANTUM),
+                                Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
+                            );
+                            point_position.is_some_and(|point| {
+                                point_line_distance_value(point, &line).is_some_and(|measured| {
+                                    same_dimension_length(measured, expected)
+                                })
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let &(first_start, first_end) = candidates.first()?;
+                    let orientation_is_ambiguous = candidates
+                        .iter()
+                        .any(|(start, end)| *start == first_end && *end == first_start);
+                    if candidates.iter().all(|(start, end)| {
+                        (*start == first_start && *end == first_end)
+                            || (*start == first_end && *end == first_start)
+                    }) {
+                        let representative = if orientation_is_ambiguous {
+                            if first_start <= first_end {
+                                (first_start, first_end)
+                            } else {
+                                (first_end, first_start)
+                            }
+                        } else {
+                            (first_start, first_end)
+                        };
+                        candidates.truncate(1);
+                        candidates[0] = representative;
+                    } else {
+                        return None;
+                    }
+                    candidates
+                } else {
+                    candidates
+                };
                 let [(start, end)] = candidates.as_slice() else {
                     return None;
                 };
@@ -565,15 +683,6 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(start.0 as f64 * QUANTUM, start.1 as f64 * QUANTUM),
                     Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
                 ))
-            };
-            let candidate = |id: &str, start, end| SketchEntity {
-                id: SketchEntityId(id.into()),
-                sketch: sketch.clone(),
-                construction: true,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line { start, end },
             };
             let mut lines = Vec::with_capacity(line_operands.len());
             for operand in line_operands {
@@ -590,43 +699,6 @@ pub(crate) fn project_relation_solved_line_geometry(
             if lines.is_empty() {
                 continue;
             }
-            let point_position = if relation.family == FeatureInputRelationFamily::PointLineDistance
-            {
-                let point_marker = first_operand
-                    .entity_ref
-                    .as_deref()
-                    .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id == id))
-                    .or_else(|| {
-                        relation_operand_marker(relation, 0, sketch, &markers_by_id).and_then(
-                            |id| lane.sketch_entities.iter().find(|marker| marker.id == id),
-                        )
-                    })
-                    .or_else(|| {
-                        (first_operand.kind == FeatureInputOperandKind::Native(0x81dd))
-                            .then(|| points.get(usize::from(first_operand.entity_index)).copied())
-                            .flatten()
-                    });
-                point_marker.and_then(|marker| {
-                    let [u, v] = marker.coordinates_m?;
-                    let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                    let candidates = transforms
-                        .get(relation.feature_ref.as_str())
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|transform| transform.apply(native))
-                        .collect::<HashSet<_>>();
-                    let candidates = candidates.into_iter().collect::<Vec<_>>();
-                    let [position] = candidates.as_slice() else {
-                        return None;
-                    };
-                    Some(Point2::new(
-                        position.0 as f64 * QUANTUM,
-                        position.1 as f64 * QUANTUM,
-                    ))
-                })
-            } else {
-                None
-            };
             let valid = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => match lines.as_slice() {
                     [(_, _, first), (_, _, second)] => line_line_distance(first, second)

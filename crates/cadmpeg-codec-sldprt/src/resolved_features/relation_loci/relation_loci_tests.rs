@@ -349,6 +349,88 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
 }
 
 #[test]
+fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
+    let sketch = SketchId("sketch".into());
+    let markers = [
+        marker(
+            "point-marker",
+            0,
+            10,
+            SketchInputKind::Point,
+            Some([5.0, 1.0]),
+        ),
+        marker(
+            "first-curve-marker",
+            1,
+            20,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+        marker(
+            "second-curve-marker",
+            2,
+            30,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+    ];
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("point-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(5.0, 1.0),
+        },
+    };
+    let unrelated_point = SketchEntity {
+        id: SketchEntityId("unrelated-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(15.0, 1.0),
+        },
+    };
+    let line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(20.0, 0.0),
+    );
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([(
+        "second-curve-marker".into(),
+        vec![SketchLocus::Entity(line.id.clone())],
+    )]);
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
+    let parameter = length_parameter(1.0);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[point.clone(), unrelated_point, line.clone()],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Entity(line.id),
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
 fn dynamic_line_relation_requires_exact_curve_dimension() {
     let sketch = SketchId("sketch".into());
     let markers = [
