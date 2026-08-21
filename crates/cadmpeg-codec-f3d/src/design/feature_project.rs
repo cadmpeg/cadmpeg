@@ -9,7 +9,7 @@ use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOff
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_flange_group,
-    resolved_edge_group, resolved_edge_treatment_group,
+    resolved_edge_group, resolved_edge_treatment_group, resolved_surface_patch_edge_group,
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
@@ -5633,23 +5633,40 @@ fn resolved_surface_patch_path(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     scope: &DesignParameterScope,
+    grouped_recipe: bool,
 ) -> cadmpeg_ir::features::PathRef {
     use cadmpeg_ir::features::PathRef;
 
     let paths = groups
         .iter()
         .map(|group| {
-            let selection = resolved_edge_group(
-                group,
-                all_groups,
-                operands,
-                identity_operands,
-                scope.previous_history_state_id,
-                &neutral_feature_id(scope),
-            );
+            let selection = if grouped_recipe {
+                resolved_surface_patch_edge_group(
+                    group,
+                    all_groups,
+                    operands,
+                    identity_operands,
+                    scope.previous_history_state_id,
+                    &neutral_feature_id(scope),
+                )
+            } else {
+                resolved_edge_group(
+                    group,
+                    all_groups,
+                    operands,
+                    identity_operands,
+                    scope.previous_history_state_id,
+                    &neutral_feature_id(scope),
+                )
+            };
             loft_path_from_edge_selection(&group.id, selection)
         })
         .collect::<Vec<_>>();
+    if grouped_recipe {
+        if let [path] = paths.as_slice() {
+            return path.clone();
+        }
+    }
     if paths.is_empty() {
         return PathRef::Native(scope.id.clone());
     }
@@ -6345,15 +6362,16 @@ pub(crate) fn project_surface_patch(
             return None;
         }
         return Some(FeatureDefinition::FilledSurface {
-            boundary: SurfaceBoundary::Path(resolved_loft_path(
-                group,
+            boundary: SurfaceBoundary::Path(resolved_surface_patch_path(
+                std::slice::from_ref(group),
                 construction_groups,
                 edge_operands,
                 edge_identity_operands,
                 scope,
+                true,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: surface_patch_continuity(scope),
+            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
             boundary_continuities: Vec::new(),
             merge_result: Some(false),
         });
@@ -6430,6 +6448,7 @@ pub(crate) fn project_surface_patch(
             edge_operands,
             edge_identity_operands,
             scope,
+            false,
         )
     };
     Some(FeatureDefinition::FilledSurface {

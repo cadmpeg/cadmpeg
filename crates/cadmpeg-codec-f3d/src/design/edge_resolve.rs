@@ -27,6 +27,136 @@ pub(crate) fn resolved_edge_group(
     )
 }
 
+/// Resolve a modern grouped `SurfacePatch` edge group from its ordered exact
+/// recipe references.
+///
+/// The first reference with an exact edge candidate identifies the member edge.
+/// The proof is admitted only when that reference has one candidate and the
+/// complete group maps to distinct edges. Auxiliary clause structures on
+/// individual operands do not override this group-level relation. This keeps
+/// the member-to-edge mapping tied to serialized reference order instead of
+/// choosing an arbitrary assignment from overlapping candidate sets.
+pub(crate) fn resolved_surface_patch_edge_group(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> cadmpeg_ir::features::EdgeSelection {
+    let fallback = || {
+        resolved_edge_group(
+            group,
+            groups,
+            operands,
+            identity_operands,
+            previous_state_id,
+            feature_id,
+        )
+    };
+    let stream = native_stream(&group.id);
+    let mut member_ids = HashSet::new();
+    if group
+        .members
+        .iter()
+        .any(|member| !member_ids.insert(*member))
+    {
+        return fallback();
+    }
+    let matched_operands = group
+        .members
+        .iter()
+        .map(|member| {
+            let mut matches = operands.iter().filter(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.record_index == *member
+            });
+            let operand = matches.next()?;
+            matches.next().is_none().then_some(operand)
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(matched_operands) = matched_operands else {
+        return fallback();
+    };
+    let Some(edges) = surface_patch_grouped_recipe_edges(&matched_operands) else {
+        return fallback();
+    };
+    let state_id = previous_state_id.or_else(|| {
+        let mut states = matched_operands
+            .iter()
+            .filter_map(|operand| operand.recipe_state_id);
+        let state_id = states.next()?;
+        (states.all(|candidate| candidate == state_id)
+            && matched_operands
+                .iter()
+                .all(|operand| operand.recipe_state_id == Some(state_id)))
+        .then_some(state_id)
+    });
+    let Some(state_id) = state_id else {
+        return cadmpeg_ir::features::EdgeSelection::Edges(edges);
+    };
+    let Some(edge_slots) = edges
+        .iter()
+        .map(stable_edge_slot)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return fallback();
+    };
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    cadmpeg_ir::features::EdgeSelection::Historical {
+        state: feature_input_topology_id(feature_id, state_id),
+        edges: edge_slots
+            .into_iter()
+            .map(|edge_slot| {
+                ids::history_input_edge_id(
+                    &ids::history_input_prefix(feature_key, state_id),
+                    edge_slot,
+                )
+            })
+            .collect(),
+        native: group.id.clone(),
+    }
+}
+
+fn surface_patch_grouped_recipe_edges(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<cadmpeg_ir::ids::EdgeId>> {
+    if operands.is_empty() {
+        return None;
+    }
+    let edges = operands
+        .iter()
+        .map(|operand| {
+            let reference = operand
+                .recipe_references
+                .iter()
+                .find(|reference| !reference.candidate_edges.is_empty())?;
+            let [edge] = reference.candidate_edges.as_slice() else {
+                return None;
+            };
+            Some(edge.clone())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut distinct = edges.clone();
+    distinct.sort_by(|left, right| left.0.cmp(&right.0));
+    distinct.dedup();
+    (distinct.len() == edges.len()).then_some(edges)
+}
+
+fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
+    edge.0
+        .rsplit_once('#')?
+        .1
+        .split(':')
+        .next()?
+        .parse::<i64>()
+        .ok()
+}
+
 /// Resolve a selectorless `EdgeFlange` group from its updated source edges.
 ///
 /// An `EdgeFlange` operation preserves the selected source edge as an updated

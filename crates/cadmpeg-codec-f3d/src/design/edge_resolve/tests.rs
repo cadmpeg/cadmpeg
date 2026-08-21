@@ -11,8 +11,9 @@
 use super::*;
 use crate::records::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignParameterScope,
+    DesignParameterScope, DesignRecipeReference,
 };
+use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
     serde_json::from_value(serde_json::json!({
@@ -271,6 +272,86 @@ fn recipe_edge_operand(
         "next_byte_offset": 0,
     }))
     .expect("edge recipe operand")
+}
+
+fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
+    DesignRecipeReference {
+        selector: 1,
+        selector_offset: 0,
+        token: "97".into(),
+        token_offset: 0,
+        design_reference: 1,
+        design_reference_offset: 0,
+        candidate_faces: Vec::new(),
+        candidate_edges: candidate_edges
+            .iter()
+            .map(|edge| EdgeId(format!("f3d:edge#{edge}")))
+            .collect(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    }
+}
+
+#[test]
+fn grouped_surface_patch_recipe_uses_first_exact_singleton_per_member() {
+    let mut first = recipe_edge_operand(10, &[], &[]);
+    first.recipe_references = vec![recipe_reference(&[]), recipe_reference(&[17])];
+    let mut second = recipe_edge_operand(11, &[], &[]);
+    second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[19])];
+
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&first, &second]),
+        Some(vec![
+            EdgeId("f3d:edge#17".into()),
+            EdgeId("f3d:edge#18".into())
+        ])
+    );
+}
+
+#[test]
+fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
+    let mut ambiguous = recipe_edge_operand(10, &[], &[]);
+    ambiguous.recipe_references = vec![recipe_reference(&[17, 18])];
+    let mut repeated = recipe_edge_operand(11, &[], &[]);
+    repeated.recipe_references = vec![recipe_reference(&[17])];
+
+    assert!(surface_patch_grouped_recipe_edges(&[&ambiguous]).is_none());
+    assert!(surface_patch_grouped_recipe_edges(&[&repeated, &repeated]).is_none());
+}
+
+#[test]
+fn grouped_surface_patch_recipe_projects_historical_edges() {
+    let mut group = group(2, 10);
+    group.members = vec![10, 11];
+    group.member_offsets = vec![0, 0];
+    let mut first = recipe_edge_operand(10, &[], &[]);
+    first.recipe_references = vec![recipe_reference(&[17])];
+    first.surface_patch_recipe_structure =
+        Some(crate::records::DesignSurfacePatchRecipeStructure {
+            root: 2,
+            clauses: Vec::new(),
+        });
+    let mut second = recipe_edge_operand(11, &[], &[]);
+    second.recipe_references = vec![recipe_reference(&[18])];
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into());
+
+    let selection = resolved_surface_patch_edge_group(
+        &group,
+        std::slice::from_ref(&group),
+        &[first, second],
+        &[],
+        Some(7),
+        &feature_id,
+    );
+    let prefix = crate::ids::history_input_prefix("surface-patch", 7);
+    assert!(matches!(
+        selection,
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+            if edges == [
+                crate::ids::history_input_edge_id(&prefix, 17),
+                crate::ids::history_input_edge_id(&prefix, 18),
+            ]
+    ));
 }
 
 #[test]

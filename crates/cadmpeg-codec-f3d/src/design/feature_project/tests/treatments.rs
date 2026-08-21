@@ -1483,19 +1483,22 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
     patch_scope.surface_patch_boundaries.clear();
     patch_group.members = vec![200, 201, 202, 203];
+    let grouped_projection = crate::design::feature_project::project_surface_patch(
+        &patch_scope,
+        std::slice::from_ref(&patch_group),
+        &[],
+        &[],
+    );
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            &patch_scope,
-            std::slice::from_ref(&patch_group),
-            &[],
-            &[],
-        ),
+        grouped_projection,
         Some(FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
+            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
+            ref boundary_continuities,
             ..
-        }) if native == &patch_group.id
+        }) if native == &patch_group.id && boundary_continuities.is_empty()
     ));
 
     let mut fill_scope = scope.clone();
