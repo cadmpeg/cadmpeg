@@ -1404,6 +1404,42 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
 }
 
 #[test]
+fn nx_native_expression_units_remain_outside_neutral_values() {
+    let expression = crate::native::om::Expression {
+        id: "nx:test:expression#native".into(),
+        object_id: Some(1),
+        record: None,
+        declaration: None,
+        name: "p1".into(),
+        parameter_index: Some(1),
+        qualifier: None,
+        unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
+        expression: "4".into(),
+        value: Some(4.0),
+        source_entry: "part".into(),
+        source_table: "table".into(),
+        source_offset: 1,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
+
+    assert_eq!(ir.model.parameters[0].value, None);
+    assert_eq!(
+        ir.model.parameters[0]
+            .properties
+            .get("unit")
+            .map(String::as_str),
+        Some("custom/unit")
+    );
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&ir),
+        [ir.model.parameters[0].id.clone()].into()
+    );
+}
+
+#[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;

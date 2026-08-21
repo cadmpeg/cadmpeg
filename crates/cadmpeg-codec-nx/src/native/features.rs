@@ -8625,7 +8625,7 @@ pub fn feature_block_dimensions(
                     Some((
                         expression,
                         crate::native::expression_length_in_millimeters(
-                            expression.unit,
+                            &expression.unit,
                             expression.value.filter(|value| value.is_finite())?,
                         )?,
                     ))

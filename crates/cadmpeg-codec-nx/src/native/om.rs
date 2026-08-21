@@ -85,7 +85,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
 }
 
 /// Unit declared by an NX numeric expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionUnit {
     /// Model length in millimeters as stored by NX.
@@ -94,25 +94,28 @@ pub enum ExpressionUnit {
     Inch,
     /// Angular value in degrees as stored by NX.
     Degree,
+    /// Unit label without a neutral dimensional mapping.
+    Native(String),
 }
 
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
 impl ExpressionUnit {
-    pub(crate) const fn property_name(self) -> &'static str {
+    pub(crate) fn property_name(&self) -> String {
         match self {
-            Self::Millimeter => "millimeter",
-            Self::Inch => "inch",
-            Self::Degree => "degree",
+            Self::Millimeter => "millimeter".to_string(),
+            Self::Inch => "inch".to_string(),
+            Self::Degree => "degree".to_string(),
+            Self::Native(unit) => unit.clone(),
         }
     }
 }
 
-pub(crate) fn expression_length_in_millimeters(unit: ExpressionUnit, value: f64) -> Option<f64> {
+pub(crate) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64) -> Option<f64> {
     match unit {
         ExpressionUnit::Millimeter => Some(value),
         ExpressionUnit::Inch => Some(value * INCH_TO_MILLIMETERS),
-        ExpressionUnit::Degree => None,
+        ExpressionUnit::Degree | ExpressionUnit::Native(_) => None,
     }
 }
 
@@ -4010,6 +4013,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
+                    crate::om::ExpressionUnit::Native(unit) => ExpressionUnit::Native(unit),
                 },
                 expression: expression.expression.to_string(),
                 value: expression.value,
@@ -4038,7 +4042,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             .entry((
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
-                expression.unit,
+                expression.unit.clone(),
             ))
             .or_default() += 1;
     }
@@ -4047,7 +4051,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
         let key = (
             expression_scope(expression).to_string(),
             expression.name.clone(),
-            expression.unit,
+            expression.unit.clone(),
         );
         if name_counts.get(&key) != Some(&1) {
             expression.value = None;
@@ -4067,7 +4071,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             let expression_key = (
                 expression_scope(expression).to_string(),
                 expression.name.clone(),
-                expression.unit,
+                expression.unit.clone(),
             );
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
@@ -4076,7 +4080,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 let key = (
                     expression_scope(expression).to_string(),
                     name.to_string(),
-                    expression.unit,
+                    expression.unit.clone(),
                 );
                 if name_counts.get(&key) != Some(&1) {
                     return None;
@@ -4098,6 +4102,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 #[cfg(test)]
 mod tests {
     #![allow(unused_imports)]
+    mod native_units;
     use std::io::{Cursor, Write};
 
     use flate2::write::ZlibEncoder;
@@ -4113,12 +4118,11 @@ mod tests {
     use cadmpeg_ir::report::LossCategory;
     use cadmpeg_ir::Exactness;
 
+    use super::*;
     use crate::container;
     use crate::parasolid::{self, StreamKind};
     use crate::test_support::*;
     use crate::NxCodec;
-
-    use super::*;
 
     #[test]
     fn nx_expression_parameter_references_preserve_formula_order() {

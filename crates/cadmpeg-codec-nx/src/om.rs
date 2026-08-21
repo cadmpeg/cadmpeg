@@ -1162,7 +1162,7 @@ pub struct ReferenceValue {
 }
 
 /// Unit declared by an NX numeric-expression serialization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpressionUnit {
     /// Model length in millimeters as serialized by NX.
     Millimeter,
@@ -1170,6 +1170,8 @@ pub enum ExpressionUnit {
     Inch,
     /// Angular value in degrees as serialized by NX.
     Degree,
+    /// Unit label without a neutral dimensional mapping.
+    Native(String),
 }
 
 /// One numeric expression decoded from an exactly bounded OM entity.
