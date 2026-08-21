@@ -404,30 +404,16 @@ impl F3dLossCode {
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::GeometryNotTransferred
-            | Self::TopologyNotTransferred
-            | Self::MissingGeometryStream => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
         LossKind::namespaced("f3d", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `f3d/<local>`. Severity and strict floor come
-    /// from the local code.
+    /// The structured code is `f3d/<local>`. Severity comes from the local
+    /// code; the strict floor comes from the taxonomy.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())

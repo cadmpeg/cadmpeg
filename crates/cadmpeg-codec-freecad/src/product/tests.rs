@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
-#![allow(unused_imports)]
-
 use crate::native;
 use crate::product::{product_cycle_nodes, product_kind, product_record_index};
 use crate::test_support::*;

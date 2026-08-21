@@ -1,45 +1,94 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::presentation::{
+    general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
+};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use crate::global::ProjectedGlobal;
+use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// One admitted annotation shape per variant.
+///
+/// [`classify`] is the single owner of annotation admission: the native
+/// retention pass and the semantic projection both dispatch on its result,
+/// so a new form is admitted by adding one `classify` arm and handling the
+/// variant everywhere the compiler then requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnnotationKind {
+    AngularDimension,
+    CurveDimension,
+    DiameterDimension,
+    FlagNote,
+    GeneralLabel,
+    GeneralNote,
+    NewGeneralNote,
+    Leader,
+    LinearDimension,
+    OrdinateDimension,
+    PointDimension,
+    RadiusDimension,
+    GeneralSymbol,
+    SectionedArea,
+}
+
+/// Maps a directory entry's type and form to its annotation kind, or `None`
+/// for every shape the annotation concern does not admit.
+pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
+    match (entity_type, form) {
+        (202, 0) => Some(AnnotationKind::AngularDimension),
+        (204, 0) => Some(AnnotationKind::CurveDimension),
+        (206, 0) => Some(AnnotationKind::DiameterDimension),
+        (208, 0) => Some(AnnotationKind::FlagNote),
+        (210, 0) => Some(AnnotationKind::GeneralLabel),
+        (212, 0) => Some(AnnotationKind::GeneralNote),
+        (213, 0) => Some(AnnotationKind::NewGeneralNote),
+        (214, 1..=12) => Some(AnnotationKind::Leader),
+        (216, 0..=2) => Some(AnnotationKind::LinearDimension),
+        (218, 0..=1) => Some(AnnotationKind::OrdinateDimension),
+        (220, 0) => Some(AnnotationKind::PointDimension),
+        (222, 0..=1) => Some(AnnotationKind::RadiusDimension),
+        (228, 0) => Some(AnnotationKind::GeneralSymbol),
+        (230, 0) => Some(AnnotationKind::SectionedArea),
+        _ => None,
+    }
+}
 
 fn finite(record: &ParameterRecord, index: usize) -> bool {
     record.number(index).is_some_and(f64::is_finite)
 }
 
-fn exact_parameter_count(
-    record: &ParameterRecord,
-    expected: usize,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start)
-        == expected
+fn exact_parameter_count(record: &ParameterRecord, expected: usize) -> bool {
+    record.parameter_end() == expected
 }
 
-fn font_valid(value: i64, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    value >= 0
-        || value
-            .checked_neg()
-            .and_then(|value| u32::try_from(value).ok())
-            .and_then(|sequence| entries.get(&sequence).copied())
-            .is_some_and(|entry| entry.entity_type == 310)
+fn justification_valid(value: i64) -> bool {
+    matches!(value, 0..=3)
+}
+
+fn fixed_or_variable_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
+fn mirror_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=2)
+}
+
+fn vertical_text_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let Some(count) = record.count(1).filter(|count| *count > 0) else {
-        return false;
+    let parameter_end = record.parameter_end();
+    let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
+        DefaultTailCount::Held(count) if count > 0 => count,
+        _ => return false,
     };
-    let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
-    let last_string_start = 2 + (count - 1) * 12;
-    (last_string_start < parameter_end && parameter_end <= 2 + count * 12)
+    parameter_end <= 2 + count * 12
         && (0..count).all(|index| {
             let start = 2 + index * 12;
             let text = record.string_or_empty(start + 11);
@@ -55,17 +104,17 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 })
                 && record
                     .integer_or(start + 3, 1)
-                    .is_some_and(|value| font_valid(value, entries))
+                    .is_some_and(|value| general_note_font_valid(value, entries))
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)
                 && record.number_or(start + 5, 0.0).is_some_and(f64::is_finite)
                 && record
                     .integer_or(start + 6, 0)
-                    .is_some_and(|value| matches!(value, 0..=2))
+                    .is_some_and(mirror_flag_valid)
                 && record
                     .integer_or(start + 7, 0)
-                    .is_some_and(|value| matches!(value, 0..=1))
+                    .is_some_and(vertical_text_flag_valid)
                 && (start + 8..=start + 10)
                     .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
@@ -75,26 +124,34 @@ fn new_general_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let Some(count) = record.count(12).filter(|count| *count > 0) else {
-        return false;
+    let parameter_end = record.parameter_end();
+    let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
+        DefaultTailCount::Held(count) if count > 0 => count,
+        _ => return false,
     };
-    exact_parameter_count(record, 13 + count * 20, entries)
+    parameter_end <= 13 + count * 20
         && (1..=2).all(|index| {
             record
-                .number(index)
+                .number_or(index, 0.0)
                 .is_some_and(|value| value.is_finite() && value >= 0.0)
         })
-        && record
-            .integer(3)
-            .is_some_and(|value| matches!(value, 0..=3))
-        && (4..=11).all(|index| finite(record, index))
+        && record.integer_or(3, 0).is_some_and(justification_valid)
+        && (4..=11).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
         && (0..count).all(|index| {
             let start = 13 + index * 20;
-            let fixed = record.integer(start);
-            let character_width = record.number(start + 1);
-            let character_height = record.number(start + 2);
-            let spacing = record.number(start + 3);
-            let text = record.string(start + 19);
+            let fixed = record.integer_or(start, 0);
+            let character_width = record.number_or(start + 1, 0.0);
+            let character_height = record.number_or(start + 2, 0.0);
+            // PS-01: variable-width CSPACE has an explicit default of one;
+            // fixed-width CSPACE uses the generic real default of zero.
+            let spacing_default = if fixed == Some(1) { 1.0 } else { 0.0 };
+            let spacing = record.number_or(start + 3, spacing_default);
+            let text = record.string_or_empty(start + 19);
+            // PS-01: Type 213 FONT has no explicit default; the generic
+            // integer default is zero.
+            let font_style = record.integer_or(start + 5, 0);
+            // PS-04: CHRSET has an entity-specific default of standard ASCII.
+            let character_set = record.integer_or(start + 11, 1);
             let metrics_valid = character_width
                 .zip(character_height)
                 .zip(spacing)
@@ -109,14 +166,14 @@ fn new_general_note_valid(
                             Some(1) => spacing >= 0.0,
                             _ => false,
                         }
-                });
+                })
+                && fixed.is_some_and(fixed_or_variable_valid);
             metrics_valid
-                && finite(record, start + 4)
-                && record.integer(start + 5).is_some()
-                && record.number(start + 6).is_some_and(|value| {
+                && record.number_or(start + 4, 0.0).is_some_and(f64::is_finite)
+                && record.number_or(start + 6, 0.0).is_some_and(|value| {
                     value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
                 })
-                && record.string(start + 7).is_some()
+                && record.string_or_empty(start + 7).is_some()
                 && record
                     .integer(start + 8)
                     .and_then(|value| usize::try_from(value).ok())
@@ -124,29 +181,33 @@ fn new_general_note_valid(
                     .is_some_and(|(declared, text)| declared == text.len())
                 && (start + 9..=start + 10).all(|field| {
                     record
-                        .number(field)
+                        .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
+                && font_style.is_some_and(new_general_note_font_valid)
+                && character_set.is_some_and(|value| new_general_note_charset_valid(value, entries))
                 && record
-                    .integer(start + 11)
-                    .is_some_and(|value| font_valid(value, entries))
-                && (start + 12..=start + 13).all(|field| finite(record, field))
+                    .number_or(start + 12, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
                 && record
-                    .integer(start + 14)
-                    .is_some_and(|value| matches!(value, 0..=2))
+                    .number_or(start + 13, 0.0)
+                    .is_some_and(f64::is_finite)
                 && record
-                    .integer(start + 15)
-                    .is_some_and(|value| matches!(value, 0..=1))
-                && (start + 16..=start + 18).all(|field| finite(record, field))
+                    .integer_or(start + 14, 0)
+                    .is_some_and(mirror_flag_valid)
+                && record
+                    .integer_or(start + 15, 0)
+                    .is_some_and(vertical_text_flag_valid)
+                && (start + 16..=start + 18)
+                    .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
 }
 
-fn leader_valid(
-    entry: &DirectoryEntry,
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    let Some(count) = record.count(1).filter(|count| *count > 0) else {
+fn leader_valid(entry: &DirectoryEntry, record: &ParameterRecord) -> bool {
+    let Some(count) = record
+        .count_with_stride_at(1, 7, 2, record.parameter_end())
+        .filter(|count| *count > 0)
+    else {
         return false;
     };
     let dimensions_valid = record
@@ -162,7 +223,7 @@ fn leader_valid(
                     _ => false,
                 }
         });
-    exact_parameter_count(record, 7 + count * 2, entries)
+    exact_parameter_count(record, 7 + count * 2)
         && dimensions_valid
         && (4..=6 + count * 2).all(|index| finite(record, index))
 }
@@ -195,8 +256,8 @@ fn child_valid(
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
                     212 => general_note_valid(record, entries),
-                    214 => leader_valid(entry, record, entries),
-                    106 => witness_valid(record, entries),
+                    214 => leader_valid(entry, record),
+                    106 => witness_valid(record),
                     _ => false,
                 })
     })
@@ -222,15 +283,15 @@ fn dimension_children_valid(
         })
 }
 
-fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
+fn witness_valid(record: &ParameterRecord) -> bool {
     let Some(count) = record
-        .count(2)
+        .count_with_stride_at(2, 4, 2, record.parameter_end())
         .filter(|count| *count >= 3 && *count % 2 == 1)
     else {
         return false;
     };
     record.integer(1) == Some(1)
-        && exact_parameter_count(record, 4 + count * 2, entries)
+        && exact_parameter_count(record, 4 + count * 2)
         && (3..4 + count * 2).all(|index| finite(record, index))
 }
 
@@ -275,7 +336,7 @@ fn dimension_valid(
             });
             children.extend((2..=3).filter_map(|index| pointer(record, index, entries)));
             children.extend(leaders.into_iter().flatten());
-            exact_parameter_count(record, 9, entries)
+            exact_parameter_count(record, 9)
                 && witnesses_valid
                 && (4..=5).all(|index| finite(record, index))
                 && record
@@ -322,10 +383,7 @@ fn dimension_valid(
                 None => false,
             });
             children.extend((2..=7).filter_map(|index| pointer(record, index, entries)));
-            exact_parameter_count(record, 8, entries)
-                && curves_valid
-                && leaders_valid
-                && witnesses_valid
+            exact_parameter_count(record, 8) && curves_valid && leaders_valid && witnesses_valid
         }
         (206, 0) => {
             let first = pointer(record, 2, entries);
@@ -353,7 +411,7 @@ fn dimension_valid(
             };
             children.extend(first);
             children.extend(second);
-            exact_parameter_count(record, 6, entries)
+            exact_parameter_count(record, 6)
                 && leaders_valid
                 && (4..=5).all(|index| finite(record, index))
         }
@@ -380,7 +438,7 @@ fn dimension_valid(
             });
             children.extend(leaders.into_iter().flatten());
             children.extend((4..=5).filter_map(|index| pointer(record, index, entries)));
-            exact_parameter_count(record, 6, entries) && leaders_valid && witnesses_valid
+            exact_parameter_count(record, 6) && leaders_valid && witnesses_valid
         }
         (218, 0) => {
             let ordinate = pointer(record, 2, entries);
@@ -395,7 +453,7 @@ fn dimension_valid(
                     )
             });
             children.extend(ordinate);
-            exact_parameter_count(record, 3, entries) && valid
+            exact_parameter_count(record, 3) && valid
         }
         (218, 1) => {
             let witness = pointer(record, 2, entries);
@@ -413,7 +471,7 @@ fn dimension_valid(
             });
             children.extend(witness);
             children.extend(leader);
-            exact_parameter_count(record, 4, entries) && valid
+            exact_parameter_count(record, 4) && valid
         }
         (220, 0) => {
             let leader = pointer(record, 2, entries);
@@ -441,7 +499,7 @@ fn dimension_valid(
             };
             children.extend(leader);
             children.extend(enclosure);
-            exact_parameter_count(record, 4, entries) && leader_valid && enclosure_valid
+            exact_parameter_count(record, 4) && leader_valid && enclosure_valid
         }
         (222, 0..=1) => {
             let first = pointer(record, 2, entries);
@@ -469,7 +527,7 @@ fn dimension_valid(
                 };
             children.extend(first);
             children.extend(second);
-            exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 }, entries)
+            exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 })
                 && first_valid
                 && center_valid
                 && second_valid
@@ -508,7 +566,7 @@ fn flag_or_label_valid(
         })
     });
     let shape_valid = if entry.entity_type == 208 {
-        count.is_some_and(|count| exact_parameter_count(record, 7 + count, entries))
+        count.is_some_and(|count| exact_parameter_count(record, 7 + count))
             && (1..=4).all(|index| finite(record, index))
             && note
                 .and_then(|sequence| records.get(&sequence))
@@ -524,7 +582,7 @@ fn flag_or_label_valid(
                         <= 10
                 })
     } else {
-        count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count, entries))
+        count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count))
     };
     note_valid && leaders_valid && shape_valid
 }
@@ -568,7 +626,7 @@ fn general_symbol_valid(
     note_valid
         && geometry_valid
         && leaders_valid
-        && exact_parameter_count(record, leader_count_index + 1 + leader_count, entries)
+        && exact_parameter_count(record, leader_count_index + 1 + leader_count)
 }
 
 pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
@@ -590,14 +648,14 @@ fn fill_pattern_valid(pattern: i64) -> bool {
 }
 
 fn zero_or_omitted(record: &ParameterRecord, index: usize) -> bool {
-    match record.tokens.get(index).map(|token| &token.value) {
+    match record.value(index) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         _ => record.number(index) == Some(0.0),
     }
 }
 
 fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
-    match record.tokens.get(index).map(|token| &token.value) {
+    match record.value(index) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         _ => finite(record, index),
     }
@@ -635,16 +693,16 @@ fn sectioned_area_valid(
     boundary_valid
         && pattern_parameters_valid
         && islands_valid
-        && exact_parameter_count(record, 9 + island_count, entries)
+        && exact_parameter_count(record, 9 + island_count)
 }
 
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -653,20 +711,13 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory.iter().filter(|entry| {
-        (matches!(entry.entity_type, 202 | 204 | 206 | 208 | 210 | 212 | 213) && entry.form == 0)
-            || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
-            || matches!(
-                (entry.entity_type, entry.form),
-                (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
-            )
-            || matches!((entry.entity_type, entry.form), (228 | 230, 0))
-    }) {
-        handled.insert(entry.sequence);
+    for (entry, kind) in directory
+        .iter()
+        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
+    {
         let valid = records.get(&entry.sequence).is_some_and(|record| {
             let transform_valid = resolve_transform(
                 entry.transform,
@@ -680,38 +731,58 @@ pub(super) fn project(
             .is_ok();
             entry.status.use_flag == 1
                 && transform_valid
-                && match entry.entity_type {
-                    202 | 204 | 206 => dimension_valid(entry, record, &entries, &records),
-                    208 | 210 => flag_or_label_valid(entry, record, &entries, &records),
-                    212 => general_note_valid(record, &entries),
-                    213 => new_general_note_valid(record, &entries),
-                    214 => leader_valid(entry, record, &entries),
-                    216 | 218 | 220 | 222 => dimension_valid(entry, record, &entries, &records),
-                    228 => general_symbol_valid(record, &entries, &records),
-                    230 => sectioned_area_valid(record, &entries),
-                    _ => false,
+                && match kind {
+                    AnnotationKind::AngularDimension
+                    | AnnotationKind::CurveDimension
+                    | AnnotationKind::DiameterDimension
+                    | AnnotationKind::LinearDimension
+                    | AnnotationKind::OrdinateDimension
+                    | AnnotationKind::PointDimension
+                    | AnnotationKind::RadiusDimension => {
+                        dimension_valid(entry, record, &entries, &records)
+                    }
+                    AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
+                        flag_or_label_valid(entry, record, &entries, &records)
+                    }
+                    AnnotationKind::GeneralNote => general_note_valid(record, &entries),
+                    AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
+                    AnnotationKind::Leader => leader_valid(entry, record),
+                    AnnotationKind::GeneralSymbol => {
+                        general_symbol_valid(record, &entries, &records)
+                    }
+                    AnnotationKind::SectionedArea => sectioned_area_valid(record, &entries),
                 }
         });
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            let message = match entry.entity_type {
-                202 | 204 | 206 | 216 | 218 | 220 | 222 => {
+            let message = match kind {
+                AnnotationKind::AngularDimension
+                | AnnotationKind::CurveDimension
+                | AnnotationKind::DiameterDimension
+                | AnnotationKind::LinearDimension
+                | AnnotationKind::OrdinateDimension
+                | AnnotationKind::PointDimension
+                | AnnotationKind::RadiusDimension => {
                     "dimension components, role types, transforms, or Directory status are invalid"
                 }
-                228 => "symbol note, defining geometry, or leader list is invalid",
-                230 => "section boundary, fill pattern, hatch geometry, or island list is invalid",
-                _ => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
+                AnnotationKind::GeneralSymbol => {
+                    "symbol note, defining geometry, or leader list is invalid"
+                }
+                AnnotationKind::SectionedArea => {
+                    "section boundary, fill pattern, hatch geometry, or island list is invalid"
+                }
+                AnnotationKind::FlagNote
+                | AnnotationKind::GeneralLabel
+                | AnnotationKind::GeneralNote
+                | AnnotationKind::NewGeneralNote
+                | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
             losses.push(entity_loss(entry, message));
         }
     }
 
-    Projection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

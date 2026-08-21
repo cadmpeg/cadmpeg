@@ -2,7 +2,7 @@
 <n0:Uos
  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
  xmlns:n0="urn:example:wrong-ap242-namespace"
- xsi:schemaLocation="http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd">
+ xsi:schemaLocation="urn:example:wrong-ap242-namespace urn:example:wrong-ap242-namespace.xsd">
  <Header>
   <Name>bm01-lookalike.stpx</Name>
  </Header>

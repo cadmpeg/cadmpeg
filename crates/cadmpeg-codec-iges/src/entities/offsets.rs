@@ -2,9 +2,9 @@
 //! Offset curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{declared_unit_vector, entity_loss, source_object};
+use super::geometry::{declared_unit_vector, entity_loss, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
@@ -13,7 +13,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,23 +33,16 @@ fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
 
 fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
-        record.tokens.get(index).map(|token| &token.value),
+        record.value(index),
         Some(TokenValue::Omitted | TokenValue::Integer(0))
     )
 }
 
 fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
-        record.tokens.get(index).map(|token| &token.value),
+        record.value(index),
         Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
     )
-}
-
-pub(super) struct OffsetProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
 }
 
 #[derive(Clone, Copy)]
@@ -84,8 +76,8 @@ fn source_parameter_map(
     record: &ParameterRecord,
     neutral: [f64; 2],
 ) -> Option<SourceParameterMap> {
-    let native = match entry.entity_type {
-        100 => {
+    let native = match (entry.entity_type, entry.form) {
+        (100, 0) => {
             let center = [record.number(2)?, record.number(3)?];
             let start = [record.number(4)?, record.number(5)?];
             let end = [record.number(6)?, record.number(7)?];
@@ -101,11 +93,62 @@ fn source_parameter_map(
             }
             [start_parameter, start_parameter + sweep]
         }
-        110 => [0.0, 1.0],
-        130 => [record.number(13)?, record.number(14)?],
+        (110, 0) => [0.0, 1.0],
+        (130, 0) => [record.number(13)?, record.number(14)?],
+        // These entities retain their IGES native parameter values in the
+        // neutral edge range. Their domains are bounded by the entity data:
+        // Type 102 starts at zero, Type 106 linear paths use one unit
+        // interval per segment, and Types 112 and 126 carry their active
+        // parameter bounds explicitly. Type 104 is not listed because the
+        // neutral hyperbola carrier uses a different analytic parameter than
+        // the IGES secant/tangent parameter and cannot use an affine map.
+        (102 | 112, 0) | (106, 11..=13 | 63) | (126, 0..=5) => neutral,
         _ => return None,
     };
     SourceParameterMap::new(native, neutral)
+}
+
+fn source_parameter_range(
+    ir: &CadIr,
+    source_id: &CurveId,
+    geometry: &CurveGeometry,
+    tolerance: f64,
+) -> Option<[f64; 2]> {
+    let point_position = |vertex: &VertexId| {
+        let point_id = ir
+            .model
+            .vertices
+            .iter()
+            .find(|item| item.id == *vertex)?
+            .point
+            .clone();
+        ir.model
+            .points
+            .iter()
+            .find(|item| item.id == point_id)
+            .map(|point| point.position)
+    };
+    let candidates = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(source_id))
+        .filter_map(|edge| {
+            let range = edge.param_range?;
+            let start = point_position(&edge.start)?;
+            let end = point_position(&edge.end)?;
+            let evaluated_start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
+            let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
+            (evaluated_start.distance(start) <= tolerance
+                && evaluated_end.distance(end) <= tolerance)
+                .then_some(range)
+        })
+        .collect::<Vec<_>>();
+    let range = *candidates.first()?;
+    candidates
+        .iter()
+        .all(|candidate| *candidate == range)
+        .then_some(range)
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -113,9 +156,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
-) -> OffsetProjection {
+) -> WireProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -124,7 +167,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -133,7 +175,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 130 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -202,11 +243,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
         };
-        let source_range = ir.model.edges.iter().find_map(|edge| {
-            (edge.curve.as_ref() == Some(&source_id))
-                .then_some(edge.param_range)
-                .flatten()
-        });
+        let source_range = source_parameter_range(
+            ir,
+            &source_id,
+            &source.geometry,
+            global.minimum_resolution_mm(),
+        );
         let Some(source_range) = source_range else {
             losses.push(entity_loss(
                 entry,
@@ -682,8 +724,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    OffsetProjection {
-        handled,
+    WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,

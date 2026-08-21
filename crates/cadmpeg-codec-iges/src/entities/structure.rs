@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product definitions, occurrences, and ordered assembly relationships.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use crate::global::ProjectedGlobal;
+use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
+
+const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 
 #[derive(Clone)]
 struct SolidAssembly {
@@ -113,7 +115,9 @@ fn array_mask_valid(
     first_position_index: usize,
     total: usize,
 ) -> bool {
-    let Some(count) = record.count(count_index) else {
+    let Some(count) =
+        record.count_with_stride_at(count_index, first_position_index, 1, record.parameter_end())
+    else {
         return false;
     };
     let Some(flag) = record
@@ -146,18 +150,24 @@ fn array_mask_valid(
 fn has_association_back_pointer(
     record: &ParameterRecord,
     group_sequence: u32,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> bool {
-    trailing_pointer_groups(record, entries)
+    trailing_pointer_analysis
+        .get(&record.directory_sequence)
+        .and_then(|analysis| analysis.groups.as_ref())
+        .filter(|groups| groups.fully_valid)
         .is_some_and(|groups| groups.associations.contains(&group_sequence))
 }
 
 fn has_property_pointer(
     record: &ParameterRecord,
     property_sequence: u32,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> bool {
-    trailing_pointer_groups(record, entries)
+    trailing_pointer_analysis
+        .get(&record.directory_sequence)
+        .and_then(|analysis| analysis.groups.as_ref())
+        .filter(|groups| groups.fully_valid)
         .is_some_and(|groups| groups.properties.contains(&property_sequence))
 }
 
@@ -167,10 +177,7 @@ fn attribute_value_valid(
     data_type: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    match (
-        data_type,
-        record.tokens.get(index).map(|token| &token.value),
-    ) {
+    match (data_type, record.value(index)) {
         (1, Some(TokenValue::Integer(_)))
         | (3, Some(TokenValue::String(_)))
         | (5, Some(TokenValue::Omitted)) => true,
@@ -207,14 +214,6 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
     }
 }
 
-fn entity_parameter_end(
-    record: &ParameterRecord,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> usize {
-    trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start)
-}
-
 fn generic_property_value_valid(
     record: &ParameterRecord,
     index: usize,
@@ -222,10 +221,7 @@ fn generic_property_value_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     match data_type {
-        0 => matches!(
-            record.tokens.get(index).map(|token| &token.value),
-            Some(TokenValue::Omitted)
-        ),
+        0 => matches!(record.value(index), Some(TokenValue::Omitted)),
         1 => record.integer(index).is_some(),
         2 => record.number(index).is_some_and(f64::is_finite),
         3 => record.string(index).is_some(),
@@ -448,7 +444,7 @@ fn property_fields_valid(
                 .integer(3)
                 .is_some_and(|value| matches!(value, 0..=11 | 100..=106));
             let charset_valid = record
-                .integer(4)
+                .integer_or(4, DEFAULT_DIMENSION_UNITS_CHARACTER_SET)
                 .is_some_and(|value| matches!(value, 1 | 1001..=1003));
             let fraction = record.integer(6);
             exact(6)
@@ -466,7 +462,9 @@ fn property_fields_valid(
             exact(8)
                 && integer_range(2, 0..=2)
                 && integer_range(3, 1..=10)
-                && integer_range(4, 1..=4)
+                && record
+                    .integer_or(4, 2)
+                    .is_some_and(|value| (1..=4).contains(&value))
                 && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
                 && integer_range(7, 0..=1)
                 && fraction.is_some_and(|value| matches!(value, 0..=2))
@@ -478,7 +476,8 @@ fn property_fields_valid(
             .count(13)
             .filter(|count| *count <= end)
             .is_some_and(|count| {
-                exact(i64::try_from(12 + count * 3).unwrap_or_default())
+                record.integer(1) == Some(14)
+                    && count.checked_mul(3).and_then(|span| span.checked_add(14)) == Some(end)
                     && integer_range(2, 0..=2)
                     && integer_range(3, 0..=4)
                     && record
@@ -555,8 +554,9 @@ fn predefined_associativity_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> bool {
-    let end = entity_parameter_end(record, entries);
+    let end = record.parameter_end();
     match entry.form {
         5 => {
             let Some(count) = record.count(1).filter(|count| *count > 0) else {
@@ -581,26 +581,36 @@ fn predefined_associativity_valid(
                 })
         }
         6 => {
-            let visible_count = record.count(1);
-            let view = existing_pointer(record, 2, entries);
+            let visible_count = (record.integer(1) == Some(1))
+                .then(|| record.count(2))
+                .flatten();
+            let view = existing_pointer(record, 3, entries);
             let visible = visible_count.and_then(|count| {
                 (0..count)
-                    .map(|offset| existing_pointer(record, 3 + offset, entries))
+                    .map(|offset| existing_pointer(record, 4 + offset, entries))
                     .collect::<Option<Vec<_>>>()
             });
-            visible_count.is_some_and(|count| end == 3 + count)
+            visible_count.is_some_and(|count| end == 4 + count)
                 && view.is_some_and(|sequence| {
                     entries
                         .get(&sequence)
                         .is_some_and(|target| target.entity_type == 410)
                         && records.get(&sequence).is_some_and(|record| {
-                            has_association_back_pointer(record, entry.sequence, entries)
+                            has_association_back_pointer(
+                                record,
+                                entry.sequence,
+                                trailing_pointer_analysis,
+                            )
                         })
                 })
                 && visible.is_some_and(|visible| {
                     visible.iter().all(|sequence| {
                         records.get(sequence).is_some_and(|record| {
-                            has_association_back_pointer(record, entry.sequence, entries)
+                            has_association_back_pointer(
+                                record,
+                                entry.sequence,
+                                trailing_pointer_analysis,
+                            )
                         })
                     })
                 })
@@ -617,7 +627,11 @@ fn predefined_associativity_valid(
                 && members.is_some_and(|members| {
                     members.iter().all(|sequence| {
                         records.get(sequence).is_some_and(|member| {
-                            has_association_back_pointer(member, entry.sequence, entries)
+                            has_association_back_pointer(
+                                member,
+                                entry.sequence,
+                                trailing_pointer_analysis,
+                            )
                         })
                     })
                 })
@@ -646,7 +660,11 @@ fn predefined_associativity_valid(
                     entries.get(&sequence).is_some_and(|target| {
                         matches!(target.entity_type, 202 | 206 | 216 | 218 | 220 | 222)
                     }) && records.get(&sequence).is_some_and(|member| {
-                        has_association_back_pointer(member, entry.sequence, entries)
+                        has_association_back_pointer(
+                            member,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
                     })
                 })
         }
@@ -721,7 +739,7 @@ fn predefined_associativity_valid(
             let back_pointer_owners = records
                 .iter()
                 .filter_map(|(sequence, owner)| {
-                    has_association_back_pointer(owner, entry.sequence, entries)
+                    has_association_back_pointer(owner, entry.sequence, trailing_pointer_analysis)
                         .then_some(*sequence)
                 })
                 .collect::<Vec<_>>();
@@ -742,6 +760,7 @@ fn flow_associativity(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> Option<FlowAssociativity> {
     let form = entry.form;
     let context_count = if form == 18 { 2 } else { 1 };
@@ -813,13 +832,13 @@ fn flow_associativity(
             }
         }) && (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries)
+                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
             }))
     });
     let joins_valid = joins.iter().all(|sequence| {
         (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries)
+                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
             }))
             && entries
                 .get(sequence)
@@ -840,10 +859,10 @@ fn flow_associativity(
                 }
         }) && (form == 20
             || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, entries)
+                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
             }))
     });
-    (cursor == entity_parameter_end(record, entries)
+    (cursor == record.parameter_end()
         && associated_valid
         && connections_valid
         && joins_valid
@@ -860,9 +879,10 @@ pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -871,7 +891,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
@@ -881,7 +900,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
         .filter_map(|entry| {
             let record = records.get(&entry.sequence).copied()?;
-            flow_associativity(entry, record, &entries, &records).map(|flow| (entry.sequence, flow))
+            flow_associativity(entry, record, &entries, &records, trailing_pointer_analysis)
+                .map(|flow| (entry.sequence, flow))
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -889,7 +909,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -898,16 +917,15 @@ pub(super) fn project(
             .iter()
             .filter_map(|(sequence, owner_record)| {
                 (*sequence != entry.sequence
-                    && has_property_pointer(owner_record, entry.sequence, &entries))
+                    && has_property_pointer(
+                        owner_record,
+                        entry.sequence,
+                        trailing_pointer_analysis,
+                    ))
                 .then_some(*sequence)
             })
             .collect::<Vec<_>>();
-        let fields_valid = property_fields_valid(
-            entry,
-            record,
-            entity_parameter_end(record, &entries),
-            &entries,
-        );
+        let fields_valid = property_fields_valid(entry, record, record.parameter_end(), &entries);
         let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
         let reference_designator_valid = entry.form != 7
             || owners.iter().all(|owner| {
@@ -963,7 +981,10 @@ pub(super) fn project(
                         let Some(owner_record) = records.get(owner) else {
                             return false;
                         };
-                        let groups = trailing_pointer_groups(owner_record, &entries);
+                        let groups = trailing_pointer_analysis
+                            .get(&owner_record.directory_sequence)
+                            .and_then(|analysis| analysis.groups.as_ref())
+                            .filter(|groups| groups.fully_valid);
                         let has_basic = groups.as_ref().is_some_and(|groups| {
                             groups.properties.iter().any(|sequence| {
                                 entries.get(sequence).is_some_and(|property| {
@@ -1034,18 +1055,22 @@ pub(super) fn project(
                 });
                 let sole_sheet_id = owners.first().is_some_and(|owner| {
                     records.get(owner).is_some_and(|owner_record| {
-                        trailing_pointer_groups(owner_record, &entries).is_some_and(|groups| {
-                            groups
-                                .properties
-                                .iter()
-                                .filter(|sequence| {
-                                    entries.get(sequence).is_some_and(|property| {
-                                        property.entity_type == 406 && property.form == 33
+                        trailing_pointer_analysis
+                            .get(&owner_record.directory_sequence)
+                            .and_then(|analysis| analysis.groups.as_ref())
+                            .filter(|groups| groups.fully_valid)
+                            .is_some_and(|groups| {
+                                groups
+                                    .properties
+                                    .iter()
+                                    .filter(|sequence| {
+                                        entries.get(sequence).is_some_and(|property| {
+                                            property.entity_type == 406 && property.form == 33
+                                        })
                                     })
-                                })
-                                .count()
-                                == 1
-                        })
+                                    .count()
+                                    == 1
+                            })
                     })
                 });
                 owners.len() == 1
@@ -1095,13 +1120,12 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         let name_valid = matches!(
-            record.tokens.get(1).map(|token| &token.value),
+            record.value(1),
             Some(TokenValue::String(_) | TokenValue::Omitted)
         );
         let list_type_valid = record
@@ -1116,12 +1140,13 @@ pub(super) fn project(
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 1..=6));
-            let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
-                None | Some(TokenValue::Omitted) => Some(1),
+            let value_count = match record.value(cursor + 2) {
+                None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
-                        (entry.form == 0 || count <= record.tokens.len().saturating_sub(cursor + 3))
-                            .then_some(count)
+                        (entry.form == 0
+                            || count <= record.parameter_end().saturating_sub(cursor + 3))
+                        .then_some(count)
                     })
                 }
                 Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
@@ -1169,7 +1194,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1194,7 +1218,7 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                let available = record.tokens.len().saturating_sub(value_start);
+                let available = record.parameter_end().saturating_sub(value_start);
                 (width == 0 || rows <= available / width).then_some(rows)
             });
         let mut cursor = value_start;
@@ -1221,7 +1245,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1229,7 +1252,7 @@ pub(super) fn project(
         let count = record.count(1).filter(|count| *count > 0);
         let mut types = BTreeSet::<Vec<u8>>::new();
         let units_valid = count.is_some_and(|count| {
-            entity_parameter_end(record, &entries) == 2 + count * 3
+            record.parameter_end() == 2 + count * 3
                 && (0..count).all(|offset| {
                     let start = 2 + offset * 3;
                     record
@@ -1263,7 +1286,6 @@ pub(super) fn project(
     }
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1298,7 +1320,7 @@ pub(super) fn project(
             && entry.label_display == 0
             && entry.line_weight == 0
             && entry.color == 0;
-        if directory_valid && classes_valid && cursor == entity_parameter_end(record, &entries) {
+        if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -1312,7 +1334,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1332,7 +1353,11 @@ pub(super) fn project(
             !matches!(entry.form, 1 | 14)
                 || members.iter().all(|member| {
                     records.get(member).is_some_and(|member_record| {
-                        has_association_back_pointer(member_record, entry.sequence, &entries)
+                        has_association_back_pointer(
+                            member_record,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
                     })
                 })
         });
@@ -1349,12 +1374,18 @@ pub(super) fn project(
     for entry in directory.iter().filter(|entry| {
         entry.entity_type == 402 && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 21)
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.structure == 0 && predefined_associativity_valid(entry, record, &entries, &records)
+        if entry.structure == 0
+            && predefined_associativity_valid(
+                entry,
+                record,
+                &entries,
+                &records,
+                trailing_pointer_analysis,
+            )
         {
             decoded.insert(entry.sequence);
         } else {
@@ -1370,7 +1401,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
     {
-        handled.insert(entry.sequence);
         let flow = flows.get(&entry.sequence);
         let flow_targets_valid = flow.is_some_and(|flow| {
             flow.form == entry.form
@@ -1410,7 +1440,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1447,7 +1476,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1516,7 +1544,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1594,7 +1621,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1651,7 +1677,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1758,7 +1783,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1796,7 +1820,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1842,7 +1865,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -1932,7 +1954,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -2115,11 +2136,7 @@ pub(super) fn project(
         }
     }
 
-    Projection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

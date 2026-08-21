@@ -1,40 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use std::io::Cursor;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-
-use crate::annotations::{ExactnessNote, StreamProvenance};
 use crate::codec::{CadirEncoder, Encoder};
-use crate::document::Model;
 use crate::examples::{directed_subd_sum, unit_cube};
-use crate::features::ExtrudeDirection;
-use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SplineSurfaceParameters, SurfaceGeometry,
-};
-use crate::ids::{
-    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, UnknownId,
-};
-use crate::math::{Point3, Vector3};
-use crate::native::NativeRecord;
-use crate::products::{ProductDefinition, ProductDefinitionKind};
-use crate::provenance::{Exactness, SourceObjectAssociation};
-use crate::report::{Check, LossKind, LossNote, LossTaxonomy, Severity, TransferLedger};
+use crate::report::{LossKind, LossNote, LossTaxonomy, TransferLedger};
 use crate::source_fidelity::RetainedSourceRecord;
-use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
-};
-use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
-use crate::topology::Color;
-use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 use crate::validate::validate_neutral;
-use crate::{diff, CadIr, SourceProvenance};
+use crate::CadIr;
 
 use super::*;
 
@@ -141,4 +116,84 @@ fn decode_result_edit_guard_finalizes_during_unwind() {
         .points
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
+}
+
+struct RejectFloorCodec;
+
+fn reject_floor_kind() -> LossKind {
+    LossKind::shared(LossTaxonomy::TopologyNotTransferred)
+}
+
+impl CodecBackend for RejectFloorCodec {
+    fn id(&self) -> &'static str {
+        "reject-floor"
+    }
+
+    fn detect(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the strict gate tests do not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<DecodeResult, CodecError> {
+        let mut result = decode_result(unit_cube());
+        let report = result.report_mut();
+        // Deliberately lie in both directions; the wrapper owns this field.
+        report.container_only = !ctx.container_only();
+        report
+            .losses
+            .push(LossNote::new(reject_floor_kind(), "synthetic reject floor"));
+        Ok(result)
+    }
+}
+
+fn strict_options(container_only: bool) -> DecodeOptions {
+    let mut options = DecodeOptions {
+        container_only,
+        ..DecodeOptions::default()
+    };
+    options.policy.mode = DecodeMode::Strict;
+    options
+}
+
+#[test]
+fn the_strict_gate_refuses_a_full_decode_on_a_reject_floor_loss() {
+    let error = RejectFloorCodec
+        .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(false))
+        .unwrap_err();
+
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => {
+            assert_eq!(loss_code, reject_floor_kind().to_string());
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
+    let result = RejectFloorCodec
+        .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &strict_options(true))
+        .unwrap();
+
+    assert!(result.report().container_only);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == reject_floor_kind())
+            .count(),
+        1
+    );
 }

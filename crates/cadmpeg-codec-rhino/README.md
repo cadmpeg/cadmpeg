@@ -4,8 +4,9 @@
 supported `CadIr` documents back to `.3dm`.
 
 Support level: [L0](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
-Archive 2/3/4/50/60/70/80 and V2–V4 open at L1 and show as extras. Bounded
-source-less native writing is an extra above that L1 subset.
+Archive 2/3/4/50/60/70/80/90 and V2–V4 open at L1 and show as extras. V1
+and archive version 5 remain L0. Bounded source-less native writing is an
+extra above that L1 subset.
 
 ## Install
 

@@ -52,10 +52,13 @@ impl CodecBackend for StepCodec {
         if starts_with_step_magic(prefix) {
             Confidence::High
         } else if archive::has_root_marker(prefix)
+            || is_part26_hdf5(prefix)
             || is_part28_xml(prefix)
             || is_ap242_bo_model_xml(prefix)
         {
             Confidence::Medium
+        } else if archive::has_zip_magic(prefix) {
+            Confidence::Low
         } else {
             Confidence::No
         }
@@ -239,24 +242,43 @@ impl CodecBackend for StepCodec {
 fn starts_with_step_magic(bytes: &[u8]) -> bool {
     let mut at = 0;
     loop {
-        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+        while bytes
+            .get(at)
+            .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+        {
             at += 1;
         }
-        if bytes.get(at..at + 2) != Some(b"/*") {
-            break;
+        if bytes.get(at..at + 2) == Some(b"/*") {
+            at += 2;
+            let Some(relative_end) = bytes[at..].windows(2).position(|window| window == b"*/")
+            else {
+                return false;
+            };
+            at += relative_end + 2;
+            continue;
         }
-        let Some(relative_end) = bytes[at + 2..]
-            .windows(2)
-            .position(|window| window == b"*/")
-        else {
-            return false;
-        };
-        at += relative_end + 4;
+        if bytes
+            .get(at..at + 3)
+            .is_some_and(|prefix| prefix == b"\\N\\" || prefix == b"\\F\\")
+        {
+            at += 3;
+            continue;
+        }
+        break;
     }
-    let magic = b"ISO-10303-21;";
-    bytes
-        .get(at..at + magic.len())
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(magic))
+    for &expected_byte in b"ISO-10303-21;" {
+        while bytes.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        if !bytes
+            .get(at)
+            .is_some_and(|byte| byte.eq_ignore_ascii_case(&expected_byte))
+        {
+            return false;
+        }
+        at += 1;
+    }
+    true
 }
 
 fn inspect_zip(
@@ -343,10 +365,18 @@ fn decode_zip(
 }
 
 fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    // CE-05/CE-06: the HDF5 signature identifies the binary container, not
-    // an AP schema or an entity graph. Forced STEP selection may report the
-    // Part 26 family, but no HDF5 object becomes a Part 21 occurrence here.
-    if has_hdf5_signature(bytes) {
+    // CE-03/CE-04: Part 28 marker detection is not UOS conformance or schema
+    // mapping. The caller owns the exact binding, governing EXPRESS schema,
+    // derived XML Schema, identity/reference checks, and validation result;
+    // this codec has no Part 28 adapter and builds no partial graph.
+    // CE-05: HDF5 signature detection is not HDF5 validation or Part 26
+    // mapping. The caller owns the mapping edition, governing EXPRESS schema,
+    // HDF5 and Part 26 validation, resource-local row/reference mapping, and
+    // malformed-input result; this codec builds no partial graph.
+    // CE-06: Part 26 and Part 21 resource graphs have no universal join. The caller
+    // owns the exact resource identities, row-to-occurrence map, schema/unit/context
+    // agreement, conflict policy, and retention of both source graphs.
+    if is_part26_hdf5(bytes) {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),
         ));
@@ -356,12 +386,6 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
             "STEP Part 28 XML encoding".into(),
         ));
     }
-    // CE-04: Part 28 has no universal XML-to-EXPRESS inverse. Its `id`,
-    // `ref`, aggregate, and complex-entity forms gain graph meaning only
-    // from the selected EXPRESS schema, configuration, and derived XML
-    // Schema. Do not let an XML identity become a Part 21 `#` occurrence.
-    // BM-02: alternate XML remains outside the Part 21 graph; no implicit
-    // sidecar composition occurs here.
     if is_ap242_bo_model_xml(bytes) {
         return Err(CodecError::NotImplemented(
             "AP242 BO-Model XML sidecar".into(),
@@ -370,7 +394,7 @@ fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn has_hdf5_signature(bytes: &[u8]) -> bool {
+fn is_part26_hdf5(bytes: &[u8]) -> bool {
     const SIGNATURE: &[u8] = b"\x89HDF\r\n\x1a\n";
     if bytes.starts_with(SIGNATURE) {
         return true;
@@ -404,11 +428,10 @@ fn is_part28_xml(bytes: &[u8]) -> bool {
         return true;
     }
 
-    // CE-03: a Part 28:2007 UOS document can omit the document wrapper and a
-    // configured UOS can use a local name other than `uos`. Its governing-
-    // schema namespace varies by AP, but the Part 28 common namespace remains
-    // the bounded admission marker. Schema selection and the derived XML
-    // Schema remain caller inputs.
+    // A configured UOS can use a local name other than the document marker.
+    // Its governing-schema namespace varies by AP, but the Part 28 common
+    // namespace remains the bounded admission marker. Schema selection and
+    // the derived XML Schema remain caller inputs.
     PART28_COMMON_NAMESPACES
         .iter()
         .any(|namespace| has_namespace_value(attributes, namespace))
@@ -426,31 +449,6 @@ fn ascii_starts_with(value: &[u8], prefix: &[u8]) -> bool {
             .iter()
             .zip(prefix)
             .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix))
-}
-
-const AP242_BO_MODEL_NAMESPACES: [&[u8]; 2] = [
-    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model",
-    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model",
-];
-
-// BM-01: the root namespace is the schema identity; local names and schema
-// locations alone do not establish an AP242 BO-Model document.
-fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
-    let bytes = &bytes[..bytes.len().min(4096)];
-    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
-        return false;
-    };
-    let Some(separator) = name.iter().position(|byte| *byte == b':') else {
-        return name == b"Uos"
-            && namespace_for_prefix(attributes, &[])
-                .is_some_and(|namespace| AP242_BO_MODEL_NAMESPACES.contains(&namespace));
-    };
-    if &name[separator + 1..] != b"Uos" {
-        return false;
-    }
-    let prefix = &name[..separator];
-    namespace_for_prefix(attributes, prefix)
-        .is_some_and(|namespace| AP242_BO_MODEL_NAMESPACES.contains(&namespace))
 }
 
 fn xml_root_start_tag(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
@@ -528,16 +526,6 @@ fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
     None
 }
 
-fn namespace_for_prefix<'a>(attributes: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
-    xml_attribute_value(attributes, |name, _value| {
-        if prefix.is_empty() {
-            name == b"xmlns"
-        } else {
-            name.strip_prefix(b"xmlns:") == Some(prefix)
-        }
-    })
-}
-
 fn has_namespace_value(attributes: &[u8], expected: &[u8]) -> bool {
     xml_attribute_value(attributes, |name, value| {
         (name == b"xmlns" || name.starts_with(b"xmlns:")) && value == expected
@@ -594,4 +582,66 @@ fn xml_attribute_value(
         }
     }
     None
+}
+
+fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+    let bytes = &bytes[..bytes.len().min(4096)];
+    let Some((name, attributes)) = xml_root_start_tag(bytes) else {
+        return false;
+    };
+    let local_name = name
+        .iter()
+        .rposition(|byte| *byte == b':')
+        .map_or(name, |separator| &name[separator + 1..]);
+    // BM-03: the published namespace must be bound on the Uos document
+    // element. Text, comments, schemaLocation values, and local names do not
+    // identify the alternate encoding.
+    local_name == b"Uos"
+        && BO_MODEL_NAMESPACES
+            .iter()
+            .any(|namespace| has_namespace_value(attributes, namespace))
+}
+
+const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model",
+    b"http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model",
+];
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+
+    use super::{starts_with_step_magic, StepCodec};
+
+    #[test]
+    fn detects_magic_after_ignored_controls_and_inside_token() {
+        let source = b"\0 /* leading comment */ \\N\\ ISO-10303-\n21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let codec = StepCodec::default();
+
+        assert!(starts_with_step_magic(source));
+        assert_eq!(codec.detect(source), Confidence::High);
+        codec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode Part 21 with ignored framing octets");
+
+        let with_bom = [b"\xEF\xBB\xBF".as_slice(), source].concat();
+        assert_eq!(codec.detect(&with_bom), Confidence::No);
+        assert!(!starts_with_step_magic(b"/* incomplete ISO-10303-21;"));
+    }
+
+    #[test]
+    fn inspect_accepts_noncanonical_complex_partial_order_and_reports_a_note() {
+        let bytes = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+        let summary = StepCodec::default()
+            .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+            .expect("inspection describes recoverable source order");
+
+        assert!(summary
+            .notes
+            .iter()
+            .any(|note| note.contains("complex partial records are not alphabetical")));
+    }
 }

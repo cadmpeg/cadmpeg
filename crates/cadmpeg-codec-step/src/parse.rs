@@ -16,6 +16,11 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
+use crate::parse::schema_identifier::{
+    split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
+};
+
+pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +84,8 @@ pub struct HeaderRecord {
     pub name: String,
     /// Header record parameters.
     pub parameters: Vec<Value>,
+    /// Byte offset of the record name in the source.
+    pub offset: usize,
 }
 
 /// One DATA section and its ordered population.
@@ -132,7 +139,10 @@ pub struct SignatureSection {
     /// filtering. The range starts at `ISO-10303-21;` and ends at the `S` in
     /// this section's `SIGNATURE;` token.
     pub signed: Range<usize>,
-    /// Decoded CMS `SignedData` payload.
+    /// Structurally admitted, decoded CMS `SignedData` payload.
+    ///
+    /// This is not a cryptographic verification result. A downstream verifier
+    /// must apply the CMS content, key, and caller-supplied trust checks.
     pub cms: Vec<u8>,
 }
 
@@ -141,8 +151,9 @@ impl SignatureSection {
     ///
     /// The source range is retained separately because the signature input is
     /// defined by the alphabet projection, not by transport controls such as
-    /// line endings. `None` means that the supplied source does not contain
-    /// the recorded range.
+    /// line endings. A CMS verifier supplies these bytes as the detached
+    /// content. `None` means that the supplied source does not contain the
+    /// recorded range.
     #[allow(dead_code)] // Alphabet projection for signature verification; not on the decode path.
     pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
         Some(
@@ -354,6 +365,9 @@ pub enum ParseDiagnosticKind {
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
     OmittedEntityName,
+    /// A `FILE_SCHEMA` object identifier has a component outside the range
+    /// that its position permits.
+    SchemaObjectIdentifierOutOfRange,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -456,12 +470,18 @@ fn has_named_carrier(name: &str) -> bool {
     matches!(
         name,
         "ANNOTATION_PLANE"
+            | "ANNOTATION_PLACEHOLDER_LEADER_LINE"
+            | "ANNOTATION_TO_ANNOTATION_LEADER_LINE"
+            | "ANNOTATION_TO_MODEL_LEADER_LINE"
             | "ADVANCED_FACE"
             | "ADVANCED_BREP_REPRESENTATION"
             | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+            | "APLL_POINT"
+            | "APLL_POINT_WITH_SURFACE"
             | "AXIS1_PLACEMENT"
             | "AXIS2_PLACEMENT_2D"
             | "AXIS2_PLACEMENT_3D"
+            | "AUXILIARY_LEADER_LINE"
             | "BEZIER_CURVE"
             | "BOUNDARY_CURVE"
             | "BREP_WITH_VOIDS"
@@ -534,6 +554,7 @@ fn has_named_carrier(name: &str) -> bool {
             | "SHELL"
             | "SHAPE_DIMENSION_REPRESENTATION"
             | "SHAPE_REPRESENTATION"
+            | "SHAPE_REPRESENTATION_WITH_PARAMETERS"
             | "SPHERICAL_SURFACE"
             | "SUBEDGE"
             | "SUBFACE"
@@ -542,7 +563,9 @@ fn has_named_carrier(name: &str) -> bool {
             | "SURFACE_OF_REVOLUTION"
             | "SURFACE_REPLICA"
             | "TESSELLATED_FACE"
+            | "TESSELLATED_CURVE_SET"
             | "TESSELLATED_GEOMETRIC_SET"
+            | "REPOSITIONED_TESSELLATED_ITEM"
             | "TESSELLATED_SHELL"
             | "TESSELLATED_SOLID"
             | "TESSELLATED_SHAPE_REPRESENTATION"
@@ -575,20 +598,30 @@ impl Parser<'_, '_, '_> {
         self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") {
+            let offset = self.current_offset();
             let name = self.take_name()?;
             self.charge_string_storage(&name, "step_parse_name_storage")?;
             let parameters = self.parameters()?;
             self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
-            header.push(HeaderRecord { name, parameters });
+            header.push(HeaderRecord {
+                name,
+                parameters,
+                offset,
+            });
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let implementation_level = match validate_header(&header) {
-            Ok(level) => level,
+        let (implementation_level, admitted_schema_identifiers) = match validate_header(&header) {
+            Ok(admitted) => admitted,
             Err(message) => return self.err(message),
         };
-        let schema_identifiers = schema_identifiers(&header, implementation_level);
+        self.diagnostics
+            .extend(schema_object_identifier_diagnostics(
+                &admitted_schema_identifiers,
+                header[2].offset,
+            ));
+        let schema_identifiers = schema_identifiers(&admitted_schema_identifiers);
         if let Err(message) =
             validate_header_sections(implementation_level, &header, &schema_identifiers)
         {
@@ -758,7 +791,7 @@ impl Parser<'_, '_, '_> {
         if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
-            && schema_identifier_count(&header) != 1
+            && schema_identifiers.len() != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -1346,7 +1379,11 @@ fn value_storage_bytes(value: &Value) -> u64 {
     })
 }
 
-fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'static str> {
+/// Validate the three required header records, and admit the `FILE_SCHEMA`
+/// identifier list.
+fn validate_header(
+    header: &[HeaderRecord],
+) -> Result<(ImplementationLevel, Vec<AdmittedSchemaIdentifier>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -1481,30 +1518,50 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     let Some(Value::List(identifiers)) = schema.first() else {
         return Err("FILE_SCHEMA must contain one schema identifier list");
     };
-    if schema.len() != 1
-        || identifiers.is_empty()
-        || !identifiers
-            .iter()
-            .all(|value| matches!(value, Value::String(_)))
-    {
+    if schema.len() != 1 || identifiers.is_empty() {
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
+    let mut admitted = Vec::with_capacity(identifiers.len());
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
         let Value::String(bytes) = value else {
-            unreachable!("FILE_SCHEMA identifiers were checked as strings");
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         let Ok(identifier) = decode_string(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        if !valid_schema_identifier(&identifier) {
+        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
-        if !normalized_identifiers.insert(identifier.to_ascii_uppercase()) {
+        let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-        }
+        };
+        admitted.push(identifier);
     }
-    Ok(implementation_level)
+    Ok((implementation_level, admitted))
+}
+
+/// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
+/// under its schema name alone.
+fn schema_object_identifier_diagnostics(
+    admitted: &[AdmittedSchemaIdentifier],
+    offset: usize,
+) -> Vec<ParseDiagnostic> {
+    admitted
+        .iter()
+        .filter_map(|identifier| match identifier {
+            AdmittedSchemaIdentifier::Valid { .. } => None,
+            AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
+                name, component, ..
+            } => Some(ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                message: format!(
+                    "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
+                ),
+            }),
+        })
+        .collect()
 }
 
 fn validate_header_sections(
@@ -1881,11 +1938,32 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
 }
 
 fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
-    let compact = input[payload.clone()]
-        .iter()
-        .copied()
-        .filter(|byte| !byte.is_ascii_control() && *byte != b' ')
-        .collect::<Vec<_>>();
+    let mut compact = Vec::with_capacity(payload.len());
+    let mut at = payload.start;
+    while at < payload.end {
+        if input[at].is_ascii_control() || input[at] == b' ' {
+            at += 1;
+            continue;
+        }
+        if let Some(end) = crate::lex::print_control_end(input, at) {
+            if end <= payload.end {
+                at = end;
+                continue;
+            }
+        }
+        if input.get(at..at + 2) == Some(b"/*") {
+            let body = at + 2;
+            if let Some(end) = input[body..payload.end]
+                .windows(2)
+                .position(|window| window == b"*/")
+            {
+                at = body + end + 2;
+                continue;
+            }
+        }
+        compact.push(input[at]);
+        at += 1;
+    }
     let cms = STANDARD
         .decode(compact)
         .map_err(|error| ParseError::Syntax {
@@ -1900,42 +1978,6 @@ fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<
         message: format!("invalid detached CMS SIGNATURE payload: {message}"),
     })?;
     Ok(cms)
-}
-
-fn valid_schema_identifier(identifier: &str) -> bool {
-    let identifier = identifier.trim().to_ascii_uppercase();
-    if identifier.is_empty() || identifier.chars().count() > 1024 {
-        return false;
-    }
-    let (name, object_identifier) = match identifier.split_once('{') {
-        Some((name, object_identifier)) => {
-            let Some(object_identifier) = object_identifier.strip_suffix('}') else {
-                return false;
-            };
-            (name.trim_end(), Some(object_identifier))
-        }
-        None => (identifier.as_str(), None),
-    };
-    if name.is_empty()
-        || name.trim() != name
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
-    {
-        return false;
-    }
-    object_identifier.is_none_or(|value| {
-        let mut components = value.split_whitespace();
-        components.next().is_some() && value.split_whitespace().all(valid_schema_oid_component)
-    })
-}
-
-fn valid_schema_oid_component(component: &str) -> bool {
-    let digits = component
-        .strip_prefix('-')
-        .or_else(|| component.strip_prefix('+'))
-        .unwrap_or(component);
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
@@ -1953,7 +1995,8 @@ fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -
     let schema_name = schema_name.trim().to_ascii_uppercase();
     schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
-        identifier == schema_name || schema_name_without_oid(identifier) == schema_name
+        identifier == schema_name
+            || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
     })
 }
 
@@ -2012,13 +2055,6 @@ fn validate_header_section_name(
     Ok(())
 }
 
-fn schema_identifier_count(header: &[HeaderRecord]) -> usize {
-    match header[2].parameters.first() {
-        Some(Value::List(identifiers)) => identifiers.len(),
-        _ => 0,
-    }
-}
-
 fn valid_data_parameters(
     parameters: &[Value],
     schema_identifiers: &[String],
@@ -2046,27 +2082,11 @@ fn valid_data_parameters(
     Ok(())
 }
 
-fn schema_name_without_oid(identifier: &str) -> &str {
-    identifier
-        .trim()
-        .split_once('{')
-        .map_or_else(|| identifier.trim(), |(name, _)| name.trim())
-}
-
-fn schema_identifiers(
-    header: &[HeaderRecord],
-    implementation_level: ImplementationLevel,
-) -> Vec<String> {
-    let Some(Value::List(identifiers)) = header[2].parameters.first() else {
-        return Vec::new();
-    };
-    identifiers
+/// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
+fn schema_identifiers(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
+    admitted
         .iter()
-        .filter_map(|value| match value {
-            Value::String(bytes) => decode_string(bytes, implementation_level).ok(),
-            _ => None,
-        })
-        .map(|identifier| identifier.to_ascii_uppercase())
+        .map(|identifier| identifier.text().to_ascii_uppercase())
         .collect()
 }
 

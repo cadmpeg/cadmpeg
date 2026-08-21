@@ -1,8 +1,8 @@
 ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION(('BM-02 paired Part 21 base'),'2;1');
-FILE_NAME('bm02_pair.p21','2026-08-16T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg','','');
-FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }'));
+FILE_DESCRIPTION(('BM-02 paired Part 21 graph witness'),'4;1');
+FILE_NAME('bm02-model.p21','2026-08-16T00:00:00Z',('cadmpeg'),('cadmpeg'),'cadmpeg','cadmpeg','');
+FILE_SCHEMA(('AP242'));
 ENDSEC;
 DATA;
 #1=PRODUCT('P21_PRODUCT','P21 value','',(#2));

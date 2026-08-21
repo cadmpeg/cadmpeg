@@ -39,17 +39,11 @@ pub(super) fn decode(
     }
     let mut losses = Vec::new();
     let representations = exchange
-        .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
-        .filter_map(|(id, record)| {
-            let representation = record
-                .partial("REPRESENTATION")
-                .or_else(|| record.partial("SHAPE_REPRESENTATION"))?;
-            let items = representation
-                .parameters
-                .get(1)
-                .and_then(ValueExt::list)?
-                .iter()
-                .filter_map(ValueExt::reference)
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            let items = super::representation::items(record)?
+                .into_iter()
                 .collect::<BTreeSet<_>>();
             (!items.is_empty()).then_some((id, items))
         })

@@ -376,6 +376,7 @@ pub(crate) fn transfer(
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
+                visible: None,
                 channels: BTreeMap::new(),
             });
         }
@@ -677,6 +678,7 @@ fn transfer_edge_appearance(
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider Edge".into()),
+            visible: None,
             channels: [("precedence".into(), "edge_over_object".into())].into(),
         });
     }
@@ -728,6 +730,7 @@ fn transfer_vertex_appearance(
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider Vertex".into()),
+            visible: None,
             channels: [("precedence".into(), "vertex_over_object".into())].into(),
         });
     }
@@ -3373,6 +3376,7 @@ fn transfer_shape_appearances(
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
+                        visible: None,
                         channels: BTreeMap::new(),
                     });
                 }
@@ -3535,6 +3539,7 @@ fn bind_material_faces(
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
+            visible: None,
             channels: [("precedence".into(), "face_over_object".into())].into(),
         });
     }
@@ -3683,6 +3688,7 @@ fn transfer_topology_colors(
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
+                visible: None,
                 channels: [("precedence".into(), kind.precedence().into())].into(),
             });
         }

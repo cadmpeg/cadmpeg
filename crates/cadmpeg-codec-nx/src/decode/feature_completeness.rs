@@ -13,15 +13,14 @@ use std::collections::{BTreeMap, BTreeSet};
 mod operands;
 pub(crate) use operands::{
     body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
-    edge_selection_is_incomplete, explicit_body_ids, extrude_extent_is_incomplete,
-    extrude_start_is_incomplete, face_selection_is_incomplete, face_selections_overlap,
-    hole_auxiliary_semantics_are_incomplete, hole_feature_is_incomplete, hole_kind_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete, pattern_composition_is_incomplete,
+    edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
+    face_selection_is_incomplete, face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
+    hole_feature_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
     resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
-    selection_ids_are_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete, valid_increasing_locations,
+    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    termination_dependency_is_incomplete, termination_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.

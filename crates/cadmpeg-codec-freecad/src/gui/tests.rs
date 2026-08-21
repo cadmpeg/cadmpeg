@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! GUI document transfer unit tests.
 
-#![allow(clippy::doc_markdown, unused_imports)]
+#![allow(clippy::doc_markdown)]
 
 use crate::test_support::*;
 use crate::FcstdCodec;

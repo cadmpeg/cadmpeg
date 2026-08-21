@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter alias, equation, and configuration-index tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::*;

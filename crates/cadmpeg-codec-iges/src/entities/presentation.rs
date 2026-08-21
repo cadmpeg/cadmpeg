@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Directory display attributes and color definitions.
 
+use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -12,12 +13,6 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
-
-pub(super) struct PresentationProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
 
 #[derive(Clone, Copy)]
 struct TextFontDefinition {
@@ -50,6 +45,51 @@ fn standard_color(number: i64) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
+fn text_font_definition_pointer_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    value
+        .checked_neg()
+        .and_then(|value| u32::try_from(value).ok())
+        .is_some_and(|sequence| {
+            sequence % 2 == 1
+                && entries
+                    .get(&sequence)
+                    .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
+        })
+}
+
+pub(super) fn general_note_font_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(
+        value,
+        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
+    ) || text_font_definition_pointer_valid(value, entries)
+}
+
+pub(super) fn new_general_note_font_valid(value: i64) -> bool {
+    matches!(value, 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19)
+}
+
+pub(super) fn new_general_note_charset_valid(
+    value: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001)
+        || text_font_definition_pointer_valid(value, entries)
+}
+
+fn mirror_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=2)
+}
+
+fn vertical_text_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
 fn source_sequence(id: &str) -> Option<u32> {
     let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
     let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
@@ -79,8 +119,7 @@ fn text_font_definition(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
-    let parameter_end = trailing_pointer_groups(record, entries)
-        .map_or(record.tokens.len(), |groups| groups.token_start);
+    let parameter_end = record.parameter_end();
     let directory_valid = entry.status.use_flag == 2
         && entry.structure == 0
         && entry.line_font == 0
@@ -97,7 +136,7 @@ fn text_font_definition(
     {
         return None;
     }
-    let supersedes = match record.tokens.get(3).map(|token| &token.value) {
+    let supersedes = match record.value(3) {
         None | Some(TokenValue::Omitted) => None,
         Some(TokenValue::Integer(value)) if *value >= 0 => None,
         Some(TokenValue::Integer(value)) => value
@@ -144,9 +183,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     _ctx: Option<&DecodeContext<'_>>,
-) -> PresentationProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -155,7 +194,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
@@ -174,7 +212,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
             text_fonts
                 .get(&sequence)
@@ -200,22 +237,13 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let parameter_end = trailing_pointer_groups(record, &entries)
-            .map_or(record.tokens.len(), |groups| groups.token_start);
+        let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
-        let font_valid = font.is_some_and(|font| {
-            font >= 0
-                || font
-                    .checked_neg()
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
-        });
+        let font_valid = font.is_some_and(|font| general_note_font_valid(font, &entries));
         let directory_valid = entry.status.use_flag == 2
             && entry.structure == 0
             && entry.line_font == 0
@@ -234,12 +262,10 @@ pub(super) fn project(
                 .number_or(4, std::f64::consts::FRAC_PI_2)
                 .is_some_and(f64::is_finite)
             && record.number_or(5, 0.0).is_some_and(f64::is_finite)
-            && record
-                .integer_or(6, 0)
-                .is_some_and(|value| matches!(value, 0..=2))
+            && record.integer_or(6, 0).is_some_and(mirror_flag_valid)
             && record
                 .integer_or(7, 0)
-                .is_some_and(|value| matches!(value, 0..=1))
+                .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite));
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
@@ -255,7 +281,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -283,7 +308,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -342,7 +366,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
@@ -358,7 +381,7 @@ pub(super) fn project(
             losses.push(loss(entry, "RGB percentage is outside 0 through 100"));
             continue;
         };
-        let name = match record.tokens.get(4).map(|token| &token.value) {
+        let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
             Some(crate::parameter::TokenValue::String(_)) => record
                 .string(4)
@@ -480,6 +503,7 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Body".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
@@ -513,15 +537,12 @@ pub(super) fn project(
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Face".into()),
+            visible: None,
             channels: BTreeMap::new(),
         });
     }
 
-    PresentationProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

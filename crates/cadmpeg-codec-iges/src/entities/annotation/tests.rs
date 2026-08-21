@@ -1,33 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+use super::{
+    fill_pattern_valid, fixed_or_variable_valid, justification_valid, mirror_flag_valid,
+    new_general_note_charset_valid, new_general_note_font_valid, vertical_text_flag_valid,
+};
+use crate::entities::presentation::general_note_font_valid;
 
 #[test]
 fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
@@ -59,6 +46,345 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_applies_new_general_note_defaults_with_positive_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(defaulted_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    assert_eq!(annotation.fields()["kind"], "new_general_note");
+    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 0);
+    assert!(annotation.fields()["strings"][0]["control_codes"].is_null());
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_applies_variable_spacing_default() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(variable_spacing_default_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 1);
+    assert!(annotation.fields()["strings"][0]["character_spacing"].is_null());
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_requires_new_general_note_character_count() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_character_count_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_does_not_default_wrong_typed_general_note_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_general_note_parameter_types_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .count();
+    assert_eq!(losses, 2, "{:#?}", result.report().losses);
+}
+
+#[test]
+fn decode_rejects_zero_new_general_note_character_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(zero_character_metrics_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_omitted_new_general_note_character_metrics() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_character_metrics_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_omitted_new_general_note_font_style() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(omitted_font_style_new_general_note_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_accepts_new_general_note_character_set_table_and_default() {
+    for character_set in ["", "1", "1001", "1002", "1003", "2001", "3001"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(new_general_note_character_set_file(character_set)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            "character set {character_set:?}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn decode_rejects_new_general_note_character_set_outside_table() {
+    for character_set in ["0", "4", "1000", "3002"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(new_general_note_character_set_file(character_set)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(result.ir().model.semantic_annotations.is_empty());
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "character set {character_set}: {:#?}",
+            result.report().losses
+        );
+        assert_eq!(
+            result.ir().native.namespace("iges").unwrap().arenas["annotations"].len(),
+            1
+        );
+    }
+}
+
+#[test]
+fn decode_accepts_new_general_note_type_310_character_set_pointer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(new_general_note_type_310_character_set_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_rejects_new_general_note_even_or_wrong_type_character_set_pointer() {
+    for bytes in [
+        new_general_note_even_character_set_pointer_file(),
+        new_general_note_wrong_type_character_set_pointer_file(),
+    ] {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(result.ir().model.semantic_annotations.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    }
+}
+
+#[test]
+fn decode_rejects_out_of_table_annotation_font_values() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_annotation_font_values_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 2, "{:#?}", result.report().losses);
+    assert!(result.ir().model.semantic_annotations.is_empty());
+}
+
+#[test]
+fn decode_rejects_out_of_table_sectioned_area_pattern() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(out_of_table_sectioned_area_pattern_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(result.ir().model.semantic_annotations.is_empty());
+}
+
+#[test]
+fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(negative_text_box_dimensions_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(annotations.len(), 2);
+    assert!(result.ir().model.semantic_annotations.is_empty());
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count()
+            >= 2
+    );
+}
+
+#[test]
+fn drawing_and_presentation_enumerations_match_the_iges_tables() {
+    let entries = BTreeMap::new();
+    for value in [
+        0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
+    ] {
+        assert!(
+            general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [-1, 4, 5, 7, 1000, 3002] {
+        assert!(
+            !general_note_font_valid(value, &entries),
+            "font code {value}"
+        );
+    }
+    for value in [1, 2, 3, 6, 12, 13, 14, 17, 18, 19] {
+        assert!(new_general_note_font_valid(value), "font style {value}");
+    }
+    for value in [0, 4, 5, 7, 1001, -1] {
+        assert!(!new_general_note_font_valid(value), "font style {value}");
+    }
+    let entries = BTreeMap::new();
+    for value in [1, 1001, 1002, 1003, 2001, 3001] {
+        assert!(
+            new_general_note_charset_valid(value, &entries),
+            "character set {value}"
+        );
+    }
+    for value in [0, 4, 1000, 3002, -1] {
+        assert!(
+            !new_general_note_charset_valid(value, &entries),
+            "character set {value}"
+        );
+    }
+
+    for value in 0..=3 {
+        assert!(justification_valid(value));
+    }
+    assert!(!justification_valid(-1));
+    assert!(!justification_valid(4));
+
+    for value in 0..=1 {
+        assert!(fixed_or_variable_valid(value));
+        assert!(vertical_text_flag_valid(value));
+    }
+    assert!(!fixed_or_variable_valid(-1));
+    assert!(!fixed_or_variable_valid(2));
+    assert!(!vertical_text_flag_valid(-1));
+    assert!(!vertical_text_flag_valid(2));
+
+    for value in 0..=2 {
+        assert!(mirror_flag_valid(value));
+    }
+    assert!(!mirror_flag_valid(-1));
+    assert!(!mirror_flag_valid(3));
+
+    for value in [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 26, 28, 29,
+        32, 34, 36, 38, 40, 41, 42, 46, 50, 60, 70, 72, 80, 82, 84, 86, 90, 92, 94, 110, 124, 134,
+        136, 140, 142, 152, 154, 156, 157, 158, 159, 172, 174, 178, 210, 220, 224, 226, 234, 236,
+        240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
+    ] {
+        assert!(fill_pattern_valid(value), "admitted fill pattern {value}");
+    }
+    for value in [
+        21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
+    ] {
+        assert!(!fill_pattern_valid(value), "reserved fill pattern {value}");
+    }
 }
 
 #[test]
@@ -164,11 +490,11 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
         radius.fields()["leaders"][1],
         "iges:presentation:annotation#D9"
     );
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]
@@ -191,11 +517,11 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
             .iter()
             .any(|annotation| annotation.fields()["kind"] == kind));
     }
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
 }
 
 #[test]

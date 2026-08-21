@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
     SurfaceGeometry,
@@ -46,8 +41,9 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert_eq!(global.minimum_resolution_mm(), 0.01);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let context = global.length_context().unwrap();
+    assert_eq!(context.minimum_resolution_mm(), 0.01);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -194,9 +190,9 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert!(global.maximum_coordinate_mm() >= 6.0);
-    assert_ne!(global.maximum_coordinate_mm(), 1000.0);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    assert!(global.maximum_coordinate_mm().unwrap() >= 6.0);
+    assert_ne!(global.maximum_coordinate_mm().unwrap(), 1000.0);
 
     let decoded = IgesCodec
         .decode(
@@ -526,14 +522,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         report.losses
     );
     assert!(
-        report.losses.iter().all(|loss| {
-            matches!(
-                loss.code.taxonomy(),
-                cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-                    | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-                    | cadmpeg_ir::LossTaxonomy::ProceduralReduced
-            )
-        }),
+        report
+            .losses
+            .iter()
+            .all(|loss| accepts_procedural_reduction_loss(loss.code.taxonomy())),
         "{:#?}",
         report.losses
     );
@@ -651,6 +643,30 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         error
             .to_string()
             .contains("analytic surface surface#free-sphere requires B-rep topology"),
+        "{error}"
+    );
+}
+
+#[test]
+fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_cylinder_seam_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let error = IgesEncoder::default()
+        .plan(EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        })
+        .err()
+        .expect("a cylindrical face without axial bounds must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("boundary loop that repeats one seam edge without axial bounds"),
         "{error}"
     );
 }
@@ -1055,7 +1071,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
         .find(|entity| entity.field("entity_type") == Some(504.into()))
         .expect("generated B-rep has an edge list");
     assert_eq!(edge_list.field("subordinate_status"), Some(1.into()));
-    assert_eq!(edge_list.field("hierarchy_status"), Some(0.into()));
+    assert_eq!(edge_list.field("hierarchy_status"), Some(1.into()));
 }
 
 #[test]
@@ -1424,7 +1440,7 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
 }
 
 #[test]
-fn encode_promotes_an_unclassified_brep_loop_to_outer() {
+fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
     let mut decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
@@ -1447,7 +1463,7 @@ fn encode_promotes_an_unclassified_brep_loop_to_outer() {
         .unwrap();
     assert_eq!(
         round_trip.ir().model.loops[0].boundary_role,
-        LoopBoundaryRole::Outer
+        LoopBoundaryRole::Unspecified
     );
     assert!(
         round_trip.report().losses.is_empty(),
@@ -1474,8 +1490,9 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let global = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
-    assert_eq!(global.minimum_resolution_mm(), 0.25);
+    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let context = global.length_context().unwrap();
+    assert_eq!(context.minimum_resolution_mm(), 0.25);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -1504,11 +1521,10 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(
-        report.losses.iter().all(|loss| matches!(
-            loss.code.taxonomy(),
-            cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-                | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-        )),
+        report
+            .losses
+            .iter()
+            .all(|loss| accepts_non_manifold_write_loss(loss.code.taxonomy())),
         "{:#?}",
         report.losses
     );
@@ -1823,6 +1839,46 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
 }
 
 #[test]
+fn encode_type_186_uses_ordered_region_shell_roles() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let region = &mut ir.model.regions[0];
+    let source_outer = region.shells[0].clone();
+    let source_void = region.shells[1].clone();
+    region.shells.reverse();
+
+    let (exterior, voids) = crate::writer::solid_shell_roles(region).unwrap();
+    assert_eq!(exterior, &source_void);
+    assert_eq!(voids, std::slice::from_ref(&source_outer));
+
+    let entities = crate::writer::brep_entities(&ir).unwrap();
+    let shell_indices = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| (entity.type_code == 514).then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(shell_indices.len(), 2);
+    let solid = entities
+        .iter()
+        .find(|entity| entity.type_code == 186)
+        .unwrap();
+    let expected = format!(
+        "186,{},1,1,{},1;",
+        crate::writer::reference_marker(shell_indices[0]),
+        crate::writer::reference_marker(shell_indices[1])
+    );
+    assert_eq!(
+        String::from_utf8(solid.parameters.clone()).unwrap(),
+        expected
+    );
+}
+
+#[test]
 fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
@@ -1870,6 +1926,17 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 periodic: false,
             },
             [1, 1, 1, 0],
+        ),
+        (
+            "equal-weight-rational",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights: Some(vec![2.0, 2.0]),
+                periodic: false,
+            },
+            [1, 0, 1, 0],
         ),
     ];
     for (name, nurbs, expected) in cases {

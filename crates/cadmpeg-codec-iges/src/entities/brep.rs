@@ -2,20 +2,19 @@
 //! Explicit IGES B-rep topology projection.
 
 use super::evaluation;
-use super::geometry::{entity_loss, resolve_transform};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::Pcurve;
+use cadmpeg_ir::geometry::{CurveGeometry, Pcurve};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
     VertexUse,
@@ -74,6 +73,12 @@ struct SurfaceSupport<'a> {
     factor: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceEdgeSelectionError {
+    NoMatch,
+    Ambiguous,
+}
+
 fn compose_sense(left: Sense, right: Sense) -> Sense {
     if left == right {
         Sense::Forward
@@ -124,6 +129,37 @@ fn topology_vertex(
         .clone()
 }
 
+fn source_edge_for_vertices<'a>(
+    ir: &'a CadIr,
+    curve_id: &CurveId,
+    curve_geometry: &CurveGeometry,
+    natural_start: Point3,
+    natural_end: Point3,
+    tolerance: f64,
+) -> Result<&'a Edge, SourceEdgeSelectionError> {
+    let mut matching = None;
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+    {
+        let endpoints_agree = edge.param_range.is_some_and(|range| {
+            evaluation::curve(curve_geometry, range[0])
+                .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
+                && evaluation::curve(curve_geometry, range[1])
+                    .is_some_and(|point| evaluation::distance(point, natural_end) <= tolerance)
+        });
+        if endpoints_agree {
+            if matching.is_some() {
+                return Err(SourceEdgeSelectionError::Ambiguous);
+            }
+            matching = Some(edge);
+        }
+    }
+    matching.ok_or(SourceEdgeSelectionError::NoMatch)
+}
+
 #[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
 fn project_pcurve_uses(
     candidate: &mut ModelDraft,
@@ -139,7 +175,7 @@ fn project_pcurve_uses(
         .enumerate()
         .map(|(index, (isoparametric, sequence))| {
             let (geometry, range) =
-                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx)?;
+                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx, None)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
@@ -158,19 +194,21 @@ fn project_pcurve_uses(
         .collect()
 }
 
-fn pcurves_agree(
-    source: &CadIr,
+#[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
+fn pcurves_agree<'a>(
+    source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
+    model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> bool {
     if uses.is_empty() {
         return true;
     }
-    let index = cadmpeg_ir::index::ModelIndex::new(source);
+    let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
     let mapped = uses
         .iter()
         .map(|(_, sequence)| {
@@ -181,12 +219,13 @@ fn pcurves_agree(
                 support.factor,
                 Some(tolerance),
                 ctx,
+                None,
             )?;
             let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             })?;
             let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             })?;
             Some((start, end))
         })
@@ -201,19 +240,13 @@ fn pcurves_agree(
             .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance)
 }
 
-pub(super) struct BrepProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> BrepProjection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -222,7 +255,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
@@ -236,7 +268,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -284,7 +315,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(
                 entry,
@@ -347,7 +377,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "loops cannot carry a transformation"));
             continue;
@@ -463,7 +492,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "faces cannot carry a transformation"));
             continue;
@@ -517,7 +545,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
-        handled.insert(entry.sequence);
         if entry.transform != 0 {
             losses.push(entity_loss(entry, "shells cannot carry a transformation"));
             continue;
@@ -583,7 +610,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -680,6 +706,7 @@ pub(super) fn project(
 
     for definition in body_definitions {
         let entry = definition.entry;
+        let mut model_index = None;
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
@@ -787,6 +814,7 @@ pub(super) fn project(
                                 expected,
                                 tolerance,
                                 ctx,
+                                &mut model_index,
                             ) {
                                 losses.push(entity_loss(
                                     entry,
@@ -853,6 +881,7 @@ pub(super) fn project(
                             expected_end,
                             tolerance,
                             ctx,
+                            &mut model_index,
                         ) {
                             losses.push(entity_loss(
                                 entry,
@@ -866,40 +895,51 @@ pub(super) fn project(
                         } else {
                             let curve_id =
                                 CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
-                            let Some(source_edge) = ir
+                            if !ir
                                 .model
                                 .edges
                                 .iter()
-                                .find(|edge| edge.curve.as_ref() == Some(&curve_id))
-                            else {
+                                .any(|edge| edge.curve.as_ref() == Some(&curve_id))
+                            {
                                 valid = false;
                                 break;
-                            };
-                            let curve_agrees = source_edge.param_range.is_some_and(|range| {
-                                ir.model
-                                    .curves
-                                    .iter()
-                                    .find(|curve| curve.id == curve_id)
-                                    .is_some_and(|curve| {
-                                        let evaluated_start =
-                                            evaluation::curve(&curve.geometry, range[0]);
-                                        let evaluated_end =
-                                            evaluation::curve(&curve.geometry, range[1]);
-                                        evaluated_start.is_some_and(|point| {
-                                            evaluation::distance(point, natural_start) <= tolerance
-                                        }) && evaluated_end.is_some_and(|point| {
-                                            evaluation::distance(point, natural_end) <= tolerance
-                                        })
-                                    })
-                            });
-                            if !curve_agrees {
+                            }
+                            let Some(curve) =
+                                ir.model.curves.iter().find(|curve| curve.id == curve_id)
+                            else {
                                 losses.push(entity_loss(
                                     entry,
                                     "edge curve endpoints disagree with the vertex-list points",
                                 ));
                                 valid = false;
                                 break;
-                            }
+                            };
+                            let source_edge = match source_edge_for_vertices(
+                                ir,
+                                &curve_id,
+                                &curve.geometry,
+                                natural_start,
+                                natural_end,
+                                tolerance,
+                            ) {
+                                Ok(source_edge) => source_edge,
+                                Err(SourceEdgeSelectionError::NoMatch) => {
+                                    losses.push(entity_loss(
+                                        entry,
+                                        "edge curve endpoints disagree with the vertex-list points",
+                                    ));
+                                    valid = false;
+                                    break;
+                                }
+                                Err(SourceEdgeSelectionError::Ambiguous) => {
+                                    losses.push(entity_loss(
+                                        entry,
+                                        "edge curve maps to multiple ambiguous edge occurrences",
+                                    ));
+                                    valid = false;
+                                    break;
+                                }
+                            };
                             let id = EdgeId(format!(
                                 "iges:model:edge#{stem}:D{}:{}",
                                 edge_key.0,
@@ -968,8 +1008,10 @@ pub(super) fn project(
                         face: face_id.clone(),
                         boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
                             cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                        } else {
+                        } else if face_definition.has_outer_loop {
                             cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                        } else {
+                            cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
                         },
                         coedges: coedge_ids,
                         vertex_uses: loop_vertex_uses,
@@ -1078,11 +1120,7 @@ pub(super) fn project(
         decoded.extend(vertex_ids.keys().map(|key| key.0));
     }
 
-    BrepProjection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

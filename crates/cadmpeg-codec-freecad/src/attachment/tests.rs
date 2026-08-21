@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Attachment-frame transfer unit tests.
 
-#![allow(unused_imports)]
-
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};

@@ -5,7 +5,7 @@
  xmlns:cmn="http://standards.iso.org/iso/ts/10303/-3000/-ed-2/tech/xml-schema/common"
  xsi:schemaLocation="http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model http://standards.iso.org/iso/ts/10303/-3001/-ed-2/tech/xml-schema/bo_model/bom.xsd">
  <Header>
-  <Name>bm01-ap242-bo-model-ed2.stpx</Name>
+  <Name>bm01-ap242-bo-model.stpx</Name>
   <TimeStamp>2026-08-16T00:00:00Z</TimeStamp>
   <Organization><Name>cadmpeg</Name></Organization>
   <PreprocessorVersion>cadmpeg witness</PreprocessorVersion>

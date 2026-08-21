@@ -1,36 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
 
-use super::angular_basis;
+use super::{angular_basis, offset_indicator_parameters};
+
+#[test]
+fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
+    assert_eq!(
+        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), Some(4.0), Some(8.0),])),
+        [2.0, 6.0]
+    );
+    assert_eq!(
+        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), None, Some(8.0)])),
+        [0.0, 0.0]
+    );
+    assert_eq!(offset_indicator_parameters(None), [0.0, 0.0]);
+}
+
+#[test]
+fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
+    for indicator in [
+        "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
+        "0,0,1",
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(offset_nurbs_surface_file(indicator)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id.0 == "iges:model:surface#D1"));
+        assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+        assert_eq!(result.report().losses.len(), 1);
+        assert_eq!(
+            result.report().losses[0].code,
+            IgesLossCode::EntityNotProjected.kind()
+        );
+    }
+}
+
+#[test]
+fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 128,
+                form: 0,
+                label: "SURFACE".into(),
+                status: "00000000",
+                parameters: "128,1000,1000,1,1,0,0,0,0,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_surface_poles")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 2_001
+    ));
+}
 
 #[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
@@ -60,9 +108,38 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
-    assert!(result.report().losses.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_retains_both_ruled_surface_developability_values_in_native_parameters() {
+    for developable_flag in [0, 1] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(ruled_surface_file_with_developable_flag(developable_flag)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == "iges:entity:directory#5")
+            .unwrap();
+        assert_eq!(
+            entity.fields()["parameters"][4]["value"]["value"],
+            developable_flag
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
+    }
 }
 
 #[test]
@@ -74,11 +151,11 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         )
         .unwrap();
     assert_eq!(ruled.ir().model.procedural_surfaces.len(), 1);
-    assert!(
-        ruled.report().losses.is_empty(),
-        "{:#?}",
-        ruled.report().losses
-    );
+    assert!(ruled
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     assert!(cadmpeg_ir::validate_neutral(ruled.ir(), Vec::new()).is_ok());
 
     let tabulated = IgesCodec

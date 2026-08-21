@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
-use super::{resolve_uri, ReferenceTarget, ROOT_NAME};
+use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
 
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
@@ -50,32 +49,14 @@ fn rejects_archive_relative_traversal() {
     assert!(resolve_uri(ROOT_NAME, "parts//child.p21").is_err());
 }
 
-use std::fmt::Write as _;
-use std::io::Cursor;
+use std::io::{Cursor, Read as _};
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::ids::StepIdentity;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::StepCodec;
 
 fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
@@ -91,13 +72,92 @@ fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+fn step_zip_with_comment(entries: &[(&str, &[u8], CompressionMethod)], comment: &str) -> Vec<u8> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for &(name, bytes, method) in entries {
+        writer
+            .start_file(
+                name,
+                SimpleFileOptions::default().compression_method(method),
+            )
+            .unwrap();
+        std::io::Write::write_all(&mut writer, bytes).unwrap();
+    }
+    writer.set_comment(comment).unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
+fn duplicate_first_central_record(mut bytes: Vec<u8>) -> Vec<u8> {
+    let end = bytes
+        .windows(4)
+        .rposition(|signature| signature == b"PK\x05\x06")
+        .expect("ZIP end record");
+    let central_start = u32::from_le_bytes(bytes[end + 16..end + 20].try_into().unwrap()) as usize;
+    let name_len = u16::from_le_bytes(
+        bytes[central_start + 28..central_start + 30]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let extra_len = u16::from_le_bytes(
+        bytes[central_start + 30..central_start + 32]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let comment_len = u16::from_le_bytes(
+        bytes[central_start + 32..central_start + 34]
+            .try_into()
+            .unwrap(),
+    ) as usize;
+    let record_len = 46 + name_len + extra_len + comment_len;
+    let record = bytes[central_start..central_start + record_len].to_vec();
+    let central_end = end;
+    bytes.splice(central_end..central_end, record.iter().copied());
+    let new_end = end + record_len;
+    let count = u16::from_le_bytes(bytes[new_end + 10..new_end + 12].try_into().unwrap());
+    bytes[new_end + 8..new_end + 10].copy_from_slice(&(count + 1).to_le_bytes());
+    bytes[new_end + 10..new_end + 12].copy_from_slice(&(count + 1).to_le_bytes());
+    let size = u32::from_le_bytes(bytes[new_end + 12..new_end + 16].try_into().unwrap());
+    bytes[new_end + 12..new_end + 16].copy_from_slice(&(size + record_len as u32).to_le_bytes());
+    bytes
+}
+
+fn mark_entries_encrypted(mut bytes: Vec<u8>) -> Vec<u8> {
+    let locations = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        (0..archive.len())
+            .map(|index| {
+                let file = archive.by_index(index).unwrap();
+                (
+                    file.header_start() as usize,
+                    file.central_header_start() as usize,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    for (local, central) in locations {
+        let local_flags = u16::from_le_bytes(bytes[local + 6..local + 8].try_into().unwrap()) | 1;
+        bytes[local + 6..local + 8].copy_from_slice(&local_flags.to_le_bytes());
+        let central_flags =
+            u16::from_le_bytes(bytes[central + 8..central + 10].try_into().unwrap()) | 1;
+        bytes[central + 8..central + 10].copy_from_slice(&central_flags.to_le_bytes());
+    }
+    bytes
+}
+
+fn corrupt_first_payload(mut bytes: Vec<u8>) -> Vec<u8> {
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+    let data_start = archive.by_index(0).unwrap().data_start().unwrap() as usize;
+    bytes[data_start] ^= 1;
+    bytes
+}
+
 #[test]
 pub(crate) fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
 
     assert_eq!(codec.detect(bytes), Confidence::High);
-    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
+    assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::Low);
 
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -127,6 +187,39 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     codec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("Part 21 leading trivia and case-insensitive magic");
+}
+
+#[test]
+fn zip_root_detection_uses_structured_entry_names() {
+    let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
+    let marker_payload = b"payload contains ISO-10303.p21 but has no such entry";
+    let codec = StepCodec::default();
+
+    let root_after_payload = step_zip(&[
+        ("preview.bin", marker_payload, CompressionMethod::Stored),
+        (ROOT_NAME, root, CompressionMethod::Stored),
+    ]);
+    assert!(has_root_marker(&root_after_payload));
+    assert_eq!(codec.detect(&root_after_payload), Confidence::Medium);
+
+    let marker_in_payload = step_zip(&[("preview.bin", marker_payload, CompressionMethod::Stored)]);
+    assert!(!has_root_marker(&marker_in_payload));
+    assert_eq!(codec.detect(&marker_in_payload), Confidence::Low);
+
+    let marker_in_filename = step_zip(&[(
+        "parts/ISO-10303.p21.preview",
+        b"ancillary",
+        CompressionMethod::Stored,
+    )]);
+    assert!(!has_root_marker(&marker_in_filename));
+    assert_eq!(codec.detect(&marker_in_filename), Confidence::Low);
+
+    let marker_in_comment = step_zip_with_comment(
+        &[("preview.bin", b"ancillary", CompressionMethod::Stored)],
+        ROOT_NAME,
+    );
+    assert!(!has_root_marker(&marker_in_comment));
+    assert_eq!(codec.detect(&marker_in_comment), Confidence::Low);
 }
 
 #[test]
@@ -203,15 +296,259 @@ fn codec_resolves_root_references_relative_to_the_archive_directory() {
 }
 
 #[test]
-fn valid_external_resource_pair_keeps_target_anchor_and_root_graph_separate() {
+fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip forwarded reference'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<target>=<parts/child.p21#target>;ENDSEC;REFERENCE;#10=<#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        (
+            "parts/child.p21",
+            b"not a STEP exchange structure",
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect forwarded ZIP reference");
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+
+    let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without parsing subsidiary");
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+}
+
+#[test]
+fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
+    let root = include_bytes!("tests/data/ce02_composition_root.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_composition_subsidiary.p21");
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/ce02_composition_subsidiary.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse ZIP root");
+    let (subsidiary_exchange, subsidiary_diagnostics) =
+        crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
+    assert!(root_diagnostics.is_empty());
+    assert!(subsidiary_diagnostics.is_empty());
+    assert_eq!(root_exchange.references[0].name, "#10");
+    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(
+        root_exchange.anchors[0].value,
+        crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
+    );
+    assert_eq!(
+        crate::reader::schema_identifiers(&root_exchange),
+        crate::reader::schema_identifiers(&subsidiary_exchange)
+    );
+
+    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
+        panic!("root forwarding anchor");
+    };
+    let ReferenceTarget::Internal {
+        member,
+        query,
+        fragment,
+    } = resolve_uri(ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
+    else {
+        panic!("forwarded ZIP resource became external");
+    };
+    assert_eq!(member, "parts/ce02_composition_subsidiary.p21");
+    assert_eq!(query, None);
+    assert_eq!(fragment.as_deref(), Some("remote_point"));
+    let anchor = subsidiary_exchange
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == "remote_point")
+        .expect("subsidiary target anchor");
+    let crate::parse::Value::Reference(target_id) = anchor.value else {
+        panic!("subsidiary anchor is not an entity");
+    };
+    let target = subsidiary_exchange
+        .records
+        .get(&target_id)
+        .expect("subsidiary target entity");
+    assert!(target
+        .partials
+        .iter()
+        .any(|partial| partial.name == "CARTESIAN_POINT"));
+    assert_eq!(target_id, 12);
+
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("open composition ZIP");
+    let mut extracted = Vec::new();
+    archive
+        .by_name(&member)
+        .expect("open addressed subsidiary member")
+        .read_to_end(&mut extracted)
+        .expect("read addressed subsidiary member");
+    assert_eq!(extracted, subsidiary);
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode ZIP root without importing target");
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["entity_instances"],
+        "6"
+    );
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#4"));
+    assert!(!result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
+    assert!(result.report().notes.iter().any(|note| note
+        == "internal resource #10 -> parts/ce02_composition_subsidiary.p21#remote_point"));
+
+    let target_result = StepCodec::default()
+        .decode(&mut Cursor::new(extracted), &DecodeOptions::default())
+        .expect("decode subsidiary independently");
+    assert!(target_result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == "step:data:point#12"));
+}
+
+#[test]
+fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
+    let root = include_bytes!("tests/data/ce02_root_forwarded_unparsed.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_subsidiary_unparsed.p21");
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
+    assert!(root_diagnostics.is_empty());
+    assert_eq!(
+        root_exchange.anchors[0].value,
+        crate::parse::Value::Resource("parts/ce02_subsidiary_unparsed.p21#remote_item".into())
+    );
+    assert_eq!(root_exchange.references[0].uri, "#target");
+
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/ce02_subsidiary_unparsed.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect root without parsing subsidiary");
+    assert_eq!(summary.entries.len(), 2);
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without parsing subsidiary");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["archive_root"], ROOT_NAME);
+    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .len(),
+        1
+    );
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "external reference #10 -> #target"));
+    assert!(result
+        .report()
+        .notes
+        .iter()
+        .any(|note| note
+            == "internal resource #10 -> parts/ce02_subsidiary_unparsed.p21#remote_item"));
+}
+
+#[test]
+fn codec_keeps_external_reference_graph_resource_local() {
+    let root = include_bytes!("tests/data/er03_root.p21");
+    let subsidiary = include_bytes!("tests/data/er03_subsidiary.p21");
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/er03_subsidiary.p21",
+            subsidiary,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect resource-composition witness");
+    assert_eq!(summary.entries.len(), 2);
+    assert_eq!(summary.entries[0].name, ROOT_NAME);
+    assert!(!summary.entries[1]
+        .attributes
+        .contains_key("logical_sections"));
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/er03_subsidiary.p21#remote_item"));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without composing subsidiary");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["entity_instances"], "1");
+    assert_eq!(
+        result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .len(),
+        1
+    );
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #10 -> parts/er03_subsidiary.p21#remote_item".into()));
+    assert!(result
+        .report()
+        .notes
+        .contains(&"internal resource #10 -> parts/er03_subsidiary.p21#remote_item".into()));
+}
+
+#[test]
+fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     let root = include_bytes!("tests/data/er03_root_valid.p21");
     let subsidiary = include_bytes!("tests/data/er03_subsidiary_valid.p21");
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse valid root");
     assert!(root_diagnostics.is_empty());
-    assert!(root_exchange
-        .header
-        .iter()
-        .any(|record| record.name == "SCHEMA_POPULATION"));
     assert_eq!(
         root_exchange.references[0].uri,
         "parts/er03_subsidiary_valid.p21#remote_item"
@@ -241,18 +578,9 @@ fn valid_external_resource_pair_keeps_target_anchor_and_root_graph_separate() {
             CompressionMethod::Stored,
         ),
     ]);
-    let codec = StepCodec::default();
-    let summary = codec
-        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
-        .expect("inspect valid resource pair");
-    assert_eq!(summary.entries.len(), 2);
-    assert!(summary
-        .notes
-        .contains(&"internal resource #10 -> parts/er03_subsidiary_valid.p21#remote_item".into()));
-
-    let result = codec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("decode root without composing subsidiary");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode valid root without composing subsidiary");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert_eq!(source.attributes["entity_instances"], "1");
     assert_eq!(
@@ -274,19 +602,113 @@ fn valid_external_resource_pair_keeps_target_anchor_and_root_graph_separate() {
 }
 
 #[test]
-fn zip_subsidiary_instance_names_do_not_enter_root_graph() {
-    let root = include_bytes!("tests/data/ce02_zip_root.p21");
-    let subsidiary = include_bytes!("tests/data/ce02_zip_subsidiary.p21");
+fn distinct_external_resources_keep_reused_numeric_targets_separate() {
+    let root = include_bytes!("tests/data/er03_root_distinct_resources.p21");
+    let alpha = include_bytes!("tests/data/er03_subsidiary_alpha.p21");
+    let beta = include_bytes!("tests/data/er03_subsidiary_beta.p21");
+    let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse identity root");
+    assert!(root_diagnostics.is_empty());
+    assert_eq!(root_exchange.references.len(), 2);
+    assert_eq!(
+        root_exchange.references[0].uri,
+        "parts/er03_subsidiary_alpha.p21#remote_item"
+    );
+    assert_eq!(
+        root_exchange.references[1].uri,
+        "parts/er03_subsidiary_beta.p21#remote_item"
+    );
+    assert_eq!(
+        root_exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Reference(10),
+            crate::parse::Value::Reference(11)
+        ]
+    );
+
+    for (bytes, value) in [
+        (alpha.as_slice(), b"alpha".as_slice()),
+        (beta.as_slice(), b"beta".as_slice()),
+    ] {
+        let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse subsidiary");
+        assert!(diagnostics.is_empty());
+        assert_eq!(exchange.anchors[0].name, "remote_item");
+        assert_eq!(exchange.anchors[0].value, crate::parse::Value::Reference(1));
+        assert_eq!(
+            exchange.records[&1].partials[0].parameters,
+            vec![crate::parse::Value::String(value.to_vec())]
+        );
+    }
+
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        (
+            "parts/er03_subsidiary_alpha.p21",
+            alpha,
+            CompressionMethod::Stored,
+        ),
+        (
+            "parts/er03_subsidiary_beta.p21",
+            beta,
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect distinct resource identity witness");
+    assert_eq!(summary.entries.len(), 3);
+    for note in [
+        "internal resource #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "internal resource #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+    ] {
+        assert!(summary.notes.iter().any(|candidate| candidate == note));
+    }
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode root without composing subsidiaries");
+    let source = result.ir().source.as_ref().expect("STEP source metadata");
+    assert_eq!(source.attributes["entity_instances"], "1");
+    let unknown = result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena");
+    assert_eq!(unknown.len(), 1);
+    assert_eq!(unknown[0].id.0, "step:data:item#1");
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(&unknown[0].id.0)
+            .expect("root occurrence source fidelity")
+            .data
+            .as_deref(),
+        Some(b"#1=ITEM(#10,#11);".as_slice())
+    );
+    for note in [
+        "external reference #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "external reference #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+        "internal resource #10 -> parts/er03_subsidiary_alpha.p21#remote_item",
+        "internal resource #11 -> parts/er03_subsidiary_beta.p21#remote_item",
+    ] {
+        assert!(result
+            .report()
+            .notes
+            .iter()
+            .any(|candidate| candidate == note));
+    }
+}
+
+#[test]
+fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
+    let root = include_bytes!("tests/data/ce02_root_anchor_valid.p21");
+    let subsidiary = include_bytes!("tests/data/ce02_subsidiary_valid.p21");
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
         root_exchange.anchors[0].value,
-        crate::parse::Value::Reference(10)
+        crate::parse::Value::Resource("parts/ce02_subsidiary_valid.p21#remote_item".into())
     );
-    assert_eq!(
-        root_exchange.records[&1].partials[0].parameters,
-        vec![crate::parse::Value::Reference(10)]
-    );
+    assert_eq!(root_exchange.references[0].uri, "#target");
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
         crate::parse::parse(subsidiary).expect("parse CE-02 subsidiary");
@@ -297,13 +719,13 @@ fn zip_subsidiary_instance_names_do_not_enter_root_graph() {
     );
     assert_eq!(
         subsidiary_exchange.records[&1].partials[0].parameters,
-        vec![crate::parse::Value::String(b"subsidiary".to_vec())]
+        vec![crate::parse::Value::String(b"remote".to_vec())]
     );
 
     let bytes = step_zip(&[
         (ROOT_NAME, root, CompressionMethod::Stored),
         (
-            "parts/ce02_zip_subsidiary.p21",
+            "parts/ce02_subsidiary_valid.p21",
             subsidiary,
             CompressionMethod::Stored,
         ),
@@ -311,28 +733,46 @@ fn zip_subsidiary_instance_names_do_not_enter_root_graph() {
     let codec = StepCodec::default();
     let summary = codec
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
-        .expect("inspect CE-02 ZIP witness");
+        .expect("inspect valid forwarded archive");
     assert_eq!(summary.entries.len(), 2);
-    assert!(summary
-        .notes
-        .contains(&"internal resource #10 -> parts/ce02_zip_subsidiary.p21#remote_item".into()));
+    assert!(!summary.entries[1]
+        .attributes
+        .contains_key("logical_sections"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note
+                == "internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item")
+    );
 
     let result = codec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("decode CE-02 ZIP root only");
+        .expect("decode root with valid forwarded target");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert_eq!(source.attributes["archive_root"], ROOT_NAME);
     assert_eq!(source.attributes["entity_instances"], "1");
-    let unknowns = result
-        .ir()
-        .native_unknowns("step")
-        .expect("STEP unknown arena");
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].id.0, "step:data:item#1");
+    assert_eq!(
+        result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown arena")
+            .len(),
+        1
+    );
     assert!(result
         .report()
         .notes
-        .contains(&"external reference #10 -> parts/ce02_zip_subsidiary.p21#remote_item".into()));
+        .contains(&"internal resource #10 -> parts/ce02_subsidiary_valid.p21#remote_item".into()));
+    assert!(result
+        .report()
+        .notes
+        .contains(&"external reference #10 -> #target".into()));
+
+    let missing = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]
@@ -359,6 +799,48 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     assert!(matches!(
         codec.inspect(&mut Cursor::new(zstd), &InspectOptions::default()),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
+
+    let unicode_name = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        ("π-preview.bin", b"ancillary", CompressionMethod::Stored),
+    ]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(unicode_name), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let duplicate_name = duplicate_first_central_record(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(duplicate_name), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let encrypted = mark_entries_encrypted(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(encrypted), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let checksum_mismatch = corrupt_first_payload(step_zip(&[(
+        "ISO-10303.p21",
+        root,
+        CompressionMethod::Stored,
+    )]));
+    assert!(matches!(
+        codec.inspect(
+            &mut Cursor::new(checksum_mismatch),
+            &InspectOptions::default()
+        ),
+        Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
 

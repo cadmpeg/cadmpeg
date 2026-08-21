@@ -11,23 +11,23 @@ mod positional;
 mod prototypes;
 mod transfer_curves;
 
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use brep::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use cylinders::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use intersection_candidates::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use intersection_resolve::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use intersections::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use nurbs_boundaries::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use positional::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use prototypes::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use transfer_curves::*;
 
 use std::collections::BTreeMap;

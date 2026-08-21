@@ -2,7 +2,9 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use cadmpeg_core::CodecError;
+use crate::loss::IgesLossCode;
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::SourceProvenance;
 use std::collections::BTreeMap;
 
 /// Four two-digit fields in the Directory Entry status number.
@@ -58,38 +60,99 @@ impl DirectoryEntry {
     }
 }
 
-fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
-    crate::error::malformed(format!(
-        "IGES Directory Entry D{sequence}: {}",
-        message.into()
-    ))
+/// Why one Directory Entry record has no typed fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DirectoryDefect {
+    FieldNotAscii(&'static str),
+    FieldNotAnInteger(&'static str),
+    StatusNumberInvalid,
+    RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
+    UnpairedCard,
 }
 
-fn fields(line: &PhysicalLine) -> Result<[[u8; 8]; 9], CodecError> {
-    let sequence = line.sequence.unwrap_or_default();
-    let data = line
-        .payload
-        .get(..72)
-        .ok_or_else(|| malformed(sequence, "card is shorter than 72 data bytes"))?;
+impl DirectoryDefect {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::FieldNotAscii(_) => "field-not-ascii",
+            Self::FieldNotAnInteger(_) => "field-not-an-integer",
+            Self::StatusNumberInvalid => "status-number-invalid",
+            Self::RepeatedEntityTypeMismatch { .. } => "repeated-entity-type-mismatch",
+            Self::UnpairedCard => "unpaired-card",
+        }
+    }
+
+    fn describe(self) -> String {
+        match self {
+            Self::FieldNotAscii(name) => format!("the {name} field is not ASCII"),
+            Self::FieldNotAnInteger(name) => {
+                format!("the {name} field is not a decimal integer")
+            }
+            Self::StatusNumberInvalid => {
+                "the status number is neither blank nor an eight-digit decimal integer".to_owned()
+            }
+            Self::RepeatedEntityTypeMismatch { declared, repeated } => format!(
+                "the repeated entity type {repeated} does not equal the entity type {declared}"
+            ),
+            Self::UnpairedCard => {
+                "the Directory Entry section ends with an unpaired card".to_owned()
+            }
+        }
+    }
+}
+
+/// One Directory Entry whose twenty typed fields were not recovered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct QuarantinedDirectoryRecord {
+    pub(crate) sequence: u32,
+    pub(crate) source_offset: u64,
+    pub(crate) cards: usize,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) defect: DirectoryDefect,
+}
+
+impl QuarantinedDirectoryRecord {
+    /// The stable native identity of this quarantined record.
+    pub(crate) fn identity(&self) -> String {
+        format!("iges:quarantine:directory#{}", self.sequence)
+    }
+
+    pub(crate) fn loss_note(&self) -> LossNote {
+        IgesLossCode::DirectoryRecordQuarantined
+            .note(format!(
+                "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
+                self.sequence,
+                self.defect.describe(),
+                self.cards
+            ))
+            .with_provenance(SourceProvenance {
+                format: "iges".into(),
+                stream: "iges".into(),
+                offset: self.source_offset,
+                tag: Some(format!("directory_entry:D{}", self.sequence)),
+            })
+    }
+}
+
+fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
     let mut fields = [[b' '; 8]; 9];
-    for (target, source) in fields.iter_mut().zip(data.chunks_exact(8)) {
+    for (target, source) in fields.iter_mut().zip(line.payload.chunks_exact(8)) {
         target.copy_from_slice(source);
     }
-    Ok(fields)
+    fields
 }
 
-fn integer(field: [u8; 8], sequence: u32, name: &str) -> Result<i64, CodecError> {
+fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
     let text = std::str::from_utf8(&field)
-        .map_err(|_| malformed(sequence, format!("{name} is not ASCII")))?
+        .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
     if text.is_empty() {
         return Ok(0);
     }
     text.parse::<i64>()
-        .map_err(|_| malformed(sequence, format!("{name} is not a decimal integer")))
+        .map_err(|_| DirectoryDefect::FieldNotAnInteger(name))
 }
 
-fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
+fn status(field: [u8; 8]) -> Result<Status, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(Status {
             blank: 0,
@@ -98,29 +161,10 @@ fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
             hierarchy: 0,
         });
     }
-    let first_digit = field.iter().position(u8::is_ascii_digit).ok_or_else(|| {
-        malformed(
-            sequence,
-            "status number is neither blank nor a right-justified decimal integer",
-        )
-    })?;
-    if field[..first_digit].iter().any(|byte| *byte != b' ')
-        || field[first_digit..]
-            .iter()
-            .any(|byte| !byte.is_ascii_digit())
-    {
-        return Err(malformed(
-            sequence,
-            "status number is neither blank nor a right-justified decimal integer",
-        ));
+    if field.iter().any(|byte| !byte.is_ascii_digit()) {
+        return Err(DirectoryDefect::StatusNumberInvalid);
     }
-    let digit = |at: usize| {
-        field
-            .get(at)
-            .copied()
-            .filter(u8::is_ascii_digit)
-            .map_or(0, |value| value - b'0')
-    };
+    let digit = |at: usize| field[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(Status {
         blank: pair(0),
@@ -130,58 +174,79 @@ fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
     })
 }
 
-fn parse_pair(first: &PhysicalLine, second: &PhysicalLine) -> Result<DirectoryEntry, CodecError> {
+fn parse_pair(
+    first: &PhysicalLine,
+    second: &PhysicalLine,
+) -> Result<DirectoryEntry, DirectoryDefect> {
     let sequence = first.sequence.unwrap_or_default();
-    if sequence % 2 != 1 || second.sequence != sequence.checked_add(1) {
-        return Err(malformed(sequence, "cards are not an odd/even pair"));
-    }
-    let first_fields = fields(first)?;
-    let second_fields = fields(second)?;
-    let entity_type = integer(first_fields[0], sequence, "entity type")?;
-    let repeated_type = integer(second_fields[0], sequence, "repeated entity type")?;
+    let first_fields = fields(first);
+    let second_fields = fields(second);
+    let entity_type = integer(first_fields[0], "entity type")?;
+    let repeated_type = integer(second_fields[0], "repeated entity type")?;
     if entity_type != repeated_type {
-        return Err(malformed(
-            sequence,
-            format!("repeated entity type {repeated_type} does not equal {entity_type}"),
-        ));
+        return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
+            declared: entity_type,
+            repeated: repeated_type,
+        });
     }
     Ok(DirectoryEntry {
         source_offset: first.offset,
         sequence,
         entity_type,
-        parameter_start: integer(first_fields[1], sequence, "Parameter Data start")?,
-        structure: integer(first_fields[2], sequence, "structure")?,
-        line_font: integer(first_fields[3], sequence, "line font")?,
-        level: integer(first_fields[4], sequence, "level")?,
-        view: integer(first_fields[5], sequence, "view")?,
-        transform: integer(first_fields[6], sequence, "transformation")?,
-        label_display: integer(first_fields[7], sequence, "label display")?,
-        status: status(first_fields[8], sequence)?,
-        line_weight: integer(second_fields[1], sequence, "line weight")?,
-        color: integer(second_fields[2], sequence, "color")?,
-        parameter_line_count: integer(second_fields[3], sequence, "Parameter Data count")?,
-        form: integer(second_fields[4], sequence, "form")?,
+        parameter_start: integer(first_fields[1], "Parameter Data start")?,
+        structure: integer(first_fields[2], "structure")?,
+        line_font: integer(first_fields[3], "line font")?,
+        level: integer(first_fields[4], "level")?,
+        view: integer(first_fields[5], "view")?,
+        transform: integer(first_fields[6], "transformation")?,
+        label_display: integer(first_fields[7], "label display")?,
+        status: status(first_fields[8])?,
+        line_weight: integer(second_fields[1], "line weight")?,
+        color: integer(second_fields[2], "color")?,
+        parameter_line_count: integer(second_fields[3], "Parameter Data count")?,
+        form: integer(second_fields[4], "form")?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: integer(second_fields[8], sequence, "entity subscript")?,
+        subscript: integer(second_fields[8], "entity subscript")?,
     })
 }
 
-pub(crate) fn parse(scan: &CardScan) -> Result<Vec<DirectoryEntry>, CodecError> {
+fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDirectoryRecord {
+    QuarantinedDirectoryRecord {
+        sequence: cards
+            .first()
+            .and_then(|line| line.sequence)
+            .unwrap_or_default(),
+        source_offset: cards.first().map_or(0, |line| line.offset),
+        cards: cards.len(),
+        bytes: cards
+            .iter()
+            .flat_map(|line| line.payload.iter().copied())
+            .collect(),
+        defect,
+    }
+}
+
+/// Split the Directory Entry section into typed records and quarantined ones.
+pub(crate) fn parse(scan: &CardScan) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
     let lines = scan
         .lines
         .iter()
         .filter(|line| line.section == Some(Section::Directory))
         .collect::<Vec<_>>();
-    if lines.len() % 2 != 0 {
-        return Err(CodecError::Malformed(
-            "IGES Directory Entry section has an unpaired card".into(),
-        ));
+    let mut entries = Vec::new();
+    let mut quarantined = Vec::new();
+    let mut pairs = lines.chunks_exact(2);
+    for pair in pairs.by_ref() {
+        match parse_pair(pair[0], pair[1]) {
+            Ok(entry) => entries.push(entry),
+            Err(defect) => quarantined.push(quarantine(pair, defect)),
+        }
     }
-    lines
-        .chunks_exact(2)
-        .map(|pair| parse_pair(pair[0], pair[1]))
-        .collect()
+    if let Some(unpaired) = pairs.remainder().first() {
+        quarantined.push(quarantine(&[unpaired], DirectoryDefect::UnpairedCard));
+    }
+    (entries, quarantined)
 }
 
 pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
@@ -196,5 +261,7 @@ pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(test)]
+mod quarantine_tests;
 #[cfg(test)]
 mod tests;

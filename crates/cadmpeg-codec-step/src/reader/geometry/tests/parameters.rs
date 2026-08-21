@@ -136,17 +136,6 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("transformed".into()),
-            &transformed,
-            10.0,
-            0.25,
-            &BTreeMap::new(),
-        ),
-        Some([0.25, 10.0])
-    );
-    assert_eq!(
-        surface_parameter_scales_for_step(
-            &ir,
             &SurfaceId("unknown".into()),
             &SurfaceGeometry::Unknown { record: None },
             10.0,
@@ -446,6 +435,26 @@ ENDSEC;END-ISO-10303-21;",
     assert_eq!(unit_scale_radians(1, &exchange, &mut active), Some(1.0e-3));
     assert!(active.is_empty());
     assert_eq!(unit_scale_radians(2, &exchange, &mut active), Some(1.0));
+    assert!(active.is_empty());
+}
+
+#[test]
+fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
+    let (exchange, _) = crate::parse::parse(
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+#1=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT(.MILLI.,.RADIAN.));\
+#2=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#1);\
+#3=(CONVERSION_BASED_UNIT('two milli-radians',#2) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
+#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\
+#5=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#4);\
+#6=(CONVERSION_BASED_UNIT('two radians',#5) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
+ENDSEC;END-ISO-10303-21;",
+    )
+    .expect("parse conversion-based plane-angle units");
+    let mut active = BTreeSet::new();
+    assert_eq!(unit_scale_radians(3, &exchange, &mut active), Some(2.0e-3));
+    assert!(active.is_empty());
+    assert_eq!(unit_scale_radians(6, &exchange, &mut active), Some(2.0));
     assert!(active.is_empty());
 }
 

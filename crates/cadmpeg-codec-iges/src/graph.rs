@@ -51,6 +51,13 @@ impl ReferenceEdge {
     pub(crate) fn target(&self) -> Option<&str> {
         self.target.as_deref()
     }
+
+    pub(crate) fn resolved_target_sequence_for(&self, kind: ReferenceKind) -> Option<u32> {
+        (self.kind == kind && self.resolution == Resolution::Resolved)
+            .then(|| self.raw_pointer.checked_abs())
+            .flatten()
+            .and_then(|value| u32::try_from(value).ok())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -76,6 +83,10 @@ impl<'a> ParameterResolver<'a> {
         }
     }
 
+    /// Resolves a raw pointer to its target sequence, recording the
+    /// reference edge. A zero raw pointer resolves to `None` before any edge
+    /// is recorded or predicate runs; this check is the single owner of that
+    /// rule, and link builders pass raw pointer fields unguarded.
     pub(crate) fn resolve(
         &self,
         source: u32,
@@ -284,7 +295,7 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
             600..=699 | 10_000..=99_999 => matches!(target.entity_type, 306 | 416),
             _ => false,
         },
-        ReferenceKind::LineFont => target.entity_type == 304,
+        ReferenceKind::LineFont => target.entity_type == 304 && matches!(target.form, 1 | 2),
         ReferenceKind::Level => target.entity_type == 406 && target.form == 1,
         ReferenceKind::View => {
             target.entity_type == 410
@@ -292,7 +303,7 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
         }
         ReferenceKind::Transform => target.entity_type == 124,
         ReferenceKind::LabelDisplay => target.entity_type == 402 && target.form == 5,
-        ReferenceKind::Color => target.entity_type == 314,
+        ReferenceKind::Color => target.entity_type == 314 && target.form == 0,
         ReferenceKind::Parameter => unreachable!("parameter edges use their field contract"),
     }
 }
@@ -313,18 +324,29 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
         })
         .collect::<BTreeMap<_, _>>();
     let mut cyclic = BTreeSet::new();
+    let mut completed = BTreeSet::new();
+    let mut active = BTreeMap::<u32, usize>::new();
     for start in next.keys().copied() {
         let mut path = Vec::new();
-        let mut positions = BTreeMap::new();
         let mut current = start;
-        while let Some(target) = next.get(&current).copied() {
-            if let Some(position) = positions.get(&current).copied() {
+        loop {
+            if completed.contains(&current) {
+                break;
+            }
+            if let Some(position) = active.get(&current).copied() {
                 cyclic.extend(path[position..].iter().copied());
                 break;
             }
-            positions.insert(current, path.len());
+            active.insert(current, path.len());
             path.push(current);
+            let Some(target) = next.get(&current).copied() else {
+                break;
+            };
             current = target;
+        }
+        for node in path {
+            active.remove(&node);
+            completed.insert(node);
         }
     }
     cyclic

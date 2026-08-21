@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "486548b0901b3c572fa267ce1652dd26fa336e1d"
+measured_at = "ed3994945f84b746b42427872d2bd28f8f77e31b"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -27,17 +27,18 @@ test_line_debt = 0
 production_line_debt = 0
 
 [ceilings]
-from_endian_bytes = 111
-codec_error_malformed_format = 1408
+from_endian_bytes = 115
+codec_error_malformed_format = 1415
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
 nonliteral_vec_repeat = 152
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1777
+test_line_debt = 13913
 production_line_debt = 0
 
 [reasons]
-codec_error_malformed_format = "DP-10 adds three exact-runtime-type diagnostics for malformed design carriers, and SA-03 adds direct-root, child-grammar, attribute, and text diagnostics for registered annotation carriers; the source-backed admission rules and owner tests require these checks."
+from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
+codec_error_malformed_format = "The merged FreeCAD, IGES, Rhino, and STEP admission paths retain explicit malformed-input diagnostics: DP-10 and SA-03 require exact carrier and annotation checks, while IGES Type 186 and Rhino V1/RhinoIO checks preserve field-specific failures rather than collapsing distinct producer fields into one generic error."
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
+test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, and the IGES solid test support file at 2,039 lines while test ownership migration remains incomplete."

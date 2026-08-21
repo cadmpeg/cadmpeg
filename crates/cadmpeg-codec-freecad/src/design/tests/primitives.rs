@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design primitives transfer unit tests.
-#![allow(unused_imports)]
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition, Length, PathRef, RevolveExtent, Termination,
-};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RevolveExtent, Termination};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 

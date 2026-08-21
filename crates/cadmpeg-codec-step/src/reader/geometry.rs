@@ -38,6 +38,31 @@ pub(super) struct GeometryData {
     pub plane_angle_scales: BTreeMap<u64, f64>,
 }
 
+pub(super) fn placement_transform(
+    (origin, z_axis, x_axis): (Point3, Vector3, Vector3),
+) -> Transform {
+    let y_axis = Vector3::new(
+        z_axis.y * x_axis.z - z_axis.z * x_axis.y,
+        z_axis.z * x_axis.x - z_axis.x * x_axis.z,
+        z_axis.x * x_axis.y - z_axis.y * x_axis.x,
+    );
+    let placement_basis = [
+        [x_axis.x, y_axis.x, z_axis.x],
+        [x_axis.y, y_axis.y, z_axis.y],
+        [x_axis.z, y_axis.z, z_axis.z],
+    ];
+    let mut rows = Transform::identity().rows;
+    for row in 0..3 {
+        for column in 0..3 {
+            rows[row][column] = placement_basis[row][column];
+        }
+    }
+    rows[0][3] = origin.x;
+    rows[1][3] = origin.y;
+    rows[2][3] = origin.z;
+    Transform { rows }
+}
+
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
 pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
@@ -298,18 +323,72 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
+    let mut apll_point_names = BTreeMap::new();
     let mut directions = BTreeMap::new();
     let mut directions2 = BTreeMap::new();
     let mut vectors = BTreeMap::new();
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    if let Some(uncertainty) = linear_uncertainty(exchange, &mut losses) {
-        ir.tolerances.linear = uncertainty;
+    match linear_uncertainty(exchange) {
+        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
+        LinearUncertainty::Empty { unresolved } => {
+            if unresolved > 0 {
+                losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
+                    "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved} unresolved measure(s); the linear tolerance was not transferred"
+                )));
+            }
+        }
+        LinearUncertainty::Ambiguous { values, unresolved } => {
+            let default_linear = ir.tolerances.linear;
+            let listed = values
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
+                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
+                values.len()
+            )));
+        }
     }
 
-    for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
-        match entity_type(record, &["CARTESIAN_POINT", "DIRECTION"]) {
+    for (id, record) in exchange.entities_any(&[
+        "APLL_POINT",
+        "APLL_POINT_WITH_SURFACE",
+        "CARTESIAN_POINT",
+        "DIRECTION",
+    ]) {
+        match entity_type(
+            record,
+            &[
+                "APLL_POINT",
+                "APLL_POINT_WITH_SURFACE",
+                "CARTESIAN_POINT",
+                "DIRECTION",
+            ],
+        ) {
+            Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
+                let record_scale = unit_scales.length(id, scale);
+                if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
+                    points.insert(id, position);
+                    let source_name = representation_item_name(record)
+                        .and_then(|value| {
+                            super::decode_text(
+                                exchange,
+                                value,
+                                &mut losses,
+                                id,
+                                "APLL point name",
+                                StepLossCode::MetadataStringInvalid,
+                            )
+                        })
+                        .filter(|name| !name.is_empty());
+                    apll_point_names.insert(id, source_name);
+                } else {
+                    warnings.push(format!("{point_type} #{id} has invalid coordinates"));
+                }
+            }
             Some("CARTESIAN_POINT") => {
                 let record_scale = unit_scales.length(id, scale);
                 if let Some(position) =
@@ -342,6 +421,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             _ => {}
         }
     }
+    decode_tessellated_curve_sets(
+        exchange,
+        &unit_scales,
+        scale,
+        ir,
+        &mut typed,
+        &mut warnings,
+        &mut losses,
+    );
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -356,7 +444,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
         {
             if let Some(items) = representation_items(record) {
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
@@ -382,6 +470,33 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
             }
         }
+        if is_apll_leader_line(record) {
+            let mut references = Vec::new();
+            for parameter in record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+            {
+                collect_references(parameter, &mut references);
+            }
+            point_carriers.extend(references.into_iter().filter(|id| points.contains_key(id)));
+        }
+        if let Some(item) = record
+            .partials
+            .iter()
+            .find(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "GEOMETRIC_ITEM_SPECIFIC_USAGE" | "ITEM_IDENTIFIED_REPRESENTATION_USAGE"
+                )
+            })
+            .and_then(|partial| partial.parameters.get(4))
+            .and_then(Value::reference)
+        {
+            if points.contains_key(&item) {
+                point_carriers.insert(item);
+            }
+        }
         if let Some(id) = super::presentation::styled_item_target(record) {
             if points.contains_key(&id) {
                 point_carriers.insert(id);
@@ -392,7 +507,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .points
         .extend(point_carriers.into_iter().filter_map(|id| {
             points.get(&id).copied().map(|position| Point {
-                source_object: None,
+                source_object: apll_point_names
+                    .get(&id)
+                    .map(|name| SourceObjectAssociation {
+                        format: "step".into(),
+                        object_id: format!("#{id}"),
+                        name: name.clone(),
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
                 id: PointId(StepIdentity::data("point", id)),
                 position,
             })
@@ -1090,7 +1215,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             Some("SURFACE_OF_LINEAR_EXTRUSION") => {
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
-                    .and_then(|curve| curve_carrier_record(curve, exchange))
                     .filter(|curve| carrier_index.curves.contains_key(curve))
                     .map(|curve| CurveId(StepIdentity::data("curve", curve)))
                     .zip(
@@ -1107,7 +1231,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
             Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
-                .and_then(|curve| curve_carrier_record(curve, exchange))
                 .filter(|curve| carrier_index.curves.contains_key(curve))
                 .map(|curve| CurveId(StepIdentity::data("curve", curve)))
                 .zip(
@@ -1851,6 +1974,119 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
 }
 
+fn decode_tessellated_curve_sets(
+    exchange: &Exchange,
+    unit_scales: &UnitScales,
+    fallback_scale: f64,
+    ir: &mut CadIr,
+    typed: &mut HashSet<u64>,
+    warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
+) {
+    for (&id, record) in &exchange.records {
+        if record.partial("TESSELLATED_CURVE_SET").is_none() {
+            continue;
+        }
+        let Some(coordinates_id) =
+            tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
+        else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
+            ));
+            continue;
+        };
+        let Some(coordinates_record) = exchange.records.get(&coordinates_id) else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
+            ));
+            continue;
+        };
+        let scale = unit_scales.length(coordinates_id, fallback_scale);
+        let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
+            ));
+            continue;
+        };
+        let Some(strips) =
+            tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
+        else {
+            warnings.push(format!(
+                "TESSELLATED_CURVE_SET #{id} has invalid line strips"
+            ));
+            continue;
+        };
+        let source_name = representation_item_name(record)
+            .and_then(|value| {
+                super::decode_text(
+                    exchange,
+                    value,
+                    losses,
+                    id,
+                    "tessellated curve name",
+                    StepLossCode::MetadataStringInvalid,
+                )
+            })
+            .filter(|name| !name.is_empty());
+        for (strip_index, indices) in strips.into_iter().enumerate() {
+            let curve_key = if strip_index == 0 {
+                id.to_string()
+            } else {
+                format!("{id}-strip-{strip_index}")
+            };
+            let points = indices.into_iter().map(|index| vertices[index]).collect();
+            ir.model.curves.push(Curve {
+                id: CurveId(StepIdentity::data("curve", curve_key)),
+                geometry: CurveGeometry::Polyline {
+                    points,
+                    parameters: None,
+                    chordal_deflection: 0.0,
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "step".into(),
+                    object_id: format!("#{id}"),
+                    name: source_name.clone(),
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
+        typed.extend([id, coordinates_id]);
+    }
+}
+
+fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
+    let partial = record.partial("TESSELLATED_CURVE_SET")?;
+    let offset = usize::from(record.partials.len() == 1);
+    partial.parameters.get(index + offset)
+}
+
+fn tessellated_line_strips(value: Option<&Value>, point_count: usize) -> Option<Vec<Vec<usize>>> {
+    let strips = value?.list()?;
+    if strips.is_empty() {
+        return None;
+    }
+    let mut decoded = Vec::with_capacity(strips.len());
+    for strip in strips {
+        let values = strip.list()?;
+        if values.len() < 2 {
+            return None;
+        }
+        let mut indices = Vec::with_capacity(values.len());
+        for value in values {
+            let index = usize::try_from(value.integer()?).ok()?.checked_sub(1)?;
+            if index >= point_count {
+                return None;
+            }
+            indices.push(index);
+        }
+        decoded.push(indices);
+    }
+    Some(decoded)
+}
+
 fn face_surface_reference(record: &RawRecord) -> Option<u64> {
     if record.partials.len() == 1
         && matches!(record.simple_name(), Some("ADVANCED_FACE" | "FACE_SURFACE"))
@@ -1949,7 +2185,7 @@ pub(super) fn associate_free_representation_members(
         record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
     }) {
         let Some(items) = representation_items(representation) else {
             continue;
@@ -2168,6 +2404,18 @@ fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
         .iter()
         .copied()
         .find(|name| record.partial(name).is_some())
+}
+
+fn is_apll_leader_line(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "ANNOTATION_PLACEHOLDER_LEADER_LINE"
+                | "ANNOTATION_TO_ANNOTATION_LEADER_LINE"
+                | "ANNOTATION_TO_MODEL_LEADER_LINE"
+                | "AUXILIARY_LEADER_LINE"
+        )
+    })
 }
 
 fn first_named_list(record: &RawRecord, names: &[&str]) -> Option<Vec<u64>> {
@@ -2576,7 +2824,7 @@ fn retained_surface_curve_ids(
         record
             .partials
             .iter()
-            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+            .any(|partial| super::representation::is_representation_name(&partial.name))
     }) {
         let Some(items) = representation_items(representation) else {
             continue;
@@ -2769,18 +3017,17 @@ fn same_scale(left: f64, right: f64) -> bool {
 }
 
 fn is_representation_record(record: &RawRecord) -> bool {
-    record.partials.iter().any(|partial| {
-        partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-    })
+    record
+        .partials
+        .iter()
+        .any(|partial| super::representation::is_representation_name(&partial.name))
 }
 
 fn representation_context(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
-        .filter(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
+        .filter(|partial| super::representation::is_representation_name(&partial.name))
         .flat_map(|partial| partial.parameters.iter().rev())
         .find_map(Value::reference)
 }
@@ -2830,6 +3077,18 @@ fn collect_unit_scope_members(
     if record.partial("PCURVE").is_some() {
         return;
     }
+    if record.partial("MAPPED_ITEM").is_some() {
+        // The mapping source keeps the units of its mapped representation.
+        // Only the mapping target is an item in this representation's context.
+        if let Some(target) = record
+            .partial("MAPPED_ITEM")
+            .and_then(|partial| partial.parameters.last())
+            .and_then(Value::reference)
+        {
+            collect_unit_scope_members(target, exchange, members, active);
+        }
+        return;
+    }
     let mut references = Vec::new();
     for parameter in record
         .partials
@@ -2837,22 +3096,6 @@ fn collect_unit_scope_members(
         .flat_map(|partial| &partial.parameters)
     {
         collect_references(parameter, &mut references);
-    }
-    if record.partial("MAPPED_ITEM").is_some() {
-        for reference in references {
-            if exchange.records.get(&reference).is_some_and(|record| {
-                record.partials.iter().any(|partial| {
-                    matches!(
-                        partial.name.as_str(),
-                        "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
-                            | "CARTESIAN_TRANSFORMATION_OPERATOR_3D"
-                    )
-                })
-            }) {
-                collect_unit_scope_members(reference, exchange, members, active);
-            }
-        }
-        return;
     }
     for reference in references {
         let Some(referenced) = exchange.records.get(&reference) else {
@@ -2895,23 +3138,64 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
 }
 
 fn length_scale(exchange: &Exchange) -> Option<f64> {
-    let candidates = exchange
-        .records
-        .iter()
-        .filter(|(_, record)| record.partial("GLOBAL_UNIT_ASSIGNED_CONTEXT").is_some())
-        .filter_map(|(&id, _)| context_unit_scales(id, exchange).0)
-        .collect::<Vec<_>>();
-    unique_scale(&candidates)
+    document_unit_scale(exchange, "LENGTH_UNIT", unit_scale_mm)
 }
 
 fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
-    let candidates = exchange
+    document_unit_scale(exchange, "PLANE_ANGLE_UNIT", unit_scale_radians)
+}
+
+fn document_unit_scale(
+    exchange: &Exchange,
+    dimension_partial: &str,
+    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<f64>,
+) -> Option<f64> {
+    let mut context_scales = Vec::new();
+    let mut has_context_unit = false;
+
+    for record in exchange.records.values() {
+        let Some(units) = record
+            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(Value::list)
+        else {
+            continue;
+        };
+        let unit_ids = units
+            .iter()
+            .filter_map(Value::reference)
+            .filter(|id| {
+                exchange
+                    .records
+                    .get(id)
+                    .is_some_and(|unit| unit.partial(dimension_partial).is_some())
+            })
+            .collect::<Vec<_>>();
+        if unit_ids.is_empty() {
+            continue;
+        }
+        has_context_unit = true;
+        let scales = unit_ids
+            .into_iter()
+            .map(|id| resolve(id, exchange, &mut BTreeSet::new()))
+            .collect::<Option<Vec<_>>>()?;
+        context_scales.push(unique_scale(&scales)?);
+    }
+
+    if has_context_unit {
+        return unique_scale(&context_scales);
+    }
+
+    // STEP assigns units to representation contexts, not to the document.
+    // This branch is CADIR salvage for an unscoped dimension: accept only a
+    // scale to which every unit occurrence in the exchange resolves.
+    let scales = exchange
         .records
         .iter()
-        .filter(|(_, record)| record.partial("GLOBAL_UNIT_ASSIGNED_CONTEXT").is_some())
-        .filter_map(|(&id, _)| context_unit_scales(id, exchange).1)
-        .collect::<Vec<_>>();
-    unique_scale(&candidates)
+        .filter(|(_, record)| record.partial(dimension_partial).is_some())
+        .map(|(&id, _)| resolve(id, exchange, &mut BTreeSet::new()))
+        .collect::<Option<Vec<_>>>()?;
+    unique_scale(&scales)
 }
 
 pub(super) fn unit_scale_radians(
@@ -3037,43 +3321,54 @@ fn si_prefix(prefix: &str) -> Option<f64> {
     })
 }
 
-fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option<f64> {
+/// Resolve one `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` to the linear uncertainty
+/// candidates it contributes, in millimetres, and the number of its measures
+/// that did not resolve.
+///
+/// STEP scopes an uncertainty to its representation context, so each context
+/// contributes for itself. One `distance_accuracy_value` name makes that value
+/// the only contribution of the context. Every other context contributes each
+/// of its resolvable length measures. `linear_uncertainty` merges the equal
+/// contributions of all contexts and decides what a disagreement means.
+fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Vec<f64>, usize) {
+    let Some(references) = context
+        .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
+        .and_then(|partial| partial.parameters.first())
+        .and_then(Value::list)
+    else {
+        return (Vec::new(), 0);
+    };
     let mut measures = Vec::new();
-    let mut unresolved_measure_count = 0;
-    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
-        let Some(references) = context
-            .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
-            .and_then(|partial| partial.parameters.first())
-            .and_then(Value::list)
-        else {
+    let mut unresolved = 0;
+    for uncertainty_id in references.iter().filter_map(Value::reference) {
+        let Some(measure) = exchange.records.get(&uncertainty_id) else {
+            unresolved += 1;
             continue;
         };
-        for uncertainty_id in references.iter().filter_map(Value::reference) {
-            let Some(measure) = exchange.records.get(&uncertainty_id) else {
-                unresolved_measure_count += 1;
+        let Some(value) = record_values(measure).find_map(measure_number) else {
+            unresolved += 1;
+            continue;
+        };
+        let Some(unit) = record_values(measure).find_map(Value::reference) else {
+            unresolved += 1;
+            continue;
+        };
+        if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
+            let result = value * scale;
+            if !result.is_finite() || result <= 0.0 {
+                unresolved += 1;
                 continue;
-            };
-            let Some(value) = record_values(measure).find_map(measure_number) else {
-                unresolved_measure_count += 1;
-                continue;
-            };
-            let Some(unit) = record_values(measure).find_map(Value::reference) else {
-                unresolved_measure_count += 1;
-                continue;
-            };
-            if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
-                let result = value * scale;
-                if !result.is_finite() || result <= 0.0 {
-                    unresolved_measure_count += 1;
-                    continue;
-                }
-                let named_distance_accuracy = record_values(measure)
-                    .filter_map(string_value)
-                    .any(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
-                measures.push((named_distance_accuracy, result));
-            } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
-                unresolved_measure_count += 1;
             }
+            // The CADIR convention applies to the name attribute, not
+            // the optional description attribute.
+            let named_distance_accuracy = measure
+                .partial("UNCERTAINTY_MEASURE_WITH_UNIT")
+                .and_then(|partial| partial.parameters.get(2))
+                .and_then(string_value)
+                .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
+            measures.push((named_distance_accuracy, result));
+        } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new()).is_none() {
+            unresolved += 1;
         }
     }
 
@@ -3083,22 +3378,52 @@ fn linear_uncertainty(exchange: &Exchange, losses: &mut Vec<LossNote>) -> Option
         .map(|(_, value)| *value)
         .collect::<Vec<_>>();
     if named.len() == 1 {
-        return named.first().copied();
+        return (named, unresolved);
     }
-    if measures.len() == 1 {
-        return measures.first().map(|(_, value)| *value);
+    (
+        measures.into_iter().map(|(_, value)| value).collect(),
+        unresolved,
+    )
+}
+
+/// The document projection of the per-context linear uncertainty candidates.
+enum LinearUncertainty {
+    /// One distinct candidate, in millimetres.
+    Value(f64),
+    /// No candidate, with the number of measures that did not resolve.
+    Empty { unresolved: usize },
+    /// Several distinct candidates in millimetres, sorted and without
+    /// duplicates, with the number of measures that did not resolve.
+    Ambiguous { values: Vec<f64>, unresolved: usize },
+}
+
+fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
+    let mut candidates: Vec<f64> = Vec::new();
+    let mut unresolved = 0;
+    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
+        let (context_candidates, context_unresolved) =
+            context_length_uncertainties(context, exchange);
+        unresolved += context_unresolved;
+        for candidate in context_candidates {
+            // Exact equality: the candidates come from one file, so equal
+            // declarations corroborate each other and are not a conflict.
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
     }
-    if measures.len() > 1 {
-        losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
-                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has {} resolvable length measure(s) and {} unresolved measure(s); the linear tolerance is ambiguous",
-                measures.len(), unresolved_measure_count
-            )));
-    } else if measures.is_empty() && unresolved_measure_count > 0 {
-        losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
-                "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved_measure_count} unresolved measure(s); the linear tolerance was not transferred"
-            )));
+    candidates.sort_by(f64::total_cmp);
+
+    if candidates.len() > 1 {
+        return LinearUncertainty::Ambiguous {
+            values: candidates,
+            unresolved,
+        };
     }
-    None
+    match candidates.first() {
+        Some(value) => LinearUncertainty::Value(*value),
+        None => LinearUncertainty::Empty { unresolved },
+    }
 }
 
 fn string_value(value: &Value) -> Option<String> {
@@ -3583,6 +3908,34 @@ fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
         .flat_map(|partial| partial.parameters.iter())
 }
 
+pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .filter_map(ValueExt::list)
+        .find_map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    let values = row.list()?;
+                    if values.len() != 3 {
+                        return None;
+                    }
+                    let point = Point3::new(
+                        values[0].number()? * scale,
+                        values[1].number()? * scale,
+                        values[2].number()? * scale,
+                    );
+                    [point.x, point.y, point.z]
+                        .iter()
+                        .all(|coordinate| coordinate.is_finite())
+                        .then_some(point)
+                })
+                .collect::<Option<Vec<_>>>()
+                .filter(|vertices| !vertices.is_empty())
+        })
+}
+
 fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -> Option<Point3> {
     let values = named_parameter(record, name, index)?.list()?;
     if values.len() != 3 {
@@ -3593,6 +3946,33 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
         values[1].number()? * scale,
         values[2].number()? * scale,
     ))
+}
+
+fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
+    let values = if record.partials.len() == 1 {
+        named_parameter(record, point_type, 1).and_then(Value::list)
+    } else {
+        [
+            ("CARTESIAN_POINT", 0),
+            ("CARTESIAN_POINT", 1),
+            (point_type, 0),
+            (point_type, 1),
+        ]
+        .into_iter()
+        .find_map(|(name, index)| named_parameter(record, name, index).and_then(Value::list))
+    }?;
+    if values.len() != 3 {
+        return None;
+    }
+    let point = Point3::new(
+        values[0].number()? * scale,
+        values[1].number()? * scale,
+        values[2].number()? * scale,
+    );
+    [point.x, point.y, point.z]
+        .iter()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(point)
 }
 
 fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {
