@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use cadmpeg_container::compound::{CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -28,7 +28,6 @@ use crate::layout::ug_part_segment_index_row as index_row;
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
 
-const CFB_MAGIC: &[u8; 8] = &[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const LEGACY_UGII_PREFIX: &[u8; legacy_ugii_payload_prefix::VERSION] = b"\x0d\x01UGII  ";
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
@@ -199,9 +198,27 @@ impl Region {
 }
 
 impl<'a> Container<'a> {
+    /// Return bytes from an absolute offset through the end of its bounded
+    /// directory-entry span.
+    pub(crate) fn bounded_entry_tail(&self, offset: u64) -> Option<&[u8]> {
+        let offset = usize::try_from(offset).ok()?;
+        let end = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (start, byte_len) = entry.file_span?;
+                let start = usize::try_from(start).ok()?;
+                let byte_len = usize::try_from(byte_len).ok()?;
+                let end = start.checked_add(byte_len)?;
+                (start <= offset && offset < end).then_some(end)
+            })
+            .min()?;
+        self.data.get(offset..end)
+    }
+
     /// Return whether the source uses the legacy Compound File Binary wrapper.
     pub(crate) fn is_legacy_cfb(&self) -> bool {
-        self.data.starts_with(CFB_MAGIC)
+        self.legacy_cfb
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
@@ -771,7 +788,7 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
 /// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
-    /// The whole file image.
+    /// The source image, or the materialized logical stream image for legacy CFB.
     pub data: Cow<'a, [u8]>,
     /// Modern version byte at file offset 8, or the legacy UGII payload
     /// version when the source is a CFB wrapper.
@@ -789,6 +806,10 @@ pub struct Container<'a> {
     /// Modern exact four-byte value following the counted FOOTER directory;
     /// zero for legacy input.
     pub footer_fingerprint: [u8; 4],
+    /// Physical source-image length before legacy CFB stream materialization.
+    pub physical_size: u64,
+    /// Whether the source uses the legacy CFB wrapper.
+    pub legacy_cfb: bool,
     /// Modern entries from both regions or legacy CFB paths, in serialized
     /// order.
     pub entries: Vec<DirEntry>,
@@ -965,6 +986,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     let footer_fingerprint = data[footer_end..fingerprint_end]
         .try_into()
         .expect("checked four-byte footer fingerprint");
+    let physical_size = data.len() as u64;
 
     Ok(Container {
         data,
@@ -974,6 +996,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         header_entry_count,
         footer_entry_count,
         footer_fingerprint,
+        physical_size,
+        legacy_cfb: false,
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_operation_label_layouts: OnceLock::new(),
@@ -1002,6 +1026,29 @@ pub fn scan_legacy<'a>(
             "legacy UG_PART/UG_PART stream is not a UGII payload".into(),
         ));
     }
+    let part_id = part.id();
+    let mut stream_views = Vec::new();
+    let mut stream_spans = BTreeMap::new();
+    let mut logical_offset = 0_u64;
+    for entry in snapshot.entries() {
+        let CompoundEntry::Stream(stream) = entry else {
+            continue;
+        };
+        let view = if stream.id() == part_id {
+            part_view
+        } else {
+            snapshot.open(ctx, stream)?
+        };
+        let byte_len = u64::try_from(view.window().len())
+            .map_err(|_| CodecError::Malformed("legacy CFB stream exceeds u64".into()))?;
+        let span = (logical_offset, byte_len);
+        logical_offset = logical_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
+        stream_spans.insert(stream.id(), span);
+        stream_views.push(view);
+    }
+    let logical_data = ctx.concat_views(&stream_views)?;
     let mut entries = Vec::new();
     for entry in snapshot.entries() {
         ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
@@ -1015,26 +1062,29 @@ pub fn scan_legacy<'a>(
             "retain legacy NX directory entry",
             Some(root.location()),
         )?;
+        let file_span = match entry {
+            CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
+            CompoundEntry::Storage(_) => None,
+        };
         entries.push(DirEntry {
             name: format!("/Root/{}", entry.path()),
             region: Region::Header,
-            // CFB sectors are not one contiguous SPLMSSTR file span. The
-            // opened legacy Parasolid stream is passed separately to the
-            // stream extractor below.
-            file_span: None,
+            file_span,
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let header_entry_count = u32::try_from(entries.len())
         .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
     let container = Container {
-        data: Cow::Borrowed(root.window()),
+        data: Cow::Borrowed(logical_data.window()),
         version,
         file_tag: 0,
         footer_offset: 0,
         header_entry_count,
         footer_entry_count: 0,
         footer_fingerprint: [0; 4],
+        physical_size: root.window().len() as u64,
+        legacy_cfb: true,
         entries,
         indexed_section_layouts: OnceLock::new(),
         om_operation_label_layouts: OnceLock::new(),

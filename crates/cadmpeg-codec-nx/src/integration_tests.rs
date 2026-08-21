@@ -64,6 +64,24 @@ fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
 }
 
 #[test]
+fn legacy_cfb_catalogues_logical_stream_spans() {
+    let summary = NxCodec
+        .inspect(
+            &mut Cursor::new(legacy_cfb_with_ug_part()),
+            &InspectOptions::default(),
+        )
+        .expect("legacy CFB inspection");
+    let part = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+        .expect("legacy UG_PART stream entry");
+    assert_eq!(part.role, "part-payload");
+    assert!(part.compressed_size > 0);
+    assert_eq!(part.compressed_size, part.uncompressed_size);
+}
+
+#[test]
 fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
     let mut bytes = legacy_cfb_with_ug_part();
     let directory_entry = &mut bytes[512 + 2 * 128..512 + 3 * 128];

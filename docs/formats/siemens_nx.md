@@ -516,6 +516,11 @@ signature `d0 cf 11 e0 a1 b1 1a e1`. The CFB directory contains the
 `UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
 `UG_PART/UG_PART` directory path is required.
 
+Every reachable CFB stream has one exact logical byte span bounded by its
+declared stream size. Storage entries have no stream bytes. Stream payloads are
+addressed by their directory paths; their physical sector chains do not join
+adjacent streams or extend a stream beyond its declared logical size.
+
 The physical CFB image has one header sector followed by regular sectors. Its
 physical sector count is the ceiling of `(file_length - header_sector_size) /
 sector_size`; therefore the file may end inside its final regular sector. The

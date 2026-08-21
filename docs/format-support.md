@@ -246,6 +246,10 @@ See [`formats/f3d.md`](formats/f3d.md), [`formats/f3d-open-items.md`](formats/f3
 
 **Ladder: L3 for the current cumulative validation envelope on single-body, `RMFastLoad`-selected, and terminal-feature-lineage-resolved body images; L2 for unresolved multi-partition history.** Feature and history transfer above L3 shows as extras until L4 coverage gates close. Multi-partition histories remain L2 unless every emitted partition receives one unambiguous terminal lineage status.
 
+Legacy CFB directory streams are catalogued at their declared logical byte
+spans, so the existing OM, structure, external-reference, and toggle extractors
+can inspect them through the same bounded entry interface as SPLMSSTR streams.
+
 ### Read profile
 
 - **Container and versions: Partial.** The codec decodes the SPLMSSTR directory, extracts and classifies embedded Parasolid partition, deltas, and related streams, resolves short and extended segment wrappers from their encoded extension lengths, retains fixed-ID NX object-model entities at their external index boundaries, retains offset-only object-model column storage as distinct bounded blocks, and exposes strictly framed JPEG preview dimensions and asset identity.

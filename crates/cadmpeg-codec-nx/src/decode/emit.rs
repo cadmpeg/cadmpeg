@@ -1180,7 +1180,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     let legacy_cfb = scan.container.is_legacy_cfb();
     attributes.insert(
         "file_size".to_string(),
-        scan.container.data.len().to_string(),
+        scan.container.physical_size.to_string(),
     );
     attributes.insert(
         "directory_entries".to_string(),

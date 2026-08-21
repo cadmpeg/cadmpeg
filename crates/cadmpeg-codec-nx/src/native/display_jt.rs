@@ -2174,10 +2174,7 @@ pub fn display_jt_vertex_normals(
         else {
             return Vec::new();
         };
-        let Ok(start) = usize::try_from(source_offset) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container.data.get(start..) else {
+        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
             return Vec::new();
         };
         let Some((normals, normal_hash, byte_len)) = crate::jt::decode_vertex_normals(
@@ -2245,10 +2242,7 @@ pub fn display_jt_vertex_colors(
             };
             source_offset = next;
         }
-        let Ok(start) = usize::try_from(source_offset) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container.data.get(start..) else {
+        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
             return Vec::new();
         };
         let Some((colors, color_hash, byte_len)) = crate::jt::decode_vertex_colors(
@@ -2336,10 +2330,7 @@ pub fn display_jt_vertex_texture_coordinates(
             source_offset = next;
         }
         for channel in texture_channels {
-            let Ok(start) = usize::try_from(source_offset) else {
-                return Vec::new();
-            };
-            let Some(bytes) = container.data.get(start..) else {
+            let Some(bytes) = container.bounded_entry_tail(source_offset) else {
                 return Vec::new();
             };
             let Some((values, texture_coordinate_hash, byte_len)) =
@@ -2443,10 +2434,7 @@ pub fn display_jt_vertex_flags(
             };
             source_offset = next;
         }
-        let Ok(start) = usize::try_from(source_offset) else {
-            return Vec::new();
-        };
-        let Some(bytes) = container.data.get(start..) else {
+        let Some(bytes) = container.bounded_entry_tail(source_offset) else {
             return Vec::new();
         };
         let Some((values, byte_len)) =
@@ -4016,6 +4004,7 @@ mod tests {
         data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
         data.push(2);
         data.extend_from_slice(&compressed);
+        let physical_size = data.len() as u64;
         let container = Container {
             data: data.clone().into(),
             version: 6,
@@ -4024,6 +4013,8 @@ mod tests {
             header_entry_count: 0,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size,
+            legacy_cfb: false,
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
@@ -4115,6 +4106,7 @@ mod tests {
         data.extend_from_slice(&16_u32.to_le_bytes());
         data.extend_from_slice(&[0xff; 16]);
         data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+        let physical_size = data.len() as u64;
         let container = Container {
             data: data.into(),
             version: 6,
@@ -4123,6 +4115,8 @@ mod tests {
             header_entry_count: 0,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size,
+            legacy_cfb: false,
             entries: Vec::new(),
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
@@ -4209,6 +4203,7 @@ mod tests {
         let compressed = encoder.finish().expect("required invariant");
         let mut data = vec![0; 33];
         data.extend_from_slice(&compressed);
+        let physical_size = data.len() as u64;
         let container = Container {
             data: data.into(),
             version: 6,
@@ -4217,6 +4212,8 @@ mod tests {
             header_entry_count: 0,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size,
+            legacy_cfb: false,
             entries: Vec::new(),
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
@@ -5110,6 +5107,7 @@ mod tests {
         let source_offset = 64_u64;
         let mut data = vec![0; source_offset as usize + 25];
         data.extend_from_slice(&body);
+        let physical_size = data.len() as u64;
         let container = crate::container::Container {
             data: data.into(),
             version: 1,
@@ -5118,6 +5116,8 @@ mod tests {
             header_entry_count: 0,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size,
+            legacy_cfb: false,
             entries: Vec::new(),
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),

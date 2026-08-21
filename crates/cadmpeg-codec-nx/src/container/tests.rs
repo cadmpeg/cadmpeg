@@ -54,6 +54,40 @@ fn container_parses_header_and_directory() {
 }
 
 #[test]
+fn container_bounded_entry_tail_stops_at_the_next_stream() {
+    let payload = [1, 2, 3, 4, 5, 6];
+    let container = Container {
+        data: payload.as_slice().into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 2,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        physical_size: payload.len() as u64,
+        legacy_cfb: true,
+        entries: vec![
+            DirEntry {
+                name: "/Root/first".into(),
+                region: Region::Header,
+                file_span: Some((0, 3)),
+            },
+            DirEntry {
+                name: "/Root/second".into(),
+                region: Region::Header,
+                file_span: Some((3, 3)),
+            },
+        ],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    assert_eq!(container.bounded_entry_tail(1), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_tail(4), Some(&payload[4..6]));
+    assert_eq!(container.bounded_entry_tail(6), None);
+}
+
+#[test]
 fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
@@ -64,6 +98,8 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         header_entry_count: 1,
         footer_entry_count: 0,
         footer_fingerprint: [0; 4],
+        physical_size: payload.len() as u64,
+        legacy_cfb: false,
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
@@ -101,6 +137,7 @@ fn container_caches_owned_section_layouts() {
     let payload_len = payload.len() as u64;
     let mut file = vec![0xaa; 17];
     file.extend_from_slice(&payload);
+    let physical_size = file.len() as u64;
     let container = Container {
         data: file.into(),
         version: 0,
@@ -109,6 +146,8 @@ fn container_caches_owned_section_layouts() {
         header_entry_count: 1,
         footer_entry_count: 0,
         footer_fingerprint: [0; 4],
+        physical_size,
+        legacy_cfb: false,
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,

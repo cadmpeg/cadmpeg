@@ -491,6 +491,8 @@ mod tests {
             header_entry_count: 1,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size: len,
+            legacy_cfb: false,
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
