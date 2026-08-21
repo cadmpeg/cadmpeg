@@ -3643,6 +3643,25 @@ fn attach_standard_topology(
         if let Some(pruned) = pruned {
             *options = pruned;
         }
+        let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
+            missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                &ports,
+                options,
+                &deferred_port_edges,
+            )
+        } else {
+            missing_edge::unique_mesh_edge_port_candidate_pairs(&ports, options)
+                .map(|pairs| pairs.into_iter().map(Some).collect())
+        };
+        if let Some(pairs) = unique_pairs {
+            for (domain, pair) in options
+                .iter_mut()
+                .zip(pairs)
+                .filter_map(|(domain, pair)| pair.map(|pair| (domain, pair)))
+            {
+                domain.retain(|candidate| missing_edge::same_unordered_pair(*candidate, pair));
+            }
+        }
     }
     if let Some(options) = &mut constrained_endpoint_options {
         // A same-incidence row relation is not an endpoint identity. Keep its

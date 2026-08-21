@@ -2651,7 +2651,7 @@ pub fn propagate_edge_port_points_with_ordered_seeds(
         .zip(resolved.iter().copied())
         .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
         .unzip();
-    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false)?;
+    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false, true)?;
     Some(resolved)
 }
 
@@ -2704,6 +2704,23 @@ pub fn propagate_partial_edge_port_points_with_ordered_seeds(
     Some(resolved)
 }
 
+#[derive(Clone, Copy)]
+enum PortCandidateSearchMode {
+    FirstNative,
+    UniqueNative,
+    UniqueMesh,
+}
+
+impl PortCandidateSearchMode {
+    fn requires_unique(self) -> bool {
+        matches!(self, Self::UniqueNative | Self::UniqueMesh)
+    }
+
+    fn enforces_point_bijection(self) -> bool {
+        matches!(self, Self::FirstNative | Self::UniqueNative)
+    }
+}
+
 struct PortCandidateSearch<'a> {
     ports: &'a [[u32; 2]],
     candidates: &'a [Vec<[usize; 2]>],
@@ -2715,7 +2732,7 @@ struct PortCandidateSearch<'a> {
     ambiguous: bool,
     exhausted: bool,
     states: usize,
-    require_unique: bool,
+    mode: PortCandidateSearchMode,
 }
 
 impl PortCandidateSearch<'_> {
@@ -2730,10 +2747,11 @@ impl PortCandidateSearch<'_> {
                     self.port_points
                         .get(&port)
                         .is_none_or(|stored| *stored == *point)
-                        && self
-                            .point_ports
-                            .get(point)
-                            .is_none_or(|stored| *stored == port)
+                        && (!self.mode.enforces_point_bijection()
+                            || self
+                                .point_ports
+                                .get(point)
+                                .is_none_or(|stored| *stored == port))
                 })
         });
         oriented
@@ -2744,7 +2762,9 @@ impl PortCandidateSearch<'_> {
         for (&port, point) in self.ports[edge].iter().zip(points) {
             if let std::collections::hash_map::Entry::Vacant(entry) = self.port_points.entry(port) {
                 entry.insert(point);
-                self.point_ports.insert(point, port);
+                if self.mode.enforces_point_bijection() {
+                    self.point_ports.insert(point, port);
+                }
                 inserted.push((port, point));
             }
         }
@@ -2756,7 +2776,9 @@ impl PortCandidateSearch<'_> {
         self.edge_pairs[edge] = None;
         for (port, point) in inserted {
             self.port_points.remove(&port);
-            self.point_ports.remove(&point);
+            if self.mode.enforces_point_bijection() {
+                self.point_ports.remove(&point);
+            }
         }
     }
 
@@ -2771,7 +2793,10 @@ impl PortCandidateSearch<'_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        if self.ambiguous || self.exhausted || (!self.require_unique && self.solution.is_some()) {
+        if self.ambiguous
+            || self.exhausted
+            || (!self.mode.requires_unique() && self.solution.is_some())
+        {
             return;
         }
         let mut propagated = Vec::new();
@@ -2827,7 +2852,7 @@ impl PortCandidateSearch<'_> {
                     })
                     .collect::<Vec<_>>();
                 match &self.solution_key {
-                    Some(solution) if self.require_unique && *solution != key => {
+                    Some(solution) if self.mode.requires_unique() && *solution != key => {
                         self.ambiguous = true;
                     }
                     None => {
@@ -2849,7 +2874,7 @@ impl PortCandidateSearch<'_> {
                     let inserted = self.assign(edge, points);
                     self.search();
                     self.unassign(edge, inserted);
-                    if !self.require_unique && self.solution.is_some() {
+                    if !self.mode.requires_unique() && self.solution.is_some() {
                         break 'candidates;
                     }
                 }
@@ -2866,13 +2891,59 @@ pub fn bind_edge_port_candidates(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<[usize; 2]>> {
-    edge_port_candidate_assignment(ports, candidates, true)
+    edge_port_candidate_assignment(ports, candidates, true, true)
+}
+
+/// Resolve mesh-port endpoint candidates without imposing a point-to-port
+/// bijection. Mesh ports are occurrence identities: several incident ports
+/// may terminate at one coordinate row. The result is canonicalized as
+/// unordered endpoint pairs and is returned only when port equality admits
+/// exactly one such assignment.
+#[must_use]
+pub fn unique_mesh_edge_port_candidate_pairs(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<[usize; 2]>> {
+    let mut pairs = edge_port_candidate_assignment(ports, candidates, true, false)?;
+    for pair in &mut pairs {
+        pair.sort_unstable();
+    }
+    Some(pairs)
+}
+
+/// Resolve only settled mesh-port rows when repeated-face rows still carry
+/// an open face domain. Deferred rows contribute neither candidate support nor
+/// connectivity to this search and remain unresolved in the result.
+#[must_use]
+pub fn unique_mesh_edge_port_candidate_pairs_with_deferred(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+    deferred_edges: &[bool],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
+        return None;
+    }
+    let settled = (0..ports.len())
+        .filter(|edge| !deferred_edges[*edge])
+        .collect::<Vec<_>>();
+    let settled_ports = settled.iter().map(|edge| ports[*edge]).collect::<Vec<_>>();
+    let settled_candidates = settled
+        .iter()
+        .map(|edge| candidates[*edge].clone())
+        .collect::<Vec<_>>();
+    let settled_pairs = unique_mesh_edge_port_candidate_pairs(&settled_ports, &settled_candidates)?;
+    let mut resolved = candidates.iter().map(|_| None).collect::<Vec<_>>();
+    for (edge, pair) in settled.into_iter().zip(settled_pairs) {
+        resolved[edge] = Some(pair);
+    }
+    Some(resolved)
 }
 
 fn edge_port_candidate_assignment(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     require_unique: bool,
+    enforce_point_bijection: bool,
 ) -> Option<Vec<[usize; 2]>> {
     if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
         return None;
@@ -2886,9 +2957,11 @@ fn edge_port_candidate_assignment(
                 dependencies.union(previous, edge);
             }
         }
-        for point in candidates[edge].iter().flatten() {
-            if let Some(previous) = edge_by_point.insert(*point, edge) {
-                dependencies.union(previous, edge);
+        if enforce_point_bijection {
+            for point in candidates[edge].iter().flatten() {
+                if let Some(previous) = edge_by_point.insert(*point, edge) {
+                    dependencies.union(previous, edge);
+                }
             }
         }
     }
@@ -2911,6 +2984,12 @@ fn edge_port_candidate_assignment(
             .iter()
             .map(|edge| candidates[*edge].clone())
             .collect::<Vec<_>>();
+        let mode = match (require_unique, enforce_point_bijection) {
+            (false, true) => PortCandidateSearchMode::FirstNative,
+            (true, true) => PortCandidateSearchMode::UniqueNative,
+            (true, false) => PortCandidateSearchMode::UniqueMesh,
+            (false, false) => return None,
+        };
         let mut search = PortCandidateSearch {
             ports: &component_ports,
             candidates: &component_candidates,
@@ -2922,7 +3001,7 @@ fn edge_port_candidate_assignment(
             ambiguous: false,
             exhausted: false,
             states: 0,
-            require_unique,
+            mode,
         };
         search.search();
         if search.ambiguous || search.exhausted {

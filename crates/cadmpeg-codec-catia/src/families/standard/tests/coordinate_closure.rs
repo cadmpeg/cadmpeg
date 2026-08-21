@@ -1522,6 +1522,50 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
 }
 
 #[test]
+fn mesh_edge_ports_allow_one_coordinate_row_at_multiple_ports() {
+    let ports = [[10, 11], [12, 13]];
+    let candidates = [vec![[0, 1]], vec![[0, 2]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        Some(vec![[0, 1], [0, 2]])
+    );
+}
+
+#[test]
+fn mesh_edge_ports_reject_multiple_unordered_assignments() {
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1], [0, 2]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        None
+    );
+}
+
+#[test]
+fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
+    let ports = [[10, 11], [10, 12], [11, 13]];
+    let candidates = [vec![[0, 1]], vec![[0, 2]], vec![[1, 3]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        Some(vec![[0, 1], [0, 2], [1, 3]])
+    );
+}
+
+#[test]
+fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
+    let ports = [[10, 11], [11, 12]];
+    let candidates = [vec![[0, 1]], vec![[2, 3]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs_with_deferred(&ports, &candidates, &[false, true],),
+        Some(vec![Some([0, 1]), None])
+    );
+}
+
+#[test]
 fn native_edge_identities_reject_multiple_coordinate_bijections() {
     let ports = [[10, 11]];
     let candidates = [vec![[0, 1], [2, 3]]];

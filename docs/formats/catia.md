@@ -243,6 +243,16 @@ Each physical port initially admits every coordinate row present in one of its e
 
 Port-domain intersections preserve physical-edge pair correlation. For every edge with an explicit pair domain, retain in each current port component only coordinate rows participating in a pair with a row retained by the opposite component. Repeat this reduction across all edges to a fixpoint. A diagonal pair remains admissible while the two ports occupy distinct partial-quotient components because later corner equations can merge them. Equal endpoint ports encode a closed edge: both endpoint positions bind the same logical vertex, and its admissible domain consists only of diagonal pairs `[v,v]`. Apply the fixpoint after every corner merge and on the complete quotient.
 
+After this fixpoint, a mesh-port component may be searched for a unique
+unordered endpoint-pair assignment. The search enforces only that one physical
+port maps to one coordinate row; a coordinate row may occur at multiple
+incident ports. It canonicalizes edge direction and narrows a row only when
+all surviving port assignments select the same unordered pair. No assignment
+is selected when the component has no solution, more than one pair assignment,
+or an exhausted bounded search. A row with an open repeated-face domain is
+excluded from this search; it remains a deferred domain until the joint face
+assignment resolves it.
+
 An edge whose repeated face slot remains a face domain contributes no endpoint-pair support to this port fixpoint. Its complete candidate domain is retained while settled rows constrain the shared port components; the open row is filtered by those settled domains after propagation. An unresolved face domain therefore cannot be rejected or narrowed solely because another unresolved row in the same port component has a different provisional endpoint support.
 
 Coordinate binding is one joint constraint problem over the complete quotient. Before the final bijection, assign every provisional component to a coordinate row, require every coordinate row to be used, and require every edge with an explicit unordered endpoint-pair domain to select one stored pair across its assigned components. When this surjective assignment is unique, provisional components assigned to the same row collapse. The resulting logical-vertex components bind bijectively to coordinate rows. A closed edge selects one diagonal pair. Coordinate rows with equal stored XYZ form one coordinate class whose capacity is its row population. The binding is resolved only when the capacity-constrained class assignment has exactly one solution; permutations among rows of the same class do not change vertex placement. Uniqueness of the independent component domains is insufficient.

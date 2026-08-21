@@ -398,6 +398,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the coordinate roles to interpret the bounds.
 
+**Note.** One FBB-only stream contains 72 fixed class-`0x62` packets from
+offset `40482` through `50620` and 84 complete standard face-bound records.
+Comparing every packet's three binary32 bound pairs with every standard face
+AABB gives no one-face match within `0.25` coordinate units. The nearest
+per-packet maximum-coordinate residuals range from `0.745981` to `3.389341`.
+The packet bounds are grouped owner extents, not direct face boxes; the
+coordinate axes and roles remain open.
+
 ### SN-18. Class-`0x62` owner-to-face binding
 
 **Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
@@ -405,6 +413,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Allocation links bind class-`0x5f` records to class-`0x62` owners.
 
 **Need.** We must know the face binding to assign the owner metadata.
+
+**Note.** Six adjacent class-`0x5f` to class-`0x62` allocation relations occur
+at owner offsets `40712`, `144640`, `144739`, `153213`, `153243`, and `158166`,
+with class-`0x62` targets `2749`, `1126`, `1130`, `4904`, `1574`, and `759`.
+None selects one of the 84 standard face ordinals, and the packet extents have
+no unique one-face correspondence. The allocation relation remains distinct
+from standard face incidence.
 
 ### SN-19. Cone `pre_range_scalar`
 
