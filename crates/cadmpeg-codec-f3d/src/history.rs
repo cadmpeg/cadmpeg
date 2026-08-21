@@ -7049,10 +7049,15 @@ fn historical_mirror_plane_in_state(
         return None;
     }
     let topology = state.topology.as_ref()?;
-    if candidate.historical_entity_kind == AsmHistoricalEntityKind::Loop {
-        return historical_loop_plane(candidate.historical_entity_ref, topology);
+    match candidate.historical_entity_kind {
+        AsmHistoricalEntityKind::Coedge => {
+            historical_mirror_coedge_plane(candidate.historical_entity_ref, topology)
+        }
+        AsmHistoricalEntityKind::Loop => {
+            historical_loop_plane(candidate.historical_entity_ref, topology)
+        }
+        _ => historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology),
     }
-    historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology)
 }
 
 fn historical_mirror_plane_for_face_slot(
@@ -7145,6 +7150,120 @@ fn historical_loop_plane(
             origin: axis.origin,
             normal: axis.direction,
         });
+    }
+    let [first, remaining @ ..] = planes.as_slice() else {
+        return None;
+    };
+    remaining
+        .iter()
+        .all(|candidate| mirror_planes_coincident(first, candidate))
+        .then_some(first.clone())
+}
+
+/// Resolve a Mirror plane from a selected coedge's complete radial cycle.
+///
+/// A coedge selects a boundary occurrence, not a face. Its owning face can be
+/// non-planar while another face incident to the same topological edge is the
+/// selected plane. The cycle and relation checks keep that inference exact:
+/// every coedge for the edge must participate in one closed radial cycle, each
+/// cycle member must belong to one loop and one face, and the incident faces
+/// must expose one coincident set of exact plane carriers.
+fn historical_mirror_coedge_plane(
+    coedge_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<HistoricalMirrorPlane> {
+    let mut coedges = HashMap::new();
+    for coedge in &topology.coedge_topology {
+        if coedges.insert(coedge.coedge, coedge).is_some() {
+            return None;
+        }
+    }
+    let selected = coedges.get(&coedge_ref)?;
+    let edge = selected.edge;
+    let same_edge = coedges
+        .values()
+        .filter(|coedge| coedge.edge == edge)
+        .map(|coedge| coedge.coedge)
+        .collect::<HashSet<_>>();
+    let mut radial_cycle = Vec::new();
+    let mut current = coedge_ref;
+    loop {
+        if current == coedge_ref && !radial_cycle.is_empty() {
+            break;
+        }
+        if radial_cycle.contains(&current) {
+            return None;
+        }
+        let coedge = coedges.get(&current)?;
+        if coedge.edge != edge {
+            return None;
+        }
+        radial_cycle.push(current);
+        current = coedge.radial_next;
+    }
+    let radial_refs = radial_cycle.iter().copied().collect::<HashSet<_>>();
+    if radial_refs != same_edge {
+        return None;
+    }
+
+    let mut faces = HashSet::new();
+    for coedge_ref in radial_cycle {
+        let coedge = coedges.get(&coedge_ref)?;
+        let mut loop_relations = topology.loop_coedges.iter().filter(|relation| {
+            relation.owner_ref == coedge.owner_loop && relation.member_refs.contains(&coedge_ref)
+        });
+        let loop_relation = loop_relations.next()?;
+        if loop_relations.next().is_some()
+            || loop_relation
+                .member_refs
+                .iter()
+                .filter(|member| **member == coedge_ref)
+                .count()
+                != 1
+        {
+            return None;
+        }
+        let mut face_relations = topology
+            .face_loops
+            .iter()
+            .filter(|relation| relation.member_refs.contains(&coedge.owner_loop));
+        let face_relation = face_relations.next()?;
+        if face_relations.next().is_some()
+            || face_relation
+                .member_refs
+                .iter()
+                .filter(|member| **member == coedge.owner_loop)
+                .count()
+                != 1
+        {
+            return None;
+        }
+        faces.insert(face_relation.owner_ref);
+    }
+
+    let mut planes = Vec::new();
+    for face in faces {
+        let mut surface_bindings = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face);
+        let surface = surface_bindings.next()?;
+        if surface_bindings.next().is_some() {
+            return None;
+        }
+        let mut surface_planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == surface.carrier);
+        if let Some(plane) = surface_planes.next() {
+            if surface_planes.next().is_some() {
+                return None;
+            }
+            planes.push(HistoricalMirrorPlane {
+                origin: plane.origin,
+                normal: plane.normal,
+            });
+        }
     }
     let [first, remaining @ ..] = planes.as_slice() else {
         return None;
