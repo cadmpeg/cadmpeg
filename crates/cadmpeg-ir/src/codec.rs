@@ -216,15 +216,15 @@ mod sealed {
 ///     fn id(&self) -> &'static str { "rogue" }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
 /// }
 /// impl Codec for Rogue {
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
-///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
-///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
 /// }
 /// ```
 pub trait Codec: CodecBackend + sealed::Sealed {

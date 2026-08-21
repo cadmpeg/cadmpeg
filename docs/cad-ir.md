@@ -193,12 +193,12 @@ When present, native namespace versions are:
 
 | Namespace         | Version |
 | ----------------- | ------- |
-| `native.f3d`      | 12      |
+| `native.f3d`      | 13      |
 | `native.sldprt`   | 13      |
 | `native.nx`       | 189     |
 | `native.inventor` | 25      |
 | `native.fcstd`    | 22      |
-| `native.catia`    | 271     |
+| `native.catia`    | 276     |
 | `native.creo`     | 1       |
 | `native.rhino`    | 2       |
 | `native.iges`     | 3       |

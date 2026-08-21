@@ -576,7 +576,7 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 212 Form 0 puts the positive string count `NS` at index 1 and stores
 /// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
 /// Type 213 Form 0 puts the positive string count `NS` at index 12 and stores
-/// twenty tokens per text string, so its groups start at token `33 + 20*NS`.
+/// twenty tokens per text string, so its groups start at token `13 + 20*NS`.
 /// Type 228 Form 0 puts the positive geometry count `N` at index 2 and the
 /// nonnegative leader count `L` after the geometry pointers, so its groups
 /// start at token `4 + N + L`.
