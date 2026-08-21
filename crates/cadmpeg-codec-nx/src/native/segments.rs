@@ -529,7 +529,6 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
         return Vec::new();
     };
     let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
     let sections = container
         .om_sections()
         .into_iter()
@@ -544,13 +543,16 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             (SegmentIndexSlot::Value, row.value),
         ] {
             let relative = relative as usize;
+            let Some(relative_u64) = u64::try_from(relative).ok() else {
+                continue;
+            };
+            let separated_marker = entry_offset
+                .checked_add(relative_u64)
+                .and_then(|offset| container.bounded_entry_bytes(offset, 4))
+                .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
             let (separator_byte_len, schema_role) = if let Some(role) = sections.get(&relative) {
                 (0usize, *role)
-            } else if container
-                .data
-                .get(entry_start + relative..entry_start + relative + 4)
-                == Some(&[0xc0, 0xd1, 0xf1, 0xed])
-            {
+            } else if separated_marker {
                 let Some(role) = sections.get(&(relative + 4)) else {
                     continue;
                 };
