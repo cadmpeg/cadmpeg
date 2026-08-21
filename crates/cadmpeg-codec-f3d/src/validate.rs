@@ -2726,11 +2726,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         == path.occurrence_guid_offsets.len()
                                     && matches!(
                                         path.class_tag.as_str(),
-                                        "294" | "299" | "329" | "386" | "390"
+                                        "294" | "299" | "307" | "329" | "386" | "390"
                                     )
                                     && path.identity_guids.len() == path.identity_guid_offsets.len()
                                     && match path.class_tag.as_str() {
-                                        "294" | "299" | "386" | "390" => {
+                                        "294" | "299" | "307" | "386" | "390" => {
                                             path.identity_guids.len() == 4
                                         }
                                         "329" => {
@@ -2759,20 +2759,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .occurrence_guid_offsets
                                         .iter()
                                         .all(|offset| *offset > path.byte_offset)
-                                    && (matches!(path.class_tag.as_str(), "294" | "299" | "386")
-                                        || path.occurrence_guids.first().is_some_and(|guid| {
-                                            native
-                                                .design_component_occurrences
-                                                .iter()
-                                                .filter(|occurrence| {
-                                                    design_stream(&occurrence.id) == native_stream
-                                                        && occurrence
-                                                            .occurrence_guid
-                                                            .eq_ignore_ascii_case(guid)
-                                                })
-                                                .count()
-                                                == 1
-                                        }))
+                                    && (matches!(
+                                        path.class_tag.as_str(),
+                                        "294" | "299" | "307" | "386"
+                                    ) || path.occurrence_guids.first().is_some_and(|guid| {
+                                        native
+                                            .design_component_occurrences
+                                            .iter()
+                                            .filter(|occurrence| {
+                                                design_stream(&occurrence.id) == native_stream
+                                                    && occurrence
+                                                        .occurrence_guid
+                                                        .eq_ignore_ascii_case(guid)
+                                            })
+                                            .count()
+                                            == 1
+                                    }))
                             })
                     }
                     (Some(frames), None, Some(targets)) => {

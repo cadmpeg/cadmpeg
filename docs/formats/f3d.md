@@ -1359,6 +1359,15 @@ placement lanes; ordinals 4 through 7 are angle, X, Y, and Z alignment lanes.
 The class pair is part of the admission key because the same frame lengths
 occur in other scope families.
 
+The class-406/261 `Assemble` scope is a 671-byte standard form. It has six
+owners; the final two owners are its alignment lanes. Its two operand
+references are at offsets 28 and 168, and their row-major rigid transforms
+start at offsets 40 and 180. The operand-path count is at offset 384, with
+marked locator references at offsets 388 and 399. The paired class-261 header
+starts at offset 671. Each locator uses the fixed 190-byte envelope and the
+37-byte wrapper; the path record is class-307 and uses the fixed four-identity
+path form.
+
 An `Assemble` or `As-built` scope stores finite alignment parameter owners.
 The serialized frame length and total owner count select the lane layout; the
 class pair is an additional admission key for the 744- and 748-byte forms.
@@ -1369,7 +1378,9 @@ local Z offset. The 604-byte datum-envelope form, the 732-byte joint form, and
 the class-430/262 744- and 748-byte forms have exactly eight owners. Their
 four placement owners are at local ordinals zero through three, and their four
 alignment owners are at ordinals four through seven in the same angle, X, Y,
-and Z order. The 705-byte form has exactly six owners: one group of `OffsetX`,
+and Z order. The class-406/261 671-byte form has exactly six owners: four
+placement lanes followed by its two alignment lanes. The 705-byte form has
+exactly six owners: one group of `OffsetX`,
 `OffsetY`, `OffsetZ`, and `AngleZ` placement lanes followed by `alignAngle`
 and `alignOffset`. The 772-byte form has exactly ten owners: two such
 placement groups followed by `alignAngle` and `alignOffset`. The final scalar

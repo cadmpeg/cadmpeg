@@ -19,6 +19,7 @@ use crate::ids::{self, native_stream};
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
+use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
@@ -1434,7 +1435,7 @@ pub(crate) fn exact_assembly_alignment(
             Some(exact.limits),
         )
     } else {
-        if matches!(scope.frame_length, 744 | 748)
+        if matches!(scope.frame_length, 671 | 744 | 748)
             && crate::design::assembly::operand_frame_variant(
                 scope.frame_length,
                 &scope.class_tag,
@@ -2185,10 +2186,22 @@ fn exact_assembly_operand_frames(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
-    let frame_offsets = match frame_variant {
-        crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
-        crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
-        crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
+    let frame_offsets = if scope.frame_length == class_406_assemble::LEN as u64
+        && scope.class_tag == "406"
+        && scope.paired_class_tag == "261"
+    {
+        (
+            class_406_assemble::FIRST_OPERAND_REFERENCE,
+            class_406_assemble::FIRST_OPERAND_TRANSFORM,
+            class_406_assemble::SECOND_OPERAND_REFERENCE,
+            class_406_assemble::SECOND_OPERAND_TRANSFORM,
+        )
+    } else {
+        match frame_variant {
+            crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
+            crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
+            crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
+        }
     };
     if usize::try_from(scope.paired_byte_offset).ok()?
         != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
@@ -2430,7 +2443,7 @@ fn exact_assembly_operand_path(
     let mut identity_guids = Vec::new();
     let mut identity_guid_offsets = Vec::new();
     match class_tag.as_str() {
-        "294" | "299" => {
+        "294" | "299" | "307" => {
             let end = next_indexed_record_offset(bytes, start + 1)?;
             if end != limit
                 || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]

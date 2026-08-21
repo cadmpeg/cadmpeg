@@ -1266,6 +1266,36 @@ pub(crate) mod paramesh_collection_owner_backlink_prefix {
     pub(crate) const COLLECTION_BACKLINK: usize = 262;
 }
 
+/// Byte offsets for the `assembly_class_406_261_scope_671` record.
+///
+/// Spec §Assembly operands. Record length 671 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The paired class-261 header starts at offset 671; the frame carries two standard operand transforms and a two-locator path run.
+/// ```
+pub(crate) mod assembly_class_406_261_scope_671 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 671;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `first_operand_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_OPERAND_REFERENCE: usize = 28;
+    /// Offset of `first_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_OPERAND_TRANSFORM: usize = 40;
+    /// Offset of `second_operand_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_OPERAND_REFERENCE: usize = 168;
+    /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 180;
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const LOCATOR_COUNT: usize = 384;
+    /// Stated value of `locator_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const LOCATOR_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 388;
+    /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 399;
+}
+
 /// Byte offsets for the `assembly_operand_path_locator_reference_run` record.
 ///
 /// Spec §Assembly operands. Record length 26 B.

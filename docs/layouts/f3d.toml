@@ -3011,6 +3011,100 @@ source = "spec"
 anchor = "Its marked same-segment reference at offset 262 points back to the collection."
 
 [[record]]
+name = "assembly_class_406_261_scope_671"
+parsed_by = [
+    "crates/cadmpeg-codec-f3d/src/design/assembly.rs",
+    "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs",
+]
+kind = "byte"
+section = "Assembly operands"
+anchor = "The class-406/261 `Assemble` scope is a 671-byte standard form."
+size = 671
+note = "Offsets are relative to the primary indexed header. The paired class-261 header starts at offset 671; the frame carries two standard operand transforms and a two-locator path run."
+
+[[record.gap]]
+offset = 11
+size = 17
+note = "The standard scope prologue before the first operand reference is outside this table."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-406/261 `Assemble` scope is a 671-byte standard form."
+
+[[record.field]]
+name = "first_operand_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "Its two operand references are at offsets 28 and 168"
+
+[[record.gap]]
+offset = 39
+size = 1
+note = "One zero byte separates the first operand reference from its transform."
+
+[[record.field]]
+name = "first_operand_transform"
+offset = 40
+type = "f64[16]"
+source = "spec"
+anchor = "their row-major rigid transforms start at offsets 40 and 180"
+
+[[record.field]]
+name = "second_operand_reference"
+offset = 168
+type = "bytes[11]"
+source = "spec"
+anchor = "Its two operand references are at offsets 28 and 168"
+
+[[record.gap]]
+offset = 179
+size = 1
+note = "One zero byte separates the second operand reference from its transform."
+
+[[record.field]]
+name = "second_operand_transform"
+offset = 180
+type = "f64[16]"
+source = "spec"
+anchor = "their row-major rigid transforms start at offsets 40 and 180"
+
+[[record.gap]]
+offset = 308
+size = 76
+note = "The standard frame tail before the locator run is outside this table."
+
+[[record.field]]
+name = "locator_count"
+offset = 384
+type = "u32"
+source = "spec"
+anchor = "The operand-path count is at offset 384"
+value = 2
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 388
+type = "bytes[11]"
+source = "spec"
+anchor = "marked locator references at offsets 388 and 399"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 399
+type = "bytes[11]"
+source = "spec"
+anchor = "marked locator references at offsets 388 and 399"
+
+[[record.gap]]
+offset = 410
+size = 261
+note = "The standard frame tail after the locator run is outside this table; the paired header starts at offset 671."
+
+[[record]]
 name = "assembly_operand_path_locator_reference_run"
 parsed_by = [
     "crates/cadmpeg-codec-f3d/src/design/assembly.rs",

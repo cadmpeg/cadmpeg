@@ -929,6 +929,35 @@ Unstated regions:
 
 - `11..262` (251 B): The owner payload before the reciprocal collection reference is outside this table.
 
+## `assembly_class_406_261_scope_671`
+
+Spec §Assembly operands · layout: byte offsets · size: 671 B
+
+Offsets are relative to the primary indexed header. The paired class-261 header starts at offset 671; the frame carries two standard operand transforms and a two-locator path run.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-406/261 `Assemble` scope is a 671-byte standard form. |
+| 28 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | Its two operand references are at offsets 28 and 168 |
+| 40 | 128 | `first_operand_transform` | `f64[16]` | little | spec | their row-major rigid transforms start at offsets 40 and 180 |
+| 168 | 11 | `second_operand_reference` | `bytes[11]` | little | spec | Its two operand references are at offsets 28 and 168 |
+| 180 | 128 | `second_operand_transform` | `f64[16]` | little | spec | their row-major rigid transforms start at offsets 40 and 180 |
+| 384 | 4 | `locator_count` | `u32` | little | spec | The operand-path count is at offset 384 · value `2` |
+| 388 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | marked locator references at offsets 388 and 399 |
+| 399 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | marked locator references at offsets 388 and 399 |
+
+Unstated regions:
+
+- `11..28` (17 B): The standard scope prologue before the first operand reference is outside this table.
+- `39..40` (1 B): One zero byte separates the first operand reference from its transform.
+- `179..180` (1 B): One zero byte separates the second operand reference from its transform.
+- `308..384` (76 B): The standard frame tail before the locator run is outside this table.
+- `410..671` (261 B): The standard frame tail after the locator run is outside this table; the paired header starts at offset 671.
+
 ## `assembly_operand_path_locator_reference_run`
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B

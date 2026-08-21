@@ -40,6 +40,8 @@ pub(crate) enum AssemblyOperandFrameVariant {
 /// The class-430 generation is keyed by both class tags because its 744- and
 /// 748-byte spans are also used by other scope families with different
 /// payloads. Those spans must not become a frame-length-only admission.
+/// The 671-byte generation is likewise keyed to class-406 paired with
+/// class-261; its standard payload is not a generic length variant.
 pub(crate) fn operand_frame_variant(
     frame_length: u64,
     class_tag: &str,
@@ -47,6 +49,9 @@ pub(crate) fn operand_frame_variant(
 ) -> Option<AssemblyOperandFrameVariant> {
     match frame_length {
         627 | 637 | 692 => Some(AssemblyOperandFrameVariant::Standard),
+        671 if class_tag == "406" && paired_class_tag == "261" => {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
         633 | 732 => Some(AssemblyOperandFrameVariant::Compact),
         744 if class_tag == "430" && paired_class_tag == "262" => {
             Some(AssemblyOperandFrameVariant::Compact)
@@ -162,6 +167,7 @@ pub(crate) const fn alignment_lane_bounds(
 ) -> Option<(usize, usize)> {
     match (frame_length, owner_count) {
         (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
+        (671, 6) => Some((4, 6)),
         (604 | 732 | 744 | 748, 8) => Some((4, 8)),
         (705, 6) => Some((4, 6)),
         (772, 10) => Some((8, 10)),
@@ -175,6 +181,10 @@ pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[u
     match frame_length {
         399 => Some([51, 62]),
         627 | 637 | 692 | 748 => Some([366, 377]),
+        671 => Some([
+            crate::layout::assembly_class_406_261_scope_671::FIRST_LOCATOR_REFERENCE,
+            crate::layout::assembly_class_406_261_scope_671::SECOND_LOCATOR_REFERENCE,
+        ]),
         633 | 732 | 744 => Some([362, 373]),
         _ => None,
     }
@@ -609,6 +619,7 @@ mod tests {
             (744, 8, (4, 8)),
             (748, 8, (4, 8)),
             (705, 6, (4, 6)),
+            (671, 6, (4, 6)),
             (772, 10, (8, 10)),
         ] {
             assert_eq!(
@@ -638,6 +649,7 @@ mod tests {
                 Some([362, 373])
             );
         }
+        assert_eq!(super::operand_path_locator_offsets(671), Some([388, 399]));
         for frame_length in [604, 705, 772] {
             assert_eq!(super::operand_path_locator_offsets(frame_length), None);
         }
@@ -653,6 +665,12 @@ mod tests {
             super::operand_frame_variant(748, "430", "262"),
             Some(super::AssemblyOperandFrameVariant::Standard)
         );
+        assert_eq!(
+            super::operand_frame_variant(671, "406", "261"),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(super::operand_frame_variant(671, "406", "258"), None);
+        assert_eq!(super::operand_frame_variant(671, "430", "261"), None);
         assert_eq!(super::operand_frame_variant(744, "327", "262"), None);
         assert_eq!(super::operand_frame_variant(748, "430", "261"), None);
     }
