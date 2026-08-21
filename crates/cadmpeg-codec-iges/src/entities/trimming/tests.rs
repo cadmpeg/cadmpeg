@@ -1,33 +1,399 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
+use super::{
+    cluster_boundary_positions, coordinate_quantum, pcurve_within_declared_bounds,
+    BoundaryVertexClusterError, FaceTolerancePolicy,
+};
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn pcurve_bounds_use_the_active_nurbs_subrange() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    let bounds = Some([Some(0.2), Some(0.8), None, None]);
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.2, 0.8],
+        bounds,
+        [false, false]
+    ));
+    assert!(!pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        bounds,
+        [false, false]
+    ));
+}
+
+#[test]
+fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.2, 0.0),
+            Point2::new(0.3, 0.0),
+            Point2::new(0.4, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let bounds = Some([Some(0.0), Some(1.0), None, None]);
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.5, 1.0],
+        bounds,
+        [false, false]
+    ));
+    assert!(!pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 0.5],
+        bounds,
+        [false, false]
+    ));
+}
+
+#[test]
+fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
+    let geometry = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
+        weights: None,
+        periodic: false,
+    };
+
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        Some([Some(0.0), Some(1.0), None, None]),
+        [false, false]
+    ));
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        Some([Some(0.0), Some(1.0), Some(0.0), Some(1.0)]),
+        [false, true]
+    ));
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [0.0, 1.0],
+        None,
+        [false, false]
+    ));
+}
+
+#[test]
+fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_boundary_file(2)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D9:0:0")
+        .expect("trimmed boundary coedge");
+    assert!(coedge.pcurves.is_empty());
+}
+
+#[test]
+fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_boundary_file(3)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+}
+
+#[test]
+fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.75, 0.0, 0.0),
+        Point3::new(1.5, 0.0, 0.0),
+    ];
+
+    assert_eq!(
+        cluster_boundary_positions(&points, 1.0),
+        Err(BoundaryVertexClusterError::NonTransitive)
+    );
+}
+
+#[test]
+fn boundary_vertex_clustering_uses_canonical_representatives() {
+    let points = [
+        Point3::new(10.25, 0.0, 0.0),
+        Point3::new(0.5, 0.0, 0.0),
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+    ];
+    let clusters = cluster_boundary_positions(&points, 1.0).unwrap();
+
+    assert_eq!(
+        clusters
+            .iter()
+            .map(|cluster| cluster.representative)
+            .collect::<Vec<_>>(),
+        vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+    );
+}
+
+#[test]
+fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
+    let global = crate::global::parse(
+        &crate::card::scan(&fixed_ascii_with_global(
+            b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,3,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+        ))
+        .unwrap(),
+    )
+    .unwrap()
+    .0
+    .length_context()
+    .unwrap();
+    let points = [Point3::new(100.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)];
+    let policy = FaceTolerancePolicy::from_global(&global, points.into_iter());
+
+    assert!((global.minimum_resolution_mm() - 0.001).abs() <= f64::EPSILON * 64.0);
+    assert!((coordinate_quantum(&global, points.into_iter()) - 1.0).abs() <= f64::EPSILON);
+    assert!((policy.topology_sewing - 1.0).abs() <= f64::EPSILON);
+}
+
+#[test]
+fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
+    let curve_id = CurveId("curve".into());
+    let surface_id = SurfaceId("surface".into());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let candidates = vec![
+        Edge {
+            id: EdgeId("wrong-occurrence".into()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("wrong-start".into()),
+            end: VertexId("wrong-end".into()),
+            param_range: Some([1.0, 2.0]),
+            tolerance: None,
+        },
+        Edge {
+            id: EdgeId("matching-occurrence".into()),
+            curve: Some(curve_id),
+            start: VertexId("matching-start".into()),
+            end: VertexId("matching-end".into()),
+            param_range: Some([0.0, 2.0]),
+            tolerance: None,
+        },
+    ];
+    ir.model.points.extend([
+        Point {
+            id: PointId("wrong-point-start".into()),
+            position: Point3::new(10.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("wrong-point-end".into()),
+            position: Point3::new(11.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-point-start".into()),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: PointId("matching-point-end".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: VertexId("wrong-start".into()),
+            point: PointId("wrong-point-start".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("wrong-end".into()),
+            point: PointId("wrong-point-end".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-start".into()),
+            point: PointId("matching-point-start".into()),
+            tolerance: None,
+        },
+        Vertex {
+            id: VertexId("matching-end".into()),
+            point: PointId("matching-point-end".into()),
+            tolerance: None,
+        },
+    ]);
+
+    let pcurves = vec![(
+        PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(2.0, 0.0),
+        },
+        [0.0, 1.0],
+    )];
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    assert!(!super::edge_range_matches_curve(
+        &candidates[0],
+        &index,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 0.0, 0.0),
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+    ));
+    assert!(super::edge_range_matches_curve(
+        &candidates[1],
+        &index,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+    ));
+    let (selected, start, end, pcurves_agree) = super::select_boundary_edge(
+        &candidates,
+        &index,
+        &surface_id,
+        &pcurves,
+        Sense::Forward,
+        EPS_BOUNDARY_ENDPOINT_MATCH,
+        true,
+    )
+    .expect("unique pcurve-compatible edge");
+    assert_eq!(selected.id.0, "matching-occurrence");
+    assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
+    assert!(pcurves_agree);
+
+    let mut ambiguous_candidates = candidates.clone();
+    ambiguous_candidates.push(Edge {
+        id: EdgeId("duplicate-occurrence".into()),
+        curve: Some(CurveId("curve".into())),
+        start: VertexId("matching-start".into()),
+        end: VertexId("matching-end".into()),
+        param_range: Some([0.0, 2.0]),
+        tolerance: None,
+    });
+    assert!(matches!(
+        super::select_boundary_edge(
+            &ambiguous_candidates,
+            &index,
+            &surface_id,
+            &[],
+            Sense::Forward,
+            EPS_BOUNDARY_ENDPOINT_MATCH,
+            false,
+        ),
+        Err(super::BoundaryEdgeSelectionError::Ambiguous)
+    ));
+}
+
+#[test]
+fn decode_commits_a_large_batch_of_trimmed_surfaces_without_quadratic_growth() {
+    let trimmed_count = 1_000;
+    let mut entities = Vec::with_capacity(trimmed_count + 1);
+    entities.push(OwnedTestEntity {
+        entity_type: 128,
+        form: 0,
+        label: "SURFACE".into(),
+        status: "00010000",
+        parameters:
+            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;".into(),
+    });
+    for index in 0..trimmed_count {
+        entities.push(OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: format!("TRIM{index}"),
+            status: "00000000",
+            parameters: "144,1,0,0,0;".into(),
+        });
+    }
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), trimmed_count);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
 
 #[test]
 fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {

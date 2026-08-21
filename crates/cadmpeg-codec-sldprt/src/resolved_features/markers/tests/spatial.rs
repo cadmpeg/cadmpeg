@@ -1,5 +1,4 @@
 //! Spatial-point marker and geometry-layout tests.
-#![allow(unused_imports)]
 
 use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{
@@ -8,8 +7,7 @@ use super::super::super::{
 use super::super::*;
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
+    FeatureInputScalar, FeatureInputScalarRole, SketchInputKind, SketchRelationKind,
 };
 use cadmpeg_ir::math::Point3;
 

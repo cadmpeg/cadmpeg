@@ -1455,7 +1455,6 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
     use super::*;
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
@@ -1463,12 +1462,11 @@ mod tests {
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
         DesignRecipeReference,
     };
-    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::ids::{ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
-    use cadmpeg_ir::topology::{Face, Sense};
 
     fn face(slot: i64) -> FaceId {
         FaceId(format!("f3d:brep:entity#{slot}"))

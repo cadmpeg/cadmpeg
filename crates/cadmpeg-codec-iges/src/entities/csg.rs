@@ -2,10 +2,11 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
+    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
+    ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::ids::CurveId;
@@ -30,11 +31,6 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
     let curve = CurveId(format!("iges:model:curve#D{sequence}"));
-    let edge = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&curve))?;
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -48,9 +44,22 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
             .find(|item| item.id == *point_id)
             .map(|item| item.position)
     };
-    let start = point(&edge.start)?;
-    let end = point(&edge.end)?;
-    Some(super::evaluation::distance(start, end) <= tolerance)
+    let mut result = None;
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(&curve))
+    {
+        let start = point(&edge.start)?;
+        let end = point(&edge.end)?;
+        let closed = super::evaluation::distance(start, end) <= tolerance;
+        if result.is_some_and(|previous| previous != closed) {
+            return None;
+        }
+        result = Some(closed);
+    }
+    result
 }
 
 #[derive(Clone, Copy)]
@@ -59,65 +68,68 @@ enum BooleanTerm {
     Operation,
 }
 
-fn subtree_contains_brep(
+fn boolean_tree_is_valid(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
     boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
     path: &mut BTreeSet<u32>,
     memo: &mut BTreeMap<u32, bool>,
-) -> Option<bool> {
-    if let Some(contains) = memo.get(&sequence) {
-        return Some(*contains);
+) -> bool {
+    if let Some(valid) = memo.get(&sequence) {
+        return *valid;
     }
     if !path.insert(sequence) {
-        return None;
+        return false;
     }
-    let result = (|| {
-        let entry = entries.get(&sequence)?;
-        match entry.entity_type {
-            186 => Some(true),
-            180 => boolean_definitions
-                .get(&sequence)?
-                .iter()
-                .try_fold(false, |contains, term| match term {
-                    BooleanTerm::Operand(target) => subtree_contains_brep(
-                        *target,
+    let Some(entry) = entries.get(&sequence) else {
+        path.remove(&sequence);
+        return false;
+    };
+    let Some(terms) = boolean_definitions.get(&sequence) else {
+        path.remove(&sequence);
+        return false;
+    };
+    let has_direct_brep = terms.iter().any(|term| {
+        matches!(
+            term,
+            BooleanTerm::Operand(target)
+                if entries
+                    .get(target)
+                    .is_some_and(|target| target.entity_type == 186)
+        )
+    });
+    let operands_valid = terms.iter().all(|term| match term {
+        BooleanTerm::Operation => true,
+        BooleanTerm::Operand(target_sequence) => {
+            entries.get(target_sequence).is_some_and(|target| {
+                matches!(
+                    target.entity_type,
+                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
+                ) || (target.entity_type == 180
+                    && boolean_tree_is_valid(
+                        *target_sequence,
                         entries,
-                        records,
                         boolean_definitions,
                         path,
                         memo,
-                    )
-                    .map(|child_contains| contains || child_contains),
-                    BooleanTerm::Operation => Some(contains),
-                }),
-            430 if entry.form == 1 => {
-                let target = records
-                    .get(&sequence)
-                    .and_then(|record| pointer(record, 1))?;
-                entries
-                    .get(&target)
-                    .is_some_and(|target| target.entity_type == 186)
-                    .then_some(true)
-            }
-            _ => Some(false),
+                    ))
+                    || (entry.form == 1 && target.entity_type == 186)
+            })
         }
-    })();
+    });
+    let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    if let Some(contains) = result {
-        memo.insert(sequence, contains);
-    }
-    result
+    memo.insert(sequence, valid);
+    valid
 }
 
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -126,14 +138,12 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
     for entry in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -270,7 +280,6 @@ pub(super) fn project(
         (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -351,7 +360,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -399,30 +407,16 @@ pub(super) fn project(
         boolean_definitions.insert(entry.sequence, terms);
     }
     let mut visited = BTreeSet::new();
-    let mut brep_content = BTreeMap::new();
-    for (sequence, terms) in &boolean_definitions {
+    let mut boolean_validity = BTreeMap::new();
+    for sequence in boolean_definitions.keys() {
         let entry = entries[sequence];
-        let operands_valid = terms.iter().all(|term| match term {
-            BooleanTerm::Operation => true,
-            BooleanTerm::Operand(target) => entries.get(target).is_some_and(|target_entry| {
-                matches!(
-                    target_entry.entity_type,
-                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 430
-                ) || (entry.form == 1 && target_entry.entity_type == 186)
-            }),
-        });
-        let has_brep = terms.iter().try_fold(false, |contains, term| match term {
-            BooleanTerm::Operand(target) => subtree_contains_brep(
-                *target,
-                &entries,
-                &records,
-                &boolean_definitions,
-                &mut BTreeSet::new(),
-                &mut brep_content,
-            )
-            .map(|child_contains| contains || child_contains),
-            BooleanTerm::Operation => Some(contains),
-        });
+        let operands_valid = boolean_tree_is_valid(
+            *sequence,
+            &entries,
+            &boolean_definitions,
+            &mut BTreeSet::new(),
+            &mut boolean_validity,
+        );
         let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
             boolean_definitions
                 .get(&sequence)
@@ -436,7 +430,7 @@ pub(super) fn project(
                 })
                 .collect()
         });
-        if !operands_valid || has_brep != Some(entry.form == 1) || cyclic {
+        if !operands_valid || cyclic {
             losses.push(entity_loss(
                 entry,
                 "Boolean operands, form, or reference acyclicity is invalid",
@@ -465,7 +459,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -514,11 +507,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Projection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

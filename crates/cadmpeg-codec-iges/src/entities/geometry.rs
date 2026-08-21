@@ -3,10 +3,11 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
-use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -17,6 +18,57 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+
+#[derive(Clone, Copy)]
+enum ControlPointPlane {
+    Unique,
+    NonPlanar,
+    NoUniquePlane,
+}
+
+fn classify_control_point_plane(points: &[Point3], tolerance: f64) -> ControlPointPlane {
+    let Some(origin) = points.first().copied() else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let Some((first_direction, first_length)) = points.iter().skip(1).find_map(|point| {
+        let direction = point.vector_from(origin);
+        let length = direction.norm();
+        (length.is_finite() && length > tolerance).then_some((direction, length))
+    }) else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let Some(normal) = points.iter().skip(1).find_map(|point| {
+        let candidate = first_direction.cross(point.vector_from(origin));
+        let length = candidate.norm();
+        (length.is_finite() && length > tolerance * first_length).then_some(candidate)
+    }) else {
+        return ControlPointPlane::NoUniquePlane;
+    };
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= 0.0 {
+        return ControlPointPlane::NonPlanar;
+    }
+    let normal = normal.scale(1.0 / normal_length);
+    if points
+        .iter()
+        .skip(1)
+        .any(|point| normal.dot(point.vector_from(origin)).abs() > tolerance)
+    {
+        ControlPointPlane::NonPlanar
+    } else {
+        ControlPointPlane::Unique
+    }
+}
+
+fn control_points_fit_plane(points: &[Point3], normal: Vector3, tolerance: f64) -> bool {
+    let Some(origin) = points.first().copied() else {
+        return false;
+    };
+    points
+        .iter()
+        .skip(1)
+        .all(|point| normal.dot(point.vector_from(origin)).abs() <= tolerance)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct DeclaredInterval {
@@ -68,6 +120,22 @@ impl DeclaredInterval {
         self.multiply(Self::around(factor, 0.0))
     }
 
+    pub(crate) fn reciprocal(self) -> Option<Self> {
+        if self.contains(0.0) {
+            return None;
+        }
+        let lower = 1.0 / self.lower;
+        let upper = 1.0 / self.upper;
+        Some(Self::outward(lower.min(upper), lower.max(upper)))
+    }
+
+    pub(crate) fn sqrt(self) -> Option<Self> {
+        if self.upper < 0.0 {
+            return None;
+        }
+        Some(Self::outward(self.lower.max(0.0).sqrt(), self.upper.sqrt()))
+    }
+
     pub(crate) fn contains(self, value: f64) -> bool {
         self.lower <= value && value <= self.upper
     }
@@ -77,13 +145,32 @@ impl DeclaredInterval {
     }
 }
 
+fn interval_dot(left: [DeclaredInterval; 3], right: [DeclaredInterval; 3]) -> DeclaredInterval {
+    (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, index| {
+        sum.add(left[index].multiply(right[index]))
+    })
+}
+
+fn interval_squared_norm(components: [DeclaredInterval; 3]) -> DeclaredInterval {
+    interval_dot(components, components)
+}
+
+fn is_finite_nonzero_vector(vector: Vector3) -> bool {
+    vector.x.is_finite()
+        && vector.y.is_finite()
+        && vector.z.is_finite()
+        && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
+}
+
 pub(crate) fn declared_unit_vector(
     record: &ParameterRecord,
     start: usize,
     vector: Vector3,
     precision: RealPrecision,
 ) -> bool {
-    if !vector.norm().is_finite() {
+    // CADIR admission for an IGES unit-vector field uses its declared-real
+    // interval; IGES defines no separate receiver epsilon.
+    if !is_finite_nonzero_vector(vector) {
         return false;
     }
     let values = [vector.x, vector.y, vector.z];
@@ -93,12 +180,7 @@ pub(crate) fn declared_unit_vector(
             record.number_uncertainty(start + offset, values[offset], precision),
         )
     });
-    components
-        .into_iter()
-        .fold(DeclaredInterval::around(0.0, 0.0), |sum, component| {
-            sum.add(component.multiply(component))
-        })
-        .contains(1.0)
+    interval_squared_norm(components).contains(1.0)
 }
 
 pub(crate) fn declared_orthogonal_vectors(
@@ -109,21 +191,79 @@ pub(crate) fn declared_orthogonal_vectors(
     right: Vector3,
     precision: RealPrecision,
 ) -> bool {
+    // The same CADIR policy admits an orthogonal pair when its dot-product
+    // interval contains zero.
     let left_values = [left.x, left.y, left.z];
     let right_values = [right.x, right.y, right.z];
-    (0..3)
-        .fold(DeclaredInterval::around(0.0, 0.0), |sum, offset| {
-            let left = DeclaredInterval::around(
-                left_values[offset],
-                record.number_uncertainty(left_start + offset, left_values[offset], precision),
-            );
-            let right = DeclaredInterval::around(
-                right_values[offset],
-                record.number_uncertainty(right_start + offset, right_values[offset], precision),
-            );
-            sum.add(left.multiply(right))
-        })
-        .contains(0.0)
+    let left = std::array::from_fn::<_, 3, _>(|offset| {
+        DeclaredInterval::around(
+            left_values[offset],
+            record.number_uncertainty(left_start + offset, left_values[offset], precision),
+        )
+    });
+    let right = std::array::from_fn::<_, 3, _>(|offset| {
+        DeclaredInterval::around(
+            right_values[offset],
+            record.number_uncertainty(right_start + offset, right_values[offset], precision),
+        )
+    });
+    interval_dot(left, right).contains(0.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeclaredTransformFrameError {
+    NotOrthonormal,
+    WrongDeterminant,
+}
+
+fn validate_declared_transform_frame(
+    coefficient_intervals: [DeclaredInterval; 9],
+    expected_determinant: f64,
+) -> Result<(), DeclaredTransformFrameError> {
+    // CADIR admission for the IGES Type 124 invariants uses declared-real
+    // intervals; IGES does not define a separate receiver epsilon.
+    let columns = std::array::from_fn::<_, 3, _>(|column| {
+        [
+            coefficient_intervals[column],
+            coefficient_intervals[3 + column],
+            coefficient_intervals[6 + column],
+        ]
+    });
+    if columns
+        .into_iter()
+        .any(|column| !interval_squared_norm(column).contains(1.0))
+        || [(0, 1), (0, 2), (1, 2)]
+            .into_iter()
+            .any(|(left, right)| !interval_dot(columns[left], columns[right]).contains(0.0))
+    {
+        return Err(DeclaredTransformFrameError::NotOrthonormal);
+    }
+
+    let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
+    let determinant_interval = interval(0, 0)
+        .multiply(
+            interval(1, 1)
+                .multiply(interval(2, 2))
+                .subtract(interval(1, 2).multiply(interval(2, 1))),
+        )
+        .subtract(
+            interval(0, 1).multiply(
+                interval(1, 0)
+                    .multiply(interval(2, 2))
+                    .subtract(interval(1, 2).multiply(interval(2, 0))),
+            ),
+        )
+        .add(
+            interval(0, 2).multiply(
+                interval(1, 0)
+                    .multiply(interval(2, 1))
+                    .subtract(interval(1, 1).multiply(interval(2, 0))),
+            ),
+        );
+    determinant_interval
+        .contains(expected_determinant)
+        .then_some(())
+        .ok_or(DeclaredTransformFrameError::WrongDeterminant)
 }
 
 #[derive(Clone, Copy)]
@@ -268,47 +408,20 @@ pub(crate) fn resolve_transform(
                 record.number_uncertainty(value_index + 1, values[value_index], precision),
             )
         });
-        let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
-        let column_dot_interval = |left: usize, right: usize| {
-            (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, row| {
-                sum.add(interval(row, left).multiply(interval(row, right)))
-            })
-        };
-        if (0..3).any(|column| !column_dot_interval(column, column).contains(1.0))
-            || [(0, 1), (0, 2), (1, 2)]
-                .into_iter()
-                .any(|(left, right)| !column_dot_interval(left, right).contains(0.0))
-        {
-            return Err(format!(
-                "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
-            ));
-        }
-        let determinant_interval = interval(0, 0)
-            .multiply(
-                interval(1, 1)
-                    .multiply(interval(2, 2))
-                    .subtract(interval(1, 2).multiply(interval(2, 1))),
-            )
-            .subtract(
-                interval(0, 1).multiply(
-                    interval(1, 0)
-                        .multiply(interval(2, 2))
-                        .subtract(interval(1, 2).multiply(interval(2, 0))),
-                ),
-            )
-            .add(
-                interval(0, 2).multiply(
-                    interval(1, 0)
-                        .multiply(interval(2, 1))
-                        .subtract(interval(1, 1).multiply(interval(2, 0))),
-                ),
-            );
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if !determinant_interval.contains(expected_determinant) {
-            return Err(format!(
-                "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
-                entry.form
-            ));
+        match validate_declared_transform_frame(coefficient_intervals, expected_determinant) {
+            Ok(()) => {}
+            Err(DeclaredTransformFrameError::NotOrthonormal) => {
+                return Err(format!(
+                    "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
+                ));
+            }
+            Err(DeclaredTransformFrameError::WrongDeterminant) => {
+                return Err(format!(
+                    "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
+                    entry.form
+                ));
+            }
         }
 
         let raw_columns = [
@@ -353,10 +466,194 @@ pub(crate) fn resolve_transform(
     result
 }
 
+pub(crate) fn enforce_transform_depth(
+    directory: &[DirectoryEntry],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let depth_limit = ctx
+        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+        .map_or(MAX_TRANSFORM_DEPTH, |policy| {
+            policy.min(MAX_TRANSFORM_DEPTH)
+        });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+
+    for entry in directory {
+        let Some(mut sequence) = u32::try_from(entry.transform)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+        else {
+            continue;
+        };
+        let mut path = BTreeSet::new();
+        let mut depth = 0_usize;
+        loop {
+            if depth >= depth_limit {
+                return Err(refuse_local_limit(
+                    "iges_transform_depth",
+                    depth_limit as u64,
+                    depth.saturating_add(1) as u64,
+                    None,
+                ));
+            }
+            if !path.insert(sequence) {
+                break;
+            }
+            depth += 1;
+            let Some(transform) = entries.get(&sequence).copied() else {
+                break;
+            };
+            if transform.entity_type != 124 || !matches!(transform.form, 0 | 1) {
+                break;
+            }
+            let Some(next) = u32::try_from(transform.transform)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+            else {
+                break;
+            };
+            sequence = next;
+        }
+    }
+    Ok(())
+}
+
+/// One sub-projector's result: the directory sequences whose records emitted
+/// a neutral entity, and the losses the pass charged. The generic retention
+/// pass spares a record only when it is decoded, consumed, or already
+/// attributed, so membership in `decoded` is what marks projection success.
+pub(super) struct ProjectionOutcome {
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+}
+
+/// A curve projector's result: the two-field outcome extended with the edges
+/// the caller collects into the free-geometry wire shell.
+pub(super) struct WireProjectionOutcome {
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+    pub(super) wire_edges: Vec<EdgeId>,
+}
+
 pub(crate) struct Projection {
-    pub(crate) handled: BTreeSet<u32>,
     pub(crate) decoded: BTreeSet<u32>,
+    /// Source records consumed as construction data without a standalone
+    /// neutral entity. The generic retention pass suppresses its loss for
+    /// these records; membership here is the only suppression channel.
+    pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
+}
+
+fn positive_sequence(value: i64) -> Option<u32> {
+    u32::try_from(value)
+        .ok()
+        .filter(|sequence| sequence % 2 == 1)
+}
+
+fn consumed_support_sequences(
+    directory: &[DirectoryEntry],
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> BTreeSet<u32> {
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut transform_sequences = BTreeSet::new();
+    for entry in directory {
+        if let Some(sequence) = positive_sequence(entry.transform).filter(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|target| target.entity_type == 124)
+        }) {
+            transform_sequences.insert(sequence);
+        }
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
+    {
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let Some(count) = record.count(1) else {
+            continue;
+        };
+        for index in 0..count.min(record.parameter_end()) {
+            if let Some(sequence) = record
+                .integer(2 + count + index)
+                .and_then(positive_sequence)
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|target| target.entity_type == 124)
+                })
+            {
+                transform_sequences.insert(sequence);
+            }
+        }
+    }
+    let mut direction_sequences = BTreeSet::new();
+    for entry in directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+    }) {
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let indices: &[usize] = match (entry.entity_type, entry.form) {
+            (190 | 192 | 194 | 198, 0) => &[2],
+            (190, 1) => &[2, 3],
+            (192, 1) => &[2, 4],
+            (194 | 198, 1) => &[2, 5],
+            (196, 0) => &[],
+            (196, 1) => &[3, 4],
+            _ => &[],
+        };
+        for index in indices {
+            if let Some(sequence) =
+                record
+                    .integer(*index)
+                    .and_then(positive_sequence)
+                    .filter(|sequence| {
+                        entries
+                            .get(sequence)
+                            .is_some_and(|target| target.entity_type == 123 && target.form == 0)
+                    })
+            {
+                direction_sequences.insert(sequence);
+            }
+        }
+    }
+
+    let mut consumed = direction_sequences;
+    while let Some(sequence) = transform_sequences.pop_first() {
+        if !consumed.insert(sequence) {
+            continue;
+        }
+        let Some(entry) = entries.get(&sequence).copied() else {
+            continue;
+        };
+        if let Some(parent) = positive_sequence(entry.transform).filter(|parent| {
+            entries
+                .get(parent)
+                .is_some_and(|target| target.entity_type == 124)
+        }) {
+            transform_sequences.insert(parent);
+        }
+    }
+    consumed
+}
+
+fn admit_projected_entities(
+    ctx: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    admitted: &mut u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.map_or(Ok(()), |ctx| {
+        ctx.admit_entities(ir.model.entity_count() as u64, admitted, operation)
+    })
 }
 
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
@@ -390,9 +687,10 @@ pub(crate) fn project_geometry(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> Result<Projection, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -401,15 +699,9 @@ pub(crate) fn project_geometry(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
+    let consumed = consumed_support_sequences(directory, &records);
     let mut losses = Vec::new();
-    handled.extend(
-        directory
-            .iter()
-            .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
-            .map(|entry| entry.sequence),
-    );
     let analytic_surface_locations = directory
         .iter()
         .filter(|entry| {
@@ -428,7 +720,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -439,7 +730,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let direction = Vector3::new(x, y, z);
-        if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+        if !is_finite_nonzero_vector(direction) {
             losses.push(entity_loss(entry, "direction is zero or non-finite"));
             continue;
         }
@@ -461,7 +752,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -615,7 +905,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -667,7 +956,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -772,7 +1060,6 @@ pub(crate) fn project_geometry(
         .iter()
         .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -880,6 +1167,13 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "polynomial spline has unequal weights"));
             continue;
         }
+        if !polynomial && equal_weights {
+            losses.push(entity_loss(
+                entry,
+                "rational spline has equal weights but PROP3 declares rational",
+            ));
+            continue;
+        }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
             losses.push(entity_loss(
                 entry,
@@ -951,13 +1245,81 @@ pub(crate) fn project_geometry(
                 ))
             })
             .collect::<Vec<_>>();
+        if control_points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        {
+            losses.push(entity_loss(
+                entry,
+                "transformed control-point vector is non-finite",
+            ));
+            continue;
+        }
+        let point_scale = control_points
+            .iter()
+            .skip(1)
+            .map(|point| point.distance(control_points[0]))
+            .filter(|distance| distance.is_finite())
+            .fold(1.0, f64::max);
+        let plane_tolerance = global
+            .minimum_resolution_mm()
+            .max(point_scale * COMPUTATION_TOLERANCE);
+        let plane = classify_control_point_plane(&control_points, plane_tolerance);
+        let planar = flags[0] == Some(1);
+        let Some(normal_start) = range_start.checked_add(2) else {
+            losses.push(entity_loss(entry, "plane-normal offset overflows"));
+            continue;
+        };
+        let Some(normal_values) = collect_numbers(normal_start, 3) else {
+            losses.push(entity_loss(
+                entry,
+                "plane-normal fields are missing or non-finite",
+            ));
+            continue;
+        };
+        if planar {
+            let normal_definition =
+                Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
+            if !declared_unit_vector(record, normal_start, normal_definition, precision) {
+                losses.push(entity_loss(
+                    entry,
+                    "planar spline normal is not a declared unit vector",
+                ));
+                continue;
+            }
+            let normal = transform.vector(normal_definition);
+            let normal_length = normal.norm();
+            if !normal_length.is_finite()
+                || normal_length <= 0.0
+                || !control_points_fit_plane(
+                    &control_points,
+                    normal.scale(1.0 / normal_length),
+                    plane_tolerance,
+                )
+                || matches!(plane, ControlPointPlane::NonPlanar)
+            {
+                losses.push(entity_loss(
+                    entry,
+                    "planar spline flag disagrees with the control-point geometry",
+                ));
+                continue;
+            }
+        } else if matches!(plane, ControlPointPlane::Unique) {
+            losses.push(entity_loss(
+                entry,
+                "non-planar spline flag disagrees with a unique control-point plane",
+            ));
+            continue;
+        }
         let weights = (!polynomial).then_some(native_weights);
         let nurbs = NurbsCurve {
             degree,
             knots,
             control_points,
             weights,
-            periodic: flags[3] == Some(1),
+            // IGES PROP4 is informational; neutral evaluation uses the
+            // serialized active carrier without periodic parameter wrapping.
+            periodic: false,
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree,
@@ -965,7 +1327,8 @@ pub(crate) fn project_geometry(
             &nurbs.control_points,
             nurbs.weights.as_deref(),
             parameter_range[0],
-        ) else {
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
@@ -975,10 +1338,21 @@ pub(crate) fn project_geometry(
             &nurbs.control_points,
             nurbs.weights.as_deref(),
             parameter_range[1],
-        ) else {
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
+        let endpoint_distance = start.distance(end);
+        let resolution = global.minimum_resolution_mm();
+        let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
+        if flags[1] != Some(i64::from(closed)) {
+            losses.push(entity_loss(
+                entry,
+                "closed spline flag disagrees with evaluated endpoints",
+            ));
+            continue;
+        }
         let stem = format!("D{}", entry.sequence);
         let start_point = PointId(format!("iges:model:point#{stem}-start"));
         let end_point = PointId(format!("iges:model:point#{stem}-end"));
@@ -1026,41 +1400,48 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
+    let mut admitted_entities = 0;
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_primitives")?;
     let conics = super::conics::project(ir, directory, parameters, global, ctx);
-    handled.extend(conics.handled);
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
-    let copious = super::copious::project(ir, directory, parameters, global, ctx);
-    handled.extend(copious.handled);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
+    let copious = super::copious::project(ir, directory, parameters, global, ctx)?;
     decoded.extend(copious.decoded);
     losses.extend(copious.losses);
     wire_edges.extend(copious.wire_edges);
     free_vertices.extend(copious.free_vertices);
-    let splines = super::splines::project(ir, directory, parameters, global, ctx);
-    handled.extend(splines.handled);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
+    let splines = super::splines::project(ir, directory, parameters, global, ctx)?;
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
-    let composites = super::composite::project(ir, directory, parameters, global, ctx);
-    handled.extend(composites.handled);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
+    let composites = super::composite::project(ir, directory, parameters, global, ctx)?;
     decoded.extend(composites.decoded);
     losses.extend(composites.losses);
     wire_edges.extend(composites.wire_edges);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
     let offsets = super::offsets::project(ir, directory, parameters, global, ctx);
-    handled.extend(offsets.handled);
     decoded.extend(offsets.decoded);
     losses.extend(offsets.losses);
     wire_edges.extend(offsets.wire_edges);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
     let analytic_surfaces =
         super::analytic_surfaces::project(ir, directory, parameters, global, ctx);
-    handled.extend(analytic_surfaces.handled);
     decoded.extend(analytic_surfaces.decoded);
     losses.extend(analytic_surfaces.losses);
-    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx);
-    handled.extend(surfaces.handled);
+    admit_projected_entities(
+        ctx,
+        ir,
+        &mut admitted_entities,
+        "iges_geometry_analytic_surfaces",
+    )?;
+    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx)?;
     decoded.extend(surfaces.decoded);
     losses.extend(surfaces.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
         let body = BodyId("iges:model:body#free-geometry".into());
         let region = RegionId("iges:model:region#free-geometry".into());
@@ -1087,34 +1468,59 @@ pub(crate) fn project_geometry(
             free_vertices,
         });
     }
+    admit_projected_entities(
+        ctx,
+        ir,
+        &mut admitted_entities,
+        "iges_geometry_wire_topology",
+    )?;
     let trimming = super::trimming::project(ir, directory, parameters, global, ctx);
-    handled.extend(trimming.handled);
     decoded.extend(trimming.decoded);
     losses.extend(trimming.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
     let brep = super::brep::project(ir, directory, parameters, global, ctx);
-    handled.extend(brep.handled);
     decoded.extend(brep.decoded);
     losses.extend(brep.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
     let csg = super::csg::project(ir, directory, parameters, global, ctx);
-    handled.extend(csg.handled);
     decoded.extend(csg.decoded);
     losses.extend(csg.losses);
-    let structure = super::structure::project(ir, directory, parameters, global, ctx);
-    handled.extend(structure.handled);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
+    let structure = super::structure::project(
+        ir,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        ctx,
+    );
     decoded.extend(structure.decoded);
     losses.extend(structure.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
     let presentation = super::presentation::project(ir, directory, parameters, global, ctx);
-    handled.extend(presentation.handled);
     decoded.extend(presentation.decoded);
     losses.extend(presentation.losses);
-    let drawing = super::drawing::project(ir, directory, parameters, global, ctx);
-    handled.extend(drawing.handled);
+    admit_projected_entities(
+        ctx,
+        ir,
+        &mut admitted_entities,
+        "iges_geometry_presentation",
+    )?;
+    let drawing = super::drawing::project(
+        ir,
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        ctx,
+    );
     decoded.extend(drawing.decoded);
     losses.extend(drawing.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
     let annotation = super::annotation::project(ir, directory, parameters, global, ctx);
-    handled.extend(annotation.handled);
     decoded.extend(annotation.decoded);
     losses.extend(annotation.losses);
+    admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
         .map(|sequence| PointId(format!("iges:model:point#D{sequence}")))
@@ -1128,11 +1534,11 @@ pub(crate) fn project_geometry(
     ir.model.points.retain(|point| {
         !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
     });
-    Projection {
-        handled,
+    Ok(Projection {
         decoded,
+        consumed,
         losses,
-    }
+    })
 }
 
 #[cfg(test)]

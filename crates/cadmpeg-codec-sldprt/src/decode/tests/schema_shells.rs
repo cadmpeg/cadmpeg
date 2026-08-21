@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema 32001/33103 and disc14/disc20 shell-partition decode tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 

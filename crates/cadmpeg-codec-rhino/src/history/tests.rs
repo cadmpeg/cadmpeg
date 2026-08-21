@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, dead_code, clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
 use super::*;
 use crate::chunks::TCODE_CRC;

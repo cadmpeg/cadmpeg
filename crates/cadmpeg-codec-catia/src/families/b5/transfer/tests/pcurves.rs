@@ -1,24 +1,15 @@
-#![allow(unused_imports)]
-
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
-    B5SupportedSurfaceParameters, B5Surface,
+    loop_chain_closes, B5Face, B5Graph, B5Loop, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
+    B5Profile, B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
-};
+use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
     cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
     neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
-use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
-use super::super::unit;
-use super::super::vertices::transfer_vertex_tolerances;
+use super::super::surfaces::revolution_surface;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
@@ -26,9 +17,8 @@ use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{SurfaceId, UnknownId};
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};

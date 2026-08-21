@@ -1,33 +1,87 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Point3;
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+fn type_112_parameters(
+    continuity: i64,
+    breakpoints: &[f64],
+    segments: &[[f64; 12]],
+    terminal: [f64; 12],
+) -> String {
+    let mut values = vec![
+        "112".to_owned(),
+        "3".to_owned(),
+        continuity.to_string(),
+        "3".to_owned(),
+        segments.len().to_string(),
+    ];
+    values.extend(breakpoints.iter().map(ToString::to_string));
+    values.extend(
+        segments
+            .iter()
+            .flat_map(|segment| segment.iter())
+            .map(ToString::to_string),
+    );
+    values.extend(terminal.into_iter().map(|value| value.to_string()));
+    format!("{};", values.join(","))
+}
+
+#[test]
+fn decode_refuses_a_parametric_spline_segment_count_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                b"112,3,1,3,100001;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_spline_segments")
+                && limit.limit == 100_000
+                && limit.used == 100_000
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 114,
+                form: 0,
+                label: "SPLSURF".into(),
+                status: "00000000",
+                parameters: "114,3,1,1000,1000;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_spline_surface_poles")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 8_006_001
+    ));
+}
 
 #[test]
 fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
@@ -49,7 +103,11 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
-    assert!(result.report().losses.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -84,7 +142,11 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
-    assert!(result.report().losses.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -110,11 +172,11 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
     .expect("converted curve evaluates");
     let expected = Point3::new(16.0, -1.546_875, 0.164_062_5);
     assert!(point.distance(expected) < 1.0e-12, "{point:?}");
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
 }
 
 #[test]
@@ -132,23 +194,105 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
         cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, -0.75),
         Some(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
     );
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
 }
 
 #[test]
-fn decode_propagates_declared_precision_through_parametric_spline_segments() {
-    for (first_slope, second_start, terminal_x, decoded, terminal_loss) in [
-        ("1.", "1000.009999", "2000.012", true, false),
-        ("1.", "1000.010001", "2000.02", false, false),
-        ("1.D0", "1000.004D0", "2000.004D0", false, false),
-        ("1.", "1000.004", "2000.1", true, true),
+fn decode_uses_global_resolution_for_spline_position_continuity() {
+    for (resolution, second_start, decoded) in [
+        ("0.001", 1_000.000_999, true),
+        ("0.001", 1_000.001_000_000_000_2, false),
+        ("0", 1_000.0, true),
+        ("0", 1_000.000_000_000_000_1, false),
     ] {
-        let parameters = format!(
-            "112,3,0,3,2,0,1000,2000,0,{first_slope},0,0,0,0,0,0,0,0,0,0,{second_start},1.,0,0,0,0,0,0,0,0,0,0,{terminal_x},1.,0,0,0,0,0,0,0,0,0,0;"
+        let terminal_x = second_start + 1000.0;
+        let parameters = type_112_parameters(
+            0,
+            &[0.0, 1000.0, 2000.0],
+            &[
+                [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [
+                    second_start,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            ],
+            [
+                terminal_x, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ],
+        );
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(parametric_spline_curve_file_with_parameters_and_resolution(
+                    parameters.as_bytes(),
+                    resolution,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .count(),
+            usize::from(!decoded)
+        );
+    }
+}
+
+#[test]
+fn decode_type_112_h1_compares_unit_tangent_not_parameter_speed() {
+    let first = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    for (second_slope, decoded) in [(2.0, true), (-2.0, false)] {
+        let second = [
+            1.0,
+            second_slope,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let parameters = type_112_parameters(
+            1,
+            &[0.0, 1.0, 2.0],
+            &[first, second],
+            [
+                1.0 + second_slope,
+                second_slope,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
         );
         let result = IgesCodec
             .decode(
@@ -160,15 +304,123 @@ fn decode_propagates_declared_precision_through_parametric_spline_segments() {
             .unwrap();
 
         assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
-        let has_terminal_loss = result.report().losses.iter().any(|loss| {
-            loss.message
-                .contains("terminal derivative block disagrees with the last polynomial")
-        });
-        assert_eq!(has_terminal_loss, terminal_loss);
-        if !decoded {
-            assert!(result.report().losses.iter().any(|loss| loss
-                .message
-                .contains("spline segments violate planar or positional continuity")));
-        }
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .count(),
+            usize::from(!decoded)
+        );
     }
+}
+
+#[test]
+fn decode_type_112_h2_compares_curvature_with_arc_length_parameterization() {
+    let first = [0.0, 1.0, 0.0, 0.0, 0.0, -2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    for (second_curvature_coefficient, decoded) in [(4.0, true), (5.0, false)] {
+        let second = [
+            1.0,
+            2.0,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            second_curvature_coefficient,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let parameters = type_112_parameters(
+            2,
+            &[0.0, 1.0, 2.0],
+            &[first, second],
+            [
+                3.0,
+                2.0,
+                0.0,
+                0.0,
+                -1.0 + second_curvature_coefficient,
+                2.0 * second_curvature_coefficient,
+                second_curvature_coefficient,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
+        );
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                    parameters.as_bytes(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .count(),
+            usize::from(!decoded)
+        );
+    }
+}
+
+#[test]
+fn decode_keeps_type_112_curve_when_redundant_terminal_block_disagrees() {
+    let parameters = type_112_parameters(
+        1,
+        &[0.0, 1.0],
+        &[[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+        [99.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    );
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                parameters.as_bytes(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("terminal derivative block disagrees with the last polynomial")
+    }));
+}
+
+#[test]
+fn decode_rejects_a_degenerate_type_112_segment() {
+    let parameters = type_112_parameters(0, &[0.0, 1.0], &[[0.0; 12]], [0.0; 12]);
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                parameters.as_bytes(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        1
+    );
 }

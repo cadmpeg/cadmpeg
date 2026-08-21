@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#![allow(unused_imports, clippy::cloned_ref_to_slice_refs)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
 use super::*;
 use crate::design::constraints::project_sketch_constraints;
-use crate::design::decode::sketch::identity_matrix;
 use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_geometry};
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
@@ -12,10 +11,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-    SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-};
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry};
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
 };

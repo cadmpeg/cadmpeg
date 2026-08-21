@@ -619,7 +619,8 @@ accessors resolve inherited attributes against that representation.
 A complex instance whose partial records are not in ascending entity-name order
 does not conform to Part 21. CADIR salvage retains the observed partial order,
 resolves attributes by partial name, and reports `NoncanonicalSourceSyntax`
-with the containing record's byte offset. Strict decode rejects the record.
+with the containing record's byte offset. A full strict decode rejects the
+record.
 
 Part 21 simple-entity mapping supplies one parameter for each explicit
 attribute, in declaration order. Internal complex mapping supplies inherited
@@ -800,7 +801,7 @@ position zero. It does not shift complex records, non-carrier entities, or
 records whose first parameter is already a string or `$`. The reader reports
 this source repair as
 `NoncanonicalSourceSyntax` with the containing record's byte offset; salvage
-decode retains the recovered record and strict decode rejects the loss.
+decode retains the recovered record and a full strict decode rejects the loss.
 
 REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
 Entity and value occurrence integers are unique across both prefixes, and
@@ -1575,9 +1576,8 @@ means that the finite witness did not establish the ISO global point-set and
 same-direction invariants. CADIR does not claim global pcurve fidelity for
 these relations.
 Strict decode does not refuse this warning, because the relation transfers the
-source data with its verification status. Strict decode refuses
-CADIR-introduced substitution, salvage, and malformed structure. A finite
-sample set can miss a divergent interval or a lower-residual basin. A stale
+source data with its verification status. A finite sample set can miss a
+divergent interval or a lower-residual basin. A stale
 finite trim therefore keeps a recovered interval only on the coedge use, and an
 unbounded candidate uses the same witness rule.
 

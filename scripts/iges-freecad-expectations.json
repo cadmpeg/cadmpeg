@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "files": {
+    "analytic_plane_surface.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 1,
+        "wires": 0,
+        "edges": 0,
+        "vertices": 0
+      }
+    },
+    "explicit_non_manifold_open_shell.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 12,
+        "shapes": 11,
+        "valid": 11,
+        "solids": 0,
+        "shells": 6,
+        "faces": 9,
+        "wires": 6,
+        "edges": 19,
+        "vertices": 15
+      }
+    },
+    "explicit_tetrahedron_solid.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 1,
+        "shells": 1,
+        "faces": 4,
+        "wires": 4,
+        "edges": 6,
+        "vertices": 4
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [1.0, 1.0, 1.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.16666666666666669, "abs_tolerance": 1e-8},
+        "area": {"value": 2.3660254037844384, "abs_tolerance": 1e-8},
+        "length": {"value": 14.485281374238566, "abs_tolerance": 1e-8}
+      }
+    },
+    "explicit_void_solid.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 1,
+        "shells": 2,
+        "faces": 8,
+        "wires": 8,
+        "edges": 12,
+        "vertices": 8
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [4.0, 4.0, 4.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 10.64583333333333, "abs_tolerance": 1e-8},
+        "area": {"value": 38.447912811497126, "abs_tolerance": 1e-8},
+        "length": {"value": 65.18376618407355, "abs_tolerance": 1e-8}
+      }
+    },
+    "line.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 0,
+        "wires": 0,
+        "edges": 1,
+        "vertices": 2
+      },
+      "bbox": {
+        "min": [1.0, 2.0, 3.0],
+        "max": [4.0, 6.0, 3.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 0.0, "abs_tolerance": 1e-8},
+        "length": {"value": 5.0, "abs_tolerance": 1e-8}
+      }
+    },
+    "multi_pcurve_boundary.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 1,
+        "wires": 1,
+        "edges": 4,
+        "vertices": 4
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [1.0, 1.0, 0.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 1.0, "abs_tolerance": 1e-8},
+        "length": {"value": 4.0, "abs_tolerance": 1e-8}
+      }
+    },
+    "nurbs_curve.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 0,
+        "wires": 0,
+        "edges": 1,
+        "vertices": 2
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [2.0, 0.5313262206600065, 0.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 0.0, "abs_tolerance": 1e-8},
+        "length": {"value": 2.1579946652149444, "abs_tolerance": 1e-8}
+      }
+    },
+    "nurbs_surface.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 1,
+        "wires": 1,
+        "edges": 4,
+        "vertices": 4
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [1.0, 1.0, 0.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 1.0, "abs_tolerance": 1e-8},
+        "length": {"value": 4.0, "abs_tolerance": 1e-8}
+      }
+    },
+    "plane.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 1,
+        "wires": 0,
+        "edges": 0,
+        "vertices": 0
+      }
+    },
+    "point.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 0,
+        "wires": 0,
+        "edges": 0,
+        "vertices": 1
+      },
+      "bbox": {
+        "min": [1.0, 2.0, 3.0],
+        "max": [1.0, 2.0, 3.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 0.0, "abs_tolerance": 1e-8},
+        "length": {"value": 0.0, "abs_tolerance": 1e-8}
+      }
+    },
+    "trimmed_plane.igs": {
+      "require_shape": true,
+      "counts": {
+        "objects": 1,
+        "shapes": 1,
+        "valid": 1,
+        "solids": 0,
+        "shells": 0,
+        "faces": 1,
+        "wires": 1,
+        "edges": 4,
+        "vertices": 4
+      },
+      "bbox": {
+        "min": [0.0, 0.0, 0.0],
+        "max": [1.0, 1.0, 0.0],
+        "abs_tolerance": 1e-8
+      },
+      "measures": {
+        "volume": {"value": 0.0, "abs_tolerance": 1e-8},
+        "area": {"value": 1.0, "abs_tolerance": 1e-8},
+        "length": {"value": 4.0, "abs_tolerance": 1e-8}
+      }
+    }
+  }
+}

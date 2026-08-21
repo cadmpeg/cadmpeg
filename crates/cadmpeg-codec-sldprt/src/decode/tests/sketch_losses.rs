@@ -1,31 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-constraint and native-operand design-loss tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
-use crate::container::{Block, CompoundStream, ContainerScan};
-use crate::native::SldprtNative;
-use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
-};
-use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
-    DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection, Feature, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement,
-    Length, ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PatternSeed,
-    PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode, SurfaceContinuity, Termination,
-};
-use cadmpeg_ir::ids::{BodyId, EdgeId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::report::DecodeReport;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
-    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
+    SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
+    SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;

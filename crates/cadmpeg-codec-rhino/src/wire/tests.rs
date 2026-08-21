@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, dead_code, clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
 use super::Uuid;
-use crate::test_support::test_dump::*;
 
 /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
 #[test]

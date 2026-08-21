@@ -24,13 +24,15 @@ A successful dump is not a checked model.
 
 ## Decode session
 
-The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`.
+The safe consumer trait is `Codec` (`inspect` / `decode`). Format crates implement the raw hook trait `CodecBackend` (`inspect_impl` / `decode_impl`). The `Codec` blanket wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the backend, and finalizes a `DecodeContext`. Its strict gate evaluates full-decode reports only: a container-only report keeps its losses and is never refused by that gate.
 
 `DecodeContext` holds budget counters and the address-space registry. `DecodeArena` holds byte buffers with stable addresses. A `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field. Ownership lives in `cadmpeg_core::decode`. Classify a named `MAX_*` cap with [decode-resource-caps.md](decode-resource-caps.md) before adding a bound or a `ResourceLimits` field.
 
+Semantic decode is bounded by the caller's `DecodePolicy`. The policy limits input bytes, temporary materialization, retained bytes, admitted entities, collection items, recursive depth, and algorithm work. File-declared counts, pointer walks, recursive definitions, and geometric recovery cannot override these limits. A refused request returns a structured resource refusal and does not return a partial semantic document. The policy is implementation admission control; no source field changes it.
+
 ## CLI stream and exit contract
 
-`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
+`dump` and `convert` reserve stdout for the output artifact. Diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 6` with top-level `status` (`ok` | `refused`) and `refusal` (`{ stage, code, message }` or null), including semantic refusal paths. A codec-level decode failure during `dump` with an explicit report is a `decode`-stage `decode_failed` refusal; an I/O failure remains an operational exit. JSON from `inspect`, `check`, and `diff` uses the same CLI schema version. That envelope version is independent of `CadIr.ir_version`.
 
 Status 0 is success. Status 1 is a negative verdict on a verdict command; other commands stay off 1. Status 2 is operational failure.
 
@@ -79,4 +81,4 @@ Each input codec implements `Codec`:
 
 `--input-format` selects a codec. Without it, the CLI detects one. Native writers use the separate `Encoder` trait. The Rust trait definitions are authoritative for exact signatures.
 
-Strict decode refuses at the `Codec::decode` wrapper, which returns `CodecError::StrictRefusal` for the first reported loss whose strict consequence is `Reject`. The refusal carries that loss code and that loss message. It is not `CodecError::Malformed`: a strict refusal reports a mode decision, not a defect in the bytes, so a caller separates a damaged file from a policy stop by the error class alone. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.
+Strict decode refuses at the `Codec::decode` wrapper, which returns `CodecError::StrictRefusal` for the first reported loss whose strict consequence is `Reject`. The wrapper applies that predicate to full-decode reports only: a container-only decode keeps its losses and is admitted in either mode. The refusal carries that loss code and that loss message. It is not `CodecError::Malformed`: a strict refusal reports a mode decision, not a defect in the bytes, so a caller separates a damaged file from a policy stop by the error class alone. A codec reports its losses with their strict floors and adds no strict gate of its own. A local gate widens the refusal predicate and reclassifies the refusal where the caller cannot see it.

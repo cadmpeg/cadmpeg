@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design booleans-patterns transfer unit tests.
-#![allow(unused_imports)]
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 

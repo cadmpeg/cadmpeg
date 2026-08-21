@@ -365,7 +365,7 @@ anchor = "The remaining data area is blank."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/card.rs"
-contains = "terminate[0].payload.get(..32)"
+contains = "terminate.payload.get(..32)"
 note = "The parser takes the first 32 columns of the Terminate card as the four eight-column fields."
 
 # --- Section markers --------------------------------------------------------

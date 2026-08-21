@@ -58,8 +58,27 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
+    document_local_sha256_with_charge(ir, format, source_image_id, |_| {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .expect("canonical JSON serialization")
+}
+
+/// Returns the machine-local document digest while charging each canonical
+/// JSON byte through `charge`.
+///
+/// The charged form keeps the exact normalization and byte stream of
+/// [`document_local_sha256`]. A decoder can therefore apply its work budget
+/// to the real digest cost and refuse before an oversized document spends the
+/// remaining budget on an unbounded whole-document walk.
+pub fn document_local_sha256_with_charge<E>(
+    ir: &CadIr,
+    format: &str,
+    source_image_id: &str,
+    charge: impl FnMut(u64) -> Result<(), E>,
+) -> Result<String, E> {
     let unknowns = reduced_unknowns(ir, format, source_image_id);
-    canonical_json_sha256(&NormalizedDocument {
+    let document = NormalizedDocument {
         ir_version: ir.ir_version(),
         source: ir.source.as_ref().map(|source| {
             let mut source = source.clone();
@@ -70,7 +89,29 @@ pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) ->
         tolerances: &ir.tolerances,
         model: ir.model.sorted(),
         native: normalized_native(&ir.native, format, &unknowns),
-    })
+    };
+    let mut hasher = Sha256::new();
+    let mut writer = std::io::BufWriter::with_capacity(
+        1024 * 1024,
+        ChargingDigestWriter {
+            hasher: &mut hasher,
+            charge,
+            error: None,
+        },
+    );
+    let serialized = serde_json::to_writer_pretty(&mut writer, &document);
+    if let Some(error) = writer.get_mut().error.take() {
+        return Err(error);
+    }
+    serialized.expect("canonical JSON serialization");
+    if writer.flush().is_err() {
+        if let Some(error) = writer.get_mut().error.take() {
+            return Err(error);
+        }
+        panic!("a digest accepts every byte");
+    }
+    drop(writer);
+    Ok(encode_hex(&hasher.finalize()))
 }
 
 /// Reduce the `format` unknown arena to record identities and links, dropping
@@ -190,6 +231,30 @@ impl std::io::Write for DigestWriter<'_> {
     }
 }
 
+struct ChargingDigestWriter<'a, F, E> {
+    hasher: &'a mut Sha256,
+    charge: F,
+    error: Option<E>,
+}
+
+impl<F, E> std::io::Write for ChargingDigestWriter<'_, F, E>
+where
+    F: FnMut(u64) -> Result<(), E>,
+{
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if let Err(error) = (self.charge)(buf.len() as u64) {
+            self.error = Some(error);
+            return Err(std::io::Error::other("digest work charge rejected"));
+        }
+        self.hasher.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Render a digest as lowercase hexadecimal.
 fn encode_hex(digest: &[u8]) -> String {
     let mut encoded = String::with_capacity(digest.len() * 2);
@@ -203,7 +268,9 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{canonical_json_sha256, document_local_sha256, sha256_hex};
+    use super::{
+        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge, sha256_hex,
+    };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
@@ -378,6 +445,31 @@ mod tests {
             document_local_sha256(&ir, "pin", "pin:source-image#0"),
             "83fa753fb39360b9e51859c9c07ddac6ff23ec17b179fa548cf33c4331170180"
         );
+    }
+
+    #[test]
+    fn charged_document_digest_preserves_the_uncharged_digest() {
+        let ir = pinned_document();
+        let expected = document_local_sha256(&ir, "pin", "pin:source-image#0");
+        let mut charged = 0;
+        let actual = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |bytes| {
+            charged += bytes;
+            Ok::<(), ()>(())
+        })
+        .unwrap();
+
+        assert_eq!(actual, expected);
+        assert!(charged > 0);
+    }
+
+    #[test]
+    fn charged_document_digest_propagates_a_work_refusal() {
+        let ir = pinned_document();
+        let result = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |_| {
+            Err::<(), _>("work limit")
+        });
+
+        assert!(matches!(result, Err("work limit")));
     }
 
     /// The pinned document with the source metadata a decoded document carries:

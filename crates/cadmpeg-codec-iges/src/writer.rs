@@ -5,6 +5,7 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
@@ -14,12 +15,12 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::ids::{PointId, VertexId};
+use cadmpeg_ir::ids::{PointId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
 };
-use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
+use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -33,13 +34,40 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "display_attributes",
     "entities",
     "product_occurrence_expansion",
+    "quarantined_directory_records",
+    "quarantined_parameter_records",
     "transformations",
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
-const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
+const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
+const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = 1.0e-8;
+const PHYSICALLY_DEPENDENT_STATUS: &str = "00010000";
+const PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS: &str = "00010001";
+const PARAMETER_CURVE_STATUS: &str = "00010500";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
 const CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE: i32 = 2;
+const WRITER_SENDER_PRODUCT: &str = "cadmpeg";
+const WRITER_NATIVE_FILE_NAME: &str = "generated.igs";
+const WRITER_NATIVE_SYSTEM_ID: &str = "cadmpeg";
+const WRITER_PREPROCESSOR_VERSION: &str = "0.1";
+const WRITER_INTEGER_REPRESENTATION_BITS: i64 = 32;
+const WRITER_SINGLE_PRECISION_MAGNITUDE: i64 = 38;
+const WRITER_SINGLE_PRECISION_SIGNIFICANCE: i64 = 6;
+const WRITER_DOUBLE_PRECISION_MAGNITUDE: i64 = 308;
+const WRITER_DOUBLE_PRECISION_SIGNIFICANCE: i64 = 17;
+const WRITER_MODEL_SPACE_SCALE: &str = "1.0";
+const WRITER_UNITS_FLAG: i64 = 2;
+const WRITER_UNITS_NAME: &str = "MM";
+const WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS: i64 = 1;
+const WRITER_MAXIMUM_LINE_WIDTH: &str = "1.0";
+const WRITER_AUTHOR_NAME: &str = "author";
+const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
+const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
+const WRITER_ENTITY_TYPES: &[u32] = &[
+    100, 102, 104, 110, 116, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196, 198,
+    502, 504, 508, 510, 514,
+];
 
 /// Plan an IGES export, selecting replay only after checking the document
 /// baseline and retained source-image integrity.
@@ -262,9 +290,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         ));
     }
 
+    let minimum_resolution = minimum_resolution_for_output(ir);
+    if let Some(loss) = minimum_resolution_loss(ir, minimum_resolution) {
+        losses.push(loss);
+    }
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities, version, generated_minimum_resolution(ir))?,
+        bytes: encode_file(&entities, version, minimum_resolution)?,
         counts,
         losses,
     })
@@ -289,24 +321,68 @@ fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct TargetProfile {
+    version: crate::IgesVersion,
+}
+
+impl TargetProfile {
+    const fn new(version: crate::IgesVersion) -> Self {
+        Self { version }
+    }
+
+    fn admits(self, entity: &Entity) -> bool {
+        if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
+            return false;
+        }
+        match entity.type_code {
+            100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144 | 186 => {
+                entity.form == 0
+            }
+            104 => matches!(entity.form, 0 | 2 | 3),
+            190 | 192 | 194 | 196 | 198 => entity.form == 1,
+            502 | 504 | 508 | 510 => entity.form == 1,
+            514 => {
+                entity.form == 1 || (entity.form == 2 && self.version == crate::IgesVersion::V5_3)
+            }
+            _ => false,
+        }
+    }
+}
+
 fn ensure_version_support(
     entities: &[Entity],
     version: crate::IgesVersion,
 ) -> Result<(), CodecError> {
-    if version != crate::IgesVersion::V5_3 {
-        if let Some(entity) = entities
-            .iter()
-            .find(|entity| entity.type_code == 514 && entity.form == 2)
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "IGES {} does not define emitted entity Type {} Form {}",
-                version.name(),
-                entity.type_code,
-                entity.form
+    let profile = TargetProfile::new(version);
+    if let Some(entity) = entities.iter().find(|entity| !profile.admits(entity)) {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES {} does not define emitted entity Type {} Form {}",
+            version.name(),
+            entity.type_code,
+            entity.form
+        )));
+    }
+    Ok(())
+}
+
+fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecError> {
+    let (exterior, voids) = region.shells.split_first().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "IGES solid region {} has no exterior shell",
+            region.id
+        ))
+    })?;
+    let mut distinct = std::collections::BTreeSet::new();
+    for shell_id in &region.shells {
+        if !distinct.insert(shell_id.as_str()) {
+            return Err(CodecError::Malformed(format!(
+                "IGES solid region {} repeats shell {}",
+                region.id, shell_id
             )));
         }
     }
-    Ok(())
+    Ok((exterior, voids))
 }
 
 fn has_trimmed_sheet_topology(ir: &CadIr) -> bool {
@@ -492,6 +568,9 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 region.id, body.id
             )));
         }
+        if body.kind == BodyKind::Solid {
+            let _ = solid_shell_roles(region)?;
+        }
         if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep writer requires one shell for a sheet body ({})",
@@ -552,6 +631,28 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                         face.id, shell.id
                     )));
                 }
+                let face_loops = face_loop_order(ir, face)?;
+                let has_unspecified_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+                let has_outer_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+                let has_inner_loop = face_loops
+                    .iter()
+                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Inner);
+                if has_unspecified_loop && (has_outer_loop || has_inner_loop) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer cannot mix classified and unspecified boundary loops ({})",
+                        face.id
+                    )));
+                }
+                if has_inner_loop && !has_outer_loop {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer requires an explicit outer loop for inner boundary loops ({})",
+                        face.id
+                    )));
+                }
                 if !owned_faces.insert(face.id.as_str().to_owned()) {
                     return Err(CodecError::Malformed(format!(
                         "IGES face {} is owned more than once",
@@ -570,6 +671,33 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                         ))
                     })?;
                 surface_entities(&surface.geometry, 0)?;
+                if matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
+                    && face.loops.iter().any(|loop_id| {
+                        let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
+                        else {
+                            return false;
+                        };
+                        loop_.coedges.len() == 2
+                            && loop_
+                                .coedges
+                                .iter()
+                                .filter_map(|coedge_id| {
+                                    ir.model
+                                        .coedges
+                                        .iter()
+                                        .find(|coedge| coedge.id == *coedge_id)
+                                        .map(|coedge| coedge.edge.as_str())
+                                })
+                                .collect::<std::collections::BTreeSet<_>>()
+                                .len()
+                                == 1
+                    })
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES B-rep writer refuses cylindrical face {} with a boundary loop that repeats one seam edge without axial bounds",
+                        face.id
+                    )));
+                }
                 for loop_id in &face.loops {
                     let loop_ = ir
                         .model
@@ -1127,7 +1255,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             type_code: 502,
             form: 1,
             label: "VERTICES",
-            status: "00010000",
+            status: PHYSICALLY_DEPENDENT_STATUS,
             parameters: parameters.into_bytes(),
             transform: None,
         });
@@ -1170,7 +1298,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 type_code: 504,
                 form: 1,
                 label: "EDGES",
-                status: DEPENDENT_TOPOLOGY_STATUS,
+                status: PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1291,7 +1419,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     let _ = write!(
                         parameters,
                         ",{},{}",
-                        i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                        isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                         reference_marker(pcurve_index)
                     );
                 }
@@ -1313,7 +1441,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         let _ = write!(
                             parameters,
                             ",{},{}",
-                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                             reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                         );
                     }
@@ -1334,7 +1462,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         let _ = write!(
                             parameters,
                             ",{},{}",
-                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            isoparametric_flag(pcurve_use, loop_.id.as_str())?,
                             reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                         );
                     }
@@ -1346,7 +1474,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 type_code: 508,
                 form: 1,
                 label: "LOOP",
-                status: "00010000",
+                status: PHYSICALLY_DEPENDENT_STATUS,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1384,7 +1512,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 type_code: 510,
                 form: 1,
                 label: "FACE",
-                status: "00010000",
+                status: PHYSICALLY_DEPENDENT_STATUS,
                 parameters: parameters.into_bytes(),
                 transform: None,
             });
@@ -1420,7 +1548,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 form: if body.kind == BodyKind::Solid { 1 } else { 2 },
                 label: "SHELL",
                 status: if body.kind == BodyKind::Solid {
-                    "00010000"
+                    PHYSICALLY_DEPENDENT_STATUS
                 } else {
                     "00000000"
                 },
@@ -1430,18 +1558,13 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             shell_indices.insert(shell.id.as_str(), index);
         }
         if body.kind == BodyKind::Solid {
-            let exterior_shell = region.exterior_shell().ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "IGES solid region {} has no exterior shell",
-                    region.id
-                ))
-            })?;
+            let (exterior_shell, void_shells) = solid_shell_roles(region)?;
             let mut parameters = format!(
                 "186,{},1,{}",
                 reference_marker(shell_indices[exterior_shell.as_str()]),
-                region.void_shells().count()
+                void_shells.len()
             );
-            for void_shell in region.void_shells() {
+            for void_shell in void_shells {
                 let _ = write!(
                     parameters,
                     ",{},1",
@@ -1725,7 +1848,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let span = edge_span(ir, edge, &geometry)?;
         let index = entities.len();
         let mut entity = curve_entity(&geometry, Some(&span))?;
-        entity.status = "00010000";
+        entity.status = PHYSICALLY_DEPENDENT_STATUS;
         entities.push(entity);
         edge_indices.insert(edge.id.as_str().to_owned(), index);
         consumed_curves.insert(curve_id.as_str().to_owned());
@@ -2080,6 +2203,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             )));
         }
         let trimmed = has_explicit_loop;
+        let mut bounded_representation = None;
         for loop_ in loops {
             if !used_loops.insert(loop_.id.as_str().to_owned()) {
                 return Err(CodecError::Malformed(format!(
@@ -2106,6 +2230,16 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     loop_.id
                 )));
             };
+            if !trimmed {
+                let loop_has_pcurves = first_pcurve_count != 0;
+                if bounded_representation.is_some_and(|expected| expected != loop_has_pcurves) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES Type 143 requires one representation type for every boundary loop ({})",
+                        face.id
+                    )));
+                }
+                bounded_representation = Some(loop_has_pcurves);
+            }
             for (index, coedge_id) in loop_.coedges.iter().enumerate() {
                 let coedge = ir
                     .model
@@ -2351,7 +2485,7 @@ fn face_outer_loop<'a>(loops: &'a [&Loop]) -> Option<&'a Loop> {
     loops
         .first()
         .copied()
-        .filter(|loop_| loop_.boundary_role != LoopBoundaryRole::Inner)
+        .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
 }
 
 fn boundary_entity(
@@ -2459,7 +2593,7 @@ fn boundary_entity(
         type_code: 141,
         form: 0,
         label: "BOUNDARY",
-        status: "00010000",
+        status: PHYSICALLY_DEPENDENT_STATUS,
         parameters: parameters.into_bytes(),
         transform: None,
     })
@@ -2555,18 +2689,23 @@ fn curve_on_surface_entity(
     let model_curve = if model_children.len() == 1 {
         model_children[0]
     } else {
-        push_composite_entity(entities, &model_children, "MODEL", "00010000")?
+        push_composite_entity(
+            entities,
+            &model_children,
+            "MODEL",
+            PHYSICALLY_DEPENDENT_STATUS,
+        )?
     };
     let parameter_curve = if pcurve_children.len() == 1 {
         pcurve_children[0]
     } else {
-        push_composite_entity(entities, &pcurve_children, "PCURVE", "00010500")?
+        push_composite_entity(entities, &pcurve_children, "PCURVE", PARAMETER_CURVE_STATUS)?
     };
     Ok(Entity {
         type_code: 142,
         form: 0,
         label: "CURVSURF",
-        status: "00010000",
+        status: PHYSICALLY_DEPENDENT_STATUS,
         parameters: format!(
             "142,{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
@@ -2614,7 +2753,7 @@ fn oriented_curve_entity(
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
         let mut entity = curve_entity(geometry, Some(span))?;
-        entity.status = "00010000";
+        entity.status = PHYSICALLY_DEPENDENT_STATUS;
         return Ok(entity);
     }
     let reversed_span = CurveSpan {
@@ -2764,7 +2903,7 @@ fn oriented_curve_entity(
             )))
         }
     };
-    entity.status = "00010000";
+    entity.status = PHYSICALLY_DEPENDENT_STATUS;
     Ok(entity)
 }
 
@@ -2957,11 +3096,22 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
         .all(|(left, right)| (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10)
 }
 
+fn isoparametric_flag(pcurve_use: &PcurveUse, owner: &str) -> Result<i32, CodecError> {
+    match pcurve_use.isoparametric {
+        Some(isoparametric) => Ok(i32::from(isoparametric)),
+        None => Err(CodecError::NotImplemented(format!(
+            "IGES {owner} requires an explicit isoparametric flag for pcurve {}",
+            pcurve_use.pcurve
+        ))),
+    }
+}
+
 fn validate_brep_pcurve_uses(
     orientation: &PcurveOrientationContext<'_>,
     uses: &[PcurveUse],
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
+        isoparametric_flag(pcurve_use, orientation.owner)?;
         let pcurve = orientation
             .ir
             .model
@@ -3025,11 +3175,7 @@ impl PcurveOrientationContext<'_> {
         if uses.is_empty() {
             return Ok(PcurveOrientation::Directed);
         }
-        let tolerance = if self.tolerance.is_finite() {
-            self.tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
-        } else {
-            cadmpeg_ir::units::COINCIDENCE_TOLERANCE
-        };
+        let tolerance = effective_topology_tolerance(self.tolerance);
         let mapped = self.map(uses)?;
         let (directed_start, directed_end) = if self.sense == Sense::Forward {
             (self.natural_start, self.natural_end)
@@ -3221,7 +3367,8 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
 }
 
 fn generated_minimum_resolution(ir: &CadIr) -> f64 {
-    ir.model
+    let topology_tolerance = ir
+        .model
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
@@ -3232,7 +3379,72 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
                 .filter_map(|vertex| vertex.tolerance),
         )
         .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
-        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max)
+        .map(effective_topology_tolerance)
+        .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
+    let endpoint_scale = generated_endpoint_coordinate_scale(ir);
+    topology_tolerance.max(endpoint_scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE)
+}
+
+fn minimum_resolution_for_output(ir: &CadIr) -> f64 {
+    let generated = generated_minimum_resolution(ir);
+    if ir.tolerances.linear.is_finite() && ir.tolerances.linear > 0.0 {
+        generated.max(ir.tolerances.linear)
+    } else {
+        generated
+    }
+}
+
+fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
+    ir.source.as_ref()?;
+    let declared = ir.tolerances.linear;
+    if declared.is_finite() && declared > 0.0 && emitted <= declared {
+        return None;
+    }
+    Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
+        "IGES Global minimum resolution changed from {declared:.17e} mm to {emitted:.17e} mm to cover the emitted geometry"
+    )))
+}
+
+fn effective_topology_tolerance(explicit_tolerance: f64) -> f64 {
+    if explicit_tolerance.is_finite() {
+        explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
+    } else {
+        cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+    }
+}
+
+fn generated_endpoint_coordinate_scale(ir: &CadIr) -> f64 {
+    let mut scale = 1.0_f64;
+    for edge in &ir.model.edges {
+        for vertex_id in [&edge.start, &edge.end] {
+            if let Some(point) = vertex_position(ir, vertex_id) {
+                scale = scale.max(point_coordinate_scale(point));
+            }
+        }
+        let Some(curve_id) = edge.curve.as_ref() else {
+            continue;
+        };
+        let Some(range) = edge.param_range else {
+            continue;
+        };
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+            continue;
+        };
+        for parameter in range {
+            if let Some(point) = curve_point(&curve.geometry, parameter) {
+                scale = scale.max(point_coordinate_scale(point));
+            }
+        }
+    }
+    scale
+}
+
+fn point_coordinate_scale(point: Point3) -> f64 {
+    [point.x, point.y, point.z]
+        .into_iter()
+        .filter(|value| value.is_finite())
+        .map(f64::abs)
+        .fold(1.0, f64::max)
 }
 
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
@@ -3538,14 +3750,18 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         }
         let message = match arena.as_str() {
             "directions" => {
-                "IGES direction records are regenerated only for required analytic-surface support; native direction identities and unrelated records are omitted"
+                "IGES direction records are regenerated only for required analytic-surface support; native direction identities and unrelated records are omitted".to_owned()
             }
             "display_attributes" => {
-                "IGES display attributes are not regenerated by the bounded semantic writer"
+                "IGES display attributes are not regenerated by the bounded semantic writer".to_owned()
             }
             "product_occurrence_expansion" => {
-                "IGES product occurrence expansion is not regenerated by the bounded semantic writer"
+                "IGES product occurrence expansion is not regenerated by the bounded semantic writer".to_owned()
             }
+            "quarantined_directory_records" | "quarantined_parameter_records" => format!(
+                "IGES native arena {arena} holds {} quarantined record(s) that the bounded semantic writer does not regenerate, because a record that failed typing has no fields to write",
+                records.len()
+            ),
             _ => continue,
         };
         losses.push(IgesLossCode::PassthroughRecordOmitted.note(message));
@@ -3592,7 +3808,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         type_code: 123,
         form: 0,
         label: "DIRECTN",
-        status: "00010000",
+        status: PHYSICALLY_DEPENDENT_STATUS,
         parameters: format!(
             "123,{},{},{};",
             number(direction.x),
@@ -3625,7 +3841,7 @@ fn pointer_surface_support(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok((
         vec![
-            point_entity_with_status(location, "00010000"),
+            point_entity_with_status(location, PHYSICALLY_DEPENDENT_STATUS),
             direction_entity(axis)?,
             direction_entity(reference)?,
         ],
@@ -3633,6 +3849,39 @@ fn pointer_surface_support(
         axis_index,
         reference_index,
     ))
+}
+
+#[derive(Clone, Copy)]
+enum AnalyticSurfaceFamily {
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
+impl AnalyticSurfaceFamily {
+    const fn type_code(self) -> u32 {
+        match self {
+            Self::Plane => 190,
+            Self::Cylinder => 192,
+            Self::Cone => 194,
+            Self::Sphere => 196,
+            Self::Torus => 198,
+        }
+    }
+}
+
+fn analytic_surface_family(geometry: &SurfaceGeometry) -> Option<AnalyticSurfaceFamily> {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => Some(AnalyticSurfaceFamily::Plane),
+        SurfaceGeometry::Cylinder { .. } => Some(AnalyticSurfaceFamily::Cylinder),
+        SurfaceGeometry::Cone { .. } => Some(AnalyticSurfaceFamily::Cone),
+        SurfaceGeometry::Sphere { .. } => Some(AnalyticSurfaceFamily::Sphere),
+        SurfaceGeometry::Torus { .. } => Some(AnalyticSurfaceFamily::Torus),
+        SurfaceGeometry::Nurbs(_) => None,
+        _ => None,
+    }
 }
 
 fn append_surface_entities(
@@ -3656,6 +3905,8 @@ fn surface_entities(
     geometry: &SurfaceGeometry,
     base_index: usize,
 ) -> Result<Vec<Entity>, CodecError> {
+    let analytic_type_code =
+        analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -3665,10 +3916,12 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *normal, *u_axis)?;
             entities.push(Entity {
-                type_code: 190,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES plane has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "PLANE",
-                status: "00010000",
+                status: PHYSICALLY_DEPENDENT_STATUS,
                 parameters: format!(
                     "190,{},{},{};",
                     reference_marker(location),
@@ -3695,7 +3948,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 192,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES cylinder has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "CYLINDER",
                 status: "00000000",
@@ -3741,7 +3996,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 194,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES cone has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "CONE",
                 status: "00000000",
@@ -3773,7 +4030,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 196,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES sphere has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "SPHERE",
                 status: "00000000",
@@ -3809,7 +4068,9 @@ fn surface_entities(
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
             let surface = Entity {
-                type_code: 198,
+                type_code: analytic_type_code.ok_or_else(|| {
+                    CodecError::Malformed("IGES torus has no analytic surface family".into())
+                })?,
                 form: 1,
                 label: "TORUS",
                 status: "00000000",
@@ -4381,7 +4642,9 @@ fn encode_nurbs(
         }
         None => vec![1.0; control_count],
     };
-    let polynomial = nurbs.weights.is_none();
+    let polynomial = weights
+        .first()
+        .is_some_and(|first| weights.iter().all(|weight| weight == first));
     let plane_normal = nurbs_plane_normal(&nurbs.control_points);
     let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
@@ -4412,15 +4675,14 @@ fn encode_nurbs(
     parameters.push_str(&number(range[0]));
     parameters.push(',');
     parameters.push_str(&number(range[1]));
-    if let Some(normal) = plane_normal {
-        for value in [normal.x, normal.y, normal.z] {
-            parameters.push(',');
-            parameters.push_str(&number(value));
-        }
+    let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
+    for value in [normal.x, normal.y, normal.z] {
+        parameters.push(',');
+        parameters.push_str(&unit_normal_number(value));
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
-        "00010500"
+        PARAMETER_CURVE_STATUS
     } else {
         "00000000"
     };
@@ -4503,9 +4765,6 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
-    if nurbs.periodic {
-        return true;
-    }
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree,
         &nurbs.knots,
@@ -4530,7 +4789,7 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
         .fold(1.0, f64::max);
-    start.distance(end) <= 1.0e-10 * scale
+    start.distance(end) <= NURBS_CLOSEDNESS_TOLERANCE * scale
 }
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
@@ -4682,7 +4941,7 @@ fn placement(
 
 fn validate_arc_sweep(range: [f64; 2]) -> Result<(), CodecError> {
     let sweep = range[1] - range[0];
-    if !(0.0..=TAU + 1.0e-10).contains(&sweep) || sweep == 0.0 {
+    if !(0.0..=TAU + ANGULAR_TOLERANCE).contains(&sweep) || sweep == 0.0 {
         return Err(CodecError::NotImplemented(
             "IGES conic writer requires a non-zero ordered span no larger than one revolution"
                 .into(),
@@ -4778,7 +5037,7 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
         .max(right.y.abs())
         .max(right.z.abs())
         .max(1.0);
-    let tolerance = (scale * 1.0e-8).max(explicit_tolerance);
+    let tolerance = (scale * WRITER_ENDPOINT_RELATIVE_TOLERANCE).max(explicit_tolerance);
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance
@@ -4814,14 +5073,12 @@ fn encode_file(
 ) -> Result<Vec<u8>, CodecError> {
     let generation_timestamp = generation_timestamp(SystemTime::now())?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
-    let global = format!(
-        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H{},{},{},6Hauthor,7Hcadmpeg,{},0,0H,0H;",
-        generation_timestamp,
-        number(minimum_resolution),
-        number(maximum_coordinate),
-        version.global_flag(),
-    )
-    .into_bytes();
+    let global = generated_global(
+        version,
+        &generation_timestamp,
+        minimum_resolution,
+        maximum_coordinate,
+    );
     let global_count = global.len().div_ceil(72);
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     for entity in entities {
@@ -4937,6 +5194,50 @@ fn encode_file(
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
+}
+
+fn global_hollerith(value: &str) -> String {
+    debug_assert!(value.is_ascii());
+    format!("{}H{value}", value.len())
+}
+
+fn generated_global(
+    version: crate::IgesVersion,
+    generation_timestamp: &str,
+    minimum_resolution: f64,
+    maximum_coordinate: f64,
+) -> Vec<u8> {
+    let fields = [
+        "1H,".to_owned(),
+        "1H;".to_owned(),
+        global_hollerith(WRITER_SENDER_PRODUCT),
+        global_hollerith(WRITER_NATIVE_FILE_NAME),
+        global_hollerith(WRITER_NATIVE_SYSTEM_ID),
+        global_hollerith(WRITER_PREPROCESSOR_VERSION),
+        WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
+        WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
+        WRITER_SINGLE_PRECISION_SIGNIFICANCE.to_string(),
+        WRITER_DOUBLE_PRECISION_MAGNITUDE.to_string(),
+        WRITER_DOUBLE_PRECISION_SIGNIFICANCE.to_string(),
+        global_hollerith(""),
+        WRITER_MODEL_SPACE_SCALE.to_owned(),
+        WRITER_UNITS_FLAG.to_string(),
+        global_hollerith(WRITER_UNITS_NAME),
+        WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS.to_string(),
+        WRITER_MAXIMUM_LINE_WIDTH.to_owned(),
+        global_hollerith(generation_timestamp),
+        number(minimum_resolution),
+        number(maximum_coordinate),
+        global_hollerith(WRITER_AUTHOR_NAME),
+        global_hollerith(WRITER_AUTHOR_ORGANIZATION),
+        version.global_flag().to_string(),
+        WRITER_DRAFTING_STANDARD_FLAG.to_string(),
+        global_hollerith(""),
+        global_hollerith(""),
+    ];
+    let mut global = fields.join(",");
+    global.push(';');
+    global.into_bytes()
 }
 
 fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
@@ -5085,7 +5386,6 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 }
 
 fn number(value: f64) -> String {
-    let value = stabilize_real(value);
     if value == 0.0 {
         "0".into()
     } else {
@@ -5093,20 +5393,12 @@ fn number(value: f64) -> String {
     }
 }
 
-/// Quantize a real so Fixed ASCII card layout does not depend on platform libm.
-///
-/// Near-zeros within [`cadmpeg_ir::compare::FLOAT_TOLERANCE`] collapse to
-/// `0`. Other values round-trip through twelve significant digits before the
-/// sixteen-digit write format runs, absorbing last-place disagreement that
-/// would otherwise change token width and reflow parameter cards.
-fn stabilize_real(value: f64) -> f64 {
-    if !value.is_finite() {
-        return value;
+fn unit_normal_number(value: f64) -> String {
+    if value == 0.0 {
+        "0".into()
+    } else {
+        format!("{value:.16e}").replace('e', "D")
     }
-    if value.abs() <= cadmpeg_ir::compare::FLOAT_TOLERANCE {
-        return 0.0;
-    }
-    format!("{value:.12e}").parse().unwrap_or(value)
 }
 
 #[cfg(test)]

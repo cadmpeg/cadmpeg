@@ -8,6 +8,7 @@ use std::io::Cursor;
 use cadmpeg_codec_iges::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::{CadIr, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 
@@ -74,20 +75,46 @@ fuzz_target!(|data: &[u8]| {
         )
         .is_ok());
     let mut decode = Cursor::new(encoded.as_slice());
-    let decoded = codec
+    let mut decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+
+    if control & 0x40 != 0 {
+        let mut decoded_ir = decoded.ir_mut();
+        let source = decoded_ir
+            .source
+            .as_mut()
+            .expect("IGES decode supplies source metadata");
+        source
+            .attributes
+            .insert("iges_fuzz_edit".into(), "edited".into());
+    }
 
     let replay = encoder
         .plan(EncodeInput {
             ir: decoded.ir(),
             fidelity: Some(decoded.source_fidelity()),
         })
-        .expect("unchanged writer output must plan for replay");
+        .expect("writer output must plan after the optional source edit");
+    if control & 0x40 == 0 {
+        assert_eq!(replay.write_path(), WritePath::VerbatimReplay);
+    } else {
+        assert_ne!(replay.write_path(), WritePath::VerbatimReplay);
+    }
     let mut replayed = Vec::new();
     replay
         .write_to(&mut replayed)
-        .expect("unchanged writer output must replay");
-    assert_eq!(replayed, encoded);
+        .expect("writer output must serialize after the optional source edit");
+    if control & 0x40 == 0 {
+        assert_eq!(replayed, encoded);
+    } else {
+        let mut edited_decode = Cursor::new(replayed);
+        let edited = codec
+            .decode(&mut edited_decode, &DecodeOptions::default())
+            .expect("edited writer output must decode");
+        assert!(
+            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok()
+        );
+    }
 });

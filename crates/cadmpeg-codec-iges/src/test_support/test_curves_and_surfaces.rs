@@ -6,7 +6,12 @@ use super::test_cards::*;
 use super::test_owned::*;
 
 pub(crate) fn point_file() -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    point_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn point_file_with_global(global: &[u8]) -> Vec<u8> {
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -429,8 +434,8 @@ pub(crate) fn mixed_degree_composite_pcurve_file() -> Vec<u8> {
             form: 0,
             label: "CUBIC".into(),
             status: "00010000",
-            parameters: "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1;"
-                .into(),
+            parameters:
+                "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1,0,0,1;".into(),
         },
         OwnedTestEntity {
             entity_type: 110,
@@ -603,9 +608,18 @@ pub(crate) fn parametric_spline_curve_file() -> Vec<u8> {
 }
 
 pub(crate) fn parametric_spline_curve_file_with_parameters(parameters: &[u8]) -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    parametric_spline_curve_file_with_parameters_and_resolution(parameters, "0.001")
+}
+
+pub(crate) fn parametric_spline_curve_file_with_parameters_and_resolution(
+    parameters: &[u8],
+    resolution: &str,
+) -> Vec<u8> {
+    let global = format!(
+        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    );
     let parameter_count = parameters.len().div_ceil(64);
-    let mut bytes = fixed_ascii_with_global(global);
+    let mut bytes = fixed_ascii_with_global(global.as_bytes());
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
         ["112", "1", "0", "0", "0", "0", "0", "0", "00000000"],
@@ -821,6 +835,10 @@ pub(crate) fn nurbs_surface_file() -> Vec<u8> {
 }
 
 pub(crate) fn ruled_surface_file() -> Vec<u8> {
+    ruled_surface_file_with_developable_flag(1)
+}
+
+pub(crate) fn ruled_surface_file_with_developable_flag(developable_flag: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -864,7 +882,11 @@ pub(crate) fn ruled_surface_file() -> Vec<u8> {
     }
     bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
     bytes.extend(parameter_card(b"110,0,1,0,1,1,0;", 3, 2));
-    bytes.extend(parameter_card(b"118,1,3,0,1;", 5, 3));
+    bytes.extend(parameter_card(
+        format!("118,1,3,0,{developable_flag};").as_bytes(),
+        5,
+        3,
+    ));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
@@ -1068,7 +1090,7 @@ pub(crate) fn ellipse_surface_of_revolution_file() -> Vec<u8> {
 pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
     let angle = 0.3_f64;
     let pcurve = format!(
-        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1;",
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1,0,0,1;",
         angle + std::f64::consts::TAU
     );
     owned_test_file(&[
@@ -1198,6 +1220,31 @@ pub(crate) fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
     offset_plane_file_with_indicator("0", "0", &indicator_z.to_string(), distance)
 }
 
+pub(crate) fn offset_nurbs_surface_file(indicator: &str) -> Vec<u8> {
+    let surface_parameters = [
+        "128", "1", "1", "1", "1", "0", "0", "1", "0", "0", "0", "0", "1", "1", "0", "0", "1", "1",
+        "1", "1", "1", "1", "0", "0", "0", "1", "0", "0", "0", "1", "0", "1", "1", "1", "0", "1",
+        "0", "1",
+    ]
+    .join(",");
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 128,
+            form: 0,
+            label: "SADDLE".into(),
+            status: "00000000",
+            parameters: format!("{surface_parameters};"),
+        },
+        OwnedTestEntity {
+            entity_type: 140,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: format!("140,{indicator},1,1;"),
+        },
+    ])
+}
+
 pub(crate) fn offset_plane_file_with_indicator(
     indicator_x: &str,
     indicator_y: &str,
@@ -1275,12 +1322,36 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
-    for (sequence, parameter_start, kind, label) in [
-        (1, 1, 116, "LOCATION"),
-        (3, 2, 123, "AXIS"),
-        (5, 3, 123, "REFDIR"),
-        (7, 4, entity_type, "SURFACE"),
-    ] {
+    let include_axis = !(entity_type == 196 && form == 0);
+    let include_reference = form == 1;
+    let surface_sequence = if include_reference {
+        7
+    } else if include_axis {
+        5
+    } else {
+        3
+    };
+    let surface_parameter_start = if include_reference {
+        4
+    } else if include_axis {
+        3
+    } else {
+        2
+    };
+    let mut directory_entries = vec![(1, 1, 116, "LOCATION")];
+    if include_axis {
+        directory_entries.push((3, 2, 123, "AXIS"));
+    }
+    if include_reference {
+        directory_entries.push((5, 3, 123, "REFDIR"));
+    }
+    directory_entries.push((
+        surface_sequence,
+        surface_parameter_start,
+        entity_type,
+        "SURFACE",
+    ));
+    for (sequence, parameter_start, kind, label) in directory_entries {
         let kind = kind.to_string();
         let parameter_start = parameter_start.to_string();
         let surface_form = form.to_string();
@@ -1294,7 +1365,7 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
                 "0",
                 "0",
                 "0",
-                if sequence == 7 {
+                if sequence == surface_sequence {
                     "00000000"
                 } else {
                     "00010000"
@@ -1308,7 +1379,11 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
                 "0",
                 "0",
                 "1",
-                if sequence == 7 { &surface_form } else { "0" },
+                if sequence == surface_sequence {
+                    &surface_form
+                } else {
+                    "0"
+                },
                 "",
                 "",
                 label,
@@ -1318,8 +1393,12 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
         ));
     }
     bytes.extend(parameter_card(b"116,1,2,3,0;", 1, 1));
-    bytes.extend(parameter_card(b"123,0,0,1;", 3, 2));
-    bytes.extend(parameter_card(b"123,1,0,0;", 5, 3));
+    if include_axis {
+        bytes.extend(parameter_card(b"123,0,0,1;", 3, 2));
+    }
+    if include_reference {
+        bytes.extend(parameter_card(b"123,1,0,0;", 5, 3));
+    }
     let parameters = match (entity_type, form) {
         (190, 0) => "190,1,3;",
         (190, 1) => "190,1,3,5;",
@@ -1333,10 +1412,19 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
         (198, 1) => "198,1,3,4,1,5;",
         _ => unreachable!(),
     };
-    bytes.extend(parameter_card(parameters.as_bytes(), 7, 4));
+    bytes.extend(parameter_card(
+        parameters.as_bytes(),
+        surface_sequence,
+        surface_parameter_start,
+    ));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
-        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            surface_sequence + 1,
+            surface_parameter_start,
+        )
+        .as_bytes(),
         b'T',
         1,
     ));
@@ -1490,7 +1578,12 @@ pub(crate) fn model_curve_only_trimmed_plane_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_plane_file() -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    bounded_plane_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+fn bounded_plane_file_with_global(global: &[u8]) -> Vec<u8> {
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     for (sequence, entity_type, label, status) in [
@@ -1548,7 +1641,10 @@ pub(crate) fn bounded_plane_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
-    let mut bytes = bounded_plane_file();
+    bounded_plane_with_resolution_gap(bounded_plane_file())
+}
+
+fn bounded_plane_with_resolution_gap(mut bytes: Vec<u8>) -> Vec<u8> {
     let original = b"110,1,1,0,1,0,0;";
     let replacement = b"110,1,1,0,1,0.000999,0;";
     let start = bytes
@@ -1568,15 +1664,9 @@ pub(crate) fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
 }
 
 pub(crate) fn centimetre_bounded_plane_with_resolution_gap_file() -> Vec<u8> {
-    let mut bytes = bounded_plane_with_resolution_gap_file();
-    let millimetres = b",2,2HM";
-    let centimetres = b",3,2HC";
-    let start = bytes
-        .windows(millimetres.len())
-        .position(|window| window == millimetres)
-        .expect("bounded-plane Global units fields");
-    bytes[start..start + millimetres.len()].copy_from_slice(centimetres);
-    bytes
+    bounded_plane_with_resolution_gap(bounded_plane_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,2Hcm,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    ))
 }
 
 pub(crate) fn bounded_plane_with_significance_gap_file() -> Vec<u8> {

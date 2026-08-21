@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Split-face, body-modifier, and operation-identity projection tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::*;

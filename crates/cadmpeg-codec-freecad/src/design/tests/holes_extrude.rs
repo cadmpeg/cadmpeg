@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design holes-extrude transfer unit tests.
-#![allow(unused_imports)]
 
 use crate::test_support::*;
 use crate::FcstdCodec;

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Spatial-sketch write-back and semantic-write round-trip pins.
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 
 use std::{collections::BTreeMap, io::Cursor};

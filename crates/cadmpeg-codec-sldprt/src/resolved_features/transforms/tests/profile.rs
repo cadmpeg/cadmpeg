@@ -1,31 +1,23 @@
 //! Marker-backed profile sketch and owned-edge tests.
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::marker;
 use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName, FeatureInputOperand,
-    FeatureInputOperandKind, FeatureInputReference, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
-    SketchInputKind, SketchInputLink, SketchRelationKind,
+    Feature as NativeFeature, FeatureHistory, FeatureInputEdgeSelection, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
-use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote, StreamProvenance};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-    Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, PathRef,
-    PatternKind, PatternSeed, ProfileRef, RadiusSpec, SweepMode, Termination,
+    Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, ProfileRef,
+    RadiusSpec, Termination,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
     SketchPlacement,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn doubled_point_distance_constrains_the_owned_profile_line() {

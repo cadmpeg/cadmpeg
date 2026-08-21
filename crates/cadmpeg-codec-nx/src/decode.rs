@@ -24,84 +24,58 @@ use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
 mod jpeg;
-#[allow(unused_imports)]
 pub(crate) use jpeg::jpeg_dimensions;
 
 mod report;
 #[allow(unused_imports)]
-pub(crate) use report::{append_design_intent_losses, build_geometry_report};
+pub(crate) use report::append_design_intent_losses;
 
 mod feature_completeness;
 #[allow(unused_imports)]
 pub(crate) use feature_completeness::{
     active_configuration_state_is_incomplete, body_selection_is_incomplete,
-    body_selections_overlap, chamfer_definition_is_incomplete, chamfer_spec_is_incomplete,
-    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    datum_plane_is_incomplete, delete_body_definition_is_incomplete, directions_are_perpendicular,
-    draft_definition_is_incomplete, edge_selection_is_incomplete, explicit_body_ids,
+    body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
+    datum_coordinate_system_is_incomplete, datum_plane_is_incomplete,
+    delete_body_definition_is_incomplete, edge_selection_is_incomplete,
     extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_blend_definition_is_incomplete,
-    face_selection_is_incomplete, face_selections_overlap, fillet_definition_is_incomplete,
-    finite_feature_point, hole_auxiliary_semantics_are_incomplete, hole_definition_is_incomplete,
-    hole_feature_is_incomplete, hole_kind_is_incomplete, incomplete_expression_parameters,
-    loft_definition_is_incomplete, loft_section_is_incomplete,
-    offset_surface_definition_is_incomplete, output_free_local_body_construction,
-    output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, path_ref_is_incomplete,
-    pattern_composition_is_incomplete, pattern_feature_is_incomplete, pattern_is_incomplete,
-    pattern_occurrence_count, positive_feature_length, profile_dependency_is_incomplete,
-    profile_ref_is_incomplete, projected_curve_direction_is_incomplete, radius_spec_is_incomplete,
-    replace_face_definition_is_incomplete, resolved_body_selection_len,
-    revolve_definition_is_incomplete, revolve_feature_is_incomplete, rib_definition_is_incomplete,
-    rib_feature_is_incomplete, selection_ids_are_incomplete, sew_bodies_definition_is_incomplete,
-    sweep_definition_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, unit_feature_direction, valid_draft_angle,
-    valid_feature_direction, valid_increasing_locations,
+    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_selection_is_incomplete,
+    face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
+    hole_definition_is_incomplete, hole_feature_is_incomplete, incomplete_expression_parameters,
+    loft_definition_is_incomplete, loft_section_is_incomplete, output_free_local_body_construction,
+    output_free_native_snapshot, output_free_pattern_construction, path_ref_is_incomplete,
+    pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
+    profile_dependency_is_incomplete, profile_ref_is_incomplete,
+    projected_curve_direction_is_incomplete, radius_spec_is_incomplete,
+    replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
+    revolve_feature_is_incomplete, rib_definition_is_incomplete, rib_feature_is_incomplete,
+    sew_bodies_definition_is_incomplete, sweep_definition_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
+    termination_is_incomplete, trim_bodies_definition_is_incomplete,
+    trim_surface_definition_is_incomplete,
 };
 
 mod pcurves;
 #[cfg(test)]
-#[allow(unused_imports)]
 pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
 #[allow(unused_imports)]
 pub(crate) use pcurves::{
-    append_transferred_pcurve_segment, attach_tolerant_edge_intersections,
-    blend_boundary_parameter_from_support_spine_with_index, blend_boundary_spine_geometry_matches,
-    boundary_curve_affine_breaks, boundary_curve_speed_bound, coincident_pcurve_pair,
+    attach_tolerant_edge_intersections, coincident_pcurve_pair,
     complete_exact_boundary_intersection_pcurves,
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_pcurves_from_opposite_charts,
     complete_intersection_supports_from_edge_incidence,
-    complete_tolerant_intersection_pcurves_from_serialized_branches, curve_is_cache_backed,
-    exact_analytic_isocurve_pcurve, exact_boundary_curve_breaks, exact_boundary_pcurve,
-    exact_boundary_pcurve_matches_carrier, ordered_parameter_range,
-    orient_tolerant_intersection_pcurve, pcurve_matches_edge, pcurve_matches_edge_range,
-    pcurve_matches_edge_range_with_index, pcurve_parameter_range, reverse_pcurve_over_range,
-    surface_parameters_for_fit, surface_parameters_for_fit_with_index,
-    transfer_intersection_pcurve, transferred_pcurve_sample, TransferredPcurveSample,
+    complete_tolerant_intersection_pcurves_from_serialized_branches,
+    exact_analytic_isocurve_pcurve, exact_boundary_pcurve, orient_tolerant_intersection_pcurve,
+    pcurve_matches_edge, reverse_pcurve_over_range,
 };
 
 mod offset;
 #[allow(unused_imports)]
 pub(crate) use offset::{
-    active_spline_controls, certified_curved_offset_cache_fit, certified_offset_cache_fit,
-    clamp_intersection_parameters, clamp_surface_parameters, clamp_surface_parameters_with_periods,
-    coarse_model_surface_parameters, continue_surface_intersection_parameters_with_seeds,
-    correct_intersection_parameters, determinant_3x3, initial_surface_parameters,
-    intersection_parameter_jacobian, intersection_parameter_tangent, intersection_side,
-    least_squares_step, lift_periodic_parameter, model_surface_derivative,
-    normalize_pcurve_parameters, null_vector_3x4, nurbs_active_domain,
-    offset_surface_parameters_with_tolerance_with_index, parameter_derivative_step, point_distance,
-    positive_weights, rational_surface_derivative_bounds, saved_offset_carriers, solve_4x4,
-    solve_damped_least_squares_4x4, subdivide_offset_rectangle, surface_parameter_domain,
-    surface_parameter_periods, surface_parameter_periods_inner, surface_parameters,
-    translation_net_normal, HomogeneousControlBounds, HomogeneousSurfaceNet,
-    IntersectionParameterSpace, RationalSurfaceDerivativeBounds,
+    certified_offset_cache_fit, point_distance, solve_damped_least_squares_4x4,
+    subdivide_offset_rectangle, surface_parameter_periods, translation_net_normal,
 };
 #[cfg(test)]
-#[allow(unused_imports)]
 pub(crate) use offset::{
     continue_surface_intersection_parameters, offset_surface_parameters,
     offset_surface_parameters_with_tolerance,
@@ -110,69 +84,37 @@ pub(crate) use offset::{
 mod build;
 #[allow(unused_imports)]
 pub(crate) use build::{
-    classify_body_kinds, finalize_point_topology, ordered_curve_candidates,
-    ordered_fixed_candidates, ordered_point_candidates, ordered_surface_candidates,
-    prune_inactive_geometry, prune_inactive_topology, prune_unreferenced_unknown_carriers,
-    retain_live_annotations, retain_live_unknown_links, select_active_body,
-    select_terminal_feature_bodies, topology_body_node_ids, try_decode_geometry,
-    unmatched_delta_tombstone_counts, GeometryDecode,
+    ordered_curve_candidates, ordered_point_candidates, ordered_surface_candidates,
+    select_active_body, try_decode_geometry,
 };
 
 mod support_uv;
 #[allow(unused_imports)]
 pub(crate) use support_uv::{
-    assign_ext11_support_uv, assign_ext11_support_uv_to_surfaces,
-    attach_completed_intersection_pcurves, blend_spine_cache_fit_tolerance,
-    complete_coupled_support_uv, complete_ext11_support_uv,
-    complete_parameterization_equivalent_support_uv, complete_support_uv, complete_support_uv_wave,
-    invalidate_inconsistent_support_uv, linear_knots, missing_support_parameter,
-    parameterization_equivalent_surfaces, pcurve_control_point_seed, pcurve_requires_completion,
-    pending_support_lanes_requiring_completion, procedural_surface_for_carrier,
-    support_uv_lane_matches_surface, validate_serialized_support_uv, PendingExt11SupportUv,
+    assign_ext11_support_uv_to_surfaces, attach_completed_intersection_pcurves,
+    blend_spine_cache_fit_tolerance, complete_ext11_support_uv,
+    complete_parameterization_equivalent_support_uv, complete_support_uv,
+    invalidate_inconsistent_support_uv, parameterization_equivalent_surfaces,
 };
 
 mod blend;
 #[allow(unused_imports)]
 pub(crate) use blend::{
-    add_bernstein_polynomials, analytic_surface_offset, bernstein_product, bezier_spans,
-    binomial_coefficient, blend_boundary_parameter, blend_boundary_parameter_from_support_pcurve,
-    blend_boundary_point, blend_boundary_point_with_index, blend_contact_offset_matches,
-    blend_surface_contact_direction, blend_surface_definition, blend_surface_frame_with_index,
-    blend_surface_offset, blend_surface_parameter_grid_with_index,
-    blend_surface_parameters_for_fit_with_grid, blend_surface_parameters_from_grid_for_fit,
-    blend_surface_parameters_inner, blend_surface_point_from_frame,
-    blend_surface_point_inner_with_index, blend_surface_u_derivative_with_index,
-    canonical_periodic_parameter, closest_blend_surface_grid_parameters,
-    closest_nurbs_curve_parameter, closest_parameter_candidates, closest_pcurve_parameters,
-    closest_periodic_analytic_curve_parameter, closest_spine_parameter,
-    coarse_blend_surface_parameters_with_index, constant_surface_offset_between,
-    decoded_surface_point, decoded_surface_point_inner, homogeneous_pcurve_spans,
-    homogeneous_residual_distance, insert_homogeneous_curve_knot, lift_periodic_parameters,
-    model_curve_point, model_curve_tangent, polynomial_roots_in_unit_interval, polynomial_value,
-    rational_squared_distance_derivative, real_polynomial_roots,
-    refine_blend_surface_parameters_with_index, rodrigues_rotate, scalar_bernstein_sign_variations,
-    scalar_bezier_roots, scalar_bezier_value, signed_angle, spine_contact_direction_with_index,
-    spine_contact_pcurve, spine_contact_point_with_index, stationary_rational_distance_candidates,
-    subdivide_scalar_bezier_span, subtract_bernstein_polynomials, sum_bernstein_polynomials,
-    surface_contact_direction_with_index, surface_offset_lineage, BezierSpan,
-    BlendContactDerivativeContext, BlendParameterGrid, BlendSurfaceFrame, BoundaryInverseTarget,
-    HomogeneousCurveSpans, ScalarBezierRoots, ScalarBezierSpan,
+    analytic_surface_offset, bezier_spans, blend_contact_offset_matches,
+    closest_nurbs_curve_parameter, closest_pcurve_parameters, closest_spine_parameter,
+    constant_surface_offset_between, homogeneous_residual_distance, real_polynomial_roots,
+    surface_offset_lineage,
 };
 #[cfg(test)]
-#[allow(unused_imports)]
 pub(crate) use blend::{
     blend_surface_parameters, blend_surface_parameters_for_fit, blend_surface_point,
-    blend_surface_point_inner, blend_surface_u_derivative, coarse_blend_surface_parameters,
-    refine_blend_surface_parameters, surface_contact_direction,
+    blend_surface_u_derivative, coarse_blend_surface_parameters, refine_blend_surface_parameters,
+    surface_contact_direction,
 };
 
 mod emit;
 #[allow(unused_imports)]
-pub(crate) use emit::{
-    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    orient_edge_range, retain_unresolved_topology_carriers, sense, source_meta, surface_tag,
-    synthesize_closed_edge_vertex, unknown_stream,
-};
+pub(crate) use emit::{decoded_tolerance, orient_edge_range, source_meta, unknown_stream};
 
 pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.

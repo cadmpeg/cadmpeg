@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Application-domain census unit tests.
 
-#![allow(unused_imports)]
-
 use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};

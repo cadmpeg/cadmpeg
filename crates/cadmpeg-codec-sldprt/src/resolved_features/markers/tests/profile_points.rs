@@ -1,17 +1,9 @@
 //! Indexed and linked profile-point marker tests.
-#![allow(unused_imports)]
 
 use super::super::super::selections::coordinate_marker_local_links;
-use super::super::super::{
-    CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
-};
+use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::super::*;
-use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
-};
-use cadmpeg_ir::math::Point3;
+use crate::records::{SketchInputEntity, SketchInputKind};
 
 #[test]
 fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {

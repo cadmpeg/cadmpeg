@@ -186,21 +186,25 @@ more than once when the source serializes repeated consumption slots.
 
 ## Native namespaces
 
+A native namespace version declares which arena set and which record shapes a
+stored document holds, and it rises when either changes.
+
 When present, native namespace versions are:
 
 | Namespace         | Version |
 | ----------------- | ------- |
-| `native.f3d`      | 12      |
+| `native.f3d`      | 13      |
 | `native.sldprt`   | 13      |
 | `native.nx`       | 189     |
 | `native.inventor` | 25      |
 | `native.fcstd`    | 22      |
-| `native.catia`    | 271     |
+| `native.catia`    | 276     |
 | `native.creo`     | 1       |
 | `native.rhino`    | 2       |
+| `native.iges`     | 3       |
 | `native.sat`      | 1       |
 
-Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`.
+Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`; its version 1 is the IR's default for a namespace that declares no shape revision of its own, not a version the codec stamps.
 
 NX native data retains the ordered UG_PART segment index with validated compressed-stream, body-image alias, and role-classified OM-section links. Parasolid attribute-class declarations keep exact field descriptors, topology attribute-list ownership, and counted integer, binary64, and string value records. OM retention covers internally pointed record-area headers and byte identities; object-ID-bounded records; section-scoped class and member declarations with bounded registry suffixes and structured class-layout fingerprints; offset-only store control and column blocks with atomic store-local class-selection lanes; ordered references to uniquely resolved object records and parameter declarations; product-terminated control indices; and complete counted same-store block-index lanes.
 

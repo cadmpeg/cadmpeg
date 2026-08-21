@@ -2774,11 +2774,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-    use std::io::{Cursor, Write};
-
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
+    use std::io::Cursor;
 
     use crate::parasolid::Stream;
 
@@ -3264,19 +3260,16 @@ mod tests {
         assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
+        SurfaceGeometry,
     };
-    use cadmpeg_ir::math::{Point2, Vector3};
+
     use cadmpeg_ir::report::LossCategory;
 
-    use cadmpeg_ir::Exactness;
-
-    use crate::container;
-    use crate::parasolid::{self, StreamKind};
+    use crate::parasolid::StreamKind;
     use crate::test_support::*;
     use crate::NxCodec;
 

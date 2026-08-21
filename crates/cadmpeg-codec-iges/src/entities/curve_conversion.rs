@@ -5,7 +5,7 @@ use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Angular slack this module allows when bounding or dividing a sweep.
-pub(super) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
+pub(crate) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
 
 pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
     (left - right).abs() <= ANGULAR_TOLERANCE

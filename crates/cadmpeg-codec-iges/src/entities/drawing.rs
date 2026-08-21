@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Views, drawings, and view-dependent presentation relationships.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
-use crate::parameter::{trailing_pointer_groups, ParameterRecord};
+use crate::global::ProjectedGlobal;
+use crate::loss::IgesLossCode;
+use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,13 +38,93 @@ fn has_in_plane_component(normal: [f64; 3], up: [f64; 3]) -> bool {
     cross.iter().any(|value| *value != 0.0)
 }
 
+fn depth_clipping_valid(value: i64) -> bool {
+    matches!(value, 0..=3)
+}
+
+fn display_flag_valid(value: i64) -> bool {
+    matches!(value, 0..=1)
+}
+
+fn standard_line_font_valid(value: i64) -> bool {
+    matches!(value, 1..=5)
+}
+
+fn standard_color_valid(value: i64) -> bool {
+    matches!(value, 0..=8)
+}
+
+#[derive(Debug, PartialEq)]
+enum DrawingPropertyValue {
+    Name(Vec<u8>),
+    Size([f64; 2]),
+    Units(i64, Vec<u8>),
+}
+
+fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
+    match form {
+        15 => (record.integer(1) == Some(1))
+            .then(|| record.string(2).filter(|value| !value.is_empty()))
+            .flatten()
+            .map(|value| DrawingPropertyValue::Name(value.to_vec())),
+        16 => {
+            if record.integer(1) != Some(2) {
+                return None;
+            }
+            let size = [record.number(2)?, record.number(3)?];
+            size.iter()
+                .all(|value| value.is_finite() && *value > 0.0)
+                .then_some(DrawingPropertyValue::Size(size))
+        }
+        17 => {
+            let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
+            let name = record.string(3).filter(|value| !value.is_empty())?;
+            (record.integer(1) == Some(2))
+                .then_some(DrawingPropertyValue::Units(units, name.to_vec()))
+        }
+        _ => None,
+    }
+}
+
+fn conflicting_drawing_property_forms(
+    record: &ParameterRecord,
+    form: i64,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+) -> bool {
+    let Some(groups) = trailing_pointer_analysis
+        .get(&record.directory_sequence)
+        .and_then(|analysis| analysis.groups.as_ref())
+        .filter(|groups| groups.fully_valid)
+    else {
+        return false;
+    };
+    let values = groups
+        .properties
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|sequence| {
+            directory
+                .get(sequence)
+                .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
+        })
+        .filter_map(|sequence| records.get(&sequence))
+        .filter_map(|record| drawing_property_value(form, record))
+        .collect::<Vec<_>>();
+    values.len() > 1 && values.windows(2).any(|pair| pair[0] != pair[1])
+}
+
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Projection {
+) -> ProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -52,7 +133,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -60,7 +140,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -93,11 +172,27 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
+        for form in [15, 16, 17] {
+            if conflicting_drawing_property_forms(
+                record,
+                form,
+                &entries,
+                &records,
+                trailing_pointer_analysis,
+            ) {
+                losses.push(
+                    IgesLossCode::DrawingPropertyAmbiguous
+                        .note(format!(
+                            "IGES drawing has conflicting valid Type 406 Form {form} properties"
+                        ))
+                        .with_provenance(entry.loss_provenance()),
+                );
+            }
+        }
         let view_count = record.count(1);
         let width = if entry.form == 0 { 3 } else { 4 };
         let views_valid = view_count.is_some_and(|count| {
@@ -113,7 +208,7 @@ pub(super) fn project(
                     && (start + 1..=start + 2)
                         .all(|index| record.number(index).is_some_and(f64::is_finite))
                     && (entry.form == 0
-                        || match record.tokens.get(start + 3).map(|token| &token.value) {
+                        || match record.value(start + 3) {
                             None | Some(crate::parameter::TokenValue::Omitted) => true,
                             _ => record.number(start + 3).is_some_and(f64::is_finite),
                         })
@@ -147,7 +242,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -208,7 +302,7 @@ pub(super) fn project(
                     .is_some_and(|(min, max)| min < max);
             let depth = record
                 .integer_or(20, 0)
-                .filter(|value| matches!(value, 0..=3));
+                .filter(|value| depth_clipping_valid(*value));
             let depth_values_valid = (21..=22)
                 .all(|index| record.number_or(index, 0.0).is_some_and(f64::is_finite))
                 && (depth != Some(3)
@@ -238,7 +332,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -270,13 +363,11 @@ pub(super) fn project(
                     .is_some_and(|value| last_breakpoint.is_none_or(|previous| value > previous));
                 last_view = view;
                 last_breakpoint = breakpoint;
-                let display_valid = record
-                    .integer(start + 2)
-                    .is_some_and(|value| matches!(value, 0..=1));
-                let color_valid = match record.tokens.get(start + 3).map(|token| &token.value) {
+                let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
+                let color_valid = match record.value(start + 3) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 3).is_some_and(|value| {
-                        matches!(value, 0..=8)
+                        standard_color_valid(value)
                             || value
                                 .checked_neg()
                                 .and_then(|value| {
@@ -289,10 +380,11 @@ pub(super) fn project(
                                 .is_some()
                     }),
                 };
-                let font_valid = match record.tokens.get(start + 4).map(|token| &token.value) {
+                let font_valid = match record.value(start + 4) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 4).is_some_and(|value| {
-                        matches!(value, 0..=5)
+                        value == 0
+                            || standard_line_font_valid(value)
                             || value
                                 .checked_neg()
                                 .and_then(|value| {
@@ -305,7 +397,7 @@ pub(super) fn project(
                                 .is_some()
                     }),
                 };
-                let weight_valid = match record.tokens.get(start + 5).map(|token| &token.value) {
+                let weight_valid = match record.value(start + 5) {
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 5).is_some_and(|value| value >= 0),
                 };
@@ -331,7 +423,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
-        handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -349,9 +440,13 @@ pub(super) fn project(
                     .is_some_and(|view| {
                         view.entity_type == 410
                             && records.get(&view.sequence).is_some_and(|view_record| {
-                                trailing_pointer_groups(view_record, &entries).is_some_and(
-                                    |groups| groups.associations.contains(&entry.sequence),
-                                )
+                                trailing_pointer_analysis
+                                    .get(&view_record.directory_sequence)
+                                    .and_then(|analysis| analysis.groups.as_ref())
+                                    .filter(|groups| groups.fully_valid)
+                                    .is_some_and(|groups| {
+                                        groups.associations.contains(&entry.sequence)
+                                    })
                             })
                     })
                     && (entry.form == 3 || {
@@ -359,7 +454,7 @@ pub(super) fn project(
                         let definition = record.integer(start + 2);
                         let color = record.integer(start + 3);
                         let weight = record.integer(start + 4);
-                        line_font.is_some_and(|value| matches!(value, 0..=5))
+                        line_font.is_some_and(|value| value == 0 || standard_line_font_valid(value))
                             && definition.is_some_and(|value| {
                                 if line_font == Some(0) {
                                     u32::try_from(value).ok().is_some_and(|sequence| {
@@ -372,7 +467,7 @@ pub(super) fn project(
                                 }
                             })
                             && color.is_some_and(|value| {
-                                matches!(value, 0..=8)
+                                standard_color_valid(value)
                                     || value
                                         .checked_neg()
                                         .and_then(|value| {
@@ -407,11 +502,7 @@ pub(super) fn project(
         }
     }
 
-    Projection {
-        handled,
-        decoded,
-        losses,
-    }
+    ProjectionOutcome { decoded, losses }
 }
 
 #[cfg(test)]

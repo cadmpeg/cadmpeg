@@ -1,26 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, dead_code, clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::IR_VERSION;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
 
 use crate::chunks::{
     anonymous_version, checked_count_bytes, chunk_at, crc16, packed_version, parse_eof,
     parse_header, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
-    TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT,
+    TCODE_CRC, TCODE_SHORT,
 };
 use crate::layout::endoffile_record_v50 as eof_v50;
 use crate::layout::file_header;
 use crate::layout::long_chunk_header_v2 as long_v2;
 use crate::layout::long_chunk_header_v50 as long_v50;
-use crate::settings;
 use crate::test_support::test_dump::*;
-use crate::wire::Uuid;
 use crate::{RhinoCodec, MAGIC};
 
 #[test]

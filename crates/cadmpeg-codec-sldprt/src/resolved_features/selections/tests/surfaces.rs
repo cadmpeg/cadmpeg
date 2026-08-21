@@ -1,17 +1,12 @@
 //! Surface-selection, thread, and component-path tests.
-#![allow(unused_imports)]
 
-use super::super::super::component_paths::{
-    compact_edge_path_value, compact_edge_selection_set_value,
-};
-use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
+use super::super::super::CLASS_MARKER;
 use super::super::selection_vector_tail;
 use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::{
-    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
-    FeatureInputScalar, FeatureInputScalarRole,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+    FeatureInputName, FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{BTreeMap, HashSet};
 

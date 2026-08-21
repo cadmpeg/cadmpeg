@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
-
-use std::collections::BTreeSet;
 
 use super::super::definitions::*;
-use super::super::entity::*;
-use super::super::operations::*;
-use super::super::rows::*;
 use crate::psb;
 use crate::scalar;
 

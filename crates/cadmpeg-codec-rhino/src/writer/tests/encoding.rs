@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -10,7 +9,6 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Color, Point};
 use cadmpeg_ir::units::Units;
-use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec, RhinoEncoder};

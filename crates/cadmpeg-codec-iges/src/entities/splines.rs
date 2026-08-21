@@ -1,30 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Piecewise parametric spline projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object, DeclaredInterval};
+use super::geometry::{
+    entity_loss, resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
-use crate::global::{Global, RealPrecision};
+use crate::global::{ProjectedGlobal, RealPrecision};
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SPLINE_SEGMENTS: usize = 100_000;
 const MAX_SPLINE_SURFACE_POLES: usize = 1_000_000;
-
-pub(super) struct SplineProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-}
 
 fn declared_interval(
     record: &ParameterRecord,
@@ -67,6 +63,52 @@ fn terminal_intervals(
         c.add(d.multiply(width).scale(3.0)),
         d,
     ]
+}
+
+type IntervalVector = [DeclaredInterval; 3];
+
+fn interval_dot(left: IntervalVector, right: IntervalVector) -> DeclaredInterval {
+    left.into_iter()
+        .zip(right)
+        .fold(DeclaredInterval::around(0.0, 0.0), |sum, (left, right)| {
+            sum.add(left.multiply(right))
+        })
+}
+
+fn interval_unit_tangent(vector: IntervalVector) -> Option<IntervalVector> {
+    let speed_squared = interval_dot(vector, vector);
+    let inverse_speed = speed_squared.sqrt()?.reciprocal()?;
+    Some(vector.map(|component| component.multiply(inverse_speed)))
+}
+
+fn interval_curvature(
+    derivative: IntervalVector,
+    second_derivative: IntervalVector,
+) -> Option<IntervalVector> {
+    let speed_squared = interval_dot(derivative, derivative);
+    let inverse_speed_fourth = speed_squared.multiply(speed_squared).reciprocal()?;
+    let derivative_second_dot = interval_dot(derivative, second_derivative);
+    Some(std::array::from_fn(|index| {
+        second_derivative[index]
+            .multiply(speed_squared)
+            .subtract(derivative[index].multiply(derivative_second_dot))
+            .multiply(inverse_speed_fourth)
+    }))
+}
+
+fn intervals_overlap(left: IntervalVector, right: IntervalVector) -> bool {
+    left.into_iter()
+        .zip(right)
+        .all(|(left, right)| left.overlaps(right))
+}
+
+fn points_within_resolution(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    if resolution == 0.0 {
+        distance == 0.0
+    } else {
+        distance < resolution
+    }
 }
 
 fn surface_point_close(left: Point3, right: Point3) -> bool {
@@ -180,9 +222,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> SplineProjection {
+) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -191,7 +233,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -200,7 +241,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 112 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -219,10 +259,21 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "spline header enum is out of range"));
             continue;
         }
-        let Some(segment_count) = record
-            .integer(4)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0 && *count <= MAX_SPLINE_SEGMENTS)
+        let Some(raw_segment_count) = record.integer(4) else {
+            losses.push(entity_loss(entry, "spline segment count is invalid"));
+            continue;
+        };
+        if raw_segment_count > MAX_SPLINE_SEGMENTS as i64 {
+            return Err(refuse_local_limit(
+                "iges_spline_segments",
+                MAX_SPLINE_SEGMENTS as u64,
+                u64::try_from(raw_segment_count).unwrap_or(u64::MAX),
+                None,
+            ));
+        }
+        let Some(segment_count) = usize::try_from(raw_segment_count)
+            .ok()
+            .filter(|count| *count > 0)
         else {
             losses.push(entity_loss(
                 entry,
@@ -284,7 +335,10 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
         let mut continuous = true;
         let precision = global.real_precision();
-        let mut previous_terminal = None;
+        let resolution = global.minimum_resolution_mm();
+        let mut previous_terminal_point = None;
+        let mut previous_terminal_tangent = None;
+        let mut previous_terminal_curvature = None;
         for (segment, values) in coefficients.chunks_exact(12).enumerate() {
             let width = breakpoints[segment + 1] - breakpoints[segment];
             let width_interval =
@@ -319,6 +373,13 @@ pub(super) fn project(
                     precision,
                 ),
             ];
+            if !values
+                .chunks_exact(4)
+                .any(|component| component[1] != 0.0 || component[2] != 0.0 || component[3] != 0.0)
+            {
+                continuous = false;
+                break;
+            }
             if dimensions == 2
                 && (1..4).any(|power| {
                     !declared_interval(
@@ -330,18 +391,6 @@ pub(super) fn project(
                     .contains(0.0)
                 })
             {
-                continuous = false;
-                break;
-            }
-            let starts = [0, 4, 8].map(|offset| {
-                declared_interval(record, segment_start + offset, values[offset], precision)
-            });
-            if previous_terminal.is_some_and(|previous: [DeclaredInterval; 3]| {
-                previous
-                    .into_iter()
-                    .zip(starts)
-                    .any(|(left, right)| !left.overlaps(right))
-            }) {
                 continuous = false;
                 break;
             }
@@ -360,6 +409,80 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
+            let start_point =
+                transform.point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor));
+            let end_point =
+                transform.point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor));
+            // GE-03: IGES §2.2.4.3.19 supplies the positional comparison only.
+            if previous_terminal_point.is_some_and(|previous| {
+                !points_within_resolution(previous, start_point, resolution)
+            }) {
+                continuous = false;
+                break;
+            }
+            let starts = [0, 4, 8].map(|offset| {
+                [0, 1, 2, 3].map(|order| {
+                    declared_interval(
+                        record,
+                        segment_start + offset + order,
+                        values[offset + order],
+                        precision,
+                    )
+                })
+            });
+            if continuity >= 1 && segment > 0 {
+                // GE-03: IGES §4.14 defines slope and curvature continuity but
+                // gives no numeric receiver tolerance. Interval overlap is the
+                // CADIR admission decision for the declared real values.
+                let start_derivative = starts.map(|component| component[1]);
+                let Some(start_tangent) = interval_unit_tangent(start_derivative) else {
+                    continuous = false;
+                    break;
+                };
+                let Some(previous_tangent) = previous_terminal_tangent else {
+                    continuous = false;
+                    break;
+                };
+                if !intervals_overlap(previous_tangent, start_tangent) {
+                    continuous = false;
+                    break;
+                }
+                if continuity >= 2 {
+                    let start_second_derivative = starts.map(|component| component[2].scale(2.0));
+                    let Some(start_curvature) =
+                        interval_curvature(start_derivative, start_second_derivative)
+                    else {
+                        continuous = false;
+                        break;
+                    };
+                    let Some(previous_curvature) = previous_terminal_curvature else {
+                        continuous = false;
+                        break;
+                    };
+                    if !intervals_overlap(previous_curvature, start_curvature) {
+                        continuous = false;
+                        break;
+                    }
+                }
+            }
+            if segment + 1 < segment_count && continuity >= 1 {
+                let terminal_derivative = intervals.map(|component| component[1]);
+                previous_terminal_tangent = interval_unit_tangent(terminal_derivative);
+                if previous_terminal_tangent.is_none() {
+                    continuous = false;
+                    break;
+                }
+                if continuity >= 2 {
+                    let terminal_second_derivative =
+                        intervals.map(|component| component[2].scale(2.0));
+                    previous_terminal_curvature =
+                        interval_curvature(terminal_derivative, terminal_second_derivative);
+                    if previous_terminal_curvature.is_none() {
+                        continuous = false;
+                        break;
+                    }
+                }
+            }
             let bezier = (0..4)
                 .map(|index| {
                     transform.point(Point3::new(
@@ -374,12 +497,12 @@ pub(super) fn project(
             } else {
                 control_points.extend_from_slice(&bezier[1..]);
             }
-            previous_terminal = Some([intervals[0][0], intervals[1][0], intervals[2][0]]);
+            previous_terminal_point = Some(end_point);
         }
         if !continuous {
             losses.push(entity_loss(
                 entry,
-                "spline segments violate planar or positional continuity",
+                "spline segments violate declared continuity, planarity, or non-degeneracy",
             ));
             continue;
         }
@@ -391,6 +514,8 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "terminal derivative block is missing"));
             continue;
         };
+        // GE-03: §4.14 calls this block redundant. CADIR keeps the
+        // coefficient-defined carrier when a present block disagrees.
         let last_values = &coefficients[coefficients.len() - 12..];
         let last_segment_start = coefficient_start + (segment_count - 1) * 12;
         let last_width = declared_interval(
@@ -448,15 +573,20 @@ pub(super) fn project(
             continue;
         };
         wire_edges.push(edge);
+        losses.push(
+            IgesLossCode::SplineHeaderNotTransferred
+                .note(
+                    "Type 112 curve type, continuity, and dimensionality are retained only in native parameters",
+                )
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
-        let _ = (curve_type, continuity);
     }
 
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 114 && entry.form == 0)
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -477,11 +607,45 @@ pub(super) fn project(
             continue;
         }
         let dimensions = [record.integer(3), record.integer(4)];
-        let [Some(u_segments), Some(v_segments)] = dimensions.map(|value| {
-            value
-                .and_then(|number| usize::try_from(number).ok())
-                .filter(|count| *count > 0)
-        }) else {
+        let [Some(raw_u_segments), Some(raw_v_segments)] = dimensions else {
+            losses.push(entity_loss(entry, "spline-surface dimensions are invalid"));
+            continue;
+        };
+        if raw_u_segments > 0 && raw_v_segments > 0 {
+            let requested = u64::try_from(raw_u_segments)
+                .ok()
+                .and_then(|value| value.checked_mul(3))
+                .and_then(|value| value.checked_add(1))
+                .and_then(|u_count| {
+                    u64::try_from(raw_v_segments)
+                        .ok()
+                        .and_then(|value| value.checked_mul(3))
+                        .and_then(|value| value.checked_add(1))
+                        .and_then(|v_count| u_count.checked_mul(v_count))
+                });
+            match requested {
+                None => {
+                    return Err(refuse_local_limit(
+                        "iges_spline_surface_poles",
+                        MAX_SPLINE_SURFACE_POLES as u64,
+                        u64::MAX,
+                        None,
+                    ));
+                }
+                Some(requested) if requested > MAX_SPLINE_SURFACE_POLES as u64 => {
+                    return Err(refuse_local_limit(
+                        "iges_spline_surface_poles",
+                        MAX_SPLINE_SURFACE_POLES as u64,
+                        requested,
+                        None,
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+        let [Some(u_segments), Some(v_segments)] = [raw_u_segments, raw_v_segments]
+            .map(|value| usize::try_from(value).ok().filter(|count| *count > 0))
+        else {
             losses.push(entity_loss(entry, "spline-surface dimensions are invalid"));
             continue;
         };
@@ -500,15 +664,20 @@ pub(super) fn project(
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            losses.push(entity_loss(entry, "spline-surface pole count overflows"));
-            continue;
+            return Err(refuse_local_limit(
+                "iges_spline_surface_poles",
+                MAX_SPLINE_SURFACE_POLES as u64,
+                u64::MAX,
+                None,
+            ));
         };
         if pole_count > MAX_SPLINE_SURFACE_POLES {
-            losses.push(entity_loss(
-                entry,
-                format!("spline surface exceeds the {MAX_SPLINE_SURFACE_POLES}-pole limit"),
+            return Err(refuse_local_limit(
+                "iges_spline_surface_poles",
+                MAX_SPLINE_SURFACE_POLES as u64,
+                pole_count as u64,
+                None,
             ));
-            continue;
         }
         let Some(u_breakpoint_count) = u_segments.checked_add(1) else {
             losses.push(entity_loss(entry, "u-breakpoint count overflows"));
@@ -588,7 +757,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if record.tokens.len() < required_parameter_count {
+        if record.parameter_end() < required_parameter_count {
             losses.push(entity_loss(
                 entry,
                 "spline-surface placeholder grid is truncated",
@@ -694,16 +863,19 @@ pub(super) fn project(
             }),
             source_object: Some(source_object(entry)),
         });
+        losses.push(
+            IgesLossCode::SplineHeaderNotTransferred
+                .note("Type 114 curve and patch types are retained only in native parameters")
+                .with_provenance(entry.loss_provenance()),
+        );
         decoded.insert(entry.sequence);
-        let _ = (curve_type, patch_type);
     }
 
-    SplineProjection {
-        handled,
+    Ok(WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -1,25 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
-use std::io::{Cursor, Write};
+use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
 
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
-
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::LossCategory;
-use cadmpeg_ir::Exactness;
-
-use crate::container;
-use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
-use crate::NxCodec;
 
 use super::*;
 
@@ -29,16 +12,16 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
         SimpleHoleForm,
     };
-    use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+    use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::native::Native;
+
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::{Tolerances, Units};
+    use cadmpeg_ir::units::Units;
 
     let operation = "blind".to_string();
     let template = FeatureSimpleHoleTemplate {
@@ -298,16 +281,16 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
         SimpleHoleForm,
     };
-    use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+    use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::native::Native;
+
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::{Tolerances, Units};
+    use cadmpeg_ir::units::Units;
 
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {

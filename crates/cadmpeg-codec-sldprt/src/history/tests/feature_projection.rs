@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-class, hole, plane, and profile projection tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::*;

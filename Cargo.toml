@@ -89,6 +89,9 @@ rmp = "=0.8.15"
 # while taking it off the link path. Most of the weight is in dependency rlibs.
 split-debuginfo = "unpacked"
 
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable
 # and type DWARF. This drops the rest.

@@ -324,6 +324,31 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_work(units, operation)
     }
 
+    /// Permanently refuses a codec-local resource request.
+    ///
+    /// Codecs use this when a bounded recovery algorithm reaches a fixed
+    /// local ceiling instead of a session-wide dimension. The refusal fuses
+    /// the session so a caller cannot accidentally turn it into a semantic
+    /// fallback or report success after the limit was reached.
+    pub fn refuse_codec_limit(
+        &self,
+        operation: &'static str,
+        limit: u64,
+        requested: u64,
+        location: Option<SourceLocation>,
+    ) -> CodecError {
+        self.budget.refuse(
+            ResourceDimension::Codec(operation),
+            ResourceFailure::BudgetExceeded,
+            LimitScope::Global,
+            limit,
+            requested.min(limit),
+            requested.saturating_sub(limit),
+            operation,
+            location,
+        )
+    }
+
     /// Creates a local work slice that also draws from the session allowance.
     pub fn work_budget(&self, local_limit: u64) -> WorkBudget<'_> {
         WorkBudget::for_session(local_limit, &self.budget)
