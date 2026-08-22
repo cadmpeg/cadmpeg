@@ -706,16 +706,6 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 
 ## 6. Product structure, annotation, and presentation
 
-### VN-01. One enumerated value changed meaning between IGES 4.0 and IGES 5.3
-
-**Question.** Which attribute list does the value `5` of the Attribute Table Definition Entity name in a file that declares Global version flag `6`?
-
-**Known.** The Attribute List Type (ALT) of the Attribute Table Definition Entity (Type 322) is an enumerated integer. In IGES 5.3 §4.79, page 335, the table reads `0` for the list named by the Name Property, `1` general, `2` electrical, `3` AEC, `4` process plant, **`5` Electrical and LEP manufacturing attribute list (see Table 14)**, `6-5000` other application areas, and `5001-9999` implementor defined. That row carries the margin note ECO649, so IGES 5.3 records it as a change. In NBSIR 88-3813 (IGES 4.0) Appendix J.8, page 463, the same table reads `0` for the list named by the Property Entity, `1` general, `2` electrical (Table J3), `3` AEC (Table J4), `4` process plant (Table J5), **`5-5000` other application areas**, and `5001-9999` user defined lists. IGES 4.0 therefore assigns the value `5` to the open "other application areas" band, and IGES 5.3 removes `5` from that band and gives it a named list. The rest of the entity agrees: both documents give the same Attribute Value Data Type codes `0` through `6`, the same default Attribute Value Count of `1`, the same three forms, and the same statement that the Attribute Value Data Type codes are the constants of §2.2.2 in the same order. Type 322 is normative in IGES 5.3 §4.79 and is gray-page material in IGES 4.0, whose §4.3.16 carries only a pointer to Appendix J.8.
-
-**Need.** This is the only divergence found where the same byte in the same field of the same entity decodes to a different meaning in the two documents, so it is the divergence class the dialect loss exists to guard. Every other entity divergence found is a widened range, a changed constraint, a changed status, or an addition, and each of those leaves a conformant older file readable by the later definition. A changed value does not.
-
-**Note.** The discriminating check is a corpus sweep for a Type 322 record whose second parameter reads `5` in a file that declares version flag `6` or lower. Each such record is a record whose two readings disagree about which attribute vocabulary its Attribute Type numbers index. A sweep that finds no such record shows the divergence is unreachable in the corpus, and the value still cannot be read as identical, so it still blocks the promotion of version 4.0. The near miss to record with it is the Connect Point Entity (Type 132) Function Code: IGES 4.0 §3.19.2 gives `3` as Bidirectional and IGES 5.3 §4.26 gives `3` as Input and Output, which is the same concept reworded, and `4` moves from Power to Power (VCC), which narrows a name and not a value.
-
 ### VN-03. Constructs normative in IGES 4.0 and deprecated in IGES 5.3
 
 **Question.** How should the decoder read a construct that IGES 4.0 defines normatively and IGES 5.3 deprecates or moves to its obsolete appendix?

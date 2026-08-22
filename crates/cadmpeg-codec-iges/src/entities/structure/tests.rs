@@ -328,6 +328,45 @@ fn decode_types_all_attribute_table_definition_forms() {
 }
 
 #[test]
+fn type322_attribute_list_value_follows_the_declared_dialect() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    for (global, expected_version) in [
+        (&global_v4[..], "4.0"),
+        (&global_v5[..], "5.0"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 322,
+                        form: 0,
+                        label: "ATTRDEF".into(),
+                        status: "00000000",
+                        parameters: "322,4HMETA,5,1,10,1,1;".into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            expected_version
+        );
+        let definition =
+            &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"][0];
+        assert_eq!(definition.fields()["attribute_list_type"], 5);
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    }
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
@@ -1661,6 +1700,30 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
         Dialect::V5_0
     ));
     assert!(network_connectivity_valid(&[None], &[None], Dialect::V5_0));
+}
+
+#[test]
+fn attribute_list_type_meaning_uses_versioned_ranges() {
+    for (dialect, value, expected) in [
+        (Dialect::V4_0, 0, Some("property-entity-defined")),
+        (Dialect::V4_0, 5, Some("other-application-area")),
+        (Dialect::V4_0, 5000, Some("other-application-area")),
+        (Dialect::V4_0, 5001, Some("user-defined")),
+        (Dialect::V4_0, 9999, Some("user-defined")),
+        (Dialect::V4_0, 10_000, None),
+        (Dialect::V5_0, 0, Some("type406-form15-defined")),
+        (Dialect::V5_0, 5, Some("electrical-lep-manufacturing")),
+        (Dialect::V5_0, 6, Some("other-application-area")),
+        (Dialect::V5_0, 5000, Some("other-application-area")),
+        (Dialect::V5_0, 5001, Some("implementor-defined")),
+        (Dialect::V5_0, 9999, Some("implementor-defined")),
+        (Dialect::V5_0, 10_000, None),
+    ] {
+        assert_eq!(
+            crate::entities::structure::attribute_list_type_meaning(value, dialect),
+            expected
+        );
+    }
 }
 
 fn network_null_connect_point_file(global: &[u8]) -> Vec<u8> {

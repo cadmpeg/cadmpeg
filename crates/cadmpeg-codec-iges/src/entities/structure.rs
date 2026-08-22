@@ -11,6 +11,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 
+pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Option<&'static str> {
+    match (dialect, value) {
+        (Dialect::V4_0, 0) => Some("property-entity-defined"),
+        (_, 0) => Some("type406-form15-defined"),
+        (_, 1) => Some("general"),
+        (_, 2) => Some("electrical"),
+        (_, 3) => Some("aec"),
+        (_, 4) => Some("process-plant"),
+        (Dialect::V4_0, 5..=5000) => Some("other-application-area"),
+        (Dialect::V4_0, 5001..=9999) => Some("user-defined"),
+        (_, 5) => Some("electrical-lep-manufacturing"),
+        (_, 6..=5000) => Some("other-application-area"),
+        (_, 5001..=9999) => Some("implementor-defined"),
+        _ => None,
+    }
+}
+
 #[derive(Clone)]
 struct SolidAssembly {
     form: i64,
@@ -1176,7 +1193,7 @@ pub(super) fn project(
         );
         let list_type_valid = record
             .integer(2)
-            .is_some_and(|value| matches!(value, 0..=9999));
+            .is_some_and(|value| attribute_list_type_meaning(value, global.dialect()).is_some());
         let attribute_count = record.count(3).filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
