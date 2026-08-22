@@ -2055,6 +2055,9 @@ fn try_decode_brep(
                     .collect(),
             ));
         }
+        // Keep only the selected source's bridge sequence namespace. Alternate
+        // configuration sites are qualified into the model but do not own the
+        // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate);
     }
     let report = build_geometry_report(scan, &decoded);
@@ -2396,11 +2399,13 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
+    let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
     let topology_index = crate::swift::TopologyIdentityIndex::from_model(
         &ir.model.bodies,
         &ir.model.faces,
         &ir.model.edges,
         &ir.model.vertices,
+        &face_bridge_sequences,
     );
     let face_identities = brep
         .face_atoms

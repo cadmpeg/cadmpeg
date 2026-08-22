@@ -508,7 +508,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact" define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is u16 BE at body +0" define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
@@ -586,15 +586,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
-### DI-33. SWIFT feature-to-topology identity
+### DI-33. SWIFT edge and vertex feature-to-topology identity
 
-**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
+**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid edge or vertex identity?
 
-**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. A face suffix uses the active partition `00 0e` bridge sequence to select its bridge attribute and emitted face. Edge and vertex references are not assigned a face sequence interpretation.
 
-**Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
-
-**Note.** The change that deleted this item added a test module only. It changed no decoder code and no specification text, so the question stays unanswered. `crates/cadmpeg-codec-sldprt/src/swift.rs:121-131` divides the identifier at the last colon, tests that the left part is not empty, and then discards it. The topology kind comes from the arena that holds the numeric suffix, not from any field of the identifier. The identifier resolves to no object when two arenas hold that suffix, so the gate withholds but decodes nothing. `crates/cadmpeg-codec-sldprt/src/swift.rs:54-58` records that the numeric suffix is a lane-local identity, while the lookup is global to the document.
+**Need.** We must identify the corresponding edge-use and vertex-use sequence fields and their active-partition joins before attaching an edge or vertex target.
 
 ### DI-39. `moTempAxisRef_w` carrier end and middle triple
 

@@ -331,7 +331,7 @@ anchor = "the complete zlib-member byte count as u32 LE"
 tag = "00 0e"
 name = "bridge"
 payload_bytes = 37
-note = "face-use → surface link; magic at body +8; bare record length 37"
+note = "face-use → surface link; attr u16 BE at body +0; sequence u32 BE at body +2; magic at body +8; bare record length 37"
 section = "4"
 anchor = "`00 0e` | bridge / face-use→surface link | 37 | at body +8"
 

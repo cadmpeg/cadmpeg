@@ -23,7 +23,7 @@ the table says `unstated` and says so in the field note.
 
 | Tag | Name | Payload | Meaning | Spec |
 | --- | ---- | ------: | ------- | ---- |
-| `00 0e` | bridge | 37 B | face-use → surface link; magic at body +8; bare record length 37 | §4 |
+| `00 0e` | bridge | 37 B | face-use → surface link; attr u16 BE at body +0; sequence u32 BE at body +2; magic at body +8; bare record length 37 | §4 |
 | `00 0f` | loop head | variable | bare record length is at least 14; no magic | §4 |
 | `00 10` | edge-use | 28 B | bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge | §4 |
 | `00 11` | oriented coedge | 21 B | bare body has no magic; deltas refs are nine [hi][lo][01] cells and the marker follows | §4 |

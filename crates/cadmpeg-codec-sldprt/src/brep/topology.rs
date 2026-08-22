@@ -32,6 +32,8 @@ pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 #[derive(Debug, Clone)]
 pub struct Record {
     pub attr: u16,
+    /// Big-endian document sequence carried by face bridges.
+    pub sequence: Option<u32>,
     /// Big-endian `refs` array (length varies by family).
     pub refs: Vec<u16>,
     /// Orientation marker (`0x2b` forward / `0x2d` reversed), when the family
@@ -97,6 +99,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
+        let sequence = View::u32_be_at(buf, p + 2)?;
         let owner = View::u16_be_at(buf, p + 6)?;
         let refs = refs_tripled(buf, p + 17, 5)?;
         let marker = *buf.get(p + 32)?;
@@ -105,6 +108,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         }
         return Some(Record {
             attr,
+            sequence: Some(sequence),
             refs,
             marker: Some(marker),
             xyz_m: None,
@@ -117,6 +121,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
+    let sequence = View::u32_be_at(buf, p + 2)?;
     let owner = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
@@ -129,6 +134,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     }
     Some(Record {
         attr,
+        sequence: Some(sequence),
         refs,
         marker: Some(marker),
         xyz_m: None,
@@ -149,6 +155,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
     let refs = refs_tripled(buf, p + 6, 4).or_else(|| refs_be(buf, p + 6, 4))?;
     Some(Record {
         attr,
+        sequence: None,
         refs,
         marker: None,
         xyz_m: None,
@@ -161,6 +168,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
 fn record(attr: u16, refs: Vec<u16>, marker: Option<u8>, offset: usize) -> Record {
     Record {
         attr,
+        sequence: None,
         refs,
         marker,
         xyz_m: None,
@@ -264,6 +272,7 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Record> {
 fn deduplicate_records(mut records: Vec<Record>) -> Vec<Record> {
     records.dedup_by(|right, left| {
         right.attr == left.attr
+            && right.sequence == left.sequence
             && right.refs == left.refs
             && right.marker == left.marker
             && right.offset == left.offset
@@ -292,6 +301,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
     };
     Some(Record {
         attr,
+        sequence: None,
         refs,
         marker: None,
         xyz_m: None,
@@ -338,6 +348,7 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     }
     Some(Record {
         attr,
+        sequence: None,
         refs,
         marker: None,
         xyz_m: Some([x, y, z]),
@@ -743,6 +754,7 @@ mod tests {
 
         let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
+        assert_eq!(bridge.sequence, Some(7));
         assert_eq!(bridge.owner, Some(0x4321));
         assert_eq!(bridge.refs, expected);
         assert_eq!(bridge.marker, Some(0x2b));
@@ -756,6 +768,7 @@ mod tests {
             let bridge = parse_bridge(&bytes, 0)
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
+            assert_eq!(bridge.sequence, Some(7));
             assert_eq!(bridge.owner, Some(0x4321));
             assert_eq!(bridge.refs, expected);
             assert_eq!(bridge.marker, Some(0x2d));

@@ -76,6 +76,10 @@ pub struct Brep {
     pub face_colors: Vec<entity::FaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub face_atoms: Vec<attrib::FaceAtom>,
+    /// Source-local sequence-to-attribute links carried by face bridge
+    /// records. The decode boundary retains this map only for the active
+    /// source because SWIFT identifiers resolve in that source namespace.
+    pub face_bridge_sequences: Vec<(u32, u16)>,
     /// Body-to-history ordinals resolved from Parasolid attributes.
     pub body_modifiers: Vec<attrib::BodyModifier>,
     /// Loss accounting for this decode.
@@ -958,10 +962,18 @@ fn decode_graph(
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
     let (face_colors, conflicting_face_colors) =
         unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
+    let mut face_bridge_sequences = t
+        .bridges
+        .values()
+        .filter_map(|bridge| bridge.sequence.map(|sequence| (sequence, bridge.attr)))
+        .collect::<Vec<_>>();
+    face_bridge_sequences.sort_unstable();
+    face_bridge_sequences.dedup();
 
     let mut out = Brep {
         face_colors,
         face_atoms: entity_facts.face_atoms,
+        face_bridge_sequences,
         body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
@@ -4509,6 +4521,7 @@ mod tests {
     fn topology_record(attr: u16, refs: Vec<u16>) -> Record {
         Record {
             attr,
+            sequence: None,
             refs,
             marker: None,
             xyz_m: None,
@@ -4915,6 +4928,7 @@ mod tests {
 
         let record = |attr, refs, marker| super::Record {
             attr,
+            sequence: None,
             refs,
             marker,
             xyz_m: None,
@@ -4964,6 +4978,7 @@ mod tests {
 
         let record = |attr, refs| super::Record {
             attr,
+            sequence: None,
             refs,
             marker: Some(0x2b),
             xyz_m: None,
@@ -5061,6 +5076,7 @@ mod tests {
     fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
         let bridge = |attr, surface, offset| super::Record {
             attr,
+            sequence: None,
             refs: vec![0, 0, 0, 0, surface],
             marker: Some(0x2b),
             xyz_m: None,

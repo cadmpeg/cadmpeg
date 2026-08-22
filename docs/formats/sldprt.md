@@ -1019,13 +1019,14 @@ literal precedence rule. A missing, multiply named, multiply seeded, or
 multiply consuming join leaves the nominal absent.
 
 The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
-local to the SWIFT schema lane. The decimal suffix is a native topology
-identity. A suffix binds to a neutral body, face, edge, or vertex only when
-exactly one emitted primary topology object has that numeric identity in the
-active B-rep. Face and surface carrier identities share the face binding.
-Supporting geometry and boundary identities do not bind directly. A missing,
-non-decimal, duplicate, or non-primary identity retains the source
-`ShapeAspect` target.
+local to the SWIFT schema lane. Body, edge, and vertex references use the
+corresponding primary topology identity index. A face reference uses the
+decimal sequence stored by the active partition's `00 0e` bridge record, not
+the emitted face attribute: the bridge sequence selects its bridge attribute,
+and that attribute selects `sldprt:brep:face#<attr>`. Face and surface carrier
+identities share the face binding. Supporting geometry and boundary identities
+do not bind directly. A missing, non-decimal, duplicate, or non-primary
+identity retains the source `ShapeAspect` target.
 
 A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
 `GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
@@ -1182,7 +1183,7 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 
 Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
-- **Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
+- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the owner/use field is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
 - **Edge-use `00 10`:** bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
