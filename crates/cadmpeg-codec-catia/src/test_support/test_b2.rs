@@ -109,6 +109,16 @@ pub(crate) fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {
+        record.extend_from_slice(&compact_uint_bytes(value));
+    }
+    record.extend_from_slice(&owner_numeric_tail());
+    record[3] = u8::try_from(record.len() - 5).expect("all-compact owner packet length");
+    record
+}
+
 pub(crate) fn owner_numeric_tail() -> Vec<u8> {
     let mut tail = vec![0x84, 0x41, 0xbb, 0x05, 0x0d];
     for value in [-0.0f64, 4.5, 12.25, 7.0] {

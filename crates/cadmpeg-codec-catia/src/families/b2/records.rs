@@ -170,7 +170,7 @@ pub struct B2OwnerPacket {
     pub pos: usize,
     /// Width-coded header token.
     pub header_token: u32,
-    /// Encoding selected by the first strong reference token.
+    /// Reference grammar selected by the complete fixed-nine reference lane.
     pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
@@ -199,6 +199,8 @@ pub enum B2OwnerReferenceEncoding {
     /// Strong identities use width-coded compact integers and weak identities
     /// are raw one-byte values.
     WidthCodedStrong,
+    /// All nine identities use the compact-integer reference grammar.
+    AllCompact,
 }
 
 /// Count-prefixed class-`0x61` reference record.
@@ -603,8 +605,8 @@ pub(crate) fn b2_counted_owners_from_records(
         .collect()
 }
 
-/// Decode width-coded class-`0x62` owner packets whose counted references and
-/// fixed numeric tail consume the complete frame.
+/// Decode fixed-nine class-`0x62` owner packets whose references and numeric
+/// tail consume the complete frame.
 #[must_use]
 #[cfg(test)]
 pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
@@ -619,43 +621,60 @@ pub(crate) fn b2_owner_packets_from_records(
     b_family_frames_from_records(records, 0x62)
         .into_iter()
         .filter_map(|frame| {
-            if data.get(frame.payload) != Some(&0x89) {
-                return None;
-            }
-            let mut at = frame.payload + 1;
-            let reference_encoding = if data.get(at) == Some(&0x0a) {
-                B2OwnerReferenceEncoding::TaggedU16Strong
-            } else {
-                B2OwnerReferenceEncoding::WidthCodedStrong
-            };
-            let mut references = [0u32; 9];
-            for (index, reference) in references.iter_mut().enumerate() {
-                *reference = match (reference_encoding, index % 2) {
-                    (B2OwnerReferenceEncoding::TaggedU16Strong, 0) => {
-                        persistent_ref(data, &mut at)?
-                    }
-                    (B2OwnerReferenceEncoding::TaggedU16Strong, 1)
-                    | (B2OwnerReferenceEncoding::WidthCodedStrong, 0) => {
-                        compact_int(data, &mut at)?
-                    }
-                    (B2OwnerReferenceEncoding::WidthCodedStrong, 1) => {
-                        let value = u32::from(*data.get(at)?);
-                        at += 1;
-                        value
-                    }
-                    _ => unreachable!(),
-                };
-            }
-            let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
-            Some(B2OwnerPacket {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                reference_encoding,
-                references,
-                numeric_tail,
-            })
+            let candidates = [
+                B2OwnerReferenceEncoding::TaggedU16Strong,
+                B2OwnerReferenceEncoding::WidthCodedStrong,
+                B2OwnerReferenceEncoding::AllCompact,
+            ]
+            .into_iter()
+            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, encoding))
+            .collect::<Vec<_>>();
+            let [packet] = candidates.try_into().ok()?;
+            Some(packet)
         })
         .collect()
+}
+
+fn b2_fixed_owner_packet(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    reference_encoding: B2OwnerReferenceEncoding,
+) -> Option<B2OwnerPacket> {
+    if data.get(frame.payload) != Some(&0x89) {
+        return None;
+    }
+    let mut at = frame.payload + 1;
+    let mut references = [0u32; 9];
+    for (index, reference) in references.iter_mut().enumerate() {
+        *reference = match reference_encoding {
+            B2OwnerReferenceEncoding::TaggedU16Strong if index % 2 == 0 => {
+                tagged_u16_ref(data, &mut at)?
+            }
+            B2OwnerReferenceEncoding::TaggedU16Strong => compact_int(data, &mut at)?,
+            B2OwnerReferenceEncoding::WidthCodedStrong if index % 2 == 0 => {
+                compact_int(data, &mut at)?
+            }
+            B2OwnerReferenceEncoding::WidthCodedStrong => {
+                let value = u32::from(*data.get(at)?);
+                at += 1;
+                value
+            }
+            B2OwnerReferenceEncoding::AllCompact => compact_int(data, &mut at)?,
+        };
+    }
+    let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
+    Some(B2OwnerPacket {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        reference_encoding,
+        references,
+        numeric_tail,
+    })
+}
+
+fn tagged_u16_ref(data: &[u8], at: &mut usize) -> Option<u32> {
+    (data.get(*at) == Some(&0x0a)).then_some(())?;
+    persistent_ref(data, at)
 }
 
 fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {

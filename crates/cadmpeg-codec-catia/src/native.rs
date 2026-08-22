@@ -200,6 +200,8 @@ pub enum CatiaOwnerReferenceEncoding {
     TaggedU16Strong,
     /// Strong identities use width-coded compact integers.
     WidthCodedStrong,
+    /// All nine identities use the compact-integer reference grammar.
+    AllCompact,
 }
 
 /// Target encoding of a consolidated class-`0x5f` face node.
@@ -6448,6 +6450,9 @@ fn consolidated_owner_packets(
                         }
                         crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
                             CatiaOwnerReferenceEncoding::WidthCodedStrong
+                        }
+                        crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => {
+                            CatiaOwnerReferenceEncoding::AllCompact
                         }
                     },
                     references: packet.references,

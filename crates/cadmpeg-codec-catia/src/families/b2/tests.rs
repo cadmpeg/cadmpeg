@@ -225,6 +225,18 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         packets[0].references,
         [216, 3, 540, 7, 223, 19, 545, 31, 606]
     );
+
+    let packets =
+        crate::families::b2::records::b2_owner_packets(&b2_all_compact_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(
+        packets[0].reference_encoding,
+        B2OwnerReferenceEncoding::AllCompact
+    );
+    assert_eq!(
+        packets[0].references,
+        [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    );
 }
 
 #[test]
