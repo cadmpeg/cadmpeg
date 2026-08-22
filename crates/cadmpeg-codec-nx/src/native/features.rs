@@ -209,6 +209,11 @@ pub struct FeatureOperationCommonFrame {
     /// Fixed marker selecting the index layout.
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
+    ///
+    /// The first three bytes remain an untyped operation-state prefix. The
+    /// admitted field mappings begin at byte three; callers must not treat the
+    /// prefix, or any other state byte, as feature suppression without the
+    /// separate serialized owner and typed-value joins.
     pub state: [u8; 8],
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
     #[serde(default, skip_serializing_if = "Option::is_none")]

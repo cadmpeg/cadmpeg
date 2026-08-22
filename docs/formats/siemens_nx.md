@@ -1647,7 +1647,11 @@ byte is the Boolean `m_modifiesParasolidData`. For either Boolean field, `00` is
 false, `01` is true, and another value retains the state lane without a typed
 Boolean value. The sixth and seventh state bytes are the exact two-byte
 `m_splitTrackingData` representation. The eighth state byte is the unsigned
-`m_groupCount`.
+`m_groupCount`. The first three state bytes are retained as an untyped
+operation-state prefix. They do not identify a Boolean suppression value or
+an operation-state object. A suppression assignment requires the independent
+operation-to-state-object and state-object-to-typed-value relations defined in
+OM-10; neither relation follows from the common-frame bytes.
 When the nullable object index is non-null and exactly one offset-only store
 contains that ordinal in its indexed block range, the common frame retains the
 corresponding native data-block identity. Otherwise it retains the exact
