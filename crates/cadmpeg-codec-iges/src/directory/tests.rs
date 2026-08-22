@@ -11,7 +11,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::Status;
+use super::{status, Status};
 
 #[test]
 fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
@@ -48,6 +48,19 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
         };
         assert_eq!(status.is_use_flag_valid(dialect), expected);
     }
+}
+
+#[test]
+fn early_dialects_left_pad_right_justified_status_numbers() {
+    for dialect in [Dialect::Legacy, Dialect::V4_0, Dialect::V5_0] {
+        let status = status(*b"     201", dialect).unwrap();
+        assert_eq!(status.blank, 0);
+        assert_eq!(status.subordinate, 0);
+        assert_eq!(status.use_flag, 2);
+        assert_eq!(status.hierarchy, 1);
+    }
+
+    assert!(status(*b"     201", Dialect::V5_1).is_err());
 }
 
 #[test]

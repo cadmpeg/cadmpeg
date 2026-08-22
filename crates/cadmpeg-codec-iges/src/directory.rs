@@ -162,7 +162,7 @@ fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
         .map_err(|_| DirectoryDefect::FieldNotAnInteger(name))
 }
 
-fn status(field: [u8; 8]) -> Result<Status, DirectoryDefect> {
+fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(Status {
             blank: 0,
@@ -171,10 +171,27 @@ fn status(field: [u8; 8]) -> Result<Status, DirectoryDefect> {
             hierarchy: 0,
         });
     }
-    if field.iter().any(|byte| !byte.is_ascii_digit()) {
-        return Err(DirectoryDefect::StatusNumberInvalid);
+    let mut digits = [b'0'; 8];
+    if matches!(dialect, Dialect::Legacy | Dialect::V4_0 | Dialect::V5_0) {
+        let first_digit = field
+            .iter()
+            .position(u8::is_ascii_digit)
+            .ok_or(DirectoryDefect::StatusNumberInvalid)?;
+        if field[..first_digit].iter().any(|byte| *byte != b' ')
+            || field[first_digit..]
+                .iter()
+                .any(|byte| !byte.is_ascii_digit())
+        {
+            return Err(DirectoryDefect::StatusNumberInvalid);
+        }
+        digits[first_digit..].copy_from_slice(&field[first_digit..]);
+    } else {
+        if field.iter().any(|byte| !byte.is_ascii_digit()) {
+            return Err(DirectoryDefect::StatusNumberInvalid);
+        }
+        digits = field;
     }
-    let digit = |at: usize| field[at] - b'0';
+    let digit = |at: usize| digits[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(Status {
         blank: pair(0),
@@ -187,6 +204,7 @@ fn status(field: [u8; 8]) -> Result<Status, DirectoryDefect> {
 fn parse_pair(
     first: &PhysicalLine,
     second: &PhysicalLine,
+    dialect: Dialect,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
     let sequence = first.sequence.unwrap_or_default();
     let first_fields = fields(first);
@@ -210,7 +228,7 @@ fn parse_pair(
         view: integer(first_fields[5], "view")?,
         transform: integer(first_fields[6], "transformation")?,
         label_display: integer(first_fields[7], "label display")?,
-        status: status(first_fields[8])?,
+        status: status(first_fields[8], dialect)?,
         line_weight: integer(second_fields[1], "line weight")?,
         color: integer(second_fields[2], "color")?,
         parameter_line_count: integer(second_fields[3], "Parameter Data count")?,
@@ -238,7 +256,10 @@ fn quarantine(cards: &[&PhysicalLine], defect: DirectoryDefect) -> QuarantinedDi
 }
 
 /// Split the Directory Entry section into typed records and quarantined ones.
-pub(crate) fn parse(scan: &CardScan) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
+pub(crate) fn parse(
+    scan: &CardScan,
+    dialect: Dialect,
+) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
     let lines = scan
         .lines
         .iter()
@@ -248,7 +269,7 @@ pub(crate) fn parse(scan: &CardScan) -> (Vec<DirectoryEntry>, Vec<QuarantinedDir
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-        match parse_pair(pair[0], pair[1]) {
+        match parse_pair(pair[0], pair[1], dialect) {
             Ok(entry) => entries.push(entry),
             Err(defect) => quarantined.push(quarantine(pair, defect)),
         }
