@@ -1330,7 +1330,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
@@ -1352,7 +1354,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
@@ -1371,7 +1375,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         None
     );
@@ -1657,7 +1663,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
@@ -1679,7 +1687,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         None
     );
@@ -2294,4 +2304,108 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             }]
         ));
     }
+}
+
+#[test]
+fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
+    let scope_record_index: u32 = 12;
+    let mut bytes = Vec::new();
+    let append_scalar = |bytes: &mut Vec<u8>, record_index: u32, ordinal: u8, value: f64| {
+        let start = bytes.len();
+        let mut frame = vec![0; 104];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(b"277");
+        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
+        frame[24] = 1;
+        frame[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+        frame[35] = ordinal;
+        frame[40..48].copy_from_slice(&value.to_le_bytes());
+        frame.extend_from_slice(&3u32.to_le_bytes());
+        frame.extend_from_slice(b"261");
+        frame.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&frame);
+        start
+    };
+    let taper_start = append_scalar(&mut bytes, 80, 0, -0.013962634015954637);
+    let along_start = append_scalar(&mut bytes, 82, 1, -2.5);
+
+    let mut taper_parameter = parse_design_parameter(&parameter_record(
+        Some(80),
+        "taper",
+        "TaperAngle",
+        Some("rad"),
+        "taper",
+        -0.013962634015954637,
+    ))
+    .expect("taper parameter");
+    taper_parameter.id = "generated:parameter#81".into();
+    taper_parameter.record_index = 81;
+    let mut along_parameter = parse_design_parameter(&parameter_record(
+        Some(82),
+        "along",
+        "AlongDistance",
+        Some("cm"),
+        "along",
+        -2.5,
+    ))
+    .expect("along parameter");
+    along_parameter.id = "generated:parameter#83".into();
+    along_parameter.record_index = 83;
+
+    let mut taper_owner = parse_parameter_owner(&parameter_owner_frame()).expect("taper owner");
+    taper_owner.id = "generated:owner#80".into();
+    taper_owner.record_index = 80;
+    taper_owner.scope_record_index = scope_record_index;
+    taper_owner.local_ordinal = 0;
+    taper_owner.parameter_record_index = 81;
+    let mut along_owner = taper_owner.clone();
+    along_owner.id = "generated:owner#82".into();
+    along_owner.record_index = 82;
+    along_owner.local_ordinal = 1;
+    along_owner.parameter_record_index = 83;
+
+    let mut scope = DesignParameterScope::empty("generated:scope#12", "Extrude", 12);
+    scope.reference_members = vec![80, 82];
+    scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 28,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [1, 0],
+        side_extent_discriminator_offsets: [77, 90],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedDistance,
+        direction_face_extend_offsets: [32, 36],
+        direction_reversed: false,
+        direction_reversed_offset: 40,
+        solid_operation: true,
+        solid_operation_offset: 41,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 42,
+    });
+
+    let fixed = exact_fixed_extrude_parameters(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &[taper_parameter, along_parameter],
+        &[taper_owner, along_owner],
+    )
+    .expect("fixed owner lanes");
+    assert!(matches!(
+        fixed.along_distance,
+        Some(DesignFixedExtrudeDistance::FixedScalar(DesignFixedExtrudeScalar {
+            value: -2.5,
+            record_index: 82,
+            value_offset,
+        })) if value_offset == (along_start + 40) as u64
+    ));
+    assert!(matches!(
+        fixed.taper_angle,
+        Some(DesignFixedExtrudeScalar {
+            value: -0.013962634015954637,
+            record_index: 80,
+            value_offset,
+        }) if value_offset == (taper_start + 40) as u64
+    ));
 }

@@ -255,8 +255,13 @@ pub fn decode_parameter_scopes(
                 exact_surface_extend_operation(bytes, &records, &scope);
             scope.surface_offset_operation =
                 exact_surface_offset_operation(bytes, &records, &scope);
-            scope.fixed_extrude_parameters =
-                exact_fixed_extrude_parameters(bytes, &records, &scope);
+            scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(
+                bytes,
+                &records,
+                &scope,
+                parameters,
+                parameter_owners,
+            );
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
             scope.fixed_chamfer_parameters =
                 exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
@@ -5684,6 +5689,8 @@ pub(crate) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[crate::records::DesignParameterOwner],
 ) -> Option<DesignFixedExtrudeParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude)
         || scope
@@ -5733,13 +5740,37 @@ pub(crate) fn exact_fixed_extrude_parameters(
             record_index,
             value_offset: lane.value_offset,
         };
-        match lane.ordinal {
-            0 if lane.value != 0.0 && along_distance.is_none() => {
+        let source_kind = parameter_owners
+            .iter()
+            .find(|owner| {
+                native_stream(&owner.id) == native_stream(&scope.id)
+                    && owner.scope_record_index == scope.record_index
+                    && owner.record_index == record_index
+            })
+            .and_then(|owner| {
+                parameters
+                    .iter()
+                    .find(|parameter| {
+                        native_stream(&parameter.id) == native_stream(&scope.id)
+                            && parameter.record_index == owner.parameter_record_index
+                    })
+                    .map(|parameter| parameter.source_kind.as_str())
+            });
+        match source_kind {
+            Some("AlongDistance") if lane.value != 0.0 && along_distance.is_none() => {
                 along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
             }
-            0 if along_distance.is_some() && lane.value == 0.0 => {}
-            1 if taper_angle.is_none() => taper_angle = Some(scalar),
-            _ => return None,
+            Some("TaperAngle") if taper_angle.is_none() => taper_angle = Some(scalar),
+            Some("AlongDistance") if along_distance.is_some() && lane.value == 0.0 => {}
+            Some(_) => return None,
+            None => match lane.ordinal {
+                0 if lane.value != 0.0 && along_distance.is_none() => {
+                    along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
+                }
+                0 if along_distance.is_some() && lane.value == 0.0 => {}
+                1 if taper_angle.is_none() => taper_angle = Some(scalar),
+                _ => return None,
+            },
         }
     }
     if along_distance.is_none() && taper_angle.is_none() {
