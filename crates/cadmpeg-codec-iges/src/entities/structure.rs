@@ -6,10 +6,21 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
+};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
+};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
+const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
 pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Option<&'static str> {
     match (dialect, value) {
@@ -818,6 +829,199 @@ fn predefined_associativity_valid(
     }
 }
 
+fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> {
+    let vertex = index.vertices(&vertex.0)?;
+    index.points(&vertex.point.0).map(|point| point.position)
+}
+
+fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
+    let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
+    match &surface.geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
+        _ => None,
+    }
+}
+
+fn planes_are_coplanar(
+    parent: (Point3, Vector3),
+    child: (Point3, Vector3),
+    resolution: f64,
+) -> bool {
+    let (parent_origin, parent_normal) = parent;
+    let (child_origin, child_normal) = child;
+    parent_normal.cross(child_normal).norm() <= LEGACY_PLANE_NORMAL_EPSILON
+        && child_origin
+            .vector_from(parent_origin)
+            .dot(parent_normal)
+            .abs()
+            <= resolution
+}
+
+fn legacy_single_parent_face(
+    ir: &CadIr,
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    global: &ProjectedGlobal,
+) -> Result<Option<ModelDraft>, &'static str> {
+    let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
+        return Ok(None);
+    };
+    let Some(parent_entry) = entries.get(&parent_sequence) else {
+        return Ok(None);
+    };
+    if parent_entry.entity_type != 108 || parent_entry.form != 1 {
+        return Ok(None);
+    }
+    let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
+        return Err("legacy single-parent plane hole has no children");
+    };
+    let Some(children) = (0..child_count)
+        .map(|offset| existing_pointer(record, 4 + offset, entries))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Err("legacy single-parent plane hole has an invalid child pointer");
+    };
+    if children.iter().any(|sequence| {
+        entries
+            .get(sequence)
+            .is_some_and(|child| child.entity_type != 108)
+    }) {
+        return Ok(None);
+    }
+    if children.iter().any(|sequence| {
+        entries
+            .get(sequence)
+            .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
+    }) {
+        return Err(
+            "legacy single-parent plane hole requires negative, physically dependent Type 108 children",
+        );
+    }
+
+    let boundary_sequences = std::iter::once(parent_sequence)
+        .chain(children.iter().copied())
+        .map(|sequence| {
+            records
+                .get(&sequence)
+                .and_then(|plane| existing_pointer(plane, 5, entries))
+                .ok_or("legacy single-parent plane has an invalid boundary pointer")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let index = ModelIndex::new(ir);
+    let parent_plane = plane_carrier(&index, parent_sequence)
+        .ok_or("legacy single-parent parent plane was not projected")?;
+    let resolution = global.minimum_resolution_mm();
+    let mut boundary_edges = Vec::with_capacity(boundary_sequences.len());
+    for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
+        .chain(children.iter().copied())
+        .zip(boundary_sequences.iter().copied())
+        .enumerate()
+    {
+        let plane = plane_carrier(&index, plane_sequence)
+            .ok_or("legacy single-parent child plane was not projected")?;
+        if !planes_are_coplanar(parent_plane, plane, resolution) {
+            return Err("legacy single-parent plane boundaries are not coplanar");
+        }
+        let source_edge = index
+            .edges(&format!("iges:model:edge#D{boundary_sequence}"))
+            .ok_or("legacy single-parent plane boundary was not projected")?;
+        let start = vertex_position(&index, &source_edge.start)
+            .ok_or("legacy single-parent boundary start vertex is missing")?;
+        let end = vertex_position(&index, &source_edge.end)
+            .ok_or("legacy single-parent boundary end vertex is missing")?;
+        if start.distance(end) > resolution {
+            return Err("legacy single-parent plane boundary is not closed");
+        }
+        let edge_id = EdgeId(format!(
+            "iges:model:edge#legacy-single-parent-D{}-{boundary_index}",
+            entry.sequence
+        ));
+        let mut edge = source_edge.clone();
+        edge.id = edge_id.clone();
+        edge.end = edge.start.clone();
+        boundary_edges.push((edge_id, edge));
+    }
+    let stem = format!("D{}", entry.sequence);
+    let body_id = BodyId(format!("iges:model:body#legacy-single-parent-{stem}"));
+    let region_id = RegionId(format!("iges:model:region#legacy-single-parent-{stem}"));
+    let shell_id = ShellId(format!("iges:model:shell#legacy-single-parent-{stem}"));
+    let face_id = FaceId(format!("iges:model:face#legacy-single-parent-{stem}"));
+    let mut candidate = ModelDraft::new();
+    let mut loop_ids = Vec::with_capacity(boundary_edges.len());
+    for (boundary_index, (edge_id, edge)) in boundary_edges.into_iter().enumerate() {
+        candidate.model_mut().edges.push(edge);
+        let loop_id = LoopId(format!(
+            "iges:model:loop#legacy-single-parent-{stem}:{boundary_index}"
+        ));
+        let coedge_id = CoedgeId(format!(
+            "iges:model:coedge#legacy-single-parent-{stem}:{boundary_index}"
+        ));
+        candidate.model_mut().coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            next: coedge_id.clone(),
+            previous: coedge_id.clone(),
+            radial_next: coedge_id.clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+        candidate.model_mut().loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            boundary_role: if boundary_index == 0 {
+                LoopBoundaryRole::Outer
+            } else {
+                LoopBoundaryRole::Inner
+            },
+            coedges: vec![coedge_id],
+            vertex_uses: Vec::new(),
+        });
+        loop_ids.push(loop_id);
+    }
+    candidate.model_mut().faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: SurfaceId(format!("iges:model:surface#D{parent_sequence}")),
+        sense: Sense::Forward,
+        loops: loop_ids,
+        name: None,
+        color: None,
+        tolerance: (resolution > 0.0).then_some(resolution),
+    });
+    candidate.model_mut().shells.push(Shell {
+        id: shell_id,
+        region: region_id.clone(),
+        faces: vec![face_id],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    candidate.model_mut().regions.push(Region {
+        id: region_id,
+        body: body_id.clone(),
+        shells: vec![ShellId(format!(
+            "iges:model:shell#legacy-single-parent-{stem}"
+        ))],
+    });
+    candidate.model_mut().bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::Sheet,
+        regions: vec![RegionId(format!(
+            "iges:model:region#legacy-single-parent-{stem}"
+        ))],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    candidate.model_mut().finalize();
+    Ok(Some(candidate))
+}
+
 fn flow_associativity(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -939,7 +1143,7 @@ fn flow_associativity(
 }
 
 pub(super) fn project(
-    _ir: &mut CadIr,
+    ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
@@ -958,6 +1162,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
+    let mut legacy_face_candidates = Vec::<(u32, ModelDraft)>::new();
     let flows = directory
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
@@ -1451,10 +1656,29 @@ pub(super) fn project(
             )
         {
             decoded.insert(entry.sequence);
+            match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
+                Ok(Some(candidate)) => legacy_face_candidates.push((entry.sequence, candidate)),
+                Ok(None) => {}
+                Err(reason) => losses.push(entity_loss(entry, reason)),
+            }
         } else {
             losses.push(entity_loss(
                 entry,
                 "predefined associativity counts, class layout, links, back pointers, or structure are invalid",
+            ));
+        }
+    }
+
+    let mut commit_session = CommitSession::new(ir);
+    for (sequence, candidate) in legacy_face_candidates {
+        if commit_session.commit_model(candidate, ir).is_err() {
+            let entry = entries
+                .get(&sequence)
+                .copied()
+                .expect("legacy single-parent candidate came from the directory");
+            losses.push(entity_loss(
+                entry,
+                "legacy single-parent plane hole failed neutral topology validation",
             ));
         }
     }

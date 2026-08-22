@@ -267,99 +267,187 @@ pub(crate) fn associativity_definition_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_associativity_forms_file() -> Vec<u8> {
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 410,
-            form: 0,
-            label: "VIEW".into(),
-            status: "00000000",
-            parameters: "410,1,1,0,0,0,0,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 214,
-            form: 1,
-            label: "LABELARR".into(),
-            status: "00010100",
-            parameters: "214,1,2,1,0,0,0,2,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "LABELED".into(),
-            status: "00000000",
-            parameters: "116,1,2,3,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 5,
-            label: "LABELDSP".into(),
-            status: "00000200",
-            parameters: "402,1,1,1,2,3,3,0,5;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "PARENT".into(),
-            status: "00000000",
-            parameters: "116,0,0,0,0,1,13,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "CHILD".into(),
-            status: "00000000",
-            parameters: "116,1,0,0,0,1,13,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 9,
-            label: "PARENTCH".into(),
-            status: "00000200",
-            parameters: "402,1,1,9,11;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 12,
-            label: "EXTINDEX".into(),
-            status: "00000200",
-            parameters: "402,1,4HNAME,9;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 212,
-            form: 0,
-            label: "DIMNOTE".into(),
-            status: "00010100",
-            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 214,
-            form: 1,
-            label: "DIMARR".into(),
-            status: "00010100",
-            parameters: "214,1,2,1,0,0,0,2,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 216,
-            form: 0,
-            label: "DIMENS".into(),
-            status: "00000100",
-            parameters: "216,17,19,19,0,0,1,23,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 13,
-            label: "DIMGEOM".into(),
-            status: "00000200",
-            parameters: "402,1,1,21,9;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 16,
-            label: "PLANAR".into(),
-            status: "00000200",
-            parameters: "402,1,2,0,9,11;".into(),
-        },
-    ])
+    bounded_associativity_forms_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 410,
+                form: 0,
+                label: "VIEW".into(),
+                status: "00000000",
+                parameters: "410,1,1,0,0,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 1,
+                label: "LABELARR".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "LABELED".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 5,
+                label: "LABELDSP".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,2,3,3,0,5;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "PARENT".into(),
+                status: "00000000",
+                parameters: "116,0,0,0,0,1,13,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CHILD".into(),
+                status: "00000000",
+                parameters: "116,1,0,0,0,1,13,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "PARENTCH".into(),
+                status: "00000200",
+                parameters: "402,1,1,9,11;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 12,
+                label: "EXTINDEX".into(),
+                status: "00000200",
+                parameters: "402,1,4HNAME,9;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 212,
+                form: 0,
+                label: "DIMNOTE".into(),
+                status: "00010100",
+                parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 1,
+                label: "DIMARR".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 216,
+                form: 0,
+                label: "DIMENS".into(),
+                status: "00000100",
+                parameters: "216,17,19,19,0,0,1,23,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 13,
+                label: "DIMGEOM".into(),
+                status: "00000200",
+                parameters: "402,1,1,21,9;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 16,
+                label: "PLANAR".into(),
+                status: "00000200",
+                parameters: "402,1,2,0,9,11;".into(),
+            },
+        ],
+        global,
+    )
+}
+
+pub(crate) fn legacy_perforated_plane_file(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "PPLANE".into(),
+                status: "00000000",
+                parameters: "108,0,0,1,0,5,0,0,0,0,1,9,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 108,
+                form: -1,
+                label: "CPLANE".into(),
+                status: "00010000",
+                parameters: "108,0,0,1,0,7,0,0,0,0,1,9,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "OUTER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "INNER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,2,2,4,2,4,4,2,4,2,2;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "PERFOR8".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,3;".into(),
+            },
+        ],
+        global,
+    )
+}
+
+pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "GENPARN".into(),
+                status: "00000000",
+                parameters: "108,0,0,1,0,3,0,0,0,0,1,7,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "OUTER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CHILD".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0,1,7,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "GENASSOC".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,5;".into(),
+            },
+        ],
+        global,
+    )
 }
 
 pub(crate) fn label_display_without_leader_file() -> Vec<u8> {

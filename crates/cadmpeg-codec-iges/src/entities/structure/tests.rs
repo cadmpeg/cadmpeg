@@ -954,6 +954,121 @@ fn decode_types_bounded_predefined_associativity_roles() {
 }
 
 #[test]
+fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(legacy_perforated_plane_file(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().model.faces.len(),
+            1,
+            "IGES {version}: {:#?}",
+            result.report().losses
+        );
+        let face = &result.ir().model.faces[0];
+        assert_eq!(face.surface, "iges:model:surface#D1".into());
+        assert_eq!(face.loops.len(), 2, "IGES {version}");
+        let loop_roles = face
+            .loops
+            .iter()
+            .map(|loop_id| {
+                result
+                    .ir()
+                    .model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == *loop_id)
+                    .expect("legacy face loop")
+                    .boundary_role
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            loop_roles,
+            vec![
+                cadmpeg_ir::topology::LoopBoundaryRole::Outer,
+                cadmpeg_ir::topology::LoopBoundaryRole::Inner,
+            ],
+            "IGES {version}"
+        );
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code != IgesLossCode::EntityNotProjected.kind()
+                || !loss.message.contains("IGES entity type 402 form 9")
+        }));
+        assert!(
+            cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok(),
+            "IGES {version} legacy hole topology is invalid"
+        );
+    }
+}
+
+#[test]
+fn decode_keeps_nonplane_single_parent_relations_native_in_v4_and_v5_profiles() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(legacy_generic_single_parent_file(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(result.ir().model.faces.is_empty(), "IGES {version}");
+        assert!(result.report().losses.iter().all(|loss| {
+            loss.code != IgesLossCode::EntityNotProjected.kind()
+                || !loss.message.contains("IGES entity type 402 form 9")
+        }));
+        let association = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+            .iter()
+            .find(|value| value.fields()["kind"] == "single_parent")
+            .expect("generic single-parent association");
+        assert_eq!(association.fields()["parent"], "iges:entity:directory#1");
+        assert_eq!(
+            association.fields()["children"][0],
+            "iges:entity:directory#5"
+        );
+    }
+}
+
+#[test]
+fn decode_preserves_legacy_dimensioned_geometry_roles_in_v4_and_v5_profiles() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bounded_associativity_forms_file_with_global(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let association = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+            .iter()
+            .find(|value| value.fields()["kind"] == "dimensioned_geometry")
+            .expect("legacy dimensioned-geometry association");
+        assert_eq!(
+            association.fields()["dimension"],
+            "iges:entity:directory#21"
+        );
+        assert_eq!(
+            association.fields()["geometry"][0],
+            "iges:entity:directory#9"
+        );
+        assert!(
+            result.report().losses.iter().all(|loss| {
+                loss.code != IgesLossCode::EntityNotProjected.kind()
+                    || !loss.message.contains("IGES entity type 402 form 13")
+            }),
+            "IGES {version}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn decode_rejects_label_display_without_leader() {
     let result = IgesCodec
         .decode(
