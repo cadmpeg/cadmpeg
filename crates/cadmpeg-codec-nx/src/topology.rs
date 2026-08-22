@@ -673,6 +673,7 @@ impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub fn parse(stream: &[u8]) -> Self {
         let mut candidates = Vec::new();
+        let mut ownership_candidates = Vec::new();
         for pos in 0..stream.len().saturating_sub(3) {
             if stream[pos] != 0 {
                 continue;
@@ -681,7 +682,12 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            candidates.extend(
+            let target = if matches!(kind, 12 | 19) {
+                &mut ownership_candidates
+            } else {
+                &mut candidates
+            };
+            target.extend(
                 Self::fixed_record_candidates(stream, pos, kind, len)
                     .into_iter()
                     .flatten(),
@@ -695,8 +701,25 @@ impl Graph {
         let selected = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
             stream, candidates,
         ));
+        // BODY and REGION carry ownership identity only. Their opaque fixed
+        // payloads can contain complete-looking typed tags, so they are
+        // admitted after typed topology/carrier selection and never veto a
+        // typed candidate. An ownership node that shares bytes with a typed
+        // node is ambiguous and is omitted; shells retain the identity even
+        // when the optional BODY or REGION record is absent.
+        let ownership = Self::select_non_overlapping_candidates(
+            stream,
+            Self::select_unique_candidates(ownership_candidates),
+        )
+        .into_iter()
+        .filter(|ownership| {
+            selected
+                .iter()
+                .all(|candidate| !candidate.overlaps(*ownership))
+        })
+        .collect::<Vec<_>>();
         let mut graph = Self::default();
-        for candidate in selected {
+        for candidate in selected.into_iter().chain(ownership) {
             let Some(node) = candidate.materialize(stream) else {
                 continue;
             };
@@ -1120,6 +1143,10 @@ struct NodeCandidate {
 impl NodeCandidate {
     fn end(self) -> usize {
         self.end
+    }
+
+    fn overlaps(self, other: Self) -> bool {
+        self.pos < other.end() && other.pos < self.end()
     }
 
     fn materialize(self, stream: &[u8]) -> Option<Node> {

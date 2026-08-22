@@ -305,6 +305,34 @@ fn topology_rejects_overlapping_candidates_without_ranking() {
 }
 
 #[test]
+fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
+    let mut face = record(14, 39);
+    put_ref(&mut face, 2, 4);
+    put_f64(&mut face, 10, 0.000_2);
+    put_ref(&mut face, 18, 1);
+    put_ref(&mut face, 20, 1);
+    put_ref(&mut face, 22, 1);
+    put_ref(&mut face, 24, 3);
+    put_ref(&mut face, 26, 6);
+    face[28] = b'+';
+
+    let mut stream = vec![0, 12];
+    stream.extend(face);
+
+    let graph = Graph::parse(&stream);
+    assert!(graph.get(14, 4).is_some());
+    assert!(graph.get(12, 14).is_none());
+}
+
+#[test]
+fn topology_retains_non_overlapping_ownership_records() {
+    let graph = Graph::parse(&topology_partition_stream());
+
+    assert!(graph.get(12, 2).is_some());
+    assert!(graph.get(19, 12).is_some());
+}
+
+#[test]
 fn topology_resolves_overlap_before_duplicate_identity() {
     let stream = vec![0; 40];
     let outer = NodeCandidate {
