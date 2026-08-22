@@ -4625,16 +4625,9 @@ pub(crate) fn concentric_circle_separation(
     if !evaluated_mm.is_finite() {
         return false;
     }
-    let coordinate_scale = 1.0
-        + first_center
-            .u
-            .abs()
-            .max(first_center.v.abs())
-            .max(second_center.u.abs())
-            .max(second_center.v.abs());
     let center_separation =
         (first_center.u - second_center.u).hypot(first_center.v - second_center.v);
-    if center_separation > 1.0e-9 * coordinate_scale {
+    if !linear_measurement_matches(center_separation, 0.0, linear_tolerance) {
         return false;
     }
     let measured = (first_radius.0 - second_radius.0).abs();

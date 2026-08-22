@@ -204,6 +204,25 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
 
     const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
+    let tolerant_center_circle = entity(
+        "generated:circle#tolerant-center",
+        SketchGeometry::Circle {
+            center: Point2::new(3.000_000_5, -2.0),
+            radius: cadmpeg_ir::features::Length(4.25),
+        },
+    );
+    assert!(crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_center_circle,
+        0.25,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_center_circle,
+        0.25,
+        0.0,
+    ));
     let tolerant_parallel = entity(
         "generated:line#tolerant-parallel",
         SketchGeometry::Line {
