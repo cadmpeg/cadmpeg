@@ -5244,6 +5244,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 design::DesignFeatureFamily::Revolve
                     | design::DesignFeatureFamily::Loft
                     | design::DesignFeatureFamily::Sweep
+                    | design::DesignFeatureFamily::Pipe
             )
         ) && scope.path_feature_construction.is_some()
     }) {
@@ -5352,6 +5353,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 *operation == records::DesignExtrudeOperation::NewBody
                     && groups.len() == 1
                     && role_count(0x0000_0005_0000_0000) == 1
+                    && !groups[0].members.is_empty()
             }
             None => false,
         };

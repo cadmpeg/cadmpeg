@@ -478,6 +478,82 @@ fn validation_accepts_hole_construction_group_roles() {
 }
 
 #[test]
+fn validation_checks_pipe_path_group_roles() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope_id = format!("{stream}:design-parameter-scope#10");
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut scope = DesignParameterScope::empty(&scope_id, "Pipe", 10);
+    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 0,
+        section_shape: 1,
+        section_shape_offset: 0,
+        filled: true,
+        filled_offset: 0,
+        values: [1.0, 1.0, 0.6, 0.15],
+        record_indexes: [11, 12, 13, 14],
+        value_offsets: [0; 4],
+    });
+    let path_group = DesignConstructionOperandGroup {
+        id: format!("{stream}:design-construction-operand-group#20"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 4,
+        record_index: 20,
+        byte_offset: 0,
+        class_tag: "312".into(),
+        members: Vec::new(),
+        lost_edge_references: Vec::new(),
+        member_offsets: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role: 0x0000_0005_0000_0000,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "258".into(),
+        paired_byte_offset: 0,
+    };
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes.push(scope);
+        native.design_construction_operand_groups.push(path_group);
+    }
+
+    let has_role_finding = |ir: &cadmpeg_ir::CadIr| {
+        crate::validate::validate_native(ir).iter().any(|finding| {
+            finding.entity.as_deref() == Some(scope_id.as_str())
+                && finding.message
+                    == "Fusion Design path-feature operand roles conflict with its construction"
+        })
+    };
+    assert!(has_role_finding(&ir));
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0]
+        .members
+        .push(21);
+    assert!(!has_role_finding(&ir));
+}
+
+#[test]
 fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
