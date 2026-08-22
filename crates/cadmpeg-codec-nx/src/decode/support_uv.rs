@@ -293,12 +293,44 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
     assigned.iter().any(Option::is_some).then_some(assigned)
 }
 
+pub(crate) type SupportUvLanes = [Option<Vec<[f64; 2]>>; 2];
+
+/// Serialized support-UV lanes retained with one charted intersection.
+///
+/// The values-array lanes and EXT11 chart lanes have different admission
+/// rules. Values-array lanes are ordered by support side; EXT11 lanes remain
+/// in their serialized order until their surface identity is proven. Both
+/// sources are useful as seeds for coupled completion, but only EXT11 lanes
+/// participate in EXT11 assignment.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct SerializedSupportUv {
+    pub(crate) values: SupportUvLanes,
+    pub(crate) ext11: SupportUvLanes,
+}
+
+#[cfg(test)]
+impl SerializedSupportUv {
+    pub(crate) fn from_values(values: SupportUvLanes) -> Self {
+        Self {
+            values,
+            ext11: [None, None],
+        }
+    }
+
+    pub(crate) fn from_ext11(ext11: SupportUvLanes) -> Self {
+        Self {
+            values: [None, None],
+            ext11,
+        }
+    }
+}
+
 pub(crate) type PendingExt11SupportUv = (
     ProceduralCurveId,
     Vec<Point3>,
     Vec<f64>,
     f64,
-    [Option<Vec<[f64; 2]>>; 2],
+    SerializedSupportUv,
 );
 
 /// Return endpoint witnesses already certified by serialized support-UV lanes.
@@ -396,11 +428,42 @@ pub(crate) fn pcurve_control_point_seed(
 
 fn serialized_support_uv_seed_candidates(
     geometry: &SurfaceGeometry,
-    lanes: &[Option<Vec<[f64; 2]>>; 2],
+    serialized: &SerializedSupportUv,
+    side: usize,
     point_index: usize,
-) -> [Option<Point2>; 2] {
-    std::array::from_fn(|lane| {
+) -> [Option<Point2>; 4] {
+    let lane_order = [side, 1 - side];
+    std::array::from_fn(|candidate| {
+        let lanes = if candidate < 2 {
+            &serialized.values
+        } else {
+            &serialized.ext11
+        };
+        let lane = lane_order[candidate % 2];
         let [u, v] = *lanes[lane].as_deref()?.get(point_index)?;
+        (u.is_finite()
+            && v.is_finite()
+            && !missing_support_parameter(u)
+            && !missing_support_parameter(v))
+        .then(|| surface_parameters(geometry, [u, v]))?
+    })
+}
+
+fn serialized_support_uv_seed_for_side(
+    geometry: &SurfaceGeometry,
+    serialized: &SerializedSupportUv,
+    side: usize,
+) -> Option<Point2> {
+    let lane_order = [side, 1 - side];
+    [
+        (&serialized.values, lane_order[0]),
+        (&serialized.ext11, lane_order[0]),
+        (&serialized.ext11, lane_order[1]),
+        (&serialized.values, lane_order[1]),
+    ]
+    .into_iter()
+    .find_map(|(lanes, lane)| {
+        let [u, v] = *lanes[lane].as_deref()?.first()?;
         (u.is_finite()
             && v.is_finite()
             && !missing_support_parameter(u)
@@ -422,7 +485,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 ) {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
-    for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
+    for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
@@ -450,7 +513,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
             [&surfaces[0], &surfaces[1]],
             points,
             *fit_tolerance,
-            lanes,
+            &serialized.ext11,
             geometry_budget,
         ) else {
             continue;
@@ -751,7 +814,7 @@ fn complete_support_uv_wave(
         let mut replacements = Vec::new();
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        for (procedural_id, points, parameters, fit_tolerance, lanes) in pending {
+        for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -855,12 +918,15 @@ fn complete_support_uv_wave(
                     }
                     let serialized_seeds = serialized_support_uv_seed_candidates(
                         &surface.geometry,
-                        lanes,
+                        serialized,
+                        side,
                         point_index,
                     );
                     let seed_candidates = [
                         serialized_seeds[0],
                         serialized_seeds[1],
+                        serialized_seeds[2],
+                        serialized_seeds[3],
                         pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
                         uv.last().copied(),
                         None,
@@ -1298,7 +1364,7 @@ fn complete_coupled_support_uv(
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    for (procedural_id, points, parameters, fit_tolerance, _) in pending {
+    for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
             continue;
         };
@@ -1354,10 +1420,16 @@ fn complete_coupled_support_uv(
         if !coupled_support_budget.charge_by(points.len().saturating_mul(missing_lanes).max(1)) {
             break;
         }
-        let seeds = context
-            .sides
-            .each_ref()
-            .map(|side| pcurve_control_point_seed(side.pcurve.as_ref(), 0));
+        let seeds = std::array::from_fn(|side| {
+            let support = &context.sides[side];
+            pcurve_control_point_seed(support.pcurve.as_ref(), 0).or_else(|| {
+                model_index
+                    .surfaces(surfaces[side].0.as_str())
+                    .and_then(|surface| {
+                        serialized_support_uv_seed_for_side(&surface.geometry, serialized, side)
+                    })
+            })
+        });
         let parent_geometry_budget = geometry_budget;
         let lane_geometry_budget = parent_geometry_budget.child_slice(
             support_uv_lane_geometry_work_limit(points.len(), parent_geometry_budget.remaining()),
@@ -1467,8 +1539,21 @@ pub(super) fn complete_coupled_support_uv_for_test(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) {
+    complete_coupled_support_uv_with_geometry_budget_for_test(
+        ir,
+        pending,
+        super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+}
+
+#[cfg(test)]
+pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+    geometry_work: usize,
+) {
     let coupled_support_budget = new_support_uv_budget();
-    let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::new(geometry_work);
     complete_coupled_support_uv(
         ir,
         pending,

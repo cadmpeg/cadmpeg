@@ -26,7 +26,7 @@ use super::support_uv::{
     invalidate_inconsistent_support_uv_with_validated_lanes, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
-    IntersectionCompletionSource,
+    IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
@@ -669,7 +669,10 @@ pub(crate) fn try_decode_geometry(
                     charted.points.clone(),
                     charted.parameters.clone(),
                     charted.fit_tolerance,
-                    charted.ext_support_uv.clone(),
+                    SerializedSupportUv {
+                        values: charted.support_uv.clone(),
+                        ext11: charted.ext_support_uv.clone(),
+                    },
                 ));
             }
             annotations

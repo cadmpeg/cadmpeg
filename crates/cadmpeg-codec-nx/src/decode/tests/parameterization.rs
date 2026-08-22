@@ -1219,10 +1219,10 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ],
         vec![0.0, 0.01],
         0.01,
-        [
+        SerializedSupportUv::from_ext11([
             Some(vec![[0.0, 0.0], [0.01, 0.0]]),
             Some(vec![[0.0, 0.0], [0.0, 0.01]]),
-        ],
+        ]),
     )];
 
     crate::decode::complete_ext11_support_uv(&mut result.ir_mut(), &pending);
@@ -1263,7 +1263,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         ],
         vec![0.0, 0.01],
         0.01,
-        [None, None],
+        SerializedSupportUv::default(),
     )];
 
     crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
@@ -1364,14 +1364,14 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         points,
         vec![0.0, 1.0],
         FIT_TOLERANCE,
-        [
+        SerializedSupportUv::from_values([
             Some(
                 parameters
                     .map(|parameter| [parameter.u, parameter.v])
                     .to_vec(),
             ),
             None,
-        ],
+        ]),
     )];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(64);
@@ -1494,7 +1494,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         points.clone(),
         parameters.clone(),
         1.0e-3,
-        [None, None],
+        SerializedSupportUv::default(),
     )];
 
     crate::decode::support_uv::complete_coupled_support_uv_for_test(&mut ir, &pending);
@@ -1651,7 +1651,13 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         }
     }
     let pending = vec![
-        (dependent_id, points, parameters.clone(), 0.01, [None, None]),
+        (
+            dependent_id,
+            points,
+            parameters.clone(),
+            0.01,
+            SerializedSupportUv::default(),
+        ),
         (
             spine_id,
             vec![
@@ -1660,7 +1666,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             ],
             parameters,
             0.01,
-            [None, None],
+            SerializedSupportUv::default(),
         ),
     ];
 
@@ -1710,7 +1716,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.01, 0.0, 0.0)],
             vec![0.0, 0.01],
             0.01,
-            [None, None],
+            SerializedSupportUv::default(),
         ),
         (
             failed_id,
@@ -1720,7 +1726,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             ],
             vec![0.0, 0.01],
             0.01,
-            [None, None],
+            SerializedSupportUv::default(),
         ),
     ];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
@@ -1794,7 +1800,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         ],
         vec![0.0, 0.01],
         0.01,
-        [None, None],
+        SerializedSupportUv::default(),
     )];
 
     crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
@@ -1846,7 +1852,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         ],
         vec![0.0, 0.01],
         0.01,
-        [None, None],
+        SerializedSupportUv::default(),
     )];
 
     crate::decode::invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
