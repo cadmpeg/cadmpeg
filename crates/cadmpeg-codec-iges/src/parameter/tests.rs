@@ -7,8 +7,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    analyze_trailing_pointer_groups, groups_for_candidate, structural_pointer_group_candidates,
-    ParameterRecord, Token, TokenValue,
+    analyze_trailing_pointer_groups, entity_primary_end, groups_for_candidate,
+    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -14118,5 +14118,59 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         assert_eq!(analysis.candidate_count, 0);
         assert_eq!(analysis.valid_candidate_count, 0);
         assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
+fn legacy_type402_primary_boundaries_follow_their_counted_classes() {
+    let cases = [
+        (
+            8,
+            vec![
+                402.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                TokenValue::String(b"NET".to_vec()),
+            ],
+            6,
+        ),
+        (
+            10,
+            vec![
+                402.into(),
+                1.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                2.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+            ],
+            11,
+        ),
+        (
+            11,
+            vec![
+                402.into(),
+                1.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+                42.into(),
+            ],
+            6,
+        ),
+    ];
+    for (form, values, expected_end) in cases {
+        let mut source = directory_target(9, 402);
+        source.form = form;
+        let directory = BTreeMap::from([(9, &source)]);
+        let record = token_parameter_record(9, values);
+        assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
     }
 }

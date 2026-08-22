@@ -4,12 +4,12 @@
 use crate::card::CardScan;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::entities::geometry::{resolve_transform, Affine};
-use crate::entities::structure::array_base_type;
+use crate::entities::structure::{array_base_type, signal_string_geometry_target};
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
-    DefaultTailCount, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
-    TrailingPointerAnalysis,
+    connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, ParameterRecord,
+    QuarantinedParameterRecord, Token, TokenValue, TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -517,6 +517,41 @@ enum NativeAssociativity {
         source_entity: String,
         declared_count: Option<i64>,
         entries: Vec<NativeExternalIndexEntry>,
+    },
+    LegacySignalString {
+        id: String,
+        source_entity: String,
+        declared_signal_name_count: Option<i64>,
+        declared_connection_count: Option<i64>,
+        declared_schematic_count: Option<i64>,
+        declared_physical_count: Option<i64>,
+        signal_names: Vec<Option<Vec<u8>>>,
+        connections: Vec<Option<String>>,
+        schematic_entities: Vec<Option<String>>,
+        physical_entities: Vec<Option<String>>,
+    },
+    LegacyTextNode {
+        id: String,
+        source_entity: String,
+        declared_geometry_count: Option<i64>,
+        declared_text_description_count: Option<i64>,
+        geometry: Vec<Option<String>>,
+        box_width: Option<f64>,
+        box_height: Option<f64>,
+        font_characteristic: Option<i64>,
+        font_definition: Option<String>,
+        slant_angle: Option<f64>,
+        rotation_angle: Option<f64>,
+        mirror_flag: Option<i64>,
+        rotate_internal_flag: Option<i64>,
+    },
+    LegacyConnectNode {
+        id: String,
+        source_entity: String,
+        declared_point_count: Option<i64>,
+        declared_data_count: Option<i64>,
+        points: Vec<Option<String>>,
+        data: Vec<NativeTokenValue>,
     },
     DimensionedGeometry {
         id: String,
@@ -2834,7 +2869,10 @@ pub(crate) fn store(
             .iter()
             .filter(|entry| {
                 entry.entity_type == 402
-                    && matches!(entry.form, 2 | 5 | 6 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
+                    && matches!(
+                        entry.form,
+                        2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 18 | 20 | 21
+                    )
             })
             .filter_map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
@@ -2973,6 +3011,184 @@ pub(crate) fn store(
                                             .map(<[u8]>::to_vec),
                                         entity: entity_link(start + 1),
                                     }
+                                })
+                                .collect(),
+                        }
+                    }
+                    8 => {
+                        let layout = record.and_then(signal_string_layout);
+                        let signal_name_count = layout.map_or(0, |layout| layout.signal_name_count);
+                        let connection_count = layout.map_or(0, |layout| layout.connection_count);
+                        let schematic_count = layout.map_or(0, |layout| layout.schematic_count);
+                        let physical_count = layout.map_or(0, |layout| layout.physical_count);
+                        let signal_names_start =
+                            layout.map_or(0, |layout| layout.signal_names_start);
+                        let connections_start = layout.map_or(0, |layout| layout.connections_start);
+                        let schematic_start = layout.map_or(0, |layout| layout.schematic_start);
+                        let physical_start = layout.map_or(0, |layout| layout.physical_start);
+                        let connections = (0..connection_count)
+                            .map(|offset| {
+                                let index = connections_start + offset;
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .and_then(|sequence| {
+                                        parameter_resolver.resolve_type(
+                                            entry.sequence,
+                                            index,
+                                            sequence,
+                                            402,
+                                            &[11],
+                                        )
+                                    })
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                            })
+                            .collect();
+                        let geometry_links = |start, count| {
+                            (0..count)
+                                .map(|offset| {
+                                    let index = start + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "signal-string-geometry",
+                                                |target| {
+                                                    signal_string_geometry_target(
+                                                        target.entity_type,
+                                                        target.form,
+                                                    )
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                        NativeAssociativity::LegacySignalString {
+                            id,
+                            source_entity,
+                            declared_signal_name_count: record.and_then(|record| record.integer(1)),
+                            declared_connection_count: record.and_then(|record| record.integer(2)),
+                            declared_schematic_count: record.and_then(|record| record.integer(3)),
+                            declared_physical_count: record.and_then(|record| record.integer(4)),
+                            signal_names: (0..signal_name_count)
+                                .map(|offset| {
+                                    record
+                                        .and_then(|record| {
+                                            record.string(signal_names_start + offset)
+                                        })
+                                        .map(<[u8]>::to_vec)
+                                })
+                                .collect(),
+                            connections,
+                            schematic_entities: geometry_links(schematic_start, schematic_count),
+                            physical_entities: geometry_links(physical_start, physical_count),
+                        }
+                    }
+                    10 => {
+                        let layout = record.and_then(text_node_layout);
+                        let geometry_count = layout.map_or(0, |layout| layout.geometry_count);
+                        let geometry_start = layout.map_or(0, |layout| layout.geometry_start);
+                        let description_start = layout.map(|layout| layout.description_start);
+                        let font_characteristic = description_start.and_then(|index| {
+                            record.and_then(|record| record.integer_or(index + 2, 1))
+                        });
+                        let font_definition = description_start
+                            .zip(font_characteristic)
+                            .filter(|(_, value)| *value < 0)
+                            .and_then(|(index, value)| {
+                                parameter_resolver.resolve_negative(
+                                    entry.sequence,
+                                    index + 2,
+                                    value,
+                                    "type-310-form-0-font-definition",
+                                    |target| target.entity_type == 310 && target.form == 0,
+                                )
+                            })
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"));
+                        NativeAssociativity::LegacyTextNode {
+                            id,
+                            source_entity,
+                            declared_geometry_count: record.and_then(|record| record.integer(1)),
+                            declared_text_description_count: record
+                                .and_then(|record| record.integer(2)),
+                            geometry: (0..geometry_count)
+                                .map(|offset| {
+                                    let index = geometry_start + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve_type(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                116,
+                                                &[0],
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
+                                .collect(),
+                            box_width: description_start.and_then(|index| {
+                                record.and_then(|record| record.number_or(index, 0.0))
+                            }),
+                            box_height: description_start.and_then(|index| {
+                                record.and_then(|record| record.number_or(index + 1, 0.0))
+                            }),
+                            font_characteristic,
+                            font_definition,
+                            slant_angle: description_start.and_then(|index| {
+                                record.and_then(|record| {
+                                    record.number_or(index + 3, std::f64::consts::FRAC_PI_2)
+                                })
+                            }),
+                            rotation_angle: description_start.and_then(|index| {
+                                record.and_then(|record| record.number_or(index + 4, 0.0))
+                            }),
+                            mirror_flag: description_start.and_then(|index| {
+                                record.and_then(|record| record.integer_or(index + 5, 0))
+                            }),
+                            rotate_internal_flag: description_start.and_then(|index| {
+                                record.and_then(|record| record.integer_or(index + 6, 0))
+                            }),
+                        }
+                    }
+                    11 => {
+                        let layout = record.and_then(connect_node_layout);
+                        let point_count = layout.map_or(0, |layout| layout.point_count);
+                        let points_start = layout.map_or(0, |layout| layout.points_start);
+                        let data_count = layout.map_or(0, |layout| layout.data_count);
+                        let data_start = layout.map_or(0, |layout| layout.data_start);
+                        NativeAssociativity::LegacyConnectNode {
+                            id,
+                            source_entity,
+                            declared_point_count: record.and_then(|record| record.integer(1)),
+                            declared_data_count: record.and_then(|record| record.integer(2)),
+                            points: (0..point_count)
+                                .map(|offset| {
+                                    let index = points_start + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve_type(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                116,
+                                                &[0],
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
+                                .collect(),
+                            data: (0..data_count)
+                                .map(|offset| {
+                                    record
+                                        .and_then(|record| record.token(data_start + offset))
+                                        .map_or(NativeTokenValue::Omitted, |item| token(item).value)
                                 })
                                 .collect(),
                         }

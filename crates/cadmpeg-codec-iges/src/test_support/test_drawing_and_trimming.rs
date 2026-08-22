@@ -510,6 +510,79 @@ pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
     ])
 }
 
+pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "NODEPT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 11,
+            label: "NODE".into(),
+            status: "00000400",
+            parameters: "402,1,2,1,6HCONSTR,42,1,9,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "TEXTPT".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 10,
+            label: "TEXTNODE".into(),
+            status: "00000400",
+            parameters: "402,1,1,5,1.0,2.0,1,1.5708,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 8,
+            label: "SIGNAL".into(),
+            status: "00000400",
+            parameters: "402,1,1,1,1,3HNET,3,11,11;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "SIGCURVE".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0,1,9,0;".into(),
+        },
+    ])
+}
+
+pub(crate) fn legacy_text_node_font_pointer_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "TEXTPT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 10,
+            label: "TEXTNODE".into(),
+            status: "00000400",
+            parameters: "402,1,1,3,1.0,2.0,-1,1.5708,0,0,0;".into(),
+        },
+    ])
+}
+
 pub(crate) fn flow_associativity_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

@@ -14,7 +14,30 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::network_connectivity_valid;
+use super::{network_connectivity_valid, signal_string_geometry_target};
+
+const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
+
+#[test]
+fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
+    for (entity_type, form) in [
+        (100, 0),
+        (102, 0),
+        (104, 3),
+        (106, 11),
+        (110, 2),
+        (112, 0),
+        (116, 0),
+        (126, 5),
+        (130, 0),
+        (132, 0),
+    ] {
+        assert!(signal_string_geometry_target(entity_type, form));
+    }
+    for (entity_type, form) in [(106, 10), (130, 1), (134, 0), (402, 11)] {
+        assert!(!signal_string_geometry_target(entity_type, form));
+    }
+}
 
 #[test]
 fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
@@ -1211,6 +1234,98 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
         pipe.fields()["continuations"][0],
         "iges:entity:directory#17"
     );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_preserves_legacy_signal_text_and_connect_associativities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_associativity_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+
+    let signal = associativities
+        .iter()
+        .find(|value| value.fields()["kind"] == "legacy_signal_string")
+        .unwrap();
+    assert_eq!(signal.fields()["declared_signal_name_count"], 1);
+    assert_eq!(signal.fields()["declared_connection_count"], 1);
+    assert_eq!(signal.fields()["declared_schematic_count"], 1);
+    assert_eq!(signal.fields()["declared_physical_count"], 1);
+    assert_eq!(
+        signal.fields()["signal_names"][0],
+        serde_json::json!([78, 69, 84])
+    );
+    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#3");
+    assert_eq!(
+        signal.fields()["schematic_entities"][0],
+        "iges:entity:directory#11"
+    );
+    assert_eq!(
+        signal.fields()["physical_entities"][0],
+        "iges:entity:directory#11"
+    );
+
+    let text = associativities
+        .iter()
+        .find(|value| value.fields()["kind"] == "legacy_text_node")
+        .unwrap();
+    assert_eq!(text.fields()["declared_geometry_count"], 1);
+    assert_eq!(text.fields()["declared_text_description_count"], 1);
+    assert_eq!(text.fields()["geometry"][0], "iges:entity:directory#5");
+    assert_eq!(text.fields()["box_width"], 1.0);
+    assert_eq!(text.fields()["box_height"], 2.0);
+    assert_eq!(text.fields()["font_characteristic"], 1);
+    assert!(
+        (text.fields()["slant_angle"].as_f64().unwrap() - std::f64::consts::FRAC_PI_2).abs()
+            <= LEGACY_TEXT_ANGLE_TOLERANCE
+    );
+    assert_eq!(text.fields()["rotation_angle"], 0.0);
+    assert_eq!(text.fields()["mirror_flag"], 0);
+    assert_eq!(text.fields()["rotate_internal_flag"], 0);
+
+    let connect = associativities
+        .iter()
+        .find(|value| value.fields()["kind"] == "legacy_connect_node")
+        .unwrap();
+    assert_eq!(connect.fields()["declared_point_count"], 1);
+    assert_eq!(connect.fields()["declared_data_count"], 2);
+    assert_eq!(connect.fields()["points"][0], "iges:entity:directory#1");
+    assert_eq!(connect.fields()["data"][0]["kind"], "string");
+    assert_eq!(
+        connect.fields()["data"][0]["value"],
+        serde_json::json!([67, 79, 78, 83, 84, 82])
+    );
+    assert_eq!(connect.fields()["data"][1]["kind"], "integer");
+    assert_eq!(connect.fields()["data"][1]["value"], 42);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_resolves_legacy_text_node_font_pointer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_text_node_font_pointer_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let text = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["kind"] == "legacy_text_node")
+        .unwrap();
+    assert_eq!(text.fields()["font_characteristic"], -1);
+    assert_eq!(text.fields()["font_definition"], "iges:entity:directory#1");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

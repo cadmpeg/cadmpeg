@@ -4,7 +4,10 @@
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
-use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
+use crate::parameter::{
+    connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
+    TrailingPointerAnalysis,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -182,6 +185,17 @@ pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
     ) || (entity_type == 402 && matches!(form, 1 | 7 | 14 | 15))
 }
 
+pub(crate) fn signal_string_geometry_target(entity_type: i64, form: i64) -> bool {
+    matches!(
+        (entity_type, form),
+        (100 | 102 | 112 | 116 | 130 | 132, 0)
+            | (104, 0..=3)
+            | (106, 11 | 12)
+            | (110, 0..=2)
+            | (126, 0..=5)
+    )
+}
+
 fn array_mask_valid(
     record: &ParameterRecord,
     count_index: usize,
@@ -243,6 +257,195 @@ fn has_property_pointer(
         .and_then(|analysis| analysis.groups.as_ref())
         .filter(|groups| groups.fully_valid)
         .is_some_and(|groups| groups.properties.contains(&property_sequence))
+}
+
+fn legacy_primary_end_valid(
+    record: &ParameterRecord,
+    primary_end: usize,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+) -> bool {
+    record.parameter_end() == primary_end
+        || trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| analysis.groups.as_ref())
+            .filter(|groups| groups.fully_valid)
+            .is_some_and(|groups| groups.token_start == primary_end)
+}
+
+struct LegacyAssociativityContext<'map, 'data> {
+    entry: &'map DirectoryEntry,
+    entries: &'map BTreeMap<u32, &'data DirectoryEntry>,
+    records: &'map BTreeMap<u32, &'data ParameterRecord>,
+    trailing_pointer_analysis: &'map BTreeMap<u32, TrailingPointerAnalysis>,
+}
+
+impl LegacyAssociativityContext<'_, '_> {
+    fn pointer_list_valid(
+        &self,
+        record: &ParameterRecord,
+        start: usize,
+        count: usize,
+        accepts: fn(&DirectoryEntry) -> bool,
+        back_pointers_required: bool,
+    ) -> bool {
+        (0..count).all(|offset| {
+            let Some(sequence) = existing_pointer(record, start + offset, self.entries) else {
+                return false;
+            };
+            let Some(target) = self.entries.get(&sequence) else {
+                return false;
+            };
+            accepts(target)
+                && (!back_pointers_required
+                    || self.records.get(&sequence).is_some_and(|record| {
+                        has_association_back_pointer(
+                            record,
+                            self.entry.sequence,
+                            self.trailing_pointer_analysis,
+                        )
+                    }))
+        })
+    }
+}
+
+fn connect_node_target(target: &DirectoryEntry) -> bool {
+    target.entity_type == 402 && target.form == 11
+}
+
+fn point_target(target: &DirectoryEntry) -> bool {
+    target.entity_type == 116 && target.form == 0
+}
+
+fn negative_font_pointer_valid(
+    record: &ParameterRecord,
+    index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    match record.integer_or(index, 1) {
+        Some(value) if value > 0 => true,
+        Some(value) if value < 0 => value
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok())
+            .is_some_and(|sequence| {
+                sequence % 2 == 1
+                    && entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+            }),
+        _ => false,
+    }
+}
+
+fn legacy_associativity_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+) -> bool {
+    if entry.structure != 0 {
+        return false;
+    }
+    let context = LegacyAssociativityContext {
+        entry,
+        entries,
+        records,
+        trailing_pointer_analysis,
+    };
+    match entry.form {
+        8 => {
+            let Some(layout) = signal_string_layout(record) else {
+                return false;
+            };
+            let names_valid = (0..layout.signal_name_count).all(|offset| {
+                matches!(
+                    record.value(layout.signal_names_start + offset),
+                    Some(TokenValue::String(_) | TokenValue::Omitted)
+                )
+            });
+            names_valid
+                && context.pointer_list_valid(
+                    record,
+                    layout.connections_start,
+                    layout.connection_count,
+                    connect_node_target,
+                    true,
+                )
+                && context.pointer_list_valid(
+                    record,
+                    layout.schematic_start,
+                    layout.schematic_count,
+                    |target| signal_string_geometry_target(target.entity_type, target.form),
+                    true,
+                )
+                && context.pointer_list_valid(
+                    record,
+                    layout.physical_start,
+                    layout.physical_count,
+                    |target| signal_string_geometry_target(target.entity_type, target.form),
+                    true,
+                )
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        10 => {
+            let Some(layout) = text_node_layout(record) else {
+                return false;
+            };
+            let description = layout.description_start;
+            let numeric_fields_valid = record
+                .number_or(description, 0.0)
+                .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 1, 0.0)
+                    .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 3, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 4, 0.0)
+                    .is_some_and(f64::is_finite);
+            let mirror_valid = record
+                .integer_or(description + 5, 0)
+                .is_some_and(|value| matches!(value, 0..=2));
+            let rotate_internal_valid = record
+                .integer_or(description + 6, 0)
+                .is_some_and(|value| matches!(value, 0..=1));
+            let points_valid = context.pointer_list_valid(
+                record,
+                layout.geometry_start,
+                layout.geometry_count,
+                point_target,
+                true,
+            );
+            entry.status.use_flag == 4
+                && layout.geometry_count > 0
+                && points_valid
+                && numeric_fields_valid
+                && negative_font_pointer_valid(record, description + 2, entries)
+                && mirror_valid
+                && rotate_internal_valid
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        11 => {
+            let Some(layout) = connect_node_layout(record) else {
+                return false;
+            };
+            let data_valid = (0..layout.data_count)
+                .all(|offset| record.value(layout.data_start + offset).is_some());
+            entry.status.use_flag == 4
+                && layout.point_count > 0
+                && context.pointer_list_valid(
+                    record,
+                    layout.points_start,
+                    layout.point_count,
+                    point_target,
+                    true,
+                )
+                && data_valid
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        _ => false,
+    }
 }
 
 fn attribute_value_valid(
@@ -1647,26 +1850,33 @@ pub(super) fn project(
     }
 
     for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 402 && matches!(entry.form, 2 | 5 | 6 | 9 | 12 | 13 | 16 | 21)
+        entry.entity_type == 402
+            && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.structure == 0
-            && predefined_associativity_valid(
-                entry,
-                record,
-                &entries,
-                &records,
-                trailing_pointer_analysis,
-            )
-        {
+        let valid = if matches!(entry.form, 8 | 10 | 11) {
+            legacy_associativity_valid(entry, record, &entries, &records, trailing_pointer_analysis)
+        } else {
+            entry.structure == 0
+                && predefined_associativity_valid(
+                    entry,
+                    record,
+                    &entries,
+                    &records,
+                    trailing_pointer_analysis,
+                )
+        };
+        if valid {
             decoded.insert(entry.sequence);
-            match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
-                Ok(Some(candidate)) => legacy_face_candidates.push((entry.sequence, candidate)),
-                Ok(None) => {}
-                Err(reason) => losses.push(entity_loss(entry, reason)),
+            if entry.form == 9 {
+                match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
+                    Ok(Some(candidate)) => legacy_face_candidates.push((entry.sequence, candidate)),
+                    Ok(None) => {}
+                    Err(reason) => losses.push(entity_loss(entry, reason)),
+                }
             }
         } else {
             losses.push(entity_loss(
