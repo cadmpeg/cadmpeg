@@ -33,14 +33,60 @@ struct SubfigureInstance {
 struct NetworkDefinition {
     depth: usize,
     members: Vec<u32>,
-    connect_count: usize,
+    connect_points: Vec<Option<u32>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct NetworkInstance {
     definition: u32,
-    connect_count: usize,
+    connect_points: Vec<Option<u32>>,
     valid_fields: bool,
+}
+
+fn network_connect_points(
+    record: &ParameterRecord,
+    count_index: usize,
+    first_pointer_index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> Option<Vec<Option<u32>>> {
+    let count = record.count(count_index)?;
+    (0..count)
+        .map(|index| {
+            let value = if matches!(dialect, Dialect::V4_0) {
+                record.integer(first_pointer_index + index)
+            } else {
+                record.integer_or(first_pointer_index + index, 0)
+            }?;
+            if value == 0 {
+                return (!matches!(dialect, Dialect::V4_0)).then_some(None);
+            }
+            let sequence = u32::try_from(value).ok()?;
+            (sequence % 2 == 1)
+                .then_some(sequence)
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|entry| entry.entity_type == 132)
+                })
+                .map(Some)
+        })
+        .collect()
+}
+
+fn network_connectivity_valid(
+    definition: &[Option<u32>],
+    instance: &[Option<u32>],
+    dialect: Dialect,
+) -> bool {
+    let slots_match = definition
+        .iter()
+        .zip(instance)
+        .all(|(definition, instance)| definition.is_some() || instance.is_none());
+    definition.len() == instance.len()
+        && slots_match
+        && (!matches!(dialect, Dialect::V4_0)
+            || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
 }
 
 #[derive(Clone)]
@@ -1910,22 +1956,13 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record.count(7 + member_count);
-        let connect_points_valid = connect_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record
-                    .integer(8 + member_count + index)
-                    .is_some_and(|value| {
-                        value == 0
-                            || u32::try_from(value).ok().is_some_and(|sequence| {
-                                entries
-                                    .get(&sequence)
-                                    .is_some_and(|target| target.entity_type == 132)
-                            })
-                    })
-            })
-        });
-        let Some(connect_count) = connect_count else {
+        let Some(connect_points) = network_connect_points(
+            record,
+            7 + member_count,
+            8 + member_count,
+            &entries,
+            global.dialect(),
+        ) else {
             losses.push(entity_loss(
                 entry,
                 "network definition connect-point count is invalid",
@@ -1937,14 +1974,13 @@ pub(super) fn project(
             NetworkDefinition {
                 depth,
                 members,
-                connect_count,
+                connect_points,
             },
         );
         if name_valid
             && type_flag_valid
             && designator_valid
             && display_valid
-            && connect_points_valid
             && entry.status.use_flag == 2
             && entry.transform == 0
         {
@@ -1992,19 +2028,7 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record.count(11);
-        let connect_points_valid = connect_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record.integer(12 + index).is_some_and(|value| {
-                    value == 0
-                        || u32::try_from(value).ok().is_some_and(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .is_some_and(|target| target.entity_type == 132)
-                        })
-                })
-            })
-        });
+        let connect_points = network_connect_points(record, 11, 12, &entries, global.dialect());
         let transform_valid = resolve_transform(
             entry.transform,
             &entries,
@@ -2015,7 +2039,7 @@ pub(super) fn project(
             ctx,
         )
         .is_ok();
-        let (Some(definition), Some(connect_count)) = (definition, connect_count) else {
+        let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             losses.push(entity_loss(
                 entry,
                 "network instance definition or count is invalid",
@@ -2026,13 +2050,12 @@ pub(super) fn project(
             entry.sequence,
             NetworkInstance {
                 definition,
-                connect_count,
+                connect_points,
                 valid_fields: translation_valid
                     && scales_valid
                     && type_flag_valid
                     && designator_valid
                     && display_valid
-                    && connect_points_valid
                     && transform_valid,
             },
         );
@@ -2126,9 +2149,16 @@ pub(super) fn project(
     }
     for (sequence, instance) in &network_instances {
         let entry = entries[sequence];
-        let definition_valid = network_definitions
-            .get(&instance.definition)
-            .is_some_and(|definition| definition.connect_count == instance.connect_count);
+        let definition_valid =
+            network_definitions
+                .get(&instance.definition)
+                .is_some_and(|definition| {
+                    network_connectivity_valid(
+                        &definition.connect_points,
+                        &instance.connect_points,
+                        global.dialect(),
+                    )
+                });
         if instance.valid_fields && definition_valid && decoded.contains(&instance.definition) {
             decoded.insert(*sequence);
         } else {

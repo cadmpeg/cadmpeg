@@ -9,9 +9,12 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
+
+use super::network_connectivity_valid;
 
 #[test]
 fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
@@ -1629,6 +1632,95 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
+    );
+}
+
+#[test]
+fn network_connectivity_uses_versioned_null_pointer_rules() {
+    let definition = [Some(1_u32)];
+    let instance = [None];
+    assert!(network_connectivity_valid(
+        &definition,
+        &instance,
+        Dialect::V5_0
+    ));
+    assert!(!network_connectivity_valid(
+        &definition,
+        &instance,
+        Dialect::V4_0
+    ));
+    assert!(network_connectivity_valid(
+        &definition,
+        &[Some(3)],
+        Dialect::V4_0
+    ));
+    assert!(!network_connectivity_valid(&definition, &[], Dialect::V5_0));
+    assert!(!network_connectivity_valid(
+        &[None],
+        &[Some(3)],
+        Dialect::V5_0
+    ));
+    assert!(network_connectivity_valid(&[None], &[None], Dialect::V5_0));
+}
+
+fn network_null_connect_point_file(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 132,
+                form: 0,
+                label: "DEFPIN".into(),
+                status: "00000400",
+                parameters: "132,0,0,0,0,1,1,2HP1,0,3HPIN,0,1,1,0,3;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 320,
+                form: 0,
+                label: "NETWORK".into(),
+                status: "00000200",
+                parameters: "320,0,3HNET,0,1,2HR1,0,1,1;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 420,
+                form: 0,
+                label: "NETINST".into(),
+                status: "00000000",
+                parameters: "420,3,10,20,30,1,,,1,2HU1,0,1,0;".into(),
+            },
+        ],
+        global,
+    )
+}
+
+#[test]
+fn network_null_instance_connect_point_is_v5_only() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    let v4 = IgesCodec
+        .decode(
+            &mut Cursor::new(network_null_connect_point_file(global_v4)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(v4.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("network instance definition or count is invalid")
+    }));
+
+    let v5 = IgesCodec
+        .decode(
+            &mut Cursor::new(network_null_connect_point_file(global_v5)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!v5.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("network instance definition or count is invalid")
+    }));
+    assert_eq!(
+        v5.ir().native.namespace("iges").unwrap().arenas["network_instances"].len(),
+        1
     );
 }
 
