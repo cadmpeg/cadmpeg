@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -283,10 +283,26 @@ pub(super) fn project(
             ));
             continue;
         }
-        if matches!(entry.form, 11..=13 | 63) && tuple_count < 2 {
+        if matches!(entry.form, 11..=13) {
+            let minimum_tuple_count = if matches!(global.dialect(), Dialect::V4_0) {
+                1
+            } else {
+                2
+            };
+            if tuple_count < minimum_tuple_count {
+                losses.push(entity_loss(
+                    entry,
+                    format!(
+                        "linear paths require at least {minimum_tuple_count} tuple(s) under the declared dialect"
+                    ),
+                ));
+                continue;
+            }
+        }
+        if entry.form == 63 && tuple_count < 2 {
             losses.push(entity_loss(
                 entry,
-                "linear paths require at least two tuples",
+                "simple closed paths require at least two tuples",
             ));
             continue;
         }
@@ -371,7 +387,11 @@ pub(super) fn project(
             ));
             continue;
         }
-        if matches!(entry.form, 1..=3) {
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
+                && matches!(global.dialect(), Dialect::V4_0));
+        if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
                 let point = PointId(format!(
                     "iges:model:point#D{}-{}",

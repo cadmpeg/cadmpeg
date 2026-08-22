@@ -61,6 +61,69 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
 }
 
 #[test]
+fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V4PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v4,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+}
+
+#[test]
+fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V5PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v5,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("linear paths require at least 2 tuple(s)")
+    }));
+}
+
+#[test]
 fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
     let result = IgesCodec
         .decode(
