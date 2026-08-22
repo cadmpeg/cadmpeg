@@ -14,6 +14,7 @@ fn push_inline_test_scalar(bytes: &mut Vec<u8>, value: f64) {
         4 => bytes.extend_from_slice(&[0x2f, 0x10, 0x00]),
         5 => bytes.extend_from_slice(&[0x2f, 0x14, 0x00]),
         6 => bytes.extend_from_slice(&[0x2f, 0x18, 0x00]),
+        7 => bytes.extend_from_slice(&[0x2f, 0x1c, 0x00]),
         8 => bytes.extend_from_slice(&[0x2f, 0x20, 0x00]),
         other => panic!("unsupported inline test scalar {other}"),
     }
@@ -70,6 +71,23 @@ fn inline_non_plane_record(
 
 fn local_system_suffix_row(type_byte: u8, local_system: &[u8], suffix: &[u8]) -> Vec<u8> {
     let mut payload = vec![7, type_byte, 4, 0x01, 0, 0];
+    payload.extend_from_slice(local_system);
+    payload.extend_from_slice(suffix);
+    payload.push(0xe3);
+    payload
+}
+
+fn legacy_planar_cone_suffix_row(local_system: &[u8], suffix: &[u8]) -> Vec<u8> {
+    let mut payload = vec![7, 0x25, 4, 0x01, 0, 0, 0x17];
+    push_inline_test_scalar(&mut payload, 7.0);
+    payload.push(0x15);
+    push_inline_test_scalar(&mut payload, 3.0);
+    payload.extend_from_slice(&[0x48, 0x1c, 0x00]);
+    push_inline_test_scalar(&mut payload, 1.0);
+    payload.extend_from_slice(&[0x48, 0x1c, 0x00]);
+    push_inline_test_scalar(&mut payload, 7.0);
+    push_inline_test_scalar(&mut payload, 5.0);
+    payload.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0, 0xf7, 0x2c, 0xe3]);
     payload.extend_from_slice(local_system);
     payload.extend_from_slice(suffix);
     payload.push(0xe3);
@@ -198,6 +216,48 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(cylinder_frame.radius, 1.0);
     assert_eq!(cylinder_frame.length, None);
     assert!(cylinder.has_inline_non_plane_local_system_suffix(0x24));
+}
+
+#[test]
+fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
+    let local_system = [
+        0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18, 0xe4, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x18,
+    ];
+    let record = parameter_records(&local_system_suffix_row(
+        0x25,
+        &local_system,
+        &[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18],
+    ))
+    .remove(0);
+
+    let frame = record
+        .positional_cone_frame
+        .expect("compact Y-axis cone carrier");
+    assert_eq!(frame.apex, [1.0, 8.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
+}
+
+#[test]
+fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
+    let local_system = [
+        0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x18,
+    ];
+    let record = parameter_records(&legacy_planar_cone_suffix_row(
+        &local_system,
+        &[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23],
+    ))
+    .remove(0);
+
+    let frame = record
+        .positional_cone_frame
+        .expect("legacy cone witness carrier");
+    assert_eq!(frame.apex, [0.0, -2.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
 }
 
 #[test]

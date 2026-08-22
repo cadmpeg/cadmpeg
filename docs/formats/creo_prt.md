@@ -955,8 +955,12 @@ A local-system-suffix row may omit the axial envelope. Its body begins with
 the local system and family suffix, or with an earlier row-local block closed
 by `e3` followed by that local system and suffix. The suffix local system ends
 at the next `e3`; its origin is already in model space and no axial extent is
-defined. Bytes before that local-system start do not supply the carrier
-placement. A complete suffix is admitted only when its frame is finite and
+defined. For a cone, a complete legacy planar-envelope block immediately
+before the suffix is a witness for it: the family, dominant axis, and suffix
+half-angle must agree across both operands. The witness supplies the
+model-space placement when the suffix does not preserve a unique placement
+interpretation. An incomplete or conflicting prefix does not supply a
+carrier. A complete suffix is admitted only when its frame is finite and
 orthonormal and its family suffix consumes the entire bounded body before the
 terminal `e3`.
 

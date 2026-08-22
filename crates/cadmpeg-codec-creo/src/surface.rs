@@ -3411,6 +3411,15 @@ fn inline_surface_suffix_body(
                         .iter()
                         .all(|candidate| inline_carriers_agree(*candidate, *first))
                 });
+            let carrier = inline_suffix_witness(kind, body, local_start, cache)
+                .filter(|witness| {
+                    inline_suffix_witness_agrees(
+                        *witness,
+                        &carriers,
+                        geometric_interpretation_count,
+                    )
+                })
+                .or(carrier);
             layouts.push(InlineSurfaceBody {
                 terminal_close,
                 carrier,
@@ -3421,6 +3430,52 @@ fn inline_surface_suffix_body(
         return None;
     };
     Some(*layout)
+}
+
+/// Recover a complete legacy analytic envelope immediately before an inline
+/// local-system suffix. The prefix is a separate bounded operand, so it is
+/// useful only when its family agrees with the suffix and its placement is
+/// independently complete.
+fn inline_suffix_witness(
+    kind: SurfaceKind,
+    body: &[u8],
+    local_start: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceCarrier> {
+    let prefix_end = local_start.checked_sub(1)?;
+    let prefix = body.get(..prefix_end)?;
+    match kind {
+        SurfaceKind::Cone => {
+            decode_planar_envelope_cone_frame(prefix, cache).map(InlineSurfaceCarrier::Cone)
+        }
+        _ => None,
+    }
+}
+
+fn inline_suffix_witness_agrees(
+    witness: InlineSurfaceCarrier,
+    candidates: &[InlineSurfaceCarrier],
+    interpretation_count: usize,
+) -> bool {
+    if candidates.is_empty() || candidates.len() != interpretation_count {
+        return false;
+    }
+    match witness {
+        InlineSurfaceCarrier::Cone(witness) => candidates.iter().all(|candidate| {
+            let InlineSurfaceCarrier::Cone(candidate) = *candidate else {
+                return false;
+            };
+            let axis_dot = witness
+                .axis
+                .into_iter()
+                .zip(candidate.axis)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            inline_close(witness.half_angle, candidate.half_angle)
+                && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
+        }),
+        _ => false,
+    }
 }
 
 fn decode_inline_surface_envelope(

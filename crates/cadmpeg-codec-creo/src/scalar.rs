@@ -856,19 +856,19 @@ fn decode_inline_local_system_coordinates(
     if body.get(cursor) == Some(&0x18) {
         candidates.push((0.0, cursor + 1));
     }
+    // Keep the candidate set within the slot's coordinate lane. A prefix can
+    // still be ambiguous with the generic positional row lane (for example,
+    // `0x46` is signed in the first-coordinate lane and positive in the row
+    // lane), but accepting both tabulated coordinate lanes turns one scalar
+    // into an unrelated second frame interpretation.
     let decoded = match slot % 3 {
         0 => decode_tabulated_cylinder_first_coordinate(body, cursor, cache),
         1 => decode_tabulated_cylinder_second_coordinate(body, cursor, cache),
         _ => decode_in_surface_row_lane(body, cursor, cache),
     }
     .into_iter()
-    .chain(decode_in_row_lane(body, cursor, cache))
-    .chain(decode_tabulated_cylinder_first_coordinate(
-        body, cursor, cache,
-    ))
-    .chain(decode_tabulated_cylinder_second_coordinate(
-        body, cursor, cache,
-    ));
+    .chain(decode_positive_dict(body, cursor))
+    .chain(decode_in_row_lane(body, cursor, cache));
     for candidate in decoded {
         if candidate.0.is_finite()
             && !candidates.iter().any(|existing| {
