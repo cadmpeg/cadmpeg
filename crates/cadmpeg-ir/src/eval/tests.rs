@@ -5,8 +5,10 @@
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    Curve, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceParameterization, Surface,
+    SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction,
+    SweepSurfaceLayout,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -642,6 +644,104 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     assert_eq!(second_partials.duu, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.dvv, Vector3::new(0.0, 0.0, 0.0));
+}
+
+#[test]
+fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
+    let profile_id = CurveId("profile".into());
+    let spine_id = CurveId("spine".into());
+    let surface_id = SurfaceId("cacheless-sweep".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves = vec![
+        Curve {
+            id: profile_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Curve {
+            id: spine_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Sweep {
+            profile: profile_id,
+            spine: spine_id,
+            native: Some(Box::new(SweepSurfaceConstruction {
+                primary_kind: 0,
+                revision_form: Some(SweepRevisionForm {
+                    revision: 23100,
+                    primary_flag: false,
+                    profile_endpoints: [Some(0.0), Some(1.0)],
+                    path_endpoints: [Some(0.0), Some(1.0)],
+                    tail_enum: 2,
+                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                }),
+                layout: SweepSurfaceLayout::LawDriven {
+                    mode: 10,
+                    profile_range: [0.0, 1.0],
+                    profile_frame: None,
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    directions: [
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    ],
+                    first_law: Box::new(LawExpression::Text {
+                        value: "2.0*X".into(),
+                    }),
+                    first_mode: 21,
+                    first_range: [0.0, 1.0],
+                    law_direction: Vector3::new(0.0, 0.0, 1.0),
+                    path_mode: 1,
+                    path_flag: false,
+                    path_range: [0.0, 1.0],
+                    path_parameter: 0.0,
+                    second_law_flag: false,
+                    second_law: Box::new(LawExpression::Text {
+                        value: "VEC(1,1,1)".into(),
+                    }),
+                    formula_mode: 0,
+                    formula: LawFormula {
+                        name: "null_law".into(),
+                        variables: Vec::new(),
+                    },
+                    trailing_flag: false,
+                },
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                discontinuity_flag: false,
+            })),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let expected = Point3::new(0.5, -0.5, 0.25);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.5, 0.25),
+        Some(expected)
+    );
+    assert_eq!(
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25),
+        Some(expected)
+    );
 }
 
 #[test]

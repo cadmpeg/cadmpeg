@@ -16,13 +16,14 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+use crate::CadIr;
 use crate::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry,
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
+    SweepSurfaceLayout, knots_nondecreasing,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
-use crate::CadIr;
 use cadmpeg_core::decode::alloc_filled;
 
 /// Test whether two model-space points are reflections across a line carrier.
@@ -3907,8 +3908,213 @@ pub fn model_surface_point(
             axis_origin,
             axis_direction,
         } => model_axis_revolution_point(&index, directrix, *axis_origin, *axis_direction, u, v),
+        ProceduralSurfaceDefinition::Sweep {
+            profile,
+            spine,
+            native: Some(construction),
+        } => cacheless_law_sweep_point(&index, profile, spine, construction, u, v),
         _ => None,
     }
+}
+
+fn scalar_sweep_law(expression: &LawExpression, parameter: f64) -> Option<f64> {
+    if !parameter.is_finite() {
+        return None;
+    }
+    match expression {
+        LawExpression::Null => Some(0.0),
+        LawExpression::Integer { value } => Some(*value as f64),
+        LawExpression::Double { value } => (*value).is_finite().then_some(*value),
+        LawExpression::Text { value } => {
+            let value = value.trim();
+            if value == "X" {
+                return Some(parameter);
+            }
+            if let Ok(value) = value.parse::<f64>() {
+                return value.is_finite().then_some(value);
+            }
+            let (left, right) = value.split_once('*')?;
+            if right.trim() == "X" {
+                let coefficient = left.trim().parse::<f64>().ok()?;
+                let value = coefficient * parameter;
+                return (coefficient.is_finite() && value.is_finite()).then_some(value);
+            }
+            if left.trim() == "X" {
+                let coefficient = right.trim().parse::<f64>().ok()?;
+                let value = coefficient * parameter;
+                return (coefficient.is_finite() && value.is_finite()).then_some(value);
+            }
+            None
+        }
+        LawExpression::Algebraic { operator, operands } => match operator.as_str() {
+            "ADD" if operands.len() == 2 => {
+                let value = scalar_sweep_law(&operands[0], parameter)?
+                    + scalar_sweep_law(&operands[1], parameter)?;
+                value.is_finite().then_some(value)
+            }
+            "SUB" if operands.len() == 2 => {
+                let value = scalar_sweep_law(&operands[0], parameter)?
+                    - scalar_sweep_law(&operands[1], parameter)?;
+                value.is_finite().then_some(value)
+            }
+            "MUL" if operands.len() == 2 => {
+                let value = scalar_sweep_law(&operands[0], parameter)?
+                    * scalar_sweep_law(&operands[1], parameter)?;
+                value.is_finite().then_some(value)
+            }
+            "DIV" if operands.len() == 2 => {
+                let denominator = scalar_sweep_law(&operands[1], parameter)?;
+                if denominator == 0.0 {
+                    None
+                } else {
+                    let value = scalar_sweep_law(&operands[0], parameter)? / denominator;
+                    value.is_finite().then_some(value)
+                }
+            }
+            _ => None,
+        },
+        LawExpression::Point { .. }
+        | LawExpression::Vector { .. }
+        | LawExpression::Transform { .. }
+        | LawExpression::TransformVec { .. }
+        | LawExpression::Edge { .. }
+        | LawExpression::Spline { .. } => None,
+    }
+}
+
+fn unit_sweep_scale(expression: &LawExpression) -> bool {
+    match expression {
+        LawExpression::Null => true,
+        LawExpression::Text { value } => {
+            value
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>()
+                == "VEC(1,1,1)"
+        }
+        LawExpression::Vector { value } => *value == Vector3::new(1.0, 1.0, 1.0),
+        _ => false,
+    }
+}
+
+fn identity_sweep_rail(formula: &LawFormula) -> bool {
+    if formula.name == "null_law" {
+        return formula.variables.is_empty();
+    }
+    let name = formula
+        .name
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    if !name.starts_with("ROTATE(DOMAIN(") || !name.ends_with("),TRANS1)") {
+        return false;
+    }
+    let [
+        LawExpression::TransformVec {
+            vectors,
+            scale,
+            flags,
+        },
+    ] = formula.variables.as_slice()
+    else {
+        return false;
+    };
+    *scale == 1.0
+        && flags.iter().all(|flag| !flag)
+        && *vectors
+            == [
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 0.0),
+            ]
+}
+
+fn linear_sweep_path(index: &crate::index::ModelIndex<'_>, spine: &crate::ids::CurveId) -> bool {
+    let Some(curve) = index.curves(&spine.0) else {
+        return false;
+    };
+    match &curve.geometry {
+        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Nurbs(curve) => {
+            curve.degree == 1 && curve.control_points.len() == 2 && curve.weights.is_none()
+        }
+        _ => false,
+    }
+}
+
+fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> bool {
+    parameter.is_finite()
+        && interval[0].is_none_or(|lower| parameter >= lower)
+        && interval[1].is_none_or(|upper| parameter <= upper)
+}
+
+fn cacheless_law_sweep_point(
+    index: &crate::index::ModelIndex<'_>,
+    profile: &crate::ids::CurveId,
+    spine: &crate::ids::CurveId,
+    construction: &crate::geometry::SweepSurfaceConstruction,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let form = construction.revision_form.as_ref()?;
+    if form.tail_enum != 2 || !linear_sweep_path(index, spine) {
+        return None;
+    }
+    let SweepSurfaceLayout::LawDriven {
+        profile_frame,
+        first_law,
+        path_mode,
+        path_flag,
+        second_law_flag,
+        second_law,
+        formula,
+        formula_mode,
+        trailing_flag,
+        ..
+    } = &construction.layout
+    else {
+        return None;
+    };
+    let parameterization = form.tail_parameterization.as_ref()?;
+    if profile_frame.is_some()
+        || *path_mode != 1
+        || *path_flag
+        || *second_law_flag
+        || *formula_mode != 0
+        || *trailing_flag
+        || !sweep_tail_interval_contains(parameterization.u_interval, u)
+        || !sweep_tail_interval_contains(parameterization.v_interval, v)
+        || !unit_sweep_scale(second_law)
+        || !identity_sweep_rail(formula)
+    {
+        return None;
+    }
+    let profile = model_curve_differential_by_id(index, profile, u)?;
+    let spine = model_curve_differential_by_id(index, spine, v)?;
+    let profile_length = profile.tangent.norm();
+    let spine_length = spine.tangent.norm();
+    if !profile_length.is_finite()
+        || profile_length <= f64::EPSILON
+        || !spine_length.is_finite()
+        || spine_length <= f64::EPSILON
+    {
+        return None;
+    }
+    let profile_tangent = scale_vector(profile.tangent, 1.0 / profile_length);
+    let spine_tangent = scale_vector(spine.tangent, 1.0 / spine_length);
+    let normal = profile_tangent.cross(spine_tangent);
+    let offset_distance = scalar_sweep_law(first_law, v)?;
+    Some(offset(
+        profile.point,
+        &[
+            (
+                1.0,
+                Vector3::new(spine.point.x, spine.point.y, spine.point.z),
+            ),
+            (offset_distance, normal),
+        ],
+    ))
 }
 
 /// Evaluate a surface carrier selected by arena id.
@@ -3997,6 +4203,18 @@ pub fn model_surface_point_by_id(
                 point: partials.point,
                 oriented_normal: None,
             }),
+            Some(ProceduralSurfaceDefinition::Sweep {
+                profile,
+                spine,
+                native: Some(construction),
+            }) => {
+                cacheless_law_sweep_point(index, profile, spine, construction, u, v).map(|point| {
+                    SurfaceEvaluation {
+                        point,
+                        oriented_normal: None,
+                    }
+                })
+            }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
                 let partials = model_surface_partials_by_id(index, source, u, v)?;
