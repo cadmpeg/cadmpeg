@@ -7118,6 +7118,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     let product_record_ranges = (0..bytes.len())
         .filter_map(|offset| product_record_range_at(bytes, offset))
         .collect::<Vec<_>>();
+    let descending_u32_edges = DescendingU32Edges::new(bytes);
     for table in 0..bytes.len().saturating_sub(4) {
         let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
@@ -7150,7 +7151,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        if !entity_index_is_valid(bytes, index_start, count, base) {
+        if !entity_index_is_valid(bytes, &descending_u32_edges, index_start, count, base) {
             continue;
         }
         let section_end = entity_index_offset(bytes, index_start, count)
@@ -7222,7 +7223,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if product_record_count != 1 {
             continue;
         }
-        if !offset_only_index_is_valid(bytes, index_start, offset_count, count_offset) {
+        if !offset_only_index_is_valid(
+            bytes,
+            &descending_u32_edges,
+            index_start,
+            offset_count,
+            count_offset,
+        ) {
             continue;
         }
         let first_record = second;
@@ -7256,14 +7263,61 @@ fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option
     usize::try_from(View::u32_le_at(bytes, offset)?).ok()
 }
 
+/// Positions where one little-endian u32 index word decreases at the next
+/// word boundary. Candidate index tables are allowed to start at any byte, so
+/// the scan records every byte position rather than assuming four-byte file
+/// alignment.
+#[derive(Debug, Default)]
+struct DescendingU32Edges {
+    offsets_by_alignment: [Vec<usize>; 4],
+}
+
+impl DescendingU32Edges {
+    fn new(bytes: &[u8]) -> Self {
+        let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
+        for offset in 0..bytes.len().saturating_sub(7) {
+            if View::u32_le_at(bytes, offset)
+                .zip(View::u32_le_at(bytes, offset + 4))
+                .is_some_and(|(current, next)| current > next)
+            {
+                offsets_by_alignment[offset % 4].push(offset);
+            }
+        }
+        Self {
+            offsets_by_alignment,
+        }
+    }
+
+    /// Check all adjacent words in `[start, end)` without walking the range.
+    fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
+        if end < start {
+            return false;
+        }
+        if end - start < 8 {
+            return true;
+        }
+        let offsets = &self.offsets_by_alignment[start % 4];
+        let first = offsets.partition_point(|offset| *offset < start);
+        offsets
+            .get(first)
+            .is_none_or(|offset| *offset >= end.saturating_sub(4))
+    }
+}
+
 // Validate candidate offset tables through borrowed words. A count word is
 // only a framing hint; do not allocate an offset table until every word is
 // monotone and its terminal range is in bounds.
-fn entity_index_is_valid(bytes: &[u8], index_start: usize, count: usize, base: usize) -> bool {
-    let Some(mut previous) = entity_index_offset(bytes, index_start, 0) else {
+fn entity_index_is_valid(
+    bytes: &[u8],
+    descending_u32_edges: &DescendingU32Edges,
+    index_start: usize,
+    count: usize,
+    base: usize,
+) -> bool {
+    let Some(first_index) = entity_index_offset(bytes, index_start, 0) else {
         return false;
     };
-    if previous != 0 {
+    if first_index != 0 {
         return false;
     }
     let Some(first) = entity_index_offset(bytes, index_start, 1) else {
@@ -7272,42 +7326,49 @@ fn entity_index_is_valid(bytes: &[u8], index_start: usize, count: usize, base: u
     if first == 0 {
         return false;
     }
-    previous = first;
-    for index in 2..=count {
-        let Some(current) = entity_index_offset(bytes, index_start, index) else {
-            return false;
-        };
-        if current < previous {
-            return false;
-        }
-        previous = current;
+    let Some(index_end) = count
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(4))
+        .and_then(|length| index_start.checked_add(length))
+    else {
+        return false;
+    };
+    if !descending_u32_edges.is_nondecreasing(index_start, index_end) {
+        return false;
     }
-    base.checked_add(previous)
+    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
+        return false;
+    };
+    base.checked_add(last as usize)
         .is_some_and(|end| end <= bytes.len())
 }
 
 fn offset_only_index_is_valid(
     bytes: &[u8],
+    descending_u32_edges: &DescendingU32Edges,
     index_start: usize,
     offset_count: usize,
     count_offset: usize,
 ) -> bool {
-    let Some(mut previous) = entity_index_offset(bytes, index_start, 0) else {
+    let Some(first) = entity_index_offset(bytes, index_start, 0) else {
         return false;
     };
-    if previous < count_offset.saturating_add(4) {
+    if first < count_offset.saturating_add(4) {
         return false;
     }
-    for index in 1..offset_count {
-        let Some(current) = entity_index_offset(bytes, index_start, index) else {
-            return false;
-        };
-        if current < previous {
-            return false;
-        }
-        previous = current;
+    let Some(index_end) = offset_count
+        .checked_mul(4)
+        .and_then(|length| index_start.checked_add(length))
+    else {
+        return false;
+    };
+    if index_end != count_offset || !descending_u32_edges.is_nondecreasing(index_start, index_end) {
+        return false;
     }
-    previous <= bytes.len()
+    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
+        return false;
+    };
+    usize::try_from(last).is_ok_and(|last| last <= bytes.len())
 }
 
 /// Parse indexed sections once and retain only their source ranges.

@@ -1314,6 +1314,21 @@ fn om_product_record_count_respects_containment_boundaries() {
 }
 
 #[test]
+fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
+    let words = [10_u32, 20, 30, 25, 40];
+    let bytes = words
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let edges = super::DescendingU32Edges::new(&bytes);
+
+    assert!(edges.is_nondecreasing(0, 12));
+    assert!(!edges.is_nondecreasing(0, 16));
+    assert!(edges.is_nondecreasing(4, 12));
+    assert!(edges.is_nondecreasing(12, 20));
+}
+
+#[test]
 fn om_offset_only_index_requires_one_supported_product_record() {
     let mut duplicate = control_root_offset_only_indexed_om_section();
     let first_column = duplicate
