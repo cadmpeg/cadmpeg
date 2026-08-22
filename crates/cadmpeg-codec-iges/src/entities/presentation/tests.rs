@@ -78,6 +78,55 @@ fn general_note_font_codes_follow_the_declared_dialect() {
 }
 
 #[test]
+fn color_name_placekeeper_is_4_0_only() {
+    let entity = || OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000000",
+        parameters: "314,20,40,60,0,0;".into(),
+    };
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    let v4 = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(&[entity()], global_v4)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(v4
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+    assert!(!v4
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("optional color name is not a string") }));
+
+    let v5 = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(&[entity()], global_v5)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!v5
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+    assert!(v5
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("optional color name is not a string") }));
+}
+
+#[test]
 fn decode_applies_standard_body_color_and_face_color_override() {
     let result = IgesCodec
         .decode(

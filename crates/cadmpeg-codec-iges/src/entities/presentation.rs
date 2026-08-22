@@ -402,6 +402,11 @@ pub(super) fn project(
             Some(crate::parameter::TokenValue::String(_)) => record
                 .string(4)
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
+            Some(crate::parameter::TokenValue::Integer(0))
+                if matches!(global.dialect(), Dialect::V4_0) =>
+            {
+                None
+            }
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
