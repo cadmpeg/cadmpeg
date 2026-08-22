@@ -1003,17 +1003,25 @@ fn surface_patch_boundary_settings_decode_the_fixed_payload() {
     bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
 
     let records = IndexedRecordOffsets::build(&bytes);
+    let mut expected = DesignSurfacePatchBoundary {
+        scope_reference_ordinal: 0,
+        record_index: 42,
+        is_seed_selection: true,
+        continuity: DesignPatchContinuity::Curvature,
+        flip: 2,
+        scale: -1.0,
+        model_reference: 100,
+    };
     assert_eq!(
         surface_patch_boundaries(&bytes, &records, &[42]),
-        vec![DesignSurfacePatchBoundary {
-            scope_reference_ordinal: 0,
-            record_index: 42,
-            is_seed_selection: true,
-            continuity: DesignPatchContinuity::Curvature,
-            flip: 2,
-            scale: -1.0,
-            model_reference: 100,
-        }]
+        vec![expected.clone()]
+    );
+
+    bytes[26..30].copy_from_slice(&0_u32.to_le_bytes());
+    expected.flip = 0;
+    assert_eq!(
+        surface_patch_boundaries(&bytes, &records, &[42]),
+        vec![expected]
     );
 }
 
