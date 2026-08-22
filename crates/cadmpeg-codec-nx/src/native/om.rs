@@ -47,6 +47,33 @@ pub struct OmRecordArea {
     pub source_offset: u64,
 }
 
+/// One row from the feature-history operation-state counter map.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateCounter {
+    /// Globally unique counter-row identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based row ordinal within the section's counter map.
+    pub ordinal: u32,
+    /// Serialized counter-row kind (`01` or `02`).
+    pub row_kind: u8,
+    /// Object carrying the introduced/last-modified state pair.
+    pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// State-journal ordinal at object introduction.
+    pub introduced_state: u8,
+    /// State-journal ordinal at the object's last modification.
+    pub modified_state: u8,
+    /// Absolute file offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the row's `05` marker.
+    pub source_offset: u64,
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
@@ -80,6 +107,54 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
             })
+        })
+        .collect()
+}
+
+/// Decode exact object state-counter rows from canonical feature-history areas.
+pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCounter> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(map) = section.operation_state_counter_map() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            map.rows
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, row)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    Some(OmOperationStateCounter {
+                        id: format!(
+                            "nx:feature-history:operation-state-counter#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        row_kind: row.row_kind,
+                        object_index: row.object_index.value?,
+                        raw_object_index: row.object_index.raw.to_vec(),
+                        introduced_state: row.introduced_state,
+                        modified_state: row.modified_state,
+                        object_index_source_offset: entry_offset + row.object_index.offset as u64,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + row.offset as u64,
+                    })
+                })
+                .collect()
         })
         .collect()
 }
@@ -4092,12 +4167,12 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 mod tests {
     #![allow(unused_imports)]
     mod native_units;
+    mod state_counters;
     use std::io::{Cursor, Write};
 
+    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
-
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,

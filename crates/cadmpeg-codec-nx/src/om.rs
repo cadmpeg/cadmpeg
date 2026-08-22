@@ -1734,7 +1734,6 @@ pub struct OperationStateTaggedValue<'a> {
 }
 
 /// One row in the operation-state object counter map.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateCounter<'a> {
     /// Absolute byte offset of the row's `05` marker.
@@ -1752,7 +1751,6 @@ pub struct OperationStateCounter<'a> {
 }
 
 /// Contiguous object state-counter map at the end of a feature-history area.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateCounterMap<'a> {
     /// Absolute byte offset of the first counter row.
@@ -2989,7 +2987,6 @@ impl<'a> Section<'a> {
     ///
     /// The section-role check is intentional. The same byte patterns occur in
     /// ordinary model-store payloads, where they do not carry operation state.
-    #[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
     pub fn operation_state_counter_map(&self) -> Option<OperationStateCounterMap<'a>> {
         let is_feature_history = self
             .types

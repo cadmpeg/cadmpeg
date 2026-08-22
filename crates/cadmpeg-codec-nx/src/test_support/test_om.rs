@@ -131,6 +131,22 @@ pub(crate) fn segment_om_record_area_payload() -> Vec<u8> {
     payload
 }
 
+pub(crate) fn segment_om_record_area_with_state_counter_map() -> Vec<u8> {
+    let mut payload = segment_om_record_area_payload();
+    payload.extend_from_slice(&[
+        0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04, 0x4e,
+    ]);
+    let section_start = 32;
+    let section_len = u32::from_be_bytes(
+        payload[section_start + 8..section_start + 12]
+            .try_into()
+            .expect("section length field"),
+    );
+    payload[section_start + 8..section_start + 12]
+        .copy_from_slice(&(section_len + 15).to_be_bytes());
+    payload
+}
+
 pub(crate) fn multi_section_feature_history_payload() -> Vec<u8> {
     let mut early = size_framed_om_section_with_record_area();
     let name = early
