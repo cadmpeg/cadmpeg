@@ -1904,6 +1904,62 @@ pub(crate) mod compact_loft_operation_prefix {
     pub(crate) const ZERO_RUN_11: usize = 34;
 }
 
+/// Byte offsets for the `legacy_loft_body_carrier_class_322` record.
+///
+/// Spec §3.1. Record length 87 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The same-index paired header begins at offset 87.
+/// ```
+pub(crate) mod legacy_loft_body_carrier_class_322 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 87;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `presence` (`u8`). Spec §3.1.
+    pub(crate) const PRESENCE: usize = 21;
+    /// Offset of `owner_scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_SCOPE_RECORD_INDEX: usize = 22;
+    /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_6: usize = 26;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 32;
+    /// Offset of `member_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MEMBER_REFERENCE: usize = 36;
+    /// Offset of `opaque_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_INDEX: usize = 47;
+    /// Offset of `opaque_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_SCALAR: usize = 51;
+    /// Offset of `repeated_opaque_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPEATED_OPAQUE_INDEX: usize = 59;
+    /// Offset of `next_next_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const NEXT_NEXT_REFERENCE: usize = 63;
+    /// Offset of `flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 74;
+    /// Offset of `next_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const NEXT_REFERENCE: usize = 76;
+}
+
+/// Byte offsets for the `legacy_loft_body_carrier_class_411` record.
+///
+/// Spec §3.1. Record length 99 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98.
+/// ```
+pub(crate) mod legacy_loft_body_carrier_class_411 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 99;
+    /// Offset of `common_prefix` (`bytes[87]`). Spec §3.1.
+    pub(crate) const COMMON_PREFIX: usize = 0;
+    /// Offset of `tail_zero` (`u8`). Spec §3.1.
+    pub(crate) const TAIL_ZERO: usize = 87;
+    /// Offset of `trailing_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRAILING_SCOPE_REFERENCE: usize = 88;
+}
+
 /// Byte offsets for the `fixed_pipe_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 31 B.

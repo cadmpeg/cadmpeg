@@ -4155,6 +4155,12 @@ fn extend_related_design_records(
             &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
+    native.design_loft_legacy_body_carriers =
+        crate::design::decode::operands::decode_loft_legacy_body_carriers(
+            scan,
+            &native.design_parameter_scopes,
+            &native.design_record_headers,
+        )?;
     crate::design::decode::scopes::bind_mirror_constructions(
         scan,
         &mut native.design_parameter_scopes,

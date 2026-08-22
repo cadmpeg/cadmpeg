@@ -20,6 +20,8 @@ use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
+use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
@@ -32,8 +34,9 @@ use crate::records::{
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchProfileOperand, DesignSketchProfileRegion,
+    DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignSketchProfileOperand, DesignSketchProfileRegion,
     DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
     DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
@@ -1295,6 +1298,190 @@ pub fn decode_construction_operand_groups(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+/// Decode the fixed role-less body carrier used by the legacy Boolean-Loft
+/// envelopes. The ordinary role-`0x8` body group is admitted only when this
+/// exact carrier is present at scope-reference ordinal zero.
+pub fn decode_loft_legacy_body_carriers(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignLoftLegacyBodyCarrier>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for scope in scopes.iter().filter(|scope| {
+        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
+            && matches!(
+                scope.path_feature_construction.as_ref(),
+                Some(DesignPathFeatureConstruction::Loft { operation, .. })
+                    if *operation != crate::records::DesignExtrudeOperation::NewBody
+            )
+    }) {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            if ordinal != 0 {
+                continue;
+            }
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Some(mut carrier) =
+                parse_loft_legacy_body_carrier(bytes, scope, ordinal, header)
+            else {
+                continue;
+            };
+            carrier.id = ids::native_design_loft_legacy_body_carrier_id(
+                &entry.name,
+                header.byte_offset,
+            );
+            out.push(carrier);
+        }
+    }
+    out.sort_by(|left, right| left.id.cmp(&right.id));
+    out.dedup_by(|left, right| left.id == right.id);
+    Ok(out)
+}
+
+/// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
+pub(crate) fn parse_loft_legacy_body_carrier(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignLoftLegacyBodyCarrier> {
+    let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
+        "322" => ("262", legacy_loft_322::LEN, false),
+        "411" => ("266", legacy_loft_411::LEN, true),
+        _ => return None,
+    };
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if indexed_record_index(bytes, start) != Some(header.record_index)
+        || bytes.get(
+            start + legacy_loft_322::ZERO_RUN_10
+                ..start + legacy_loft_322::ZERO_RUN_10 + 10,
+        )? != [0; 10]
+        || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
+        || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
+            != scope.record_index
+        || bytes.get(
+            start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6,
+        )? != [0; 6]
+        || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
+    {
+        return None;
+    }
+    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+    let member_offset = cursor;
+    let (member, _) = take_record_reference(bytes, &mut cursor)?;
+    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
+        return None;
+    }
+    let opaque_index = View::u32_le_at(bytes, cursor)?;
+    if opaque_index == 0 || opaque_index >= 256 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let opaque_scalar = View::f64_le_at(bytes, cursor)?;
+    if !opaque_scalar.is_finite() {
+        return None;
+    }
+    cursor = cursor.checked_add(8)?;
+    let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
+    if repeated_opaque_index != opaque_index {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    if cursor != start.checked_add(legacy_loft_322::FLAGS)? || bytes.get(cursor..cursor + 2)? != [0, 0] {
+        return None;
+    }
+    let flags: [u8; 2] = bytes.get(cursor..cursor + 2)?.try_into().ok()?;
+    cursor = cursor.checked_add(2)?;
+    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    if cursor != start.checked_add(legacy_loft_322::LEN)? {
+        return None;
+    }
+    let (trailing_scope_record_index, trailing_scope_reference_offset) = if has_trailing_scope {
+        if cursor != start + legacy_loft_411::TAIL_ZERO || bytes.get(cursor)? != &0 {
+            return None;
+        }
+        cursor = cursor.checked_add(1)?;
+        if cursor != start + legacy_loft_411::TRAILING_SCOPE_REFERENCE {
+            return None;
+        }
+        let reference_offset = cursor;
+        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        (Some(record_index), Some(u64::try_from(reference_offset).ok()?))
+    } else {
+        (None, None)
+    };
+    let paired_byte_offset = start.checked_add(frame_length)?;
+    if cursor != paired_byte_offset
+        || indexed_record_index(bytes, paired_byte_offset) != Some(header.record_index)
+    {
+        return None;
+    }
+    let paired_class_tag =
+        std::str::from_utf8(bytes.get(
+            paired_byte_offset + indexed_header::CLASS_TAG
+                ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
+        )?)
+        .ok()?;
+    if paired_class_tag != paired_class {
+        return None;
+    }
+    Some(DesignLoftLegacyBodyCarrier {
+        id: String::new(),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        owner_scope_record_index: scope.record_index,
+        owner_scope_record_index_offset: u64::try_from(
+            start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
+        )
+        .ok()?,
+        members: vec![member],
+        member_offsets: vec![u64::try_from(member_offset).ok()?],
+        member_count: 1,
+        member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
+        opaque_index,
+        opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
+        opaque_scalar,
+        opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
+        repeated_opaque_index,
+        repeated_opaque_index_offset: u64::try_from(
+            start + legacy_loft_322::REPEATED_OPAQUE_INDEX,
+        )
+        .ok()?,
+        next_next_record_index,
+        next_next_reference_offset: u64::try_from(
+            start + legacy_loft_322::NEXT_NEXT_REFERENCE,
+        )
+        .ok()?,
+        flags,
+        flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
+        next_record_index,
+        next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
+        trailing_scope_record_index,
+        trailing_scope_reference_offset,
+        paired_class_tag: paired_class_tag.to_owned(),
+        paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
+    })
 }
 
 pub(crate) fn assign_extrude_face_roles(

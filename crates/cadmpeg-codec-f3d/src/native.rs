@@ -41,7 +41,8 @@ use crate::records::{
     DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
-    DesignMaterialAssignment, DesignMeshFeature, DesignParameter, DesignParameterCompanion,
+    DesignLoftLegacyBodyCarrier, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
+    DesignParameterCompanion,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     LostEdgeReference, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
     SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface,
@@ -121,6 +122,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_face_source_groups",
     "design_feature_timelines",
     "design_fillet_radius_groups",
+    "design_loft_legacy_body_carriers",
     "design_material_assignments",
     "design_mesh_features",
     "design_parameter_companions",
@@ -467,6 +469,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_body_recipe_operands)
         },
         len: |model| model.design_body_recipe_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_loft_legacy_body_carriers",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_loft_legacy_body_carriers)
+        },
+        len: |model| model.design_loft_legacy_body_carriers.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1179,6 +1193,9 @@ pub struct F3dNative {
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Exact role-less body carriers paired with legacy Boolean-Loft groups.
+    #[serde(default)]
+    pub design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
     pub design_canvas_images: Vec<DesignCanvasImage>,
@@ -1373,6 +1390,7 @@ impl Default for F3dNative {
             body_visibilities: Vec::new(),
             design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
+            design_loft_legacy_body_carriers: Vec::new(),
             design_canvas_images: Vec::new(),
             design_decal_images: Vec::new(),
             design_mesh_features: Vec::new(),
@@ -1457,6 +1475,8 @@ impl F3dNative {
             design_mesh_features: namespace.arena_as("design_mesh_features")?,
             design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
+            design_loft_legacy_body_carriers: namespace
+                .arena_as("design_loft_legacy_body_carriers")?,
             design_dimension_annotation_frames: namespace
                 .arena_as("design_dimension_annotation_frames")?,
             design_dimension_presentation_frames: namespace

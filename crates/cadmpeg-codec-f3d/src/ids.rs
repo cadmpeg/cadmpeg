@@ -749,6 +749,11 @@ native_record_id!(
     "design-body-recipe-operand"
 );
 native_record_id!(
+    /// The native legacy-Loft body-carrier record key.
+    native_design_loft_legacy_body_carrier_id,
+    "design-loft-legacy-body-carrier"
+);
+native_record_id!(
     /// The native design-edge-operand record key.
     native_design_edge_operand_id,
     "design-edge-operand"

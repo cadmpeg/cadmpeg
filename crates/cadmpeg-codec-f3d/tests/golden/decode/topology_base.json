@@ -275,6 +275,7 @@
           "design_face_source_groups": [],
           "design_feature_timelines": [],
           "design_fillet_radius_groups": [],
+          "design_loft_legacy_body_carriers": [],
           "design_material_assignments": [],
           "design_mesh_features": [],
           "design_parameter_companions": [],

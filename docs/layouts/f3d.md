@@ -1396,6 +1396,40 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
+## `legacy_loft_body_carrier_class_322`
+
+Spec §3.1 · layout: byte offsets · size: 87 B
+
+Offsets are relative to the primary indexed header. The same-index paired header begins at offset 87.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | starts with the indexed header at offsets 0 through 10 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | has ten zero bytes at offsets 11 through 20 |
+| 21 | 1 | `presence` | `u8` | little | spec | uses offset 21 as a `01` presence byte |
+| 22 | 4 | `owner_scope_record_index` | `u32` | little | spec | The owning scope record is the u32 at offset 22 |
+| 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | offsets 26 through 31 are zero |
+| 32 | 4 | `member_count` | `u32` | little | spec | u32 `member_count` is at offset 32 |
+| 36 | 11 | `member_reference` | `bytes[11]` | little | spec | its one same-segment member reference starts at offset 36 |
+| 47 | 4 | `opaque_index` | `u32` | little | spec | The opaque u32 index is at offset 47 |
+| 51 | 8 | `opaque_scalar` | `f64` | little | spec | the finite f64 scalar is at offset 51 |
+| 59 | 4 | `repeated_opaque_index` | `u32` | little | spec | the repeated u32 index is at offset 59 |
+| 63 | 11 | `next_next_reference` | `bytes[11]` | little | spec | A marked reference to record `N+2` starts at offset 63 |
+| 74 | 2 | `flags` | `bytes[2]` | little | spec | flags `[00 00]` are at offset 74 |
+| 76 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` starts at offset 76 |
+
+## `legacy_loft_body_carrier_class_411`
+
+Spec §3.1 · layout: byte offsets · size: 99 B
+
+Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 87 | `common_prefix` | `bytes[87]` | little | spec | The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes |
+| 87 | 1 | `tail_zero` | `u8` | little | spec | stores a zero byte at offset 87 |
+| 88 | 11 | `trailing_scope_reference` | `bytes[11]` | little | spec | a marked reference to the owning scope at offset 88 |
+
 ## `fixed_pipe_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 31 B

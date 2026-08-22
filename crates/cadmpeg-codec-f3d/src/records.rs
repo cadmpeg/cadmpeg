@@ -4242,6 +4242,75 @@ pub struct DesignEntitySelectionFaceCandidate {
     pub face_slot: i64,
 }
 
+/// Legacy Boolean-Loft body carrier paired with a role-`0x8` body group.
+///
+/// The carrier is a scope-owned, role-less frame. It is retained separately
+/// from the ordinary construction-operand group because its member and
+/// scalar lanes do not use the counted-group grammar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignLoftLegacyBodyCarrier {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning Loft feature scope record.
+    pub scope_record_index: u32,
+    /// Position in the scope reference table. This is always zero for the
+    /// admitted legacy forms.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity.
+    pub record_index: u32,
+    /// Primary indexed-header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic primary class tag (`322` or `411`).
+    pub class_tag: String,
+    /// Raw scope reference stored at the fixed owner lane.
+    pub owner_scope_record_index: u32,
+    /// Byte offset of `owner_scope_record_index`.
+    pub owner_scope_record_index_offset: u64,
+    /// One member reference carried by this fixed legacy frame.
+    pub members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    pub member_offsets: Vec<u64>,
+    /// Fixed member count. The admitted forms require one.
+    pub member_count: u32,
+    /// Byte offset of `member_count`.
+    pub member_count_offset: u64,
+    /// Opaque nonzero ordinal in the legacy scalar lane.
+    pub opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    pub opaque_index_offset: u64,
+    /// Opaque finite scalar in the legacy scalar lane.
+    pub opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    pub opaque_scalar_offset: u64,
+    /// Repeated scalar-lane ordinal.
+    pub repeated_opaque_index: u32,
+    /// Byte offset of the repeated `opaque_index` copy.
+    pub repeated_opaque_index_offset: u64,
+    /// Record named by the marked `N+2` reference.
+    pub next_next_record_index: u32,
+    /// Byte offset of the marked `N+2` reference.
+    pub next_next_reference_offset: u64,
+    /// Two bytes between the `N+2` and `N+1` references.
+    pub flags: [u8; 2],
+    /// Byte offset of `flags`.
+    pub flags_offset: u64,
+    /// Record named by the marked `N+1` reference.
+    pub next_record_index: u32,
+    /// Byte offset of the marked `N+1` reference.
+    pub next_reference_offset: u64,
+    /// Additional owning-scope reference in the class-`411` form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_scope_record_index: Option<u32>,
+    /// Byte offset of the additional owning-scope reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_scope_reference_offset: Option<u64>,
+    /// Per-file dynamic paired class tag (`262` or `266`).
+    pub paired_class_tag: String,
+    /// Same-index paired-header byte offset.
+    pub paired_byte_offset: u64,
+}
+
 /// Historical edge proof carried by one nested entity-selection identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

@@ -4537,6 +4537,134 @@ source = "spec"
 anchor = "offsets 34 through 44 are zero"
 
 [[record]]
+name = "legacy_loft_body_carrier_class_322"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+size = 87
+note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 87."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "starts with the indexed header at offsets 0 through 10"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "has ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "presence"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "uses offset 21 as a `01` presence byte"
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "The owning scope record is the u32 at offset 22"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "offsets 26 through 31 are zero"
+
+[[record.field]]
+name = "member_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 `member_count` is at offset 32"
+
+[[record.field]]
+name = "member_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "its one same-segment member reference starts at offset 36"
+
+[[record.field]]
+name = "opaque_index"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "The opaque u32 index is at offset 47"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 51
+type = "f64"
+source = "spec"
+anchor = "the finite f64 scalar is at offset 51"
+
+[[record.field]]
+name = "repeated_opaque_index"
+offset = 59
+type = "u32"
+source = "spec"
+anchor = "the repeated u32 index is at offset 59"
+
+[[record.field]]
+name = "next_next_reference"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "A marked reference to record `N+2` starts at offset 63"
+
+[[record.field]]
+name = "flags"
+offset = 74
+type = "bytes[2]"
+source = "spec"
+anchor = "flags `[00 00]` are at offset 74"
+
+[[record.field]]
+name = "next_reference"
+offset = 76
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record `N+1` starts at offset 76"
+
+[[record]]
+name = "legacy_loft_body_carrier_class_411"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`411`/`266` carrier has the same fields and offsets"
+size = 99
+note = "Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98."
+
+[[record.field]]
+name = "common_prefix"
+offset = 0
+type = "bytes[87]"
+source = "spec"
+anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+
+[[record.field]]
+name = "tail_zero"
+offset = 87
+type = "u8"
+source = "spec"
+anchor = "stores a zero byte at offset 87"
+
+[[record.field]]
+name = "trailing_scope_reference"
+offset = 88
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to the owning scope at offset 88"
+
+[[record]]
 name = "fixed_pipe_operation_prefix"
 kind = "byte"
 section = "3.1"
