@@ -3917,62 +3917,77 @@ pub fn model_surface_point(
     }
 }
 
-fn scalar_sweep_law(expression: &LawExpression, parameter: f64) -> Option<f64> {
+#[derive(Clone, Copy)]
+struct ScalarSweepDifferential {
+    value: f64,
+    derivative: f64,
+}
+
+fn finite_sweep_differential(value: f64, derivative: f64) -> Option<ScalarSweepDifferential> {
+    (value.is_finite() && derivative.is_finite())
+        .then_some(ScalarSweepDifferential { value, derivative })
+}
+
+fn scalar_sweep_law_differential(
+    expression: &LawExpression,
+    parameter: f64,
+) -> Option<ScalarSweepDifferential> {
     if !parameter.is_finite() {
         return None;
     }
     match expression {
-        LawExpression::Null => Some(0.0),
-        LawExpression::Integer { value } => Some(*value as f64),
-        LawExpression::Double { value } => (*value).is_finite().then_some(*value),
+        LawExpression::Null => finite_sweep_differential(0.0, 0.0),
+        LawExpression::Integer { value } => finite_sweep_differential(*value as f64, 0.0),
+        LawExpression::Double { value } => finite_sweep_differential(*value, 0.0),
         LawExpression::Text { value } => {
             let value = value.trim();
             if value == "X" {
-                return Some(parameter);
+                return finite_sweep_differential(parameter, 1.0);
             }
-            if let Ok(value) = value.parse::<f64>() {
-                return value.is_finite().then_some(value);
+            if let Ok(constant) = value.parse::<f64>() {
+                return finite_sweep_differential(constant, 0.0);
             }
             let (left, right) = value.split_once('*')?;
             if right.trim() == "X" {
                 let coefficient = left.trim().parse::<f64>().ok()?;
-                let value = coefficient * parameter;
-                return (coefficient.is_finite() && value.is_finite()).then_some(value);
+                return finite_sweep_differential(coefficient * parameter, coefficient);
             }
             if left.trim() == "X" {
                 let coefficient = right.trim().parse::<f64>().ok()?;
-                let value = coefficient * parameter;
-                return (coefficient.is_finite() && value.is_finite()).then_some(value);
+                return finite_sweep_differential(coefficient * parameter, coefficient);
             }
             None
         }
-        LawExpression::Algebraic { operator, operands } => match operator.as_str() {
-            "ADD" if operands.len() == 2 => {
-                let value = scalar_sweep_law(&operands[0], parameter)?
-                    + scalar_sweep_law(&operands[1], parameter)?;
-                value.is_finite().then_some(value)
-            }
-            "SUB" if operands.len() == 2 => {
-                let value = scalar_sweep_law(&operands[0], parameter)?
-                    - scalar_sweep_law(&operands[1], parameter)?;
-                value.is_finite().then_some(value)
-            }
-            "MUL" if operands.len() == 2 => {
-                let value = scalar_sweep_law(&operands[0], parameter)?
-                    * scalar_sweep_law(&operands[1], parameter)?;
-                value.is_finite().then_some(value)
-            }
-            "DIV" if operands.len() == 2 => {
-                let denominator = scalar_sweep_law(&operands[1], parameter)?;
-                if denominator == 0.0 {
-                    None
-                } else {
-                    let value = scalar_sweep_law(&operands[0], parameter)? / denominator;
-                    value.is_finite().then_some(value)
+        LawExpression::Algebraic { operator, operands } => {
+            let [left, right] = operands.as_slice() else {
+                return None;
+            };
+            let left = scalar_sweep_law_differential(left, parameter)?;
+            let right = scalar_sweep_law_differential(right, parameter)?;
+            match operator.as_str() {
+                "ADD" => finite_sweep_differential(
+                    left.value + right.value,
+                    left.derivative + right.derivative,
+                ),
+                "SUB" => finite_sweep_differential(
+                    left.value - right.value,
+                    left.derivative - right.derivative,
+                ),
+                "MUL" => finite_sweep_differential(
+                    left.value * right.value,
+                    left.derivative * right.value + left.value * right.derivative,
+                ),
+                "DIV" if right.value != 0.0 => {
+                    let denominator = right.value * right.value;
+                    finite_sweep_differential(
+                        left.value / right.value,
+                        (left.derivative * right.value - left.value * right.derivative)
+                            / denominator,
+                    )
                 }
+                _ => None,
             }
-            _ => None,
-        },
+        }
         LawExpression::Point { .. }
         | LawExpression::Vector { .. }
         | LawExpression::Transform { .. }
@@ -4049,14 +4064,35 @@ fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> b
         && interval[1].is_none_or(|upper| parameter <= upper)
 }
 
-fn cacheless_law_sweep_point(
+fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(Vector3, Vector3)> {
+    let length = vector.norm();
+    if !length.is_finite() || length <= f64::EPSILON {
+        return None;
+    }
+    let unit = scale_vector(vector, 1.0 / length);
+    let normal_component = unit.dot(derivative);
+    let unit_derivative = scale_vector(
+        vector_sum(&[(1.0, derivative), (-normal_component, unit)]),
+        1.0 / length,
+    );
+    (unit_derivative.x.is_finite()
+        && unit_derivative.y.is_finite()
+        && unit_derivative.z.is_finite())
+    .then_some((unit, unit_derivative))
+}
+
+fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
     construction: &crate::geometry::SweepSurfaceConstruction,
     u: f64,
     v: f64,
-) -> Option<Point3> {
+) -> Option<(
+    ModelCurveDifferential,
+    ModelCurveDifferential,
+    ScalarSweepDifferential,
+)> {
     let form = construction.revision_form.as_ref()?;
     if form.tail_enum != 2 || !linear_sweep_path(index, spine) {
         return None;
@@ -4092,19 +4128,23 @@ fn cacheless_law_sweep_point(
     }
     let profile = model_curve_differential_by_id(index, profile, u)?;
     let spine = model_curve_differential_by_id(index, spine, v)?;
-    let profile_length = profile.tangent.norm();
-    let spine_length = spine.tangent.norm();
-    if !profile_length.is_finite()
-        || profile_length <= f64::EPSILON
-        || !spine_length.is_finite()
-        || spine_length <= f64::EPSILON
-    {
-        return None;
-    }
-    let profile_tangent = scale_vector(profile.tangent, 1.0 / profile_length);
-    let spine_tangent = scale_vector(spine.tangent, 1.0 / spine_length);
+    let law = scalar_sweep_law_differential(first_law, v)?;
+    Some((profile, spine, law))
+}
+
+fn cacheless_law_sweep_point(
+    index: &crate::index::ModelIndex<'_>,
+    profile: &crate::ids::CurveId,
+    spine: &crate::ids::CurveId,
+    construction: &crate::geometry::SweepSurfaceConstruction,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let (profile, spine, law) =
+        cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
+    let (profile_tangent, _) = unit_vector_with_derivative(profile.tangent, profile.acceleration)?;
+    let (spine_tangent, _) = unit_vector_with_derivative(spine.tangent, spine.acceleration)?;
     let normal = profile_tangent.cross(spine_tangent);
-    let offset_distance = scalar_sweep_law(first_law, v)?;
     Some(offset(
         profile.point,
         &[
@@ -4112,9 +4152,42 @@ fn cacheless_law_sweep_point(
                 1.0,
                 Vector3::new(spine.point.x, spine.point.y, spine.point.z),
             ),
-            (offset_distance, normal),
+            (law.value, normal),
         ],
     ))
+}
+
+fn cacheless_law_sweep_partials(
+    index: &crate::index::ModelIndex<'_>,
+    profile: &crate::ids::CurveId,
+    spine: &crate::ids::CurveId,
+    construction: &crate::geometry::SweepSurfaceConstruction,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
+    let (profile, spine, law) =
+        cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
+    let (profile_tangent, profile_tangent_derivative) =
+        unit_vector_with_derivative(profile.tangent, profile.acceleration)?;
+    let (spine_tangent, spine_tangent_derivative) =
+        unit_vector_with_derivative(spine.tangent, spine.acceleration)?;
+    let normal = profile_tangent.cross(spine_tangent);
+    let normal_u = profile_tangent_derivative.cross(spine_tangent)
+        + profile_tangent.cross(spine_tangent_derivative);
+    Some(SurfacePartials {
+        point: offset(
+            profile.point,
+            &[
+                (
+                    1.0,
+                    Vector3::new(spine.point.x, spine.point.y, spine.point.z),
+                ),
+                (law.value, normal),
+            ],
+        ),
+        du: profile.tangent + scale_vector(normal_u, law.value),
+        dv: spine.tangent + scale_vector(normal, law.derivative),
+    })
 }
 
 /// Evaluate a surface carrier selected by arena id.
@@ -4315,6 +4388,16 @@ pub fn model_surface_partials_by_id(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
+    if let Some(ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
+        native: Some(construction),
+    }) = index
+        .procedural_surface_for_surface(&surface.0)
+        .map(|procedural| &procedural.definition)
+    {
+        return cacheless_law_sweep_partials(index, profile, spine, construction, u, v);
+    }
     model_surface_second_partials_by_id(index, surface, u, v).map(|partials| SurfacePartials {
         point: partials.point,
         du: partials.du,
