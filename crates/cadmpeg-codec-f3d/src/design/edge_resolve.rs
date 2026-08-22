@@ -734,6 +734,11 @@ fn resolved_edge_group_with_transition_chain(
             })
             .or_else(|| {
                 allow_edge_treatment_transition_chain
+                    .then(|| contextual_deleted_edge_group_candidates(&matched_operands))
+                    .flatten()
+            })
+            .or_else(|| {
+                allow_edge_treatment_transition_chain
                     .then(|| deleted_boundary_edge_group_candidates(&matched_operands))
                     .flatten()
             })
@@ -1546,6 +1551,7 @@ pub(crate) fn deleted_boundary_edge_group_candidates(
     let mut contextual = Vec::new();
     for operand in operands {
         if operand.recipe_structure.is_none()
+            || operand.recipe_references.is_empty()
             || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
             || operand.recipe_reference_contexts.is_empty()
             || operand.deleted_boundary_edge_slots.is_empty()
@@ -1577,6 +1583,68 @@ pub(crate) fn deleted_boundary_edge_group_candidates(
             .iter()
             .all(|edge| contextual.binary_search(edge).is_ok()))
     .then_some(deleted)
+}
+
+/// Resolve a treatment group when the deleted predecessor-edge set is complete
+/// at group level but one or more members lack an operation-level deletion.
+///
+/// A member is admitted only through a recipe context that names one of the
+/// deleted predecessor edges. The contextual candidate sets must have exactly
+/// one perfect assignment; otherwise the group remains native. This handles a
+/// legacy group whose transition records consolidate one member's deletion
+/// while retaining the member-to-edge relation in the recipe references.
+pub(crate) fn contextual_deleted_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    if operands.is_empty() {
+        return None;
+    }
+    let mut deleted = Vec::new();
+    let mut has_deleted_member = false;
+    for operand in operands {
+        if operand.recipe_structure.is_none()
+            || operand.recipe_references.is_empty()
+            || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            || operand.recipe_reference_contexts.is_empty()
+        {
+            return None;
+        }
+        for edge in &operand.deleted_boundary_edge_slots {
+            if !operand.preceding_boundary_edge_slots.contains(edge)
+                || !operand.changed_boundary_edge_slots.contains(edge)
+            {
+                return None;
+            }
+            deleted.push(*edge);
+            has_deleted_member = true;
+        }
+    }
+    if !has_deleted_member {
+        return None;
+    }
+    deleted.sort_unstable();
+    deleted.dedup();
+    if deleted.len() != operands.len() {
+        return None;
+    }
+
+    let candidate_sets = operands
+        .iter()
+        .map(|operand| {
+            let mut candidates = operand
+                .recipe_reference_contexts
+                .iter()
+                .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+                .filter(|edge| deleted.binary_search(edge).is_ok())
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            candidates
+        })
+        .collect::<Vec<_>>();
+    let mut assignment = unique_bipartite_assignment(&candidate_sets)?;
+    assignment.sort_unstable();
+    Some(assignment)
 }
 
 pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(

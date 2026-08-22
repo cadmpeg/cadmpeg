@@ -1331,6 +1331,49 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
 }
 
 #[test]
+fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
+    let context = |changed_reference_edge_slots: &[i64]| {
+        serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": [],
+            "changed_reference_edge_slots": changed_reference_edge_slots,
+        }))
+        .expect("edge recipe reference context")
+    };
+    let structure = || crate::records::DesignEdgeRecipeStructure {
+        root: 2,
+        sides: Vec::new(),
+    };
+
+    let mut consolidated = recipe_edge_operand(10, &[], &[]);
+    consolidated.preceding_boundary_edge_slots = vec![5630, 5675];
+    consolidated.recipe_structure = Some(structure());
+    consolidated.recipe_references = vec![recipe_reference(&[])];
+    consolidated.recipe_reference_contexts = vec![context(&[5630])];
+
+    let mut deleted = recipe_edge_operand(11, &[5630, 5675], &[5630, 5675]);
+    deleted.preceding_boundary_edge_slots = vec![5630, 5675];
+    deleted.recipe_structure = Some(structure());
+    deleted.recipe_references = vec![recipe_reference(&[]), recipe_reference(&[])];
+    deleted.recipe_reference_contexts = vec![context(&[5630]), context(&[5675])];
+
+    assert_eq!(
+        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted]),
+        Some(vec![5630, 5675])
+    );
+
+    deleted.recipe_reference_contexts[1] = context(&[5630]);
+    assert_eq!(
+        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted]),
+        None
+    );
+}
+
+#[test]
 fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::design::edge_resolve::context_only_edge_group_candidates([
