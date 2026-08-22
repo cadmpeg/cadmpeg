@@ -985,3 +985,61 @@ fn base_feature_scope_decodes_class_377_body_based_on_faces_envelope() {
     mismatched_pair.paired_class_tag = "263".into();
     assert!(exact_base_feature_construction(&bytes, &mismatched_pair).is_none());
 }
+
+#[test]
+fn surface_patch_boundary_settings_decode_the_fixed_payload() {
+    use crate::design::decode::patch::surface_patch_boundaries;
+    use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+
+    let mut bytes = vec![0_u8; 49];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"999");
+    bytes[7..11].copy_from_slice(&42_u32.to_le_bytes());
+    bytes[21] = 1;
+    bytes[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 1;
+    bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
+
+    let records = IndexedRecordOffsets::build(&bytes);
+    assert_eq!(
+        surface_patch_boundaries(&bytes, &records, &[42]),
+        vec![DesignSurfacePatchBoundary {
+            scope_reference_ordinal: 0,
+            record_index: 42,
+            is_seed_selection: true,
+            continuity: DesignPatchContinuity::Curvature,
+            flip: 2,
+            scale: -1.0,
+            model_reference: 100,
+        }]
+    );
+}
+
+#[test]
+fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
+    use crate::design::decode::patch::surface_patch_boundaries;
+
+    let mut bytes = vec![0_u8; 49];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"999");
+    bytes[7..11].copy_from_slice(&42_u32.to_le_bytes());
+    bytes[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 1;
+    bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
+
+    let records = IndexedRecordOffsets::build(&bytes);
+    bytes[21] = 2;
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+
+    bytes[21] = 0;
+    bytes[30..38].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 0;
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+}
