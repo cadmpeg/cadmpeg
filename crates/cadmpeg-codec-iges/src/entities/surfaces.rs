@@ -193,20 +193,42 @@ fn offset_indicator_parameters(bounds: Option<[Option<f64>; 4]>) -> [f64; 2] {
 }
 
 fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
-    let parameters = ir
+    let procedural = ir
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *surface)
-        .map(|procedural| offset_indicator_parameters(procedural.record_bounds));
+        .find(|procedural| procedural.surface == *surface);
+    let parameters =
+        procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds));
     let parameters = parameters.unwrap_or([0.0, 0.0]);
-    let index = cadmpeg_ir::index::ModelIndex::new(ir);
-    let partials = cadmpeg_ir::eval::model_surface_partials_by_id(
-        &index,
-        surface,
-        parameters[0],
-        parameters[1],
-    )?;
+    let partials = match procedural {
+        Some(_) => {
+            let index = cadmpeg_ir::index::ModelIndex::new(ir);
+            cadmpeg_ir::eval::model_surface_partials_by_id(
+                &index,
+                surface,
+                parameters[0],
+                parameters[1],
+            )?
+        }
+        None => {
+            // A support with no procedural entry takes `model_surface_mapping`'s
+            // direct arm: `surface_partials` on the carrier geometry with zero
+            // offset and unit scales. Building the whole `ModelIndex` to serve
+            // that one arena lookup is the bulk of this function's cost, so the
+            // carrier is resolved here instead. The reverse scan is deliberate:
+            // the index maps an arena through a `HashMap` where a repeated
+            // identity is won by the last entry, and directory sequence numbers
+            // come straight from the card, so duplicate ids are not excluded.
+            let carrier = ir
+                .model
+                .surfaces
+                .iter()
+                .rev()
+                .find(|carrier| carrier.id == *surface)?;
+            cadmpeg_ir::eval::surface_partials(&carrier.geometry, parameters[0], parameters[1])?
+        }
+    };
     unit_vector(partials.du.cross(partials.dv))
 }
 
@@ -1111,6 +1133,10 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
+    // No `ModelIndex` can be hoisted out of this loop: every accepted offset
+    // surface appends to `ir.model`, and an offset may serve as the support
+    // of a later one in the same pass, so an index built up front would miss
+    // surfaces that must be resolvable by the time they are referenced.
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
