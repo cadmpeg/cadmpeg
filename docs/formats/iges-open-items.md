@@ -43,6 +43,32 @@ threshold that the codec selected, or because a field is blank where the codec
 requires an explicit value. A refusal is not a safe default. It removes geometry
 from a conformant file.
 
+## Dialect coverage
+
+### DV-01. Full IGES 4.0 dialect support
+
+**Question.** Which version-specific physical, Global, Directory, Parameter Data, entity, and transfer rules must be implemented and verified before Global version flag `6` joins the verified set?
+
+**Known.** `iges.md` admits a flag `6` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `PH-04`, `GL-10`, `GL-11`, `DE-01`, and `VN-01` through `VN-05` record known 4.0 differences. Full version-specific decode and strict admission are not established.
+
+**Need.** Compare the complete IGES 4.0 document with the settled 5.1/5.2/5.3 model, implement each material difference, and add independent probes for Global defaults, version handling, entity ranges, pointer targets, constraints, and geometry projection. Remove the dialect loss and strict refusal only after valid 4.0 files have full semantic and transfer verification.
+
+**Conflict.** The current read profile describes 4.0 salvage as semantic decode, but its output uses later-version semantics where the 4.0 rules differ. That is recovery, not full 4.0 support.
+
+**Note.** Keep 4.0 salvage available while this item is open. Closing this item requires updating `iges.md`, `docs/format-support.md`, and the decoder together.
+
+### DV-02. Full IGES 5.0 dialect support
+
+**Question.** Which version-specific physical, Global, Directory, Parameter Data, entity, and transfer rules must be implemented and verified before Global version flag `8` joins the verified set?
+
+**Known.** `iges.md` admits a flag `8` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `GL-12` records that the authoritative IGES 5.0 comparison is not complete. Full version-specific decode and strict admission are not established.
+
+**Need.** Obtain an authoritative IGES 5.0 specification, compare its complete rules with the settled 5.1/5.2/5.3 model, implement each material difference, and add independent probes for Global defaults, version handling, entity ranges, pointer targets, constraints, and geometry projection. Remove the dialect loss and strict refusal only after valid 5.0 files have full semantic and transfer verification.
+
+**Conflict.** The current read profile describes 5.0 salvage as semantic decode, but no authoritative comparison proves that the 5.1/5.2/5.3 semantics preserve every 5.0 meaning. That is recovery, not full 5.0 support.
+
+**Note.** Do not use a later IGES draft as a substitute for the 5.0 specification. Keep 5.0 salvage available while this item is open. Closing this item requires updating `iges.md`, `docs/format-support.md`, and the decoder together.
+
 ## 1. Physical framing and lexical rules
 
 ### PH-03. Entity-specific boundary for trailing pointer groups
