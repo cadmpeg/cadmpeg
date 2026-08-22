@@ -1637,6 +1637,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
             ordinal: 0,
             offset: 0,
             selector: 0,
+            endpoint_selector: None,
             object_name_ref: "thread-name".into(),
             feature_ref: thread_id,
             producer_feature_refs: vec![hole_id.clone()],

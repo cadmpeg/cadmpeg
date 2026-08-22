@@ -6,6 +6,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
 use crate::records::{
@@ -352,6 +353,11 @@ impl SldprtNative {
             .iter()
             .map(|lane| lane.id.as_str())
             .collect::<std::collections::HashSet<_>>();
+        let lane_payloads = native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice()))
+            .collect::<std::collections::HashMap<_, _>>();
         if let Some(record) = entities
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
@@ -501,6 +507,17 @@ impl SldprtNative {
                         .terminal_feature_ref
                         .as_deref()
                         .is_some_and(|feature| !feature_ids.contains(feature)))
+                || record.endpoint_selector.is_some_and(|selector| {
+                    usize::try_from(record.offset)
+                        .ok()
+                        .and_then(|offset| offset.checked_sub(4))
+                        .and_then(|offset| {
+                            lane_payloads
+                                .get(record.parent.as_str())
+                                .and_then(|payload| View::u32_le_at(payload, offset))
+                        })
+                        != Some(selector)
+                })
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",

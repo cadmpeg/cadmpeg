@@ -268,7 +268,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         })
                     } else if has_depth {
                         None
-                    } else if let Some((reference, kind)) =
+                    } else if let Some((reference, kind, _endpoint_selector)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
                         let prefix = match kind {
@@ -1200,7 +1200,7 @@ pub(super) fn compact_extrusion_to_vertex_at(
     payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<(usize, CompactPointReferenceKind)> {
+) -> Option<(usize, CompactPointReferenceKind, Option<u32>)> {
     let end = end.min(payload.len());
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 3)
@@ -1241,7 +1241,13 @@ pub(super) fn compact_extrusion_to_vertex_at(
     let [marker] = candidates.as_slice() else {
         return None;
     };
-    Some((*marker, kind))
+    let endpoint_selector = match kind {
+        CompactPointReferenceKind::Point => None,
+        CompactPointReferenceKind::EdgeEndpoint => {
+            Some(View::u32_le_at(payload, marker.checked_sub(4)?)?)
+        }
+    };
+    Some((*marker, kind, endpoint_selector))
 }
 
 pub(super) fn compact_extrusion_offset_from_face_at(

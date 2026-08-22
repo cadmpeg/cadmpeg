@@ -533,7 +533,7 @@ pub(super) fn compact_surface_selections(
                     compact_extrusion_to_face_at(&lane.native_payload, offset, end)
                         .or_else(|| {
                             compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
-                                .map(|(marker, _)| marker)
+                                .map(|(marker, _, _)| marker)
                         })
                         .or_else(|| {
                             compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
@@ -625,6 +625,13 @@ pub(super) fn compact_surface_selections(
             continue;
         }
         for (offset, components) in candidates {
+            let endpoint_selector = if kind == NativeClassKind::Extrusion {
+                compact_extrusion_to_vertex_at(&lane.native_payload, start, end)
+                    .and_then(|(marker, _, selector)| (marker == offset).then_some(selector))
+                    .flatten()
+            } else {
+                None
+            };
             let terminal_feature_ref = surface_selection_terminal_feature_at(
                 &lane.native_payload,
                 offset,
@@ -642,6 +649,7 @@ pub(super) fn compact_surface_selections(
                 ordinal: result.len() as u32,
                 offset: offset as u64,
                 selector: lane.native_payload[offset.saturating_sub(8)],
+                endpoint_selector,
                 object_name_ref: name.id.clone(),
                 feature_ref: feature.id.clone(),
                 producer_feature_refs,

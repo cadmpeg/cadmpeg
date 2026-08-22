@@ -1456,6 +1456,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         ordinal: 0,
         offset: 0,
         selector: 0,
+        endpoint_selector: None,
         object_name_ref: String::new(),
         feature_ref: feature_ref.into(),
         producer_feature_refs: Vec::new(),

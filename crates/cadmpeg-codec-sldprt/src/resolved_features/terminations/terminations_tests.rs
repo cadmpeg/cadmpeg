@@ -1063,10 +1063,11 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0x82, 0x92, 0x2b, 0x80, 2, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
-    let (found, kind) =
+    let (found, kind, endpoint_selector) =
         compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::Point);
+    assert_eq!(endpoint_selector, None);
     let path = compact_single_face_reference_path_at(&payload, marker).expect("required invariant");
     assert_eq!(path.last().expect("required invariant").local_id, Some(7));
 
@@ -1094,10 +1095,17 @@ fn compact_extrusion_to_vertex_accepts_both_point_reference_forms() {
     payload.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
     payload.extend_from_slice(&[0; 12]);
     let marker = selection_vector_tail(&mut payload, &[2]);
-    let (found, kind) =
+    let (found, kind, endpoint_selector) =
         compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
     assert_eq!(found, marker);
     assert_eq!(kind, CompactPointReferenceKind::EdgeEndpoint);
+    assert_eq!(endpoint_selector, Some(0));
+
+    let endpoint_selector_value: u32 = 0x0012_3456;
+    payload[marker - 4..marker].copy_from_slice(&endpoint_selector_value.to_le_bytes());
+    let (_, _, endpoint_selector) =
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).expect("required invariant");
+    assert_eq!(endpoint_selector, Some(endpoint_selector_value));
 }
 
 #[test]
@@ -1112,7 +1120,7 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let marker = selection_vector_tail(&mut payload, &[4, 7]);
     assert!(marker > 270);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _)| found),
+        compact_extrusion_to_vertex_at(&payload, 0, payload.len()).map(|(found, _, _)| found),
         Some(marker)
     );
 
@@ -1120,7 +1128,7 @@ fn compact_extrusion_to_vertex_requires_one_reference_in_the_feature_interval() 
     let second = selection_vector_tail(&mut payload, &[5, 8]);
     assert!(second > marker);
     assert_eq!(
-        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _)| found),
+        compact_extrusion_to_vertex_at(&payload, 0, boundary).map(|(found, _, _)| found),
         Some(marker)
     );
     assert_eq!(

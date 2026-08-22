@@ -428,7 +428,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which endpoint does the u32 selector in an up-to-vertex code-`3` edge-endpoint reference select?
 
-**Known.** The point-reference form retains the edge and endpoint selector. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
+**Known.** The point-reference form retains the edge and endpoint selector. The decoder retains the little-endian u32 at four bytes before the duplicated selection-vector marker as `endpoint_selector`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
