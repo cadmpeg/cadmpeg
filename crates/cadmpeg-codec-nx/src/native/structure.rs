@@ -125,6 +125,8 @@ pub fn fast_load_component_object_groups(
 }
 
 struct Candidate {
+    start: usize,
+    end: usize,
     prototypes: Vec<(usize, String)>,
     occurrence_lane_form: u8,
     occurrence_markers_offset: usize,
@@ -134,6 +136,31 @@ struct Candidate {
     uuids: Vec<(usize, String)>,
     uuid_indices_offset: usize,
     uuid_indices: Vec<u8>,
+}
+
+/// Resolve candidate parses by physical span before applying the one-roster
+/// rule. A valid parse nested inside a larger parse is an interpretation of
+/// bytes already owned by that larger candidate, not a second roster. Two
+/// disjoint candidates or partially overlapping candidates remain ambiguous.
+fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
+    candidates.sort_by_key(|candidate| (candidate.start, candidate.end));
+    let mut selected = Vec::new();
+    for candidate in candidates {
+        let Some(previous) = selected.last_mut() else {
+            selected.push(candidate);
+            continue;
+        };
+        if candidate.start >= previous.end {
+            selected.push(candidate);
+            continue;
+        }
+        if candidate.end <= previous.end {
+            continue;
+        }
+        return None;
+    }
+    let [candidate] = selected.try_into().ok()?;
+    Some(candidate)
 }
 
 /// Extract the component roster only when its entry and internal frame are
@@ -193,15 +220,13 @@ pub fn fast_load_component_roster(
             }
         }
     }
-    let mut candidates = starts
+    let candidates = starts
         .into_iter()
-        .filter_map(|start| parse_candidate(payload, start));
-    let Some(candidate) = candidates.next() else {
+        .filter_map(|start| parse_candidate(payload, start))
+        .collect::<Vec<_>>();
+    let Some(candidate) = select_roster_candidate(candidates) else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
-    if candidates.next().is_some() {
-        return (Vec::new(), Vec::new(), Vec::new());
-    }
 
     let prototypes: Vec<_> = candidate
         .prototypes
@@ -335,6 +360,8 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         .then_some(())?;
 
     Some(Candidate {
+        start,
+        end: at,
         prototypes,
         occurrence_lane_form,
         occurrence_markers_offset,
@@ -501,6 +528,22 @@ mod tests {
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_operation_label_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn candidate_span(start: usize, end: usize) -> Candidate {
+        Candidate {
+            start,
+            end,
+            prototypes: Vec::new(),
+            occurrence_lane_form: 0,
+            occurrence_markers_offset: 0,
+            occurrence_markers: Vec::new(),
+            occurrences_offset: 0,
+            prototype_indices: Vec::new(),
+            uuids: Vec::new(),
+            uuid_indices_offset: 0,
+            uuid_indices: Vec::new(),
         }
     }
 
@@ -696,6 +739,21 @@ mod tests {
         assert_eq!(
             fast_load_component_roster(&container),
             (Vec::new(), Vec::new(), Vec::new())
+        );
+    }
+
+    #[test]
+    fn nested_roster_candidate_is_resolved_before_uniqueness() {
+        let candidate =
+            select_roster_candidate(vec![candidate_span(10, 100), candidate_span(25, 40)])
+                .expect("nested candidate is owned by the outer span");
+        assert_eq!((candidate.start, candidate.end), (10, 100));
+    }
+
+    #[test]
+    fn partially_overlapping_roster_candidates_remain_ambiguous() {
+        assert!(
+            select_roster_candidate(vec![candidate_span(10, 50), candidate_span(30, 70)]).is_none()
         );
     }
 }
