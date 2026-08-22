@@ -71,12 +71,16 @@ fn report_code_count(report: &cadmpeg_ir::report::DecodeReport, code: IgesLossCo
 }
 
 fn point_file_with_version_flag(flag: &str) -> Vec<u8> {
-    point_file_with_global(
-        format!(
-            "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{flag},0,0H,0H;"
-        )
-        .as_bytes(),
-    )
+    let mut fields = valid_global_fields();
+    fields[22] = flag.into();
+    if flag == "6" {
+        fields[17] = "13H260714.000000".into();
+        fields.truncate(24);
+    } else if flag == "8" {
+        fields[17] = "13H260714.000000".into();
+        fields.truncate(25);
+    }
+    point_file_with_global(format!("{};", fields.join(",")).as_bytes())
 }
 
 fn point_file_with_field(index: usize, value: &str) -> Vec<u8> {

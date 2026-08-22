@@ -149,6 +149,8 @@ fn a_container_only_decode_reports_the_dialect_loss_and_strict_admits_it() {
 #[test]
 fn a_legacy_version_with_no_maximum_line_width_decodes_and_strict_names_the_dialect() {
     let mut fields = valid_global_fields();
+    fields[17] = "13H260714.000000".into();
+    fields.truncate(24);
     fields[16] = String::new();
     fields[22] = "6".into();
     let mut global = fields.join(",");
@@ -204,6 +206,89 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn the_4_0_global_contract_accepts_twenty_four_fields_and_the_short_date() {
+    let mut fields = valid_global_fields();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "6".into();
+    fields.truncate(24);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.version(), "4.0");
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn the_4_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
+    let mut fields = valid_global_fields();
+    fields[17] = "15H20260714.000000".into();
+    fields[22] = "6".into();
+    fields.truncate(24);
+
+    let (_, losses) = resolve_global_fields(&fields);
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        1
+    );
+
+    let mut extended = fields;
+    extended.extend(["0H".into(), "0H".into()]);
+    let (_, losses) = resolve_global_fields(&extended);
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        1
+    );
+}
+
+#[test]
+fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_four_digit_date_later() {
+    let mut fields = valid_global_fields();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.version(), "5.0");
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
+    let mut fields = valid_global_fields();
+    fields[12].clear();
+    fields[13] = "2".into();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.length_context().unwrap().length_factor_mm(), 1.0);
+    assert!(losses.is_empty(), "{losses:#?}");
+
+    fields[22] = "6".into();
+    fields[17] = "13H260714.000000".into();
+    fields.truncate(24);
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert!(parsed.length_context().is_none());
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
+        1
+    );
+}
+
+fn report_code_count_from_losses(
+    losses: &[cadmpeg_ir::report::LossNote],
+    code: IgesLossCode,
+) -> usize {
+    losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .count()
 }
 
 #[test]

@@ -43,6 +43,68 @@ pub(crate) struct RawGlobal {
     values: Vec<Value>,
 }
 
+/// The effective specification family selected by Global field 23.
+///
+/// The older declarations remain grouped as `Legacy` until their own
+/// specifications are verified. The 4.0 and 5.0 families are separate because
+/// their Global tables stop at fields 24 and 25 respectively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Dialect {
+    Legacy,
+    V4_0,
+    V5_0,
+    V5_1,
+    V5_2,
+    V5_3,
+}
+
+impl Dialect {
+    const fn from_effective_flag(flag: i64) -> Self {
+        match flag {
+            6 => Self::V4_0,
+            8 => Self::V5_0,
+            9 => Self::V5_1,
+            10 => Self::V5_2,
+            11 => Self::V5_3,
+            _ => Self::Legacy,
+        }
+    }
+
+    const fn global_field_count(self) -> usize {
+        match self {
+            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => 26,
+            Self::V4_0 => 24,
+            Self::V5_0 => 25,
+        }
+    }
+
+    const fn accepts_four_digit_date(self) -> bool {
+        matches!(self, Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3)
+    }
+
+    const fn default_model_scale(self) -> Option<f64> {
+        match self {
+            Self::V4_0 => None,
+            Self::Legacy | Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3 => Some(1.0),
+        }
+    }
+
+    const fn default_units_flag(self) -> Option<i64> {
+        match self {
+            Self::V4_0 | Self::V5_0 => None,
+            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => Some(1),
+        }
+    }
+
+    const fn has_model_date(self) -> bool {
+        !matches!(self, Self::V4_0)
+    }
+
+    const fn has_application_protocol(self) -> bool {
+        matches!(self, Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3)
+    }
+}
+
 /// Global field values, fallbacks, and absences after one resolution pass.
 #[derive(Debug)]
 pub(crate) struct ResolvedGlobal {
@@ -61,6 +123,7 @@ pub(crate) struct ResolvedGlobal {
     line_weight_scale: Option<LineWeightScale>,
     declared_version_flag: i64,
     unreadable_version_declaration: Option<String>,
+    dialect: Dialect,
 }
 
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
@@ -350,10 +413,10 @@ pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), 
     Ok(resolve(parse_raw(scan)?))
 }
 
-fn date_value_is_valid(bytes: &[u8]) -> bool {
+fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
     let dot = match bytes.len() {
         13 => 6,
-        15 => 8,
+        15 if accepts_four_digit_date => 8,
         _ => return false,
     };
     if bytes.get(dot) != Some(&b'.')
@@ -486,9 +549,13 @@ impl Resolution {
         }
     }
 
-    fn supplied_date(&self, index: usize) -> Supplied<String> {
+    fn supplied_date(&self, index: usize, dialect: Dialect) -> Supplied<String> {
         match self.supplied_string(index) {
-            Supplied::Value(text) if date_value_is_valid(text.as_bytes()) => Supplied::Value(text),
+            Supplied::Value(text)
+                if date_value_is_valid(text.as_bytes(), dialect.accepts_four_digit_date()) =>
+            {
+                Supplied::Value(text)
+            }
             Supplied::Value(_) => Supplied::Malformed,
             Supplied::Absent => Supplied::Absent,
             Supplied::Malformed => Supplied::Malformed,
@@ -534,8 +601,8 @@ impl Resolution {
         }
     }
 
-    fn metadata_date(&mut self, index: usize) {
-        if matches!(self.supplied_date(index), Supplied::Malformed) {
+    fn metadata_date(&mut self, index: usize, dialect: Dialect) {
+        if matches!(self.supplied_date(index, dialect), Supplied::Malformed) {
             self.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 index,
@@ -611,11 +678,15 @@ impl Resolution {
         }
     }
 
-    fn line_weight_scale(&mut self) -> Option<LineWeightScale> {
+    fn line_weight_scale(&mut self, dialect: Dialect) -> Option<LineWeightScale> {
         let (gradations, gradations_defect) =
             match self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS) {
                 Supplied::Absent => (Some(1), None),
-                Supplied::Value(value) if value > 0 => (Some(value), None),
+                Supplied::Value(value)
+                    if value > 0 && (dialect != Dialect::V4_0 || value <= 32_768) =>
+                {
+                    (Some(value), None)
+                }
                 Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
             };
         let (maximum_width, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
@@ -643,14 +714,14 @@ impl Resolution {
         })
     }
 
-    fn length_unit(&mut self) -> (Option<i64>, Option<String>, Option<f64>) {
+    fn length_unit(&mut self, dialect: Dialect) -> (Option<i64>, Option<String>, Option<f64>) {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
-            Supplied::Absent => (Some(1.0), None),
+            Supplied::Absent => (dialect.default_model_scale(), None),
             Supplied::Value(value) if value > 0.0 => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
-            Supplied::Absent => (Some(1), None),
+            Supplied::Absent => (dialect.default_units_flag(), None),
             Supplied::Value(value) if (1..=11).contains(&value) => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
@@ -715,6 +786,16 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         losses: Vec::new(),
     };
 
+    let (declared_version_flag, unreadable_version_declaration) =
+        match resolution.supplied_integer(FIELD_VERSION_FLAG) {
+            Supplied::Absent => (3, None),
+            Supplied::Value(value) => (value, None),
+            Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
+        };
+    let effective_flag = effective_version(declared_version_flag).0;
+    let dialect = Dialect::from_effective_flag(effective_flag);
+    let global_field_count = dialect.global_field_count();
+
     for (index, byte) in [(0_usize, parameter_delimiter), (1_usize, record_delimiter)] {
         if prohibited_delimiter_byte(byte) {
             resolution
@@ -727,11 +808,12 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
                 )));
         }
     }
-    if field_count > TABLE_1_FIELD_COUNT {
+    if field_count > global_field_count {
         resolution
             .losses
             .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
-                "IGES Global record has {field_count} fields; IGES 5.3 Table 1 defines {TABLE_1_FIELD_COUNT} and the decoder ignored the rest"
+                "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
+                effective_version(declared_version_flag).1,
             )));
     }
 
@@ -745,11 +827,11 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     resolution.metadata_integer(FIELD_DOUBLE_MAGNITUDE, |_| true);
     let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE);
     resolution.metadata_string(FIELD_RECEIVER_PRODUCT);
-    let (units_flag, units_name, length_factor_mm) = resolution.length_unit();
+    let (units_flag, units_name, length_factor_mm) = resolution.length_unit(dialect);
     #[cfg(not(test))]
     let _ = units_flag;
-    let line_weight_scale = resolution.line_weight_scale();
-    resolution.metadata_date(FIELD_GENERATION_DATE);
+    let line_weight_scale = resolution.line_weight_scale(dialect);
+    resolution.metadata_date(FIELD_GENERATION_DATE, dialect);
     let minimum_resolution = resolution.minimum_resolution();
     #[cfg(test)]
     let maximum_coordinate = resolution.maximum_coordinate();
@@ -757,15 +839,13 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let _ = resolution.maximum_coordinate();
     resolution.metadata_string(FIELD_AUTHOR);
     resolution.metadata_string(FIELD_ORGANIZATION);
-    let (declared_version_flag, unreadable_version_declaration) =
-        match resolution.supplied_integer(FIELD_VERSION_FLAG) {
-            Supplied::Absent => (3, None),
-            Supplied::Value(value) => (value, None),
-            Supplied::Malformed => (3, Some(resolution.declaration_text(FIELD_VERSION_FLAG))),
-        };
     resolution.metadata_integer(FIELD_DRAFTING_STANDARD, |value| (0..=7).contains(&value));
-    resolution.metadata_date(FIELD_MODEL_DATE);
-    resolution.metadata_string(FIELD_APPLICATION_PROTOCOL);
+    if dialect.has_model_date() {
+        resolution.metadata_date(FIELD_MODEL_DATE, dialect);
+    }
+    if dialect.has_application_protocol() {
+        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL);
+    }
 
     let resolved = ResolvedGlobal {
         parameter_delimiter,
@@ -786,6 +866,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         line_weight_scale,
         declared_version_flag,
         unreadable_version_declaration,
+        dialect,
     };
     (resolved, resolution.losses)
 }
@@ -844,7 +925,14 @@ impl ResolvedGlobal {
     }
 
     pub(crate) fn version(&self) -> &'static str {
-        effective_version(self.declared_version_flag).1
+        match self.dialect {
+            Dialect::V4_0 => "4.0",
+            Dialect::V5_0 => "5.0",
+            Dialect::V5_1 => "5.1",
+            Dialect::V5_2 => "5.2",
+            Dialect::V5_3 => "5.3",
+            Dialect::Legacy => effective_version(self.declared_version_flag).1,
+        }
     }
 
     /// The loss charged when field 23 does not name a verified specification version.
