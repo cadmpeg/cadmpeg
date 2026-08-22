@@ -143,7 +143,11 @@ struct Candidate {
 /// bytes already owned by that larger candidate, not a second roster. Two
 /// disjoint candidates or partially overlapping candidates remain ambiguous.
 fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
-    candidates.sort_by_key(|candidate| (candidate.start, candidate.end));
+    candidates.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then_with(|| right.end.cmp(&left.end))
+    });
     let mut selected = Vec::new();
     for candidate in candidates {
         let Some(previous) = selected.last_mut() else {
@@ -747,6 +751,14 @@ mod tests {
         let candidate =
             select_roster_candidate(vec![candidate_span(10, 100), candidate_span(25, 40)])
                 .expect("nested candidate is owned by the outer span");
+        assert_eq!((candidate.start, candidate.end), (10, 100));
+    }
+
+    #[test]
+    fn same_start_nested_roster_candidate_is_resolved_before_uniqueness() {
+        let candidate =
+            select_roster_candidate(vec![candidate_span(10, 40), candidate_span(10, 100)])
+                .expect("same-start nested candidate is owned by the outer span");
         assert_eq!((candidate.start, candidate.end), (10, 100));
     }
 
