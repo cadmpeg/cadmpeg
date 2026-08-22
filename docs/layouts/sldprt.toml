@@ -346,7 +346,7 @@ anchor = "`00 0f` | loop head | ≥14 | none"
 tag = "00 10"
 name = "edge-use"
 payload_bytes = 28
-note = "bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge"
+note = "sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge"
 section = "4"
 anchor = "`00 10` | edge-use | 28 | at body +8"
 
@@ -362,7 +362,7 @@ anchor = "`00 11` | oriented coedge | 21 | none"
 tag = "00 12"
 name = "vertex-use"
 payload_bytes = 24
-note = "magic at body +16"
+note = "sequence u32 BE at body +2; magic at body +16"
 section = "4"
 anchor = "`00 12` | vertex-use | 24 | at body +16"
 

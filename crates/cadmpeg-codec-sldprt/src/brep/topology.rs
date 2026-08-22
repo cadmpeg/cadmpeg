@@ -32,7 +32,7 @@ pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 #[derive(Debug, Clone)]
 pub struct Record {
     pub attr: u16,
-    /// Big-endian document sequence carried by face bridges.
+    /// Big-endian document sequence carried by sequence-bearing topology records.
     pub sequence: Option<u32>,
     /// Big-endian `refs` array (length varies by family).
     pub refs: Vec<u16>,
@@ -166,9 +166,19 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
 }
 
 fn record(attr: u16, refs: Vec<u16>, marker: Option<u8>, offset: usize) -> Record {
+    record_with_sequence(attr, None, refs, marker, offset)
+}
+
+fn record_with_sequence(
+    attr: u16,
+    sequence: Option<u32>,
+    refs: Vec<u16>,
+    marker: Option<u8>,
+    offset: usize,
+) -> Record {
     Record {
         attr,
-        sequence: None,
+        sequence,
         refs,
         marker,
         xyz_m: None,
@@ -194,10 +204,11 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
     let Some(attr) = attr_at(buf, p) else {
         return Vec::new();
     };
+    let sequence = View::u32_be_at(buf, p + 2);
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be(buf, p + 16, 6) {
-            out.push(record(attr, refs, None, off));
+            out.push(record_with_sequence(attr, sequence, refs, None, off));
         }
     }
 
@@ -230,7 +241,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
             if decoded.len() >= 3 {
                 let mut refs = vec![0; 6];
                 refs[3] = decoded[2];
-                out.push(record(attr, refs, None, off));
+                out.push(record_with_sequence(attr, sequence, refs, None, off));
             }
         }
     }
@@ -288,6 +299,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
+    let sequence = View::u32_be_at(buf, p + 2)?;
     let refs = if buf.get(p + 16..p + 24) == Some(MAGIC.as_slice()) {
         refs_be(buf, p + 6, 5)?
     } else {
@@ -301,7 +313,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
     };
     Some(Record {
         attr,
-        sequence: None,
+        sequence: Some(sequence),
         refs,
         marker: None,
         xyz_m: None,
@@ -810,10 +822,10 @@ mod tests {
         bytes
     }
 
-    fn topology_edge_use(attr: u16) -> Vec<u8> {
+    fn topology_edge_use(attr: u16, sequence: u32) -> Vec<u8> {
         let mut bytes = vec![0, 0x10];
         bytes.extend(attr.to_be_bytes());
-        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(sequence.to_be_bytes());
         bytes.extend(0_u16.to_be_bytes());
         bytes.extend(MAGIC);
         bytes.extend(
@@ -824,10 +836,10 @@ mod tests {
         bytes
     }
 
-    fn topology_vertex_use(attr: u16) -> Vec<u8> {
+    fn topology_vertex_use(attr: u16, sequence: u32) -> Vec<u8> {
         let mut bytes = vec![0, 0x12];
         bytes.extend(attr.to_be_bytes());
-        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(sequence.to_be_bytes());
         bytes.extend([0_u16, 0, 0, 0, 60].into_iter().flat_map(u16::to_be_bytes));
         bytes.extend(MAGIC);
         bytes
@@ -842,8 +854,8 @@ mod tests {
             30,
             [0, 20, 0, 30, 50, 0, 0x2b40, 0, 0],
         ));
-        body.extend(topology_edge_use(0x2b40));
-        body.extend(topology_vertex_use(50));
+        body.extend(topology_edge_use(0x2b40, 0));
+        body.extend(topology_vertex_use(50, 0));
 
         let tables = scan(&body);
         let coedge = tables.coedges.get(&30).expect("tripled coedge");
@@ -851,6 +863,17 @@ mod tests {
         assert_eq!(coedge.refs[4], 50);
         assert_eq!(coedge.refs[6], 0x2b40);
         assert!(tables.loops.contains_key(&20));
+    }
+
+    #[test]
+    fn edge_and_vertex_use_sequences_are_retained() {
+        let mut body = Vec::new();
+        body.extend(topology_edge_use(40, 0x0102_0304));
+        body.extend(topology_vertex_use(50, 0x0506_0708));
+
+        let tables = scan(&body);
+        assert_eq!(tables.edge_uses[&40].sequence, Some(0x0102_0304));
+        assert_eq!(tables.vertex_uses[&50].sequence, Some(0x0506_0708));
     }
 
     #[test]

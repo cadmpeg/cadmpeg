@@ -80,6 +80,14 @@ pub struct Brep {
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
     pub face_bridge_sequences: Vec<(u32, u16)>,
+    /// Source-local sequence-to-attribute links carried by edge-use records.
+    /// The decode boundary retains this map only for the active source because
+    /// SWIFT identifiers resolve in that source namespace.
+    pub edge_use_sequences: Vec<(u32, u16)>,
+    /// Source-local sequence-to-attribute links carried by vertex-use records.
+    /// The decode boundary retains this map only for the active source because
+    /// SWIFT identifiers resolve in that source namespace.
+    pub vertex_use_sequences: Vec<(u32, u16)>,
     /// Body-to-history ordinals resolved from Parasolid attributes.
     pub body_modifiers: Vec<attrib::BodyModifier>,
     /// Loss accounting for this decode.
@@ -969,11 +977,31 @@ fn decode_graph(
         .collect::<Vec<_>>();
     face_bridge_sequences.sort_unstable();
     face_bridge_sequences.dedup();
+    let mut edge_use_sequences = t
+        .edge_uses
+        .values()
+        .filter_map(|edge_use| edge_use.sequence.map(|sequence| (sequence, edge_use.attr)))
+        .collect::<Vec<_>>();
+    edge_use_sequences.sort_unstable();
+    edge_use_sequences.dedup();
+    let mut vertex_use_sequences = t
+        .vertex_uses
+        .values()
+        .filter_map(|vertex_use| {
+            vertex_use
+                .sequence
+                .map(|sequence| (sequence, vertex_use.attr))
+        })
+        .collect::<Vec<_>>();
+    vertex_use_sequences.sort_unstable();
+    vertex_use_sequences.dedup();
 
     let mut out = Brep {
         face_colors,
         face_atoms: entity_facts.face_atoms,
         face_bridge_sequences,
+        edge_use_sequences,
+        vertex_use_sequences,
         body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,

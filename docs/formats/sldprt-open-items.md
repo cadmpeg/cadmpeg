@@ -586,14 +586,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
-### DI-33. SWIFT edge and vertex feature-to-topology identity
-
-**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid edge or vertex identity?
-
-**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. A face suffix uses the active partition `00 0e` bridge sequence to select its bridge attribute and emitted face. Edge and vertex references are not assigned a face sequence interpretation.
-
-**Need.** We must identify the corresponding edge-use and vertex-use sequence fields and their active-partition joins before attaching an edge or vertex target.
-
 ### DI-39. `moTempAxisRef_w` carrier end and middle triple
 
 **Question.** What fixes the end of a `moTempAxisRef_w` nine-scalar carrier, and what do its scalars at `+263`, `+271`, and `+279` hold?

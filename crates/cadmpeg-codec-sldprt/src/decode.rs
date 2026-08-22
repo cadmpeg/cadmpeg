@@ -2089,6 +2089,8 @@ fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
 }
 
 fn merge_brep(target: &mut Brep, mut source: Brep) {
+    // Sequence links are source-local and belong only to the selected SWIFT
+    // source. Alternate configuration sequences must not enter its namespace.
     let stream_base = target.annotations.streams.len() as u32;
     target
         .annotations
@@ -2400,12 +2402,16 @@ fn build_geometry_ir(
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
+    let edge_use_sequences = std::mem::take(&mut brep.edge_use_sequences);
+    let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
     let topology_index = crate::swift::TopologyIdentityIndex::from_model(
         &ir.model.bodies,
         &ir.model.faces,
         &ir.model.edges,
         &ir.model.vertices,
         &face_bridge_sequences,
+        &edge_use_sequences,
+        &vertex_use_sequences,
     );
     let face_identities = brep
         .face_atoms

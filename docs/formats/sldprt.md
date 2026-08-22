@@ -1026,14 +1026,17 @@ literal precedence rule. A missing, multiply named, multiply seeded, or
 multiply consuming join leaves the nominal absent.
 
 The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
-local to the SWIFT schema lane. Body, edge, and vertex references use the
-corresponding primary topology identity index. A face reference uses the
-decimal sequence stored by the active partition's `00 0e` bridge record, not
-the emitted face attribute: the bridge sequence selects its bridge attribute,
-and that attribute selects `sldprt:brep:face#<attr>`. Face and surface carrier
-identities share the face binding. Supporting geometry and boundary identities
-do not bind directly. A missing, non-decimal, duplicate, or non-primary
-identity retains the source `ShapeAspect` target.
+local to the SWIFT schema lane. The active partition contributes one sequence
+index from its `00 0e` bridge, `00 10` edge-use, and `00 12` vertex-use
+records. Each sequence selects its record attribute, and that attribute binds
+to the emitted primary face, edge, or vertex with the corresponding identity.
+The sequence index is checked before any emitted-arena suffix index. A
+sequence with no emitted or unique primary target is unresolved and blocks
+arena fallback; a sequence shared by different primary targets is unresolved.
+Only a suffix absent from the sequence index may use a unique body, edge, or
+vertex identity suffix. Supporting geometry and boundary identities do not
+bind directly. A missing, non-decimal, duplicate, or non-primary identity
+retains the source `ShapeAspect` target.
 
 A `GdtDiameter` on a multi-diameter counterbore pattern pairs with a
 `GdtCounterBore` annotation whose non-cylinder feature-reference set equals the
@@ -1192,9 +1195,9 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 - **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the owner/use field is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
-- **Edge-use `00 10`:** bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
+- **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
-- **Vertex-use `00 12` / point `00 1d`:** `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry does not satisfy the reference-0 sentinel invariant and is not a point record.
+- **Vertex-use `00 12` / point `00 1d`:** `00 12.sequence` is u32 BE at body +2 and `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry does not satisfy the reference-0 sentinel invariant and is not a point record.
 
 A support surface belongs to a face through `face -> bridge -> bridge.refs[4] -> carrier`. Face and carrier attribute equality does not establish ownership. The carrier reference uses the bridge's site.
 
