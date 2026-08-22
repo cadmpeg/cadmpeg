@@ -624,16 +624,6 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 
 **Note.** The discriminating check is a corpus sweep restricted to files that omit or malform field 9, field 11, or field 19. For each file, decode once with `17` and `0.0` and once with `6`, `15`, and the neutral linear default, then compare the admitted entity sets. Move a constant only for entities the wider run admits, the narrow run rejects, and an independent geometric check confirms as valid. A sweep that finds no such entity settles the narrow constants.
 
-### GL-08. Prohibited delimiter bytes are honored, not rejected
-
-**Question.** Does the decoder tokenize a file correctly when Global field 1 or field 2 declares a byte that IGES 5.3 §2.2.3.1 prohibits?
-
-**Known.** IGES 5.3 §2.2.3.1 prohibits the control symbols, the space character, the digits `0` through `9`, the characters `+`, `-`, and `.`, and the letters `D`, `E`, and `H` as either delimiter, and states that those bytes cause parsing difficulties for postprocessors. The same section permits only four delimiter forms. `global.rs::first_delimiter` accepts any single-byte printable-ASCII Hollerith payload that terminates its own field, and the resolver honors that declaration and charges `iges/global.noncanonical-framing` per the disposition matrix in `iges.md`. A control or non-ASCII delimiter payload still refuses the file under §2.2.2.3. The prohibited set the resolver tests is the §2.2.3.1 set exactly, so the lowercase `d`, `e`, and `h` that `global.rs` also treats as exponent and Hollerith introducers charge no loss.
-
-**Need.** `D` and `E` introduce a real exponent and `H` introduces a Hollerith count, so a file declaring one of them as the parameter delimiter splits numeric and string tokens at the wrong byte. The decoder would report a successful decode over mis-tokenized Parameter Data. The matrix decision to honor the declaration is safe only if the tokenizer stays consistent with it.
-
-**Note.** The discriminating check has two parts. First, sweep the corpus for a Global field 1 or field 2 payload inside the prohibited set and record how many files contain one. Second, build one probe file for each of `D`, `E`, `H`, a digit, `+`, `-`, `.`, and a space, each carrying one Type 110 line with known coordinates, and compare the decoded coordinates against the authored values. A probe whose coordinates disagree converts the matrix disposition for that byte class from a loss into a refusal. The `+` parameter-delimiter and `D` record-delimiter probes are already covered by `a_prohibited_delimiter_declaration_is_honored_and_charges_noncanonical_framing`, which reads back the authored Type 116 coordinates; the remaining byte classes are unprobed.
-
 ### GL-09. Implicit defaults that the owning field cannot use
 
 **Question.** Which normative source authorizes the decoder to reject the data-type implicit default for Global fields 9, 11, and 17?

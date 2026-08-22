@@ -389,6 +389,18 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
         }
     };
 
+    for (name, delimiter) in [
+        ("parameter", parameter_delimiter),
+        ("record", record_delimiter),
+    ] {
+        if prohibited_delimiter_byte(delimiter) {
+            return Err(malformed(format!(
+                "{name} delimiter {:?} is prohibited by IGES section 2.2.3.1",
+                char::from(delimiter)
+            )));
+        }
+    }
+
     let mut values = vec![
         Value::String(vec![parameter_delimiter]),
         Value::String(vec![record_delimiter]),
@@ -801,18 +813,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let dialect = Dialect::from_effective_flag(effective_flag);
     let global_field_count = dialect.global_field_count();
 
-    for (index, byte) in [(0_usize, parameter_delimiter), (1_usize, record_delimiter)] {
-        if prohibited_delimiter_byte(byte) {
-            resolution
-                .losses
-                .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
-                    "IGES Global field {} ({}) declares the byte {:?} that IGES 5.3 section 2.2.3.1 prohibits; the declaration was honored for every later field",
-                    index + 1,
-                    field_name(index),
-                    char::from(byte),
-                )));
-        }
-    }
     if field_count > global_field_count {
         resolution
             .losses

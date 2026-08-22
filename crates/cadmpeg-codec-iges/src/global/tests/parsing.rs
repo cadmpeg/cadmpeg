@@ -30,7 +30,7 @@ fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(
-        format!("116{parameter}1.0{parameter}2.0{parameter}3.0{record}").as_bytes(),
+        format!("116{parameter}1.25{parameter}2.5{parameter}3.75{record}").as_bytes(),
         1,
         1,
     ));
@@ -191,37 +191,21 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
 }
 
 #[test]
-fn a_prohibited_delimiter_declaration_is_honored_and_charges_noncanonical_framing() {
-    for (parameter, record, expected) in [
-        (',', ';', 0_usize),
-        ('+', ';', 1),
-        (',', 'D', 1),
-        ('+', 'D', 2),
-    ] {
-        let bytes = point_file_with_delimiters(parameter, record);
-
-        let result = IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
-
-        assert_eq!(
-            result.ir().model.points.len(),
-            1,
-            "{parameter}{record}: {:#?}",
-            result.report().losses
-        );
-        let position = &result.ir().model.points[0].position;
-        assert_eq!(
-            (position.x, position.y, position.z),
-            (1.0, 2.0, 3.0),
-            "{parameter}{record}"
-        );
-        assert_eq!(
-            report_code_count(result.report(), IgesLossCode::GlobalNoncanonicalFraming),
-            expected,
-            "{parameter}{record}: {:#?}",
-            result.report().losses
-        );
+fn prohibited_delimiter_declarations_refuse_before_parameter_decode() {
+    let prohibited = [
+        ' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '.', 'D', 'E', 'H',
+    ];
+    for delimiter in prohibited {
+        for (parameter, record) in [(delimiter, ';'), (',', delimiter)] {
+            let bytes = point_file_with_delimiters(parameter, record);
+            assert!(
+                matches!(
+                    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+                    Err(CodecError::Malformed(_))
+                ),
+                "{parameter}{record}"
+            );
+        }
     }
 }
 
