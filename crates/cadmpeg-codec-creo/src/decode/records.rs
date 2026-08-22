@@ -650,6 +650,21 @@ pub(super) struct CreoDatumPlaneRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoDatumCylinderRecord {
+    pub(super) id: String,
+    pub(super) datum_id: u32,
+    pub(super) owner_feature_id: u32,
+    pub(super) reversed: bool,
+    pub(super) origin: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) radius: f64,
+    pub(super) length: Option<f64>,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoFeatureSectionTransformRecord {
     pub(super) id: String,
     pub(super) definition_id: u32,
@@ -1321,6 +1336,29 @@ pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRec
             normal: record.normal,
             plane_offset: record.offset,
             corners: record.corners,
+            offset: record.offset_in_payload,
+            source_section: source_section(scan, record.offset_in_payload),
+        })
+        .collect()
+}
+
+pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylinderRecord> {
+    scan.planes
+        .datum_cylinders
+        .iter()
+        .map(|record| CreoDatumCylinderRecord {
+            id: format!(
+                "creo:datum:cylinder#{}:{}",
+                record.offset_in_payload, record.id
+            ),
+            datum_id: record.id,
+            owner_feature_id: record.feature_id,
+            reversed: record.reversed,
+            origin: record.frame.origin,
+            axis: record.frame.axis,
+            ref_direction: record.frame.ref_direction,
+            radius: record.frame.radius,
+            length: record.frame.length,
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })

@@ -32,7 +32,13 @@ const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+    let visible_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+    let active_datum_id = SurfaceId(format!("creo:actdatums:surface#{face_id}"));
+    let id = if surfaces.iter().any(|surface| surface.id == visible_id) {
+        visible_id
+    } else {
+        active_datum_id
+    };
     let mut matches = surfaces.iter().filter(|surface| surface.id == id);
     let surface = matches.next()?;
     matches.next().is_none().then_some(surface)

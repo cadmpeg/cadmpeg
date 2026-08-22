@@ -262,7 +262,7 @@ layout. Section cardinality is descriptive and does not select a layout.
 | `AllFeatur`                      | Feature rows, generated-entity tables, affected-geometry identifiers, feature references, and DEPDB section recipes. |
 | `FeatDefs`                       | Feature definitions, section recipes, placement records, outlines, dimensions, and saved section entities.           |
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
-| `ActDatums`                      | Active datum-plane geometry under `act_datum_geoms → srf_array`.                                                     |
+| `ActDatums`                      | Active datum-plane and datum-cylinder geometry under `act_datum_geoms → srf_array`.                                  |
 | `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
 | `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                     |
@@ -1202,6 +1202,21 @@ Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>
 `(x-center, y0, midpoint(z0, z1))`; its axis points from `y0` to `y1`, its
 reference direction points from `x-center` to `x-edge`, its radius is half the
 Z span, and its finite length is the Y span.
+
+An `ActDatums` type-24 cylinder row with boundary type `00` or `01` can instead
+carry a terminal seven-slot envelope frame. Its first slot is a nonzero signed axial
+span, or the unique signed span is in an earlier scalar frame for a split
+form. The remaining six slots are two opposite model-space corners. Exactly
+one corner-coordinate span equals the absolute axial span. Of the other two
+spans, one is exactly twice the other; the larger span is the diameter and the
+smaller span is the radius. Zero, nonfinite, ambiguous, or otherwise
+inconsistent spans do not define a carrier. The origin uses the diameter
+midpoint, the axial coordinate of the second corner, and the held coordinate
+of the first corner. The axis points from the second corner to the first. The
+reference direction points from the first diameter coordinate to the second,
+reversed for a negative signed span or a reversed row orientation. This
+carrier remains in the `ActDatums` surface namespace; its numeric identifier
+does not join a `VisibGeom` surface with the same number.
 
 An XZ-axis type-24 cylinder body has the form `20 10 00 <z0-local> <aux>
 <z1-local> <x0> <y0> <z0> <x1> <y1> <z1>`. The first-corner `z0` slot can use

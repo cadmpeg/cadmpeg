@@ -61,6 +61,53 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
         .collect()
 }
 
+pub(in super::super) fn transfer_active_datum_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for datum in &scan.planes.datum_cylinders {
+        let id = super::native_surface_id(scan, datum.id);
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let frame = datum.frame;
+        annotate(
+            annotations,
+            &id,
+            "ActDatums",
+            datum.offset_in_payload as u64,
+            "active_datum_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: frame.radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("ActDatums:{}", datum.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,

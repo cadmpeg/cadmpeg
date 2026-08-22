@@ -73,6 +73,7 @@ const CREO_ARENAS: &[&str] = &[
     "positional_frame_planes",
     "cross_section_outline_planes",
     "datum_planes",
+    "datum_cylinders",
     "feature_section_transforms",
     "feature_placement_instructions",
     "pcurve_endpoints",

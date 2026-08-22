@@ -26,7 +26,7 @@ use crate::curve::{
     ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
     PrototypePcurveEndpoints,
 };
-use crate::datum::{self, DatumPlane};
+use crate::datum::{self, DatumCylinder, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
@@ -357,6 +357,9 @@ pub struct PlaneScan {
     pub cross_section_outlines: Vec<OutlinePlane>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
     pub datums: Vec<DatumPlane>,
+    /// Complete model-space cylinder carriers decoded from active-datum
+    /// surface rows.
+    pub datum_cylinders: Vec<DatumCylinder>,
 }
 
 /// Curve prototypes, parameter bodies, pcurves, and native curve rows.
@@ -1629,6 +1632,26 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     planes
 }
 
+fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
+    let mut cylinders = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "ActDatums")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        cylinders.extend(
+            datum::cylinders(&data[section.offset..end])
+                .into_iter()
+                .map(|mut cylinder| {
+                    cylinder.offset_in_payload += section.offset;
+                    cylinder
+                }),
+        );
+    }
+    cylinders.sort_by_key(|cylinder| cylinder.offset_in_payload);
+    cylinders
+}
+
 fn structural_feature_ids(
     data: &[u8],
     sections: &[Section],
@@ -2432,6 +2455,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&data, &sections);
+    let datum_cylinders = datum_cylinders(&data, &sections);
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let feature_reference_names = feature_reference_names(&data, &sections);
@@ -2599,6 +2623,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             positional_frames: positional_frame_planes,
             cross_section_outlines: cross_section_outline_planes,
             datums: datum_planes,
+            datum_cylinders,
         },
         curves: CurveScan {
             tabulated_cylinder_replays: tabulated_cylinder_curve_replays,

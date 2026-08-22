@@ -36,7 +36,7 @@ use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
 
-use super::fc05_model_frame;
+use super::{fc05_model_frame, native_surface_id};
 
 const EPS_PARAMETER_AGREE: f64 = 1e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1e-9;
@@ -1004,7 +1004,7 @@ pub(in super::super) fn transfer_native_brep(
     let model_surface_counts = candidate_face_ids
         .iter()
         .map(|face_id| {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            let id = native_surface_id(scan, *face_id);
             let count = ir
                 .model
                 .surfaces
@@ -1087,7 +1087,7 @@ pub(in super::super) fn transfer_native_brep(
                 .iter()
                 .filter(|lp| lp.half_edges.len() == 2)
                 .all(|lp| {
-                    let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                    let surface_id = native_surface_id(scan, face_id);
                     let Some(surface) = exactly_one(
                         ir.model
                             .surfaces
@@ -1118,7 +1118,7 @@ pub(in super::super) fn transfer_native_brep(
             solved_vertices,
         )
         .or_else(|| {
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            let surface_id = native_surface_id(scan, face_id);
             let surface = exactly_one(
                 ir.model
                     .surfaces
@@ -1556,14 +1556,27 @@ pub(in super::super) fn transfer_native_brep(
                     }
                 })
                 .collect::<Vec<_>>();
-            let face_offset = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
-                .map_or(0, |row| row.offset);
-            let surface = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            let visible_row = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id);
+            let active_datum = scan
+                .planes
+                .datum_cylinders
+                .iter()
+                .find(|datum| datum.id == *face_id);
+            let face_offset = visible_row
+                .map(|row| row.offset)
+                .or_else(|| active_datum.map(|datum| datum.offset_in_payload))
+                .unwrap_or(0);
+            let face_source_namespace = if visible_row.is_none() && active_datum.is_some() {
+                "ActDatums"
+            } else {
+                "VisibGeom"
+            };
+            let surface = native_surface_id(scan, *face_id);
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
                 annotate(
                     annotations,
                     &surface,
-                    "VisibGeom",
+                    face_source_namespace,
                     face_offset as u64,
                     "opaque_native_surface_carrier",
                     Exactness::Unknown,
@@ -1672,7 +1685,7 @@ pub(in super::super) fn transfer_native_brep(
                                 solved_vertices[&incidence.start_vertex_id],
                                 solved_vertices[&end],
                             ];
-                            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                            let surface_id = native_surface_id(scan, *face_id);
                             let surface = exactly_one(
                                 ir.model
                                     .surfaces
@@ -1691,7 +1704,7 @@ pub(in super::super) fn transfer_native_brep(
                         })
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
-                            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+                            let surface_id = native_surface_id(scan, *face_id);
                             let surface = exactly_one(
                                 ir.model
                                     .surfaces

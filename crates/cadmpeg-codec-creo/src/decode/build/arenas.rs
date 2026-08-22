@@ -18,7 +18,7 @@ use super::super::records::family_table_record;
 use super::super::records::{
     cross_section_curve_row_records, curve_expression_records, curve_parameter_records,
     curve_prototype_records, curve_prototype_topology_records, curve_topology_row_records,
-    datum_plane_records, depdb_recipe_row_records, face_component_records,
+    datum_cylinder_records, datum_plane_records, depdb_recipe_row_records, face_component_records,
     fc_curve_coordinate_records, feature_affected_id_records, feature_choice_field_records,
     feature_choice_records, feature_definition_records, feature_entity_records,
     feature_entity_reference_records, feature_entity_table_records, feature_geometry_table_records,
@@ -499,6 +499,8 @@ pub(in super::super) fn emit_geometry_arenas(
     )?;
     let datum_planes = datum_plane_records(scan);
     store_arena(ir, "datum_planes", &datum_planes)?;
+    let datum_cylinders = datum_cylinder_records(scan);
+    store_arena(ir, "datum_cylinders", &datum_cylinders)?;
     let feature_section_transforms = feature_section_transform_records(scan);
     store_arena(
         ir,

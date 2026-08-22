@@ -46,6 +46,26 @@ use crate::container::ContainerScan;
 
 use super::native::annotate;
 
+/// Resolve the IR surface identity for a native topology surface identifier.
+///
+/// Visible geometry rows and active-datum rows share the compact native
+/// identifier space used by topology links. Keep their source namespaces
+/// distinct when only one namespace owns the identifier; visible geometry
+/// remains the default for the existing and rowless feature-carrier paths.
+pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> SurfaceId {
+    let visible_present = scan.surfaces.rows.iter().any(|row| row.id == surface_id);
+    let active_datum_present = scan
+        .planes
+        .datum_cylinders
+        .iter()
+        .any(|cylinder| cylinder.id == surface_id);
+    if active_datum_present && !visible_present {
+        SurfaceId(format!("creo:actdatums:surface#{surface_id}"))
+    } else {
+        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+    }
+}
+
 pub(super) fn transfer_part_product(
     scan: &ContainerScan,
     ir: &mut CadIr,

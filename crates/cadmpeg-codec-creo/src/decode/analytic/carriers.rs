@@ -13,7 +13,7 @@ use crate::container::{role, ContainerScan};
 use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
-use super::super::surfaces::rowless_round_cylinder_pairs;
+use super::super::surfaces::{native_surface_id, rowless_round_cylinder_pairs};
 
 use super::super::uniqueness::exactly_one;
 use super::equations::{
@@ -254,7 +254,7 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
     for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = native_surface_id(scan, row.id);
         let model_surfaces = ir
             .model
             .surfaces
@@ -286,6 +286,24 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
             }
         } else if let Some(carrier) = surface_carrier(&surface.geometry) {
             carriers.insert(row.id, carrier);
+        }
+    }
+    for datum in &scan.planes.datum_cylinders {
+        let id = native_surface_id(scan, datum.id);
+        let model_surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        let Some(surface) = exactly_one(model_surfaces.into_iter()) else {
+            carriers.remove(&datum.id);
+            continue;
+        };
+        if let Some(carrier) = surface_carrier(&surface.geometry) {
+            carriers.insert(datum.id, carrier);
+        } else {
+            carriers.remove(&datum.id);
         }
     }
     let mut model_surfaces_by_id = BTreeMap::<u32, Vec<&Surface>>::new();
@@ -659,6 +677,12 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
                 .map(|row| (id, row.reversed))
         })
         .collect::<BTreeMap<_, _>>();
+    orientations.extend(
+        scan.planes
+            .datum_cylinders
+            .iter()
+            .map(|datum| (datum.id, datum.reversed)),
+    );
     let round_feature_ids = scan
         .features
         .rows

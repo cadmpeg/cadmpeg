@@ -24,10 +24,10 @@ use super::super::feature_history::{
 };
 use super::super::sketch_transfer::transfer_sketches;
 use super::super::surfaces::{
-    transfer_cap_pair_cylinders, transfer_carrier_intersection_curves,
-    transfer_circular_sweep_cylinders, transfer_constrained_slot_fillet_cylinders,
-    transfer_cross_section_planes, transfer_fc05_cap_circles,
-    transfer_first_instance_prototype_surfaces, transfer_hole_cylinders,
+    transfer_active_datum_cylinders, transfer_cap_pair_cylinders,
+    transfer_carrier_intersection_curves, transfer_circular_sweep_cylinders,
+    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
+    transfer_fc05_cap_circles, transfer_first_instance_prototype_surfaces, transfer_hole_cylinders,
     transfer_legacy_ascii_surface_carriers, transfer_native_brep, transfer_nurbs_boundary_curves,
     transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
     transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
@@ -72,6 +72,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_feature_extrusion_surfaces(scan, ir, annotations);
     let feature_extrusion_vertex_orbit_curve_count =
         transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
+    let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations);
     let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations);
     let positional_cylinder_count = transfer_positional_cylinders(scan, ir, annotations);
     let positional_cone_count = transfer_positional_cones(scan, ir, annotations);
@@ -370,6 +371,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
             "transferred_circular_sweep_cylinder_count".to_string(),
             circular_sweep_cylinder_count,
         );
+        if active_datum_cylinder_count != 0 {
+            coverage.insert(
+                "transferred_active_datum_cylinder_count".to_string(),
+                active_datum_cylinder_count,
+            );
+        }
         coverage.insert(
             "transferred_hole_cylinder_count".to_string(),
             hole_cylinder_count,

@@ -4,7 +4,10 @@
 use cadmpeg_core::bytes::find_from as find;
 
 use crate::scalar;
-use crate::surface::{SurfaceKind, SurfaceRow};
+use crate::surface::{PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord, SurfaceRow};
+
+const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1e-9;
+const EPS_ACTIVE_CYLINDER_MIN: f64 = 1e-12;
 
 /// An axis-aligned model-space datum plane.
 ///
@@ -25,6 +28,26 @@ pub struct DatumPlane {
     pub offset: f64,
     /// The row's two `outline` corner points, in model-space XYZ.
     pub corners: [[Option<f64>; 3]; 2],
+    /// Byte offset of the row's `geom_id` field in the original stream.
+    pub offset_in_payload: usize,
+}
+
+/// A complete model-space cylinder stored in an `ActDatums` `srf_array` row.
+///
+/// Active datum geometry uses a bounded type-24 envelope in the `ActDatums`
+/// namespace. The native topology can reference these rows as face surfaces,
+/// so their source namespace and orientation must survive the container scan
+/// instead of being inferred later from visible rows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DatumCylinder {
+    /// The row's `geom_id` in the `ActDatums` surface namespace.
+    pub id: u32,
+    /// Modeling feature identifier from the owning `srf_array.feat_id`.
+    pub feature_id: u32,
+    /// Native row orientation: `true` when the row stores `0xf6`.
+    pub reversed: bool,
+    /// Complete model-space cylinder carrier decoded from the row body.
+    pub frame: PositionalCylinderFrame,
     /// Byte offset of the row's `geom_id` field in the original stream.
     pub offset_in_payload: usize,
 }
@@ -50,6 +73,187 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
             positional_plane(payload, row, row_end, &cache)
         })
         .collect()
+}
+
+/// Decode complete cylinder carriers from active-datum surface rows.
+///
+/// A row is promoted only when its identifier and parameter body are unique in
+/// the namespace and one complete, valid positional or active-envelope frame
+/// is proved. This keeps unrelated scalar-shaped bytes and ambiguous duplicate
+/// rows out of the native surface join.
+pub fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
+    let rows = crate::surface::rows(payload);
+    let parameters = crate::surface::parameter_records(payload);
+    rows.iter()
+        .filter(|row| row.id != 0 && row.kind == SurfaceKind::Cylinder)
+        .filter_map(|row| {
+            let parameter = crate::surface::unique_surface_parameter(&parameters, row.id)?;
+            (parameter.offset == row.offset).then_some(())?;
+            Some(DatumCylinder {
+                id: row.id,
+                feature_id: row.feature_id,
+                reversed: row.reversed,
+                frame: parameter
+                    .positional_cylinder_frame
+                    .or_else(|| active_cylinder_frame(row, parameter))?,
+                offset_in_payload: row.offset,
+            })
+        })
+        .collect()
+}
+
+/// Decode the bounded active-datum cylinder envelope used by type-24 rows.
+///
+/// The terminal seven-slot frame stores one signed axial span followed by two
+/// opposite envelope corners. A preceding scalar frame may carry the signed
+/// span in split forms. The three corner-coordinate spans are a diameter, the
+/// axial length, and one radius; their 2:1:1 relationship is the admission
+/// invariant. The second corner is the oriented axial end and the first
+/// corner supplies the held radial coordinate.
+fn active_cylinder_frame(
+    row: &SurfaceRow,
+    parameter: &SurfaceParameterRecord,
+) -> Option<PositionalCylinderFrame> {
+    (row.type_byte == 0x24 && matches!(row.boundary_type, 0x00 | 0x01)).then_some(())?;
+    let terminal = parameter.terminal_scalar_frame.as_ref()?;
+    let [length_slot, corner0, corner1, corner2, corner3, corner4, corner5] =
+        terminal.slots.as_slice()
+    else {
+        return None;
+    };
+    let terminal_values = [
+        length_slot.value?,
+        corner0.value?,
+        corner1.value?,
+        corner2.value?,
+        corner3.value?,
+        corner4.value?,
+        corner5.value?,
+    ];
+    terminal_values
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(())?;
+    let preceding_values = parameter
+        .scalar_frames
+        .iter()
+        .take(parameter.scalar_frames.len().saturating_sub(1))
+        .flat_map(|frame| frame.slots.iter().filter_map(|slot| slot.value));
+    let lengths = std::iter::once(length_slot.value?).chain(preceding_values);
+    let corners = [
+        [terminal_values[1], terminal_values[2], terminal_values[3]],
+        [terminal_values[4], terminal_values[5], terminal_values[6]],
+    ];
+    let spans =
+        std::array::from_fn::<_, 3, _>(|index| (corners[1][index] - corners[0][index]).abs());
+    let scale = terminal_values
+        .into_iter()
+        .chain(spans)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let close =
+        |first: f64, second: f64| (first - second).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
+    let mut candidates = Vec::new();
+    for signed_length in lengths {
+        if !signed_length.is_finite() || signed_length == 0.0 {
+            continue;
+        }
+        let length = signed_length.abs();
+        let axis_indices = (0..3)
+            .filter(|index| close(spans[*index], length))
+            .collect::<Vec<_>>();
+        let [axis_index] = axis_indices.as_slice() else {
+            continue;
+        };
+        let radial_indices = (0..3)
+            .filter(|index| *index != *axis_index)
+            .collect::<Vec<_>>();
+        let [first_radial, second_radial] = radial_indices.as_slice() else {
+            continue;
+        };
+        let (diameter_index, radius_index) =
+            if close(spans[*first_radial], 2.0 * spans[*second_radial]) {
+                (*first_radial, *second_radial)
+            } else if close(spans[*second_radial], 2.0 * spans[*first_radial]) {
+                (*second_radial, *first_radial)
+            } else {
+                continue;
+            };
+        let radius = spans[diameter_index] * 0.5;
+        if radius <= EPS_ACTIVE_CYLINDER_MIN * scale
+            || spans[radius_index] <= EPS_ACTIVE_CYLINDER_MIN * scale
+        {
+            continue;
+        }
+        let mut origin = [0.0; 3];
+        origin[diameter_index] =
+            f64::midpoint(corners[0][diameter_index], corners[1][diameter_index]);
+        origin[*axis_index] = corners[1][*axis_index];
+        origin[radius_index] = corners[0][radius_index];
+        let mut axis = [0.0; 3];
+        axis[*axis_index] = (corners[0][*axis_index] - corners[1][*axis_index]).signum();
+        let orientation = if signed_length.is_sign_negative() {
+            -1.0
+        } else {
+            1.0
+        } * if row.reversed { -1.0 } else { 1.0 };
+        let mut ref_direction = [0.0; 3];
+        ref_direction[diameter_index] =
+            orientation * (corners[1][diameter_index] - corners[0][diameter_index]).signum();
+        let candidate = PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            length: Some(length),
+        };
+        if !candidates
+            .iter()
+            .any(|existing| active_cylinder_frames_agree(*existing, candidate))
+        {
+            candidates.push(candidate);
+        }
+    }
+    let first = candidates.first().copied()?;
+    (candidates.len() == 1).then_some(first)
+}
+
+fn active_cylinder_frames_agree(
+    first: PositionalCylinderFrame,
+    second: PositionalCylinderFrame,
+) -> bool {
+    let scale = first
+        .origin
+        .into_iter()
+        .chain(second.origin)
+        .chain([first.radius, second.radius])
+        .chain(first.length)
+        .chain(second.length)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
+    first
+        .origin
+        .into_iter()
+        .zip(second.origin)
+        .all(|(left, right)| close(left, right))
+        && first
+            .axis
+            .into_iter()
+            .zip(second.axis)
+            .all(|(left, right)| close(left, right))
+        && first
+            .ref_direction
+            .into_iter()
+            .zip(second.ref_direction)
+            .all(|(left, right)| close(left, right))
+        && close(first.radius, second.radius)
+        && match (first.length, second.length) {
+            (Some(left), Some(right)) => close(left, right),
+            (None, None) => true,
+            _ => false,
+        }
 }
 
 fn positional_plane(
