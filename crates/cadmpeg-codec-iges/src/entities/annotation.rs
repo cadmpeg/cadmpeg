@@ -3,10 +3,11 @@
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::presentation::{
-    general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
+    general_note_font_valid_for_dialect, new_general_note_charset_valid,
+    new_general_note_font_valid,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
@@ -83,6 +84,14 @@ fn vertical_text_flag_valid(value: i64) -> bool {
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
+    general_note_valid_for_dialect(record, entries, Dialect::V5_3)
+}
+
+fn general_note_valid_for_dialect(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> bool {
     let parameter_end = record.parameter_end();
     let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
@@ -102,9 +111,9 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                         .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
-                && record
-                    .integer_or(start + 3, 1)
-                    .is_some_and(|value| general_note_font_valid(value, entries))
+                && record.integer_or(start + 3, 1).is_some_and(|value| {
+                    general_note_font_valid_for_dialect(value, entries, dialect)
+                })
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)
@@ -263,6 +272,42 @@ fn child_valid(
     })
 }
 
+fn general_note_child_valid(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> bool {
+    entries.get(&sequence).is_some_and(|entry| {
+        entry.entity_type == 212
+            && entry.form == 0
+            && entry.status.is_physically_dependent()
+            && entry.status.use_flag == 1
+            && records
+                .get(&sequence)
+                .is_some_and(|record| general_note_valid_for_dialect(record, entries, dialect))
+    })
+}
+
+fn general_symbol_note_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> bool {
+    match record.integer(1) {
+        Some(0) => !matches!(dialect, Dialect::V4_0),
+        Some(_) => pointer(record, 1, entries)
+            .is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect)),
+        None => false,
+    }
+}
+
+fn dimension_enclosure_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
+    matches!((entity_type, form), (100 | 102, 0))
+        || (!matches!(dialect, Dialect::V4_0) && (entity_type, form) == (106, 63))
+}
+
 fn dimension_children_valid(
     parent: &DirectoryEntry,
     children: &[u32],
@@ -307,10 +352,11 @@ fn dimension_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
     let note = pointer(record, 1, entries);
     let note_valid =
-        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+        note.is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect));
     let mut children = note.into_iter().collect::<Vec<_>>();
     let fields_valid = match (entry.entity_type, entry.form) {
         (202, 0) => {
@@ -490,7 +536,7 @@ fn dimension_valid(
                 Some(0) => true,
                 Some(_) => enclosure.is_some_and(|sequence| {
                     entries.get(&sequence).is_some_and(|entry| {
-                        matches!((entry.entity_type, entry.form), (100 | 102, 0) | (106, 63))
+                        dimension_enclosure_type_allowed(entry.entity_type, entry.form, dialect)
                             && entry.status.is_physically_dependent()
                             && entry.status.use_flag == 1
                     })
@@ -542,6 +588,7 @@ fn flag_or_label_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
     let (note_index, count_index, leader_start) = if entry.entity_type == 208 {
         (5, 6, 7)
@@ -550,7 +597,7 @@ fn flag_or_label_valid(
     };
     let note = pointer(record, note_index, entries);
     let note_valid =
-        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+        note.is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect));
     let count = record.count(count_index);
     let leaders_valid = count.is_some_and(|count| {
         (0..count).all(|offset| {
@@ -591,13 +638,9 @@ fn general_symbol_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
-    let note_valid = match record.integer(1) {
-        Some(0) => true,
-        Some(_) => pointer(record, 1, entries)
-            .is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records)),
-        None => false,
-    };
+    let note_valid = general_symbol_note_valid(record, entries, records, dialect);
     let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
         return false;
     };
@@ -636,7 +679,10 @@ pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
     )
 }
 
-fn fill_pattern_valid(pattern: i64) -> bool {
+fn fill_pattern_valid_for_dialect(pattern: i64, dialect: Dialect) -> bool {
+    if matches!(dialect, Dialect::V4_0) {
+        return (0..=19).contains(&pattern);
+    }
     matches!(
         pattern,
         0..=20 | 22 | 26 | 28..=29 | 32 | 34 | 36 | 38 | 40..=42 | 46 | 50 | 60
@@ -664,11 +710,14 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
 fn sectioned_area_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> bool {
     let boundary_valid = pointer(record, 1, entries)
         .and_then(|sequence| entries.get(&sequence).copied())
         .is_some_and(section_boundary_type);
-    let pattern = record.integer(2).filter(|value| fill_pattern_valid(*value));
+    let pattern = record
+        .integer(2)
+        .filter(|value| fill_pattern_valid_for_dialect(*value, dialect));
     let pattern_parameters_valid = pattern.is_some_and(|pattern| {
         if matches!(pattern, 0 | 19) || pattern > 19 {
             (3..=7).all(|index| zero_or_omitted(record, index))
@@ -739,18 +788,22 @@ pub(super) fn project(
                     | AnnotationKind::OrdinateDimension
                     | AnnotationKind::PointDimension
                     | AnnotationKind::RadiusDimension => {
-                        dimension_valid(entry, record, &entries, &records)
+                        dimension_valid(entry, record, &entries, &records, global.dialect())
                     }
                     AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
-                        flag_or_label_valid(entry, record, &entries, &records)
+                        flag_or_label_valid(entry, record, &entries, &records, global.dialect())
                     }
-                    AnnotationKind::GeneralNote => general_note_valid(record, &entries),
+                    AnnotationKind::GeneralNote => {
+                        general_note_valid_for_dialect(record, &entries, global.dialect())
+                    }
                     AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
                     AnnotationKind::Leader => leader_valid(entry, record),
                     AnnotationKind::GeneralSymbol => {
-                        general_symbol_valid(record, &entries, &records)
+                        general_symbol_valid(record, &entries, &records, global.dialect())
                     }
-                    AnnotationKind::SectionedArea => sectioned_area_valid(record, &entries),
+                    AnnotationKind::SectionedArea => {
+                        sectioned_area_valid(record, &entries, global.dialect())
+                    }
                 }
         });
         if valid {

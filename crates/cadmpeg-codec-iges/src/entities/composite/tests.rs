@@ -22,6 +22,17 @@ use crate::IgesCodec;
 use super::*;
 
 #[test]
+fn composite_child_types_follow_the_declared_dialect() {
+    assert!(composite_child_type_allowed(116, 0, Dialect::V4_0));
+    assert!(composite_child_type_allowed(132, 0, Dialect::V4_0));
+    assert!(!composite_child_type_allowed(106, 1, Dialect::V4_0));
+    assert!(!composite_child_type_allowed(130, 0, Dialect::V4_0));
+    assert!(composite_child_type_allowed(106, 1, Dialect::V5_0));
+    assert!(composite_child_type_allowed(130, 0, Dialect::V5_0));
+    assert!(composite_child_type_allowed(142, 0, Dialect::V5_3));
+}
+
+#[test]
 fn zero_join_tolerance_requires_exact_endpoint_equality() {
     let left = Point3::new(1.0, 2.0, 3.0);
     let right = Point3::new(1.0, 2.0, 3.0 + f64::EPSILON * 4.0);

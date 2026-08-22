@@ -3,7 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -60,14 +60,28 @@ fn text_font_definition_pointer_valid(
         })
 }
 
-pub(super) fn general_note_font_valid(
+pub(super) fn general_note_font_valid_for_dialect(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> bool {
-    matches!(
-        value,
-        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
-    ) || text_font_definition_pointer_valid(value, entries)
+    let standard = match dialect {
+        Dialect::V4_0 => {
+            matches!(
+                value,
+                0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003
+            )
+        }
+        Dialect::V5_0 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
+        ),
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
+        ),
+    };
+    standard || text_font_definition_pointer_valid(value, entries)
 }
 
 pub(super) fn new_general_note_font_valid(value: i64) -> bool {
@@ -243,7 +257,9 @@ pub(super) fn project(
         };
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
-        let font_valid = font.is_some_and(|font| general_note_font_valid(font, &entries));
+        let font_valid = font.is_some_and(|font| {
+            general_note_font_valid_for_dialect(font, &entries, global.dialect())
+        });
         let directory_valid = entry.status.use_flag == 2
             && entry.structure == 0
             && entry.line_font == 0

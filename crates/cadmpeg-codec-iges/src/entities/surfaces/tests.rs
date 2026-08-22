@@ -12,7 +12,17 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::{angular_basis, offset_indicator_parameters};
+use crate::global::Dialect;
+
+use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
+
+#[test]
+fn tabulated_directrix_types_follow_the_declared_dialect() {
+    assert!(tabulated_directrix_type_allowed(102, 0, Dialect::V4_0));
+    assert!(!tabulated_directrix_type_allowed(130, 0, Dialect::V4_0));
+    assert!(tabulated_directrix_type_allowed(130, 0, Dialect::V5_0));
+    assert!(tabulated_directrix_type_allowed(142, 0, Dialect::V5_3));
+}
 
 #[test]
 fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {

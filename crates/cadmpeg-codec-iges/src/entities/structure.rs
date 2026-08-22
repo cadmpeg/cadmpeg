@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::CadIr;
@@ -1562,7 +1562,10 @@ pub(super) fn project(
         };
         let type_flag_valid = record
             .integer_or(5, 0)
-            .is_some_and(|value| matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999));
+            .is_some_and(|value| match global.dialect() {
+                Dialect::V4_0 => matches!(value, 0..=2),
+                _ => matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999),
+            });
         let function_flag_valid = record
             .integer_or(6, 0)
             .is_some_and(|value| matches!(value, 0..=2));

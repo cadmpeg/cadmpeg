@@ -9,7 +9,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::{general_note_font_valid, mirror_flag_valid, standard_color, vertical_text_flag_valid};
+use super::{
+    general_note_font_valid_for_dialect, mirror_flag_valid, standard_color,
+    vertical_text_flag_valid,
+};
+use crate::global::Dialect;
 
 #[test]
 fn presentation_enumerations_match_the_iges_tables() {
@@ -18,13 +22,13 @@ fn presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid(value, &entries),
+            general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid(value, &entries),
+            !general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
             "font code {value}"
         );
     }
@@ -45,6 +49,32 @@ fn presentation_enumerations_match_the_iges_tables() {
     assert!(standard_color(8).is_some());
     assert!(standard_color(0).is_none());
     assert!(standard_color(9).is_none());
+}
+
+#[test]
+fn general_note_font_codes_follow_the_declared_dialect() {
+    let entries = BTreeMap::new();
+
+    assert!(!general_note_font_valid_for_dialect(
+        2001,
+        &entries,
+        Dialect::V4_0
+    ));
+    assert!(general_note_font_valid_for_dialect(
+        2001,
+        &entries,
+        Dialect::V5_0
+    ));
+    assert!(!general_note_font_valid_for_dialect(
+        3001,
+        &entries,
+        Dialect::V5_0
+    ));
+    assert!(general_note_font_valid_for_dialect(
+        3001,
+        &entries,
+        Dialect::V5_1
+    ));
 }
 
 #[test]

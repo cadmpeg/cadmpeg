@@ -281,6 +281,32 @@ fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
     );
 }
 
+#[test]
+fn the_4_0_numeric_implicit_defaults_are_not_later_version_fallbacks() {
+    let mut fields = valid_global_fields();
+    fields[8].clear();
+    fields[10].clear();
+    fields[15].clear();
+    fields[18].clear();
+    fields[22] = "6".into();
+    fields.truncate(24);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.precision.single_significance, 0);
+    assert_eq!(parsed.precision.double_significance, 0);
+    assert_eq!(parsed.minimum_resolution, 0.0);
+    assert!(parsed.line_weight_scale.is_none());
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        0
+    );
+}
+
 fn report_code_count_from_losses(
     losses: &[cadmpeg_ir::report::LossNote],
     code: IgesLossCode,

@@ -5,7 +5,7 @@ use super::geometry::{
     declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -21,6 +21,19 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+fn tabulated_directrix_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
+    if matches!(dialect, Dialect::V4_0) {
+        return matches!(
+            (entity_type, form),
+            (100 | 102 | 110, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+        );
+    }
+    matches!(
+        (entity_type, form),
+        (100 | 102 | 110 | 130 | 142, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+    )
+}
 
 fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let length = vector.norm();
@@ -536,6 +549,21 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "directrix pointer is invalid"));
             continue;
         };
+        let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
+            losses.push(entity_loss(entry, "directrix entity is missing"));
+            continue;
+        };
+        if !tabulated_directrix_type_allowed(
+            directrix_entry.entity_type,
+            directrix_entry.form,
+            global.dialect(),
+        ) {
+            losses.push(entity_loss(
+                entry,
+                "directrix entity is outside the declared dialect",
+            ));
+            continue;
+        }
         let coordinates = [record.number(2), record.number(3), record.number(4)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
             losses.push(entity_loss(entry, "generatrix endpoint is not numeric"));

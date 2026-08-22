@@ -133,6 +133,7 @@ pub(crate) struct ProjectedGlobal {
     minimum_resolution_mm: f64,
     precision: RealPrecision,
     line_weight_scale: Option<LineWeightScale>,
+    dialect: Dialect,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -644,8 +645,9 @@ impl Resolution {
         }
     }
 
-    fn significance(&mut self, index: usize) -> u32 {
+    fn significance(&mut self, index: usize, dialect: Dialect) -> u32 {
         let defect = match self.supplied_integer(index) {
+            Supplied::Absent if matches!(dialect, Dialect::V4_0) => return 0,
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
                 Some(value) => return value,
@@ -662,8 +664,9 @@ impl Resolution {
         FALLBACK_SIGNIFICANCE
     }
 
-    fn minimum_resolution(&mut self) -> f64 {
+    fn minimum_resolution(&mut self, dialect: Dialect) -> f64 {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
+            Supplied::Absent if matches!(dialect, Dialect::V4_0) => 0.0,
             Supplied::Absent => FALLBACK_MINIMUM_RESOLUTION,
             Supplied::Value(value) if value >= 0.0 => value,
             Supplied::Value(_) | Supplied::Malformed => {
@@ -679,16 +682,18 @@ impl Resolution {
     }
 
     fn line_weight_scale(&mut self, dialect: Dialect) -> Option<LineWeightScale> {
-        let (gradations, gradations_defect) =
-            match self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS) {
-                Supplied::Absent => (Some(1), None),
-                Supplied::Value(value)
-                    if value > 0 && (dialect != Dialect::V4_0 || value <= 32_768) =>
-                {
-                    (Some(value), None)
-                }
-                Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
-            };
+        let (gradations, gradations_defect) = match self
+            .supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS)
+        {
+            Supplied::Absent if matches!(dialect, Dialect::V4_0) => (None, Some(Defect::Absent)),
+            Supplied::Absent => (Some(1), None),
+            Supplied::Value(value)
+                if value > 0 && (dialect != Dialect::V4_0 || value <= 32_768) =>
+            {
+                (Some(value), None)
+            }
+            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+        };
         let (maximum_width, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
             Supplied::Absent => (None, Some(Defect::Absent)),
             Supplied::Value(value) if value > 0.0 => (Some(value), None),
@@ -823,16 +828,16 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     resolution.metadata_string(FIELD_PREPROCESSOR_VERSION);
     resolution.metadata_integer(FIELD_INTEGER_BITS, |_| true);
     resolution.metadata_integer(FIELD_SINGLE_MAGNITUDE, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
+    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE, dialect);
     resolution.metadata_integer(FIELD_DOUBLE_MAGNITUDE, |_| true);
-    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE);
+    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, dialect);
     resolution.metadata_string(FIELD_RECEIVER_PRODUCT);
     let (units_flag, units_name, length_factor_mm) = resolution.length_unit(dialect);
     #[cfg(not(test))]
     let _ = units_flag;
     let line_weight_scale = resolution.line_weight_scale(dialect);
     resolution.metadata_date(FIELD_GENERATION_DATE, dialect);
-    let minimum_resolution = resolution.minimum_resolution();
+    let minimum_resolution = resolution.minimum_resolution(dialect);
     #[cfg(test)]
     let maximum_coordinate = resolution.maximum_coordinate();
     #[cfg(not(test))]
@@ -880,6 +885,7 @@ impl ResolvedGlobal {
             minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
             precision: self.precision,
             line_weight_scale: self.line_weight_scale,
+            dialect: self.dialect,
         })
     }
 
@@ -990,6 +996,10 @@ impl ResolvedGlobal {
 }
 
 impl ProjectedGlobal {
+    pub(crate) fn dialect(&self) -> Dialect {
+        self.dialect
+    }
+
     pub(crate) fn length_factor_mm(&self) -> f64 {
         self.length_factor_mm
     }

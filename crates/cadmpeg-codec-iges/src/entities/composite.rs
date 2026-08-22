@@ -4,7 +4,7 @@
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -24,6 +24,19 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
+
+fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
+    if matches!(dialect, Dialect::V4_0) {
+        return matches!(
+            (entity_type, form),
+            (100 | 110 | 116 | 132, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+        );
+    }
+    matches!(
+        (entity_type, form),
+        (100 | 110 | 116 | 130 | 132 | 142, 0) | (104 | 112, 0..=3) | (106, _) | (126, 0..=5)
+    )
+}
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
@@ -937,13 +950,14 @@ pub(super) fn project(
             continue;
         }
         if child_sequences.iter().any(|sequence| {
-            entries
-                .get(sequence)
-                .is_none_or(|child| !child.status.is_physically_dependent())
+            entries.get(sequence).is_none_or(|child| {
+                !composite_child_type_allowed(child.entity_type, child.form, global.dialect())
+                    || !child.status.is_physically_dependent()
+            })
         }) {
             losses.push(entity_loss(
                 entry,
-                "composite child is missing or is not physically dependent",
+                "composite child is missing, outside the declared dialect, or is not physically dependent",
             ));
             continue;
         }

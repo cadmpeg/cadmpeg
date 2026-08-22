@@ -7,14 +7,18 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
+use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
 use crate::IgesCodec;
 
+use crate::entities::presentation::general_note_font_valid_for_dialect;
+use crate::global::Dialect;
+
 use super::{
-    fill_pattern_valid, fixed_or_variable_valid, justification_valid, mirror_flag_valid,
+    dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
+    general_symbol_note_valid, justification_valid, mirror_flag_valid,
     new_general_note_charset_valid, new_general_note_font_valid, vertical_text_flag_valid,
 };
-use crate::entities::presentation::general_note_font_valid;
 
 #[test]
 fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
@@ -321,13 +325,13 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003, 2001, 3001,
     ] {
         assert!(
-            general_note_font_valid(value, &entries),
+            general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
             "font code {value}"
         );
     }
     for value in [-1, 4, 5, 7, 1000, 3002] {
         assert!(
-            !general_note_font_valid(value, &entries),
+            !general_note_font_valid_for_dialect(value, &entries, Dialect::V5_3),
             "font code {value}"
         );
     }
@@ -378,13 +382,69 @@ fn drawing_and_presentation_enumerations_match_the_iges_tables() {
         136, 140, 142, 152, 154, 156, 157, 158, 159, 172, 174, 178, 210, 220, 224, 226, 234, 236,
         240, 244, 246, 252, 254, 256, 262, 264, 265, 266, 268,
     ] {
-        assert!(fill_pattern_valid(value), "admitted fill pattern {value}");
+        assert!(
+            fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            "admitted fill pattern {value}"
+        );
     }
     for value in [
         21, 23, 24, 25, 27, 30, 31, 33, 35, 37, 39, 43, 44, 45, 47, 48, 49, 51, 269,
     ] {
-        assert!(!fill_pattern_valid(value), "reserved fill pattern {value}");
+        assert!(
+            !fill_pattern_valid_for_dialect(value, Dialect::V5_3),
+            "reserved fill pattern {value}"
+        );
     }
+}
+
+#[test]
+fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
+    assert!(fill_pattern_valid_for_dialect(19, Dialect::V4_0));
+    assert!(!fill_pattern_valid_for_dialect(20, Dialect::V4_0));
+    assert!(fill_pattern_valid_for_dialect(20, Dialect::V5_0));
+    assert!(fill_pattern_valid_for_dialect(268, Dialect::V5_3));
+    assert!(!fill_pattern_valid_for_dialect(269, Dialect::V5_3));
+}
+
+#[test]
+fn point_dimension_enclosure_types_follow_the_declared_dialect() {
+    assert!(dimension_enclosure_type_allowed(100, 0, Dialect::V4_0));
+    assert!(dimension_enclosure_type_allowed(102, 0, Dialect::V4_0));
+    assert!(!dimension_enclosure_type_allowed(106, 63, Dialect::V4_0));
+    assert!(dimension_enclosure_type_allowed(106, 63, Dialect::V5_0));
+}
+
+#[test]
+fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: [228, 0, 1, 0]
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        parameter_end: 4,
+        comment: Vec::new(),
+    };
+    let entries = BTreeMap::new();
+    let records = BTreeMap::new();
+
+    assert!(!general_symbol_note_valid(
+        &record,
+        &entries,
+        &records,
+        Dialect::V4_0
+    ));
+    assert!(general_symbol_note_valid(
+        &record,
+        &entries,
+        &records,
+        Dialect::V5_0
+    ));
 }
 
 #[test]

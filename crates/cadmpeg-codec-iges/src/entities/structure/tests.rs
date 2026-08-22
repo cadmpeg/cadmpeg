@@ -1689,3 +1689,28 @@ fn decode_preserves_owned_network_connect_points() {
         result.report().losses
     );
 }
+
+#[test]
+fn iges_4_0_rejects_a_post_4_0_connect_point_type_flag() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let bytes = owned_test_file_with_global(
+        &[OwnedTestEntity {
+            entity_type: 132,
+            form: 0,
+            label: "SIGNALPT".into(),
+            status: "00000400",
+            parameters: "132,0,0,0,0,101,1,2HP1,0,3HPIN,0,1,1,0,0,1,7,0;".into(),
+        }],
+        global,
+    );
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
