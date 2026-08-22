@@ -3,9 +3,9 @@ pub(super) use crate::assemble::{
     rational_pcurve_arc,
 };
 pub(super) use crate::families::standard::decode::{
-    analytic_surface_uv, bind_ordered_standard_curve_branches,
-    bind_ordered_standard_curve_branches_for_group, bind_standard_curve_branch_group,
-    build_standard_edge_curve, circle_axis_from_endpoints,
+    analytic_surface_uv, associate_standard_freeform_surfaces,
+    bind_ordered_standard_curve_branches, bind_ordered_standard_curve_branches_for_group,
+    bind_standard_curve_branch_group, build_standard_edge_curve, circle_axis_from_endpoints,
     circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
     corroborate_successor_endpoint_points, emit_standard_topology, include_native_endpoint_pairs,
     intersection_line_direction, merge_derived_endpoint_pair, merge_native_endpoint_evidence,
@@ -27,6 +27,7 @@ pub(super) use crate::families::standard::decode::{
     PERPENDICULAR_CYLINDER_CONIC_TOLERANCE, SPHERE_SECTION_ENDPOINT_TOLERANCE,
 };
 
+pub(super) use crate::families::a5a8::records::{FreeformSurface, FreeformSurfaceIdentity};
 pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
 pub(super) use crate::test_support::{append_b5_record, b5_closed_triangle_stream, le_f64};
 

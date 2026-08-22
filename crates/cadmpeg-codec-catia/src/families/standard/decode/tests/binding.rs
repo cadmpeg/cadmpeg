@@ -705,7 +705,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 }
 
 #[test]
-fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
+fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(point_on_standard_face(
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Unknown { record: None },
@@ -729,10 +729,79 @@ fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
         v_periodic: false,
     });
     assert!(point_on_standard_face(
+        Point3::new(0.5, 0.5, 0.0),
+        &nurbs,
+        None,
+    ));
+    assert!(!point_on_standard_face(
+        Point3::new(0.5, 0.5, 0.1),
+        &nurbs,
+        None,
+    ));
+    let mut unresolved = nurbs.clone();
+    if let SurfaceGeometry::Nurbs(surface) = &mut unresolved {
+        surface.weights = Some(vec![1.0]);
+    }
+    assert!(point_on_standard_face(
+        Point3::new(0.5, 0.5, 0.1),
+        &unresolved,
+        None,
+    ));
+    assert!(!point_on_standard_face(
         Point3::new(100.0, -50.0, 7.0),
         &nurbs,
         None,
     ));
+}
+
+#[test]
+fn freeform_surface_association_requires_a_unique_witnessed_carrier() {
+    let bounds = StandardFaceBounds {
+        aabb_center: [0.5, 0.5, 0.0],
+        aabb_half_extents: [0.5, 0.5, 0.1],
+        sphere_center: [0.5, 0.5, 0.0],
+        sphere_radius: 1.0,
+    };
+    let records = [StandardSurfaceRecord::Freeform {
+        pos: 0,
+        tag: 7,
+        bounds,
+        forward: true,
+    }];
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+    ];
+    let geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: points.to_vec(),
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    });
+    let carrier = |pos, geometry| FreeformSurface {
+        pos,
+        identity: FreeformSurfaceIdentity::FrameOffset(pos),
+        geometry,
+    };
+
+    let associated =
+        associate_standard_freeform_surfaces(&records, &points, &[carrier(0, geometry.clone())]);
+    assert_eq!(associated.get(&7), Some(&geometry));
+
+    let tied = associate_standard_freeform_surfaces(
+        &records,
+        &points,
+        &[carrier(0, geometry.clone()), carrier(1, geometry)],
+    );
+    assert!(tied.is_empty());
 }
 
 #[test]

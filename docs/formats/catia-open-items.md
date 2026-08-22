@@ -565,6 +565,18 @@ from standard face incidence.
 
 **Note.** No concrete assignment is inferred from allocation order or from a topology that is only internally consistent. Verdict: remains open; controls with 304, 270, and 264 FBB face rows at inner offsets 1137656, 1699598, and 1410531 have no complete joint topology solution or exhaust the bounded search, while the three controls that emit topology do not establish the source rule for alternate face slots.
 
+### SN-38. Standard freeform to external NURBS identity
+
+**Question.** Which admitted identity binds a standard freeform face tag to one external typed NURBS carrier when the alias walk does not resolve that carrier?
+
+**Known.** The standard freeform cores at offsets `2645546`, `2645593`, `2645640`, `2645687`, `2649118`, and `2649263` retain face bounds and tags. External A5 NURBS frames begin at offsets `50739`, `52715`, and `54691` and continue as a source-ordered carrier run. The geometry rule in `catia.md` §5.6 transfers a carrier only for a unique multi-vertex witness association and marks that geometry inferred; tied or weak associations remain unknown.
+
+**Need.** A byte identity is required to transfer every aliased carrier as byte-exact geometry and to resolve duplicate external carriers without relying on geometric coincidence.
+
+**Conflict.** None.
+
+**Note.** The current control decode transfers 78 of 84 face-local freeform carriers and retains 2 surface carriers unresolved; the remaining source relation is open. The observed core and carrier offsets establish the two byte populations but do not establish their pairing.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
