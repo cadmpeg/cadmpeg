@@ -482,6 +482,7 @@ fn validation_checks_pipe_path_group_roles() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
         DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
+        DesignRecordHeader,
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -499,18 +500,19 @@ fn validation_checks_pipe_path_group_roles() {
         record_indexes: [11, 12, 13, 14],
         value_offsets: [0; 4],
     });
+    scope.reference_members = vec![1, 2, 3, 4, 20, 21];
     let path_group = DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#20"),
         scope_record_index: 10,
         scope_reference_ordinal: 4,
         record_index: 20,
-        byte_offset: 0,
+        byte_offset: 1_000,
         class_tag: "312".into(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
         member_offsets: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
-            member_count_offset: 0,
+            member_count_offset: 1_021,
             auxiliary_record_indices: Vec::new(),
             auxiliary_record_offsets: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -520,22 +522,36 @@ fn validation_checks_pipe_path_group_roles() {
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
             opaque_index: 1,
-            opaque_index_offset: 0,
+            opaque_index_offset: 1_058,
             opaque_scalar: 0.0,
-            opaque_scalar_offset: 0,
+            opaque_scalar_offset: 1_062,
             variant: false,
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         extrude_face_role: None,
-        role_offset: 0,
+        role_offset: 1_040,
         paired_class_tag: "258".into(),
-        paired_byte_offset: 0,
+        paired_byte_offset: 1_100,
     };
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes.push(scope);
         native.design_construction_operand_groups.push(path_group);
+        native.design_record_headers.extend([
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#20"),
+                record_index: 20,
+                class_tag: "312".into(),
+                byte_offset: 1_000,
+            },
+            DesignRecordHeader {
+                id: format!("{stream}:design-record-header#21"),
+                record_index: 21,
+                class_tag: "316".into(),
+                byte_offset: 1_200,
+            },
+        ]);
     }
 
     let has_role_finding = |ir: &cadmpeg_ir::CadIr| {
@@ -547,10 +563,30 @@ fn validation_checks_pipe_path_group_roles() {
     };
     assert!(has_role_finding(&ir));
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[0]
-        .members
-        .push(21);
+    let group_native_finding_count = |ir: &cadmpeg_ir::CadIr| {
+        crate::validate::validate_native(ir)
+            .iter()
+            .filter(|finding| {
+                finding.entity.as_deref()
+                    == Some("f3d:Design/BulkStream.dat:design-construction-operand-group#20")
+                    && finding.check == cadmpeg_ir::Check::NativeLinks
+            })
+            .count()
+    };
+    assert_eq!(group_native_finding_count(&ir), 1);
+
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        let group = &mut native.design_construction_operand_groups[0];
+        group.members.push(21);
+        group.member_offsets.push(1_026);
+    }
     assert!(!has_role_finding(&ir));
+    assert_eq!(group_native_finding_count(&ir), 0);
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
+        0x0000_0008_0000_0000;
+    assert_eq!(group_native_finding_count(&ir), 1);
 }
 
 #[test]
