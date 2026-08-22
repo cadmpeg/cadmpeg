@@ -41,6 +41,42 @@ fn point_display_symbol_targets_follow_the_declared_dialect() {
 }
 
 #[test]
+fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = |global: &[u8]| {
+        owned_test_file_with_global(
+            &[OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CONSTR".into(),
+                status: "00000600",
+                parameters: "116,1,2,3,0;".into(),
+            }],
+            global,
+        )
+    };
+
+    let v4 = IgesCodec
+        .decode(&mut Cursor::new(file(global_v4)), &DecodeOptions::default())
+        .unwrap();
+    assert!(v4.ir().model.points.is_empty());
+    assert!(v4.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("Entity Use Flag 06 is outside")
+    }));
+
+    let v5 = IgesCodec
+        .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(v5.ir().model.points.len(), 1);
+    assert!(!v5.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("Entity Use Flag 06 is outside")
+    }));
+}
+
+#[test]
 fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
     fn file(global: &[u8], pointer: u32) -> Vec<u8> {
         owned_test_file_with_global(

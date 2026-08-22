@@ -747,6 +747,30 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
+    let mut losses = directory
+        .iter()
+        .filter(|entry| !entry.status.is_use_flag_valid(global.dialect()))
+        .map(|entry| {
+            entity_loss(
+                entry,
+                format!(
+                    "Entity Use Flag {:02} is outside the declared dialect",
+                    entry.status.use_flag
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    let admitted_directory = directory
+        .iter()
+        .any(|entry| !entry.status.is_use_flag_valid(global.dialect()))
+        .then(|| {
+            directory
+                .iter()
+                .filter(|entry| entry.status.is_use_flag_valid(global.dialect()))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
+    let directory = admitted_directory.as_deref().unwrap_or(directory);
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -757,7 +781,6 @@ pub(crate) fn project_geometry(
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
     let consumed = consumed_support_sequences(directory, &records);
-    let mut losses = Vec::new();
     let analytic_surface_locations = directory
         .iter()
         .filter(|entry| {

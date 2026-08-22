@@ -49,7 +49,7 @@ from a conformant file.
 
 **Question.** Which version-specific physical, Global, Directory, Parameter Data, entity, and transfer rules must be implemented and verified before Global version flag `6` joins the verified set?
 
-**Known.** `iges.md` admits a flag `6` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `PH-04`, `GL-10`, `GL-11`, `DE-01`, and `VN-01` through `VN-05` record known 4.0 differences. Full version-specific decode and strict admission are not established.
+**Known.** `iges.md` admits a flag `6` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `PH-04`, `GL-10`, `GL-11`, `VN-03`, `VN-04`, and `VN-05` record remaining 4.0 differences. Full version-specific decode and strict admission are not established.
 
 **Need.** Compare the complete IGES 4.0 document with the settled 5.1/5.2/5.3 model, implement each material difference, and add independent probes for Global defaults, version handling, entity ranges, pointer targets, constraints, and geometry projection. Remove the dialect loss and strict refusal only after valid 4.0 files have full semantic and transfer verification.
 
@@ -689,16 +689,6 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 **Note.** Do not substitute another document. A 754-page "DRAFT Baseline 1/99" IGES 5.x successor draft is reachable at a vendor mirror and is not NISTIR 4412: its own change log places it after IGES 5.3, and it was never published. It is a usable machine-readable cross-check for 5.3 wording and no evidence at all about 5.0. The remaining avenue is a source that refused an automated request: a signed-in HathiTrust catalogue search would settle whether a member library digitized the document, and as a United States government publication it would then be full-view. Failing that, an interlibrary loan or an NTIS paper or microfiche order is the fallback. Until the document is read, flag `8` keeps `iges/source.dialect-unverified`, which is the designed behavior.
 
 ## 3. Directory fields, the reference graph, and the native arenas
-
-### DE-01. IGES 4.0 Entity Use Flag has six values, not seven
-
-**Question.** Does a file that declares Global version flag `6` use the IGES 5.3 Entity Use Flag value set?
-
-**Known.** IGES 5.3 §2.2.4.4.9.3 defines seven Entity Use Flag values, `00` through `06`. NBSIR 88-3813 (IGES 4.0) §2.2.4.3.9.3, page 22, defines **six**, `00` through `05`, with the same names and the same descriptions for `00` through `05`, and states that `00` is the default value. Value `06`, Construction Geometry, exists only in IGES 5.3, together with its propagation rule that a child of an Entity Use Flag `06` parent shall also carry `06` unless the child carries `02`. IGES 5.3 also adds to value `04` the sentence "Composite curves consisting of only two connect points used as logical connectors shall have their entity use flag set to 04", which IGES 4.0 does not state. The Hierarchy field is the same in both: IGES 4.0 §2.2.4.3.9.4 and IGES 5.3 §2.2.4.4.9.4 both define `00`, `01`, and `02` with the same meanings and both delegate `02` to the Hierarchy Property (Type 406, Form 10). The Directory Entry has twenty fields in both documents; IGES 4.0 numbers the section §2.2.4.3 and IGES 5.3 numbers it §2.2.4.4, and the trailing-pointer section IGES 4.0 numbers §2.2.4.4.2 is §2.2.4.5.2 in IGES 5.3.
-
-**Need.** The Entity Use Flag decides whether a record is geometry, annotation, definition support, or a construction aid, and the decoder uses that classification when it selects what to project. A declared `06` in a file that declares version flag `6` is a value outside the 4.0 value set, so the 4.0 reading has no meaning for it and the 5.3 reading treats it as construction geometry. The value set is a range, and a changed range is a divergence whatever the practical reach.
-
-**Note.** The discriminating check is a corpus sweep for a Directory Entry status field whose Entity Use Flag digits read `06` in a file that declares version flag `6` or lower, and for a Type 102 composite curve of exactly two Type 132 connect points whose Entity Use Flag is not `04`. A sweep that finds neither shows the divergence is unreachable in the corpus. A file with a `06` flag and a flag-6 declaration is a file whose two readings disagree about whether its geometry belongs to the product.
 
 ## 4. Geometry carriers and tolerances
 

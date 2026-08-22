@@ -332,10 +332,7 @@ fn type322_attribute_list_value_follows_the_declared_dialect() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
 
-    for (global, expected_version) in [
-        (&global_v4[..], "4.0"),
-        (&global_v5[..], "5.0"),
-    ] {
+    for (global, expected_version) in [(&global_v4[..], "4.0"), (&global_v5[..], "5.0")] {
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file_with_global(

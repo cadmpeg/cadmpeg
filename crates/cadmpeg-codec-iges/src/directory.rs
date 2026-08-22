@@ -2,6 +2,7 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -17,6 +18,15 @@ pub(crate) struct Status {
 }
 
 impl Status {
+    pub(crate) fn is_use_flag_valid(self, dialect: Dialect) -> bool {
+        self.use_flag
+            <= if matches!(dialect, Dialect::V4_0) {
+                5
+            } else {
+                6
+            }
+    }
+
     pub(crate) fn is_physically_dependent(self) -> bool {
         matches!(self.subordinate, 1 | 3)
     }

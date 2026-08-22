@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -28,6 +29,24 @@ fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
         };
         assert_eq!(status.is_physically_dependent(), physical);
         assert_eq!(status.is_logically_dependent(), logical);
+    }
+}
+
+#[test]
+fn entity_use_flag_range_follows_the_declared_dialect() {
+    for (dialect, use_flag, expected) in [
+        (Dialect::V4_0, 5, true),
+        (Dialect::V4_0, 6, false),
+        (Dialect::V5_0, 6, true),
+        (Dialect::V5_0, 7, false),
+    ] {
+        let status = Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag,
+            hierarchy: 0,
+        };
+        assert_eq!(status.is_use_flag_valid(dialect), expected);
     }
 }
 
