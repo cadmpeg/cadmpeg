@@ -357,6 +357,42 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 }
 
 #[test]
+fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
+    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let first_row = bytes
+        .windows(5)
+        .position(|window| window == [0x01, 0x01, 0x02, 0x02, 0x03])
+        .expect("first FBB edge table");
+    let second_row = first_row + 8;
+    for (offset, handle) in (first_row + 5..first_row + 11)
+        .chain(second_row + 5..second_row + 11)
+        .zip([0u8, 20, 0, 21, 0, 22, 0, 30, 0, 31, 0, 32])
+    {
+        bytes[offset] = handle;
+    }
+    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
+        .expect("unmatched FBB row coverage");
+    assert_eq!(coverage[0].missing_edges, [0, 1]);
+    assert_eq!(coverage[0].gaps[0].length, 4);
+
+    let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+        false,
+    )
+    .expect("complete FBB row spans");
+    assert_eq!(assignments[0].len(), 2);
+    assert!(assignments[0].iter().all(|assignment| {
+        assignment
+            .iter()
+            .map(|placement| placement.segment_count)
+            .collect::<Vec<_>>()
+            == [2, 2]
+    }));
+}
+
+#[test]
 fn standard_mesh_runs_include_flanking_segments() {
     let runs =
         crate::solve::missing_edge::standard_mesh_edge_runs(&standard_quad_topology_stream())

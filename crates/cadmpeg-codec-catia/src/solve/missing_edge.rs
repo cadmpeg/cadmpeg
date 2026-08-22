@@ -255,15 +255,18 @@ struct StandardMeshAnalysis {
     edge_rows: Vec<EdgeRow>,
     cycles: Vec<Vec<Vec<u32>>>,
     occurrences: Vec<Vec<MeshEdgeOccurrence>>,
+    fixed_complete_row_spans: bool,
 }
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
-    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
-        .map(|(rows, _, width)| (rows, width))
-        .or_else(|| {
-            parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
-        })?;
+    let (edge_rows, handle_width, fixed_complete_row_spans) =
+        parse_standard_edge_tables_with_width(bytes, after_faces)
+            .map(|(rows, _, width)| (rows, width, false))
+            .or_else(|| {
+                parse_fbb_edge_tables(bytes, after_faces)
+                    .map(|(rows, _, _, width)| (rows, width, true))
+            })?;
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     let cycles = trims
         .iter()
@@ -274,6 +277,7 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
         edge_rows,
         cycles,
         occurrences,
+        fixed_complete_row_spans,
     })
 }
 
@@ -627,6 +631,7 @@ enum MeshFaceAssignmentDomain {
 pub(crate) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
     edge_rows: Vec<EdgeRow>,
+    fixed_complete_row_spans: bool,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
     edge_runs: Vec<MeshEdgeRun>,
@@ -649,9 +654,11 @@ impl StandardMeshBoundaryContext {
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
         let edge_rows = analysis.edge_rows.clone();
+        let fixed_complete_row_spans = analysis.fixed_complete_row_spans;
         Some(Self {
             analysis,
             edge_rows,
+            fixed_complete_row_spans,
             coverage,
             edge_ports,
             edge_runs,
@@ -664,6 +671,7 @@ impl StandardMeshBoundaryContext {
         Some(Self {
             analysis: Arc::clone(&self.analysis),
             edge_rows: self.edge_rows.clone(),
+            fixed_complete_row_spans: self.fixed_complete_row_spans,
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
@@ -1043,7 +1051,8 @@ fn standard_mesh_missing_edge_assignment_domains(
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
         missing: &[usize],
-        _rows: &[EdgeRow],
+        rows: &[EdgeRow],
+        fixed_complete_row_spans: bool,
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
         remaining_states: &mut usize,
@@ -1053,6 +1062,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             gaps: &'a [MeshBoundaryGap],
             cycle_lengths: &'a [usize],
             missing: &'a [usize],
+            rows: &'a [EdgeRow],
+            fixed_complete_row_spans: bool,
             edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
             edge_points: Option<&'a [Arc<HashSet<usize>>]>,
@@ -1199,19 +1210,25 @@ fn standard_mesh_missing_edge_assignment_domains(
                     }
                     let edge = self.missing[rank];
                     let remaining = target - offset;
-                    let canonical_span = self
-                        .canonical_spans
-                        .then(|| {
-                            if self.canonical_gap_partitions {
-                                return Some(1);
-                            }
-                            self.missing
-                                .iter()
-                                .enumerate()
-                                .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
-                                .try_fold(remaining, |available, _| available.checked_sub(1))
-                        })
+                    let row_span = (self.fixed_complete_row_spans
+                        && self.rows[edge].boundary_layout
+                            == EdgeBoundaryLayout::CompleteBoundaryRun)
+                        .then(|| self.rows[edge].handles.len().checked_sub(1))
                         .flatten();
+                    let canonical_span = row_span.or_else(|| {
+                        self.canonical_spans
+                            .then(|| {
+                                if self.canonical_gap_partitions {
+                                    return Some(1);
+                                }
+                                self.missing
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
+                                    .try_fold(remaining, |available, _| available.checked_sub(1))
+                            })
+                            .flatten()
+                    });
                     let spans: Box<dyn Iterator<Item = usize>> = if let Some(span) = canonical_span
                     {
                         Box::new(std::iter::once(span))
@@ -1299,6 +1316,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             gaps,
             cycle_lengths,
             missing,
+            rows,
+            fixed_complete_row_spans,
             edge_ports,
             corner_ports,
             edge_points,
@@ -1700,6 +1719,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (
                         placement_ports,
                         &corner_ports,
@@ -1717,6 +1737,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (None, &HashMap::new(), endpoint_constraints, &corner_points),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -1729,6 +1750,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -1770,8 +1792,9 @@ pub(crate) fn standard_mesh_missing_edge_assignments(
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
-/// each face. Every unmatched row may cover any positive remaining span;
-/// row arity fixes a span only after its interior handles match the boundary.
+/// each face. FBB complete rows cover exactly one segment per adjacent handle
+/// pair. Standard interior rows remain open-span until their sample chain is
+/// matched to the boundary.
 #[cfg(test)]
 #[must_use]
 pub fn standard_mesh_missing_edge_placements(
