@@ -3536,6 +3536,64 @@ pub(crate) mod shifted_extrude_prologue {
     pub(crate) const START_SUPPORT: usize = 41;
 }
 
+/// Byte offsets for the `legacy_class_338_two_sided_distance_extrude_frame` record.
+///
+/// Spec §3.1. Record length 495 B.
+///
+/// ```text
+/// Offsets are relative to the class-338 primary indexed header. The paired class-262 header begins at offset 495. The class-local envelope contains a ten-byte null scope-and-scalar lane, shifted two-sided extent fields, and ten ordered references beginning at offset 286.
+/// ```
+pub(crate) mod legacy_class_338_two_sided_distance_extrude_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 495;
+    /// Offset of `prefix_constant` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT: usize = 20;
+    /// Stated value of `prefix_constant` (`u32`). Spec §3.1.
+    pub(crate) const PREFIX_CONSTANT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 27;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 31;
+    /// Stated value of `direction` (`u32`). Spec §3.1.
+    pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0002;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FACE_EXTEND: usize = 35;
+    /// Stated value of `face_extend` (`u32`). Spec §3.1.
+    pub(crate) const FACE_EXTEND_VALUE: u32 = 0x0000_0000;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_REVERSED: usize = 39;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    pub(crate) const GEOMETRY_KIND: usize = 40;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    pub(crate) const START_SUPPORT: usize = 41;
+    /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_NORMAL: usize = 45;
+    /// Offset of `class_local_envelope` (`bytes[70]`). Spec §3.1.
+    pub(crate) const CLASS_LOCAL_ENVELOPE: usize = 69;
+    /// Offset of `null_scope_scalar_lane` (`bytes[10]`). Spec §3.1.
+    pub(crate) const NULL_SCOPE_SCALAR_LANE: usize = 139;
+    /// Offset of `first_side_parameter_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_SIDE_PARAMETER_REFERENCE: usize = 149;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 165;
+    /// Stated value of `first_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_REFERENCE: usize = 169;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 188;
+    /// Stated value of `second_side_extent` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `body_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_GROUP_REFERENCE: usize = 192;
+    /// Offset of `guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const GUID: usize = 203;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 282;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000a;
+}
+
 /// Byte offsets for the `legacy_class_397_symmetric_extrude_frame` record.
 ///
 /// Spec §3.1. Record length 473 B.

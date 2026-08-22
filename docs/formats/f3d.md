@@ -793,6 +793,36 @@ The ordered reference table is followed by the common scope tail: current histor
 
 The shifted Extrude prologue stores u32 `1` at primary-header offset 20 and three zero bytes at offsets 24 through 26. It stores the result-operation u32 at offset 27, the travel direction at offset 31, the face-extend option at offset 35, the direction-reversal Boolean at offset 39, the geometry-kind Boolean at offset 40, and the start-support byte at offset 41. A one-sided or symmetric form uses one of three extent lanes. A scope reference-count field at primary-header offset 252, 262, or 263 selects the compact lane, whose first-side extent is at offset 106 and second-side extent is at offset 110. An offset-profile form with its reference-count field at offset 262 instead uses the widened extent lane at offsets 116 and 130. A reference-count field at offset 272 selects the same widened lane. A reference-count field at offset 283 uses the same widened extent lane for one-sided and symmetric forms. A long-reference form with its reference-count field at offset 692 uses the compact extent lane at offsets 106 and 110. A symmetric through-all form with its reference-count field at offset 294 stores the first-side extent at offset 116 and the second-side extent at offset 129. Values in the unselected lanes have no extent semantics. A to-entity first side stores its selected-entity payload after the first-side value and stores the second-side extent four bytes before the scope reference-count field in either lane. The ordinary two-sided distance form stores its first-side and second-side extent values at offsets 155 and 178. Its marked parameter references begin at offsets 139, 159, and 182; five zero bytes separate the first reference from the first-side extent, and eight zero bytes separate the second reference from the second-side extent. The offset-283 two-sided form stores the side extents at offsets 166 and 181, with marked parameter references at offsets 139 and 170, a trailing marked entity reference at offset 185, and eight zero bytes at offsets 196 through 203. Every field uses the same enum as the current prologue. Because the two u32 after the operation are the direction and the face-extend option, neither of them selects an extent form; the later per-side values select it, and the stored parameter set follows those.
 
+The class-`338`/`262` legacy two-sided-distance form is a separate frame. Its primary header anchors a 495-byte frame, and the paired header begins at `+495`. The fixed fields and the class-local envelope are:
+
+| Relative offset | Type | Discriminant or invariant |
+| ---: | --- | --- |
+| `+20` | u32 | `1` |
+| `+24..+26` | bytes[3] | zero |
+| `+27` | u32 | result operation: `1 = join`, `2 = cut`, `3 = intersect`, `4 = new body` |
+| `+31` | u32 | travel direction `2` (two sides) |
+| `+35` | u32 | face-extend value `0` |
+| `+39` | u8 | direction reversal: `0` or `1` |
+| `+40` | u8 | geometry kind: `0` or `1` |
+| `+41` | u8 | start support: `0 = profile plane`, `1 = offset profile plane`, `2 = selected face` |
+| `+42..+44` | bytes[3] | zero |
+| `+45..+68` | f64[3] | finite unit profile normal |
+| `+69..+138` | bytes[70] | class-local nullable-selection and parameter envelope |
+| `+139..+148` | bytes[10] | `01 00 00 00 00 00 00 00 00 00` null scope-and-scalar lane |
+| `+149` | bytes[11] | marked first-side parameter reference; target is in the ordered scope table |
+| `+160..+164` | bytes[5] | zero |
+| `+165` | u32 | first-side extent `1` (distance) |
+| `+169` | bytes[11] | marked profile construction-group reference; target is in the ordered scope table |
+| `+180..+187` | bytes[8] | zero |
+| `+188` | u32 | second-side extent `1` (distance) |
+| `+192` | bytes[11] | marked body construction-group reference; target is in the ordered scope table |
+| `+203..+278` | bytes[76] | LP-UTF16 GUID: 36 code units |
+| `+279..+281` | bytes[3] | zero |
+| `+282` | u32 | ordered reference count `10` |
+| `+286 + 11i` | bytes[11] | ordered reference entry; `i = 0..9` |
+
+The common scope tail follows the ordered reference entries and ends at the paired header. The 10-byte null lane shifts the two-sided extent and group-reference fields by ten bytes from the ordinary shifted form; the extra ordered reference makes this frame 21 bytes longer than the ordinary 474-byte class-338 distance frame. The class pair, frame length, reference-count offset, ordered count, null-lane bytes, extent pair `[1, 1]`, and shifted tail fields jointly admit this grammar.
+
 The class-keyed `397 / 262` shifted form is a symmetric-distance variant with a 473-byte primary frame. Its extent pair is `[1, 1]`; this pair is admitted only for this class and frame because the common symmetric tuple is `[1, 0]`. The primary frame is:
 
 | Relative offset | Type | Discriminant or invariant |
