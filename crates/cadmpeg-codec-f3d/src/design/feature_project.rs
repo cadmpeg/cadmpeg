@@ -855,14 +855,13 @@ pub fn project_parameter_design_with_edge_identities(
                         })
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
-                    project_rectangular_pattern_scalars(scope).unwrap_or_else(|| {
-                        FeatureDefinition::Pattern {
+                    project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
+                        .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
                             pattern: PatternKind::Unresolved {
                                 form: Some(PatternForm::Linear),
                             },
-                        }
-                    })
+                        })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
@@ -6244,8 +6243,10 @@ fn circular_pattern_axis(
 
 fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind, PatternSeed};
 
     let construction = scope.rectangular_pattern_construction.as_ref()?;
     let active = [
@@ -6283,16 +6284,41 @@ fn project_rectangular_pattern_scalars(
         let norm = delta.norm();
         (norm > 0.0).then_some(delta.scale(1.0 / norm))
     });
-    let seeds = construction
+    let component_seed = construction
         .instances
         .as_ref()
         .and_then(|instances| instances.component_occurrences.as_ref())
         .map(|occurrences| {
-            vec![cadmpeg_ir::features::PatternSeed::Occurrences(vec![
-                crate::ids::neutral_component_occurrence_id(&occurrences.seed_occurrence_guid),
-            ])]
+            PatternSeed::Occurrences(vec![crate::ids::neutral_component_occurrence_id(
+                &occurrences.seed_occurrence_guid,
+            )])
+        });
+    let group_seed = native_stream(&scope.id).and_then(|stream| {
+        let matching_groups = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+                    && matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                    && !group.members.is_empty()
+            })
+            .collect::<Vec<_>>();
+        let [group] = matching_groups.as_slice() else {
+            return None;
+        };
+        Some(if group.role == 0x0000_0004_0000_0000 {
+            PatternSeed::Faces(
+                resolved_historical_face_group(scope, group, face_operands).unwrap_or_else(|| {
+                    cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
+                }),
+            )
+        } else {
+            PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
+                group.id.clone(),
+            ))
         })
-        .unwrap_or_default();
+    });
+    let seeds = component_seed.or(group_seed).into_iter().collect();
     Some(FeatureDefinition::Pattern {
         seeds,
         pattern: PatternKind::Linear {

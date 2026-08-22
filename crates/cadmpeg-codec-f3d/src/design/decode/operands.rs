@@ -1254,6 +1254,7 @@ pub fn decode_construction_operand_groups(
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::RectangularPattern)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Mirror)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
