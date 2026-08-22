@@ -46,6 +46,7 @@
           "annotations": [
             {
               "declared_string_count": 2,
+              "form": 0,
               "id": "iges:presentation:annotation#D1",
               "kind": "general_note",
               "source_entity": "iges:entity:directory#1",

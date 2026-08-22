@@ -12711,7 +12711,7 @@ fn type210_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
-fn type212_form0_follows_string_count() {
+fn type212_forms_follow_string_count() {
     let text_block = |text: &[u8]| -> Vec<TokenValue> {
         vec![
             TokenValue::Integer(text.len() as i64),
@@ -12728,11 +12728,6 @@ fn type212_form0_follows_string_count() {
             TokenValue::String(text.to_vec()),
         ]
     };
-    let association = directory_target(3, 212);
-    let property = directory_target(5, 406);
-    let source = directory_target(7, 212);
-    let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
-
     let cases = [
         (
             {
@@ -12765,15 +12760,22 @@ fn type212_form0_follows_string_count() {
         ),
     ];
 
-    for (values, expected_start) in cases {
-        let record = token_parameter_record(7, values);
-        let analysis = analyze_trailing_pointer_groups(&record, &directory);
-        assert_eq!(analysis.candidate_count, 1);
-        assert_eq!(analysis.valid_candidate_count, 1);
-        let groups = analysis.groups.expect("Type 212 table boundary");
-        assert_eq!(groups.token_start, expected_start);
-        assert_eq!(groups.associations, vec![3]);
-        assert_eq!(groups.properties, vec![5]);
+    for form in [0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 105] {
+        let association = directory_target(3, 212);
+        let property = directory_target(5, 406);
+        let mut source = directory_target(7, 212);
+        source.form = form;
+        let directory = BTreeMap::from([(3, &association), (5, &property), (7, &source)]);
+        for (values, expected_start) in &cases {
+            let record = token_parameter_record(7, values.clone());
+            let analysis = analyze_trailing_pointer_groups(&record, &directory);
+            assert_eq!(analysis.candidate_count, 1);
+            assert_eq!(analysis.valid_candidate_count, 1);
+            let groups = analysis.groups.expect("Type 212 table boundary");
+            assert_eq!(groups.token_start, *expected_start);
+            assert_eq!(groups.associations, vec![3]);
+            assert_eq!(groups.properties, vec![5]);
+        }
     }
 }
 

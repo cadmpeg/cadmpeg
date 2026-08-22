@@ -23,10 +23,43 @@ use crate::global::Dialect;
 
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
-    general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
-    new_general_note_charset_valid, new_general_note_font_valid, sectioned_area_curves_coplanar,
-    sectioned_area_valid, vertical_text_flag_valid,
+    general_note_string_count_valid, general_symbol_note_valid, justification_valid,
+    leader_valid_for_dialect, mirror_flag_valid, new_general_note_charset_valid,
+    new_general_note_font_valid, sectioned_area_curves_coplanar, sectioned_area_valid,
+    vertical_text_flag_valid,
 };
+
+#[test]
+fn general_note_forms_follow_the_section_4_60_string_minima() {
+    let cases = [
+        (0, 1),
+        (1, 2),
+        (2, 2),
+        (3, 2),
+        (4, 2),
+        (5, 3),
+        (6, 1),
+        (7, 1),
+        (8, 1),
+        (100, 4),
+        (101, 8),
+        (102, 9),
+        (105, 12),
+    ];
+    for (form, minimum) in cases {
+        assert!(crate::profile::general_note_form_admitted(form));
+        assert!(general_note_string_count_valid(form, minimum));
+        if minimum > 1 {
+            assert!(!general_note_string_count_valid(form, minimum - 1));
+        }
+        assert!(super::classify(212, form).is_some());
+    }
+    for form in [-1, 9, 99, 103, 104, 106, 5001] {
+        assert!(!crate::profile::general_note_form_admitted(form));
+        assert!(!general_note_string_count_valid(form, 1));
+        assert!(super::classify(212, form).is_none());
+    }
+}
 
 #[test]
 fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {

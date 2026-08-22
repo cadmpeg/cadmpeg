@@ -214,7 +214,9 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
         (206, 0) => Some(AnnotationKind::DiameterDimension),
         (208, 0) => Some(AnnotationKind::FlagNote),
         (210, 0) => Some(AnnotationKind::GeneralLabel),
-        (212, 0) => Some(AnnotationKind::GeneralNote),
+        (212, form) if crate::profile::general_note_form_admitted(form) => {
+            Some(AnnotationKind::GeneralNote)
+        }
         (213, 0) => Some(AnnotationKind::NewGeneralNote),
         (214, 1..=12) => Some(AnnotationKind::Leader),
         (216, 0..=2) => Some(AnnotationKind::LinearDimension),
@@ -255,10 +257,20 @@ fn general_note_valid_for_dialect(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     dialect: Dialect,
+    form: i64,
 ) -> bool {
-    let parameter_end = record.parameter_end();
+    let parameter_end = crate::parameter::entity_primary_end(record, entries)
+        .unwrap_or_else(|| record.parameter_end());
+    if !general_note_suffix_structurally_valid(record, parameter_end) {
+        return false;
+    }
     let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
-        DefaultTailCount::Held(count) if count > 0 => count,
+        DefaultTailCount::Held(count)
+            if crate::profile::general_note_form_admitted(form)
+                && general_note_string_count_valid(form, count) =>
+        {
+            count
+        }
         _ => return false,
     };
     parameter_end <= 2 + count * 12
@@ -291,6 +303,70 @@ fn general_note_valid_for_dialect(
                 && (start + 8..=start + 10)
                     .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
+}
+
+fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end: usize) -> bool {
+    // A malformed pointer target must not invalidate the note's own primary
+    // fields, but arbitrary tokens after that primary span are not a suffix.
+    // Check the two counted group shapes without requiring their targets to
+    // resolve; reference validation owns that separate decision.
+    if record.tokens.len() == primary_end || record.parameter_end() == primary_end {
+        return true;
+    }
+    let Some(first_count) = record
+        .tokens
+        .get(primary_end)
+        .and_then(|token| match &token.value {
+            crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
+            crate::parameter::TokenValue::Omitted
+            | crate::parameter::TokenValue::Real(_)
+            | crate::parameter::TokenValue::String(_) => None,
+        })
+    else {
+        return false;
+    };
+    let Some(first_end) = primary_end
+        .checked_add(1)
+        .and_then(|end| end.checked_add(first_count))
+    else {
+        return false;
+    };
+    if first_end > record.tokens.len() {
+        return false;
+    }
+    if first_end == record.tokens.len() {
+        return true;
+    }
+    let Some(second_count) = record
+        .tokens
+        .get(first_end)
+        .and_then(|token| match &token.value {
+            crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
+            crate::parameter::TokenValue::Omitted
+            | crate::parameter::TokenValue::Real(_)
+            | crate::parameter::TokenValue::String(_) => None,
+        })
+    else {
+        return false;
+    };
+    first_end
+        .checked_add(1)
+        .and_then(|end| end.checked_add(second_count))
+        .is_some_and(|second_end| second_end == record.tokens.len())
+}
+
+fn general_note_string_count_valid(form: i64, count: usize) -> bool {
+    let minimum = match form {
+        0 | 6..=8 => 1,
+        1..=4 => 2,
+        5 => 3,
+        100 => 4,
+        101 => 8,
+        102 => 9,
+        105 => 12,
+        _ => return false,
+    };
+    count >= minimum
 }
 
 fn new_general_note_valid(
@@ -436,7 +512,7 @@ fn child_valid(
             && records
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
-                    212 => general_note_valid_for_dialect(record, entries, dialect),
+                    212 => general_note_valid_for_dialect(record, entries, dialect, entry.form),
                     214 => leader_valid_for_dialect(entry, record, dialect),
                     106 => witness_valid(record),
                     _ => false,
@@ -452,12 +528,12 @@ fn general_note_child_valid(
 ) -> bool {
     entries.get(&sequence).is_some_and(|entry| {
         entry.entity_type == 212
-            && entry.form == 0
+            && crate::profile::general_note_form_admitted(entry.form)
             && entry.status.is_physically_dependent()
             && entry.status.use_flag == 1
-            && records
-                .get(&sequence)
-                .is_some_and(|record| general_note_valid_for_dialect(record, entries, dialect))
+            && records.get(&sequence).is_some_and(|record| {
+                general_note_valid_for_dialect(record, entries, dialect, entry.form)
+            })
     })
 }
 
@@ -1005,9 +1081,12 @@ pub(super) fn project(
                     AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
                         flag_or_label_valid(entry, record, &entries, &records, global.dialect())
                     }
-                    AnnotationKind::GeneralNote => {
-                        general_note_valid_for_dialect(record, &entries, global.dialect())
-                    }
+                    AnnotationKind::GeneralNote => general_note_valid_for_dialect(
+                        record,
+                        &entries,
+                        global.dialect(),
+                        entry.form,
+                    ),
                     AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
                     AnnotationKind::Leader => {
                         leader_valid_for_dialect(entry, record, global.dialect())

@@ -167,13 +167,90 @@ fn new_general_note_parameters(
 }
 
 fn note_file(entity_type: i64, parameters: String) -> Vec<u8> {
+    note_file_with_form(entity_type, 0, parameters)
+}
+
+fn note_file_with_form(entity_type: i64, form: i64, parameters: String) -> Vec<u8> {
     owned_test_file(&[OwnedTestEntity {
         entity_type,
-        form: 0,
+        form,
         label: "NOTE".into(),
         status: "00000100",
         parameters,
     }])
+}
+
+#[test]
+fn decode_general_note_preserves_non_simple_form() {
+    let bytes = note_file_with_form(212, 7, general_note_parameters(2, &["TOP", "BOTTOM"], 0));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+
+    assert_eq!(annotation.fields()["form"], 7);
+    assert_eq!(annotation.fields()["strings"].as_array().unwrap().len(), 2);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_general_note_accepts_each_standard_form_at_its_minimum_count() {
+    for (form, count) in [
+        (0, 1),
+        (1, 2),
+        (2, 2),
+        (3, 2),
+        (4, 2),
+        (5, 3),
+        (6, 1),
+        (7, 1),
+        (8, 1),
+        (100, 4),
+        (101, 8),
+        (102, 9),
+        (105, 12),
+    ] {
+        let strings = vec!["X"; count];
+        let bytes = note_file_with_form(212, form, general_note_parameters(count, &strings, 0));
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+
+        assert_eq!(annotation.fields()["form"], form);
+        assert_eq!(
+            annotation.fields()["strings"].as_array().unwrap().len(),
+            count
+        );
+        assert!(
+            result.report().losses.is_empty(),
+            "form {form}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn decode_general_note_keeps_primary_projection_when_trailing_groups_are_invalid() {
+    let primary = general_note_parameters(1, &["ALPHA"], 0);
+    let parameters = format!("{},1,2;", primary.trim_end_matches(';'));
+    let bytes = note_file_with_form(212, 7, parameters);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+
+    assert_eq!(annotation.fields()["form"], 7);
+    assert_eq!(annotation.fields()["strings"].as_array().unwrap().len(), 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]

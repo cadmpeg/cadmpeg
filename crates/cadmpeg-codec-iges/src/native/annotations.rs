@@ -46,6 +46,7 @@ pub(super) enum NativeAnnotation {
     GeneralNote {
         id: String,
         source_entity: String,
+        form: i64,
         declared_string_count: Option<i64>,
         strings: Vec<NativeTextRun>,
         transformation: Option<String>,
@@ -420,6 +421,7 @@ fn general_note(
     NativeAnnotation::GeneralNote {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
         strings: (0..count)
             .map(|index| subject.text_run(2 + index * 12))

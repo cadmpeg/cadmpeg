@@ -5,8 +5,10 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64) -> bool {
     match entity_type {
         0 | 100 | 102 | 112 | 114 | 116 | 120 | 122 | 123 | 130 | 132 | 140 | 141 | 142 | 143
         | 144 | 150 | 152 | 154 | 156 | 158 | 160 | 164 | 168 | 182 | 186 | 202 | 204 | 206
-        | 208 | 210 | 212 | 213 | 228 | 230 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414
-        | 420 => form == 0,
+        | 208 | 210 | 213 | 228 | 230 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414 | 420 => {
+            form == 0
+        }
+        212 => general_note_form_admitted(form),
         104 => matches!(form, 0..=3),
         106 => matches!(form, 1..=3 | 11..=13 | 20..=21 | 31..=38 | 40 | 63),
         108 => matches!(form, -1..=1),
@@ -31,6 +33,10 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64) -> bool {
         514 => matches!(form, 1..=2),
         _ => false,
     }
+}
+
+pub(crate) fn general_note_form_admitted(form: i64) -> bool {
+    matches!(form, 0..=8 | 100..=102 | 105)
 }
 
 #[cfg(test)]

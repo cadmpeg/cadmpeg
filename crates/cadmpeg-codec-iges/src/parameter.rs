@@ -546,8 +546,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 210 Form 0 puts the positive leader count `N` at index 2 and the `N`
 /// leader pointers at indexes 3 through `2 + N`, so its groups start at token
 /// `3 + N`.
-/// Type 212 Form 0 puts the positive string count `NS` at index 1 and stores
-/// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
+/// Type 212 Forms 0 through 8, 100 through 102, and 105 put the positive
+/// string count `NS` at index 1 and store twelve tokens per text string, so
+/// their groups start at token `2 + 12*NS`.
 /// Type 213 Form 0 puts the positive string count `NS` at index 12 and stores
 /// twenty tokens per text string, so its groups start at token `13 + 20*NS`.
 /// Type 228 Form 0 puts the positive geometry count `N` at index 2 and the
@@ -708,7 +709,7 @@ pub(crate) fn entity_primary_end(
         (142, 0) => Some(fixed_primary_end(record, 6)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
-        (212, 0) => Some(general_note_primary_end(record)),
+        (212, 0..=8 | 100..=102 | 105) => Some(general_note_primary_end(record)),
         (213, 0) => Some(new_general_note_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),

@@ -499,7 +499,7 @@ assertions = ["typed-links", "identity", "byte-coverage"]
 [[entity]]
 type = 212
 name = "general-note"
-forms = [0]
+forms = [0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 105]
 domain = "annotation"
 decoder = "entities::annotation::project"
 destination = "native.iges.annotations"
