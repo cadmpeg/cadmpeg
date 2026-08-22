@@ -392,11 +392,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-17. Class-`0x62` owner bounds
 
-**Question.** Which coordinate system and axes do the binary64 box and three binary32 bounds in a fixed `b2`, `b3`, or `b4 03 62` owner tail use?
+**Question.** What do the three binary32 bound pairs in a fixed `b2`, `b3`, or `b4 03 62` owner tail represent, and how are they scoped?
 
-**Known.** The decoder separates the fixed five-byte header, binary64 box, and binary32 bounds.
+**Known.** The decoder separates the fixed five-byte header, the binary64 parameter rectangle, and the binary32 bounds. In tagged alternating packets at offsets `40482` through `50620` and `61352` through `68556`, the binary64 `lower` and `upper` pairs match the U/V parameter domains of their independently associated NURBS carriers. The V interval can be a proper subinterval of the carrier domain. This resolves the binary64 lane for that encoding when the carrier relation is already known; it does not identify the owner packet's face.
 
-**Need.** We must know the coordinate roles to interpret the bounds.
+**Need.** We must identify the coordinate system, axes, and scope of the three binary32 bounds.
 
 **Note.** One FBB-only stream contains 72 fixed class-`0x62` packets from
 offset `40482` through `50620` and 84 complete standard face-bound records.
@@ -419,6 +419,13 @@ within `2e-3` in each coordinate. Width-coded fixed-nine packets at
 face-boundary AABBs. The one-face enclosing-box rule is therefore limited to
 the all-compact subtype; grouped width-coded extents and the binary64 box
 axes remain open.
+
+The tagged alternating packets above do not match standard face-local AABBs:
+the nearest per-packet maximum-coordinate residuals range from `0.745981` to
+`3.389341`. The binary32 lane is therefore not a direct standard face AABB in
+that dialect. The all-compact face-boundary candidates and the tagged carrier
+parameter rectangles are different observations; neither supplies a general
+owner-to-face identity.
 
 An additional fixed-nine population has 81 class-`0x62` records. Seventy-two
 tagged records start at offsets `40482` through `50620`; the nine all-compact
