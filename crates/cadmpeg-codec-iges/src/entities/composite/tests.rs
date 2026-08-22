@@ -959,11 +959,24 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
         loss.message
             .contains("terminal derivative block disagrees with the last polynomial")
     }));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        1
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind())
+            .count(),
+        1
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

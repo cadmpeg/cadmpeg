@@ -35,6 +35,37 @@ fn version_flags_clamp_unrecognized_values() {
     }
 }
 
+// IGES 5.3 §2.2.4.3.23 lists eleven version-flag values and clamps a
+// declaration below 1 to 3 and above 11 to 11. The rows cover all eleven
+// plus both clamp directions. Classes 2, 5, and 7 name ANSI/ASME drafting
+// standards rather than IGES releases; the codec renders them with hyphens
+// where the specification table uses spaces and a slash.
+#[test]
+fn every_version_flag_class_maps_to_its_specification_version() {
+    for (value, declared, effective, version) in [
+        ("1", 1, 1, "1.0"),
+        ("2", 2, 2, "ANSI-Y14.26M-1981"),
+        ("3", 3, 3, "2.0"),
+        ("4", 4, 4, "3.0"),
+        ("5", 5, 5, "ASME-ANSI-Y14.26M-1987"),
+        ("6", 6, 6, "4.0"),
+        ("7", 7, 7, "ASME-Y14.26M-1989"),
+        ("8", 8, 8, "5.0"),
+        ("9", 9, 9, "5.1"),
+        ("10", 10, 10, "5.2"),
+        ("11", 11, 11, "5.3"),
+        ("0", 0, 3, "2.0"),
+        ("12", 12, 11, "5.3"),
+    ] {
+        let mut fields = valid_global_fields();
+        fields[22] = value.into();
+        let (parsed, _) = resolve_global_fields(&fields);
+        assert_eq!(parsed.declared_version_flag(), declared, "{value}");
+        assert_eq!(parsed.effective_version_flag(), effective, "{value}");
+        assert_eq!(parsed.version(), version, "{value}");
+    }
+}
+
 #[test]
 fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
     for (encoded_version, version_name) in [("09", "5.1"), ("10", "5.2")] {
@@ -68,7 +99,15 @@ fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
 
 #[test]
 fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
-    for (flag, version_name) in [("6", "4.0"), ("3", "2.0")] {
+    for (flag, version_name) in [
+        ("1", "1.0"),
+        ("2", "ANSI-Y14.26M-1981"),
+        ("3", "2.0"),
+        ("4", "3.0"),
+        ("5", "ASME-ANSI-Y14.26M-1987"),
+        ("6", "4.0"),
+        ("7", "ASME-Y14.26M-1989"),
+    ] {
         let bytes = point_file_with_version_flag(flag);
 
         let result = IgesCodec

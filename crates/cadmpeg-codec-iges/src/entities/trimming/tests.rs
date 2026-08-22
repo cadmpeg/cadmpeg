@@ -547,6 +547,21 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         "{:#?}",
         result.report().losses
     );
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
+    // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
+    // the provenance tag is what separates this test from the bug it guards
+    // against: the loss must land on the trimmed surface, never on the Type
+    // 141 boundary or the Type 142 curve-on-surface it names.
+    assert_eq!(
+        result.report().losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D13")
+    );
     assert!(result.report().losses[0]
         .message
         .contains("IGES entity type 144 form 0"));
@@ -910,7 +925,8 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
-    assert!(!coedge.pcurves.is_empty());
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1181,7 +1197,8 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|coedge| coedge.id == loop_.coedges[0])
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
-    assert!(!coedge.pcurves.is_empty());
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

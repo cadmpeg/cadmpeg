@@ -162,9 +162,9 @@ fn representation_detection_rejects_malformed_flag_constants() {
 #[test]
 fn detection_reads_the_second_card_image_from_a_fused_first_line() {
     let base = point_file();
-    let mut fused = base[..80].to_vec();
-    fused.extend_from_slice(&base[81..161]);
-    fused.extend_from_slice(&base[161..]);
+    let mut fused = base[..CARD_COLUMNS].to_vec();
+    fused.extend_from_slice(&base[CARD_LINE_BYTES..CARD_LINE_BYTES + CARD_COLUMNS]);
+    fused.extend_from_slice(&base[CARD_LINE_BYTES + CARD_COLUMNS..]);
 
     assert_eq!(IgesCodec.detect(&fused), Confidence::High);
 
@@ -188,7 +188,7 @@ fn detection_reads_the_second_card_image_from_a_fused_first_line() {
 #[test]
 fn detection_refuses_a_start_card_with_no_readable_sequence() {
     let mut bytes = point_file();
-    bytes[73..80].fill(b' ');
+    bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].fill(b' ');
 
     assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
     assert_eq!(
