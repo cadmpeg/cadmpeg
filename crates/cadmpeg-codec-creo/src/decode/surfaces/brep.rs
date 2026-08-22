@@ -958,6 +958,21 @@ pub(in super::super) fn transfer_native_brep(
             .or_default()
             .push((face_1_endpoints, offset));
     }
+    for pcurve in crate::curve::fc02_short_pcurve_endpoints(
+        &scan.curves.parameters,
+        &scan.curves.topology_rows,
+    ) {
+        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+            scan,
+            pcurve.faces,
+            pcurve.face_0_endpoints,
+            pcurve.face_0_endpoints,
+        );
+        native_pcurves
+            .entry((pcurve.curve_id, pcurve.faces[0]))
+            .or_default()
+            .push((face_0_endpoints, pcurve.offset));
+    }
     let native_edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let edge_vertices = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)

@@ -21,7 +21,7 @@ use super::equations::{
 };
 use super::pcurves::{
     directed_pcurve_points, pcurve_edge_endpoint_evidence_with_diagnostics,
-    solve_pcurve_vertex_domains, PcurveEndpointDiagnostics,
+    solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
 
@@ -524,13 +524,18 @@ pub fn solve_topological_vertices(
     diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()
-        .map(|(curve_id, evidence)| (curve_id, (evidence.points, evidence.complete)))
+        .map(|(curve_id, evidence)| {
+            (
+                curve_id,
+                (evidence.points, evidence.complete, evidence.authoritative),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let topology_rows = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows);
     let mut pcurve_constraints = Vec::new();
     let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for row in &topology_rows {
-        let Some((points, complete)) = edge_endpoints.get(&row.id).copied() else {
+        let Some((points, complete, authoritative)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
         let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
@@ -554,7 +559,7 @@ pub fn solve_topological_vertices(
                     .push(point);
             }
         }
-        pcurve_constraints.push((vertices, points, ordered, complete));
+        pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
     let ambiguous_pcurve_vertices = pcurve_endpoint_candidates
         .iter()
@@ -564,7 +569,8 @@ pub fn solve_topological_vertices(
         .collect::<BTreeSet<_>>();
     diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
     let mut constraints = Vec::new();
-    for (vertices, points, ordered, complete) in pcurve_constraints {
+    let mut authoritative_points = BTreeMap::new();
+    for (vertices, points, ordered, complete, authoritative) in pcurve_constraints {
         if let Some(ordered) = ordered {
             let ambiguous = vertices
                 .iter()
@@ -580,6 +586,9 @@ pub fn solve_topological_vertices(
             for (vertex, point) in vertices.into_iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
                 fixed_points.entry(vertex).or_insert(Some(point));
+                if authoritative && !ambiguous {
+                    authoritative_points.entry(vertex).or_insert(point);
+                }
             }
         } else {
             diagnostics.pcurve_constraints += 1;
@@ -643,11 +652,12 @@ pub fn solve_topological_vertices(
         })
         .collect::<BTreeMap<_, _>>();
     diagnostics.analytic_domain_vertices = analytic_domains.len();
-    let points = solve_pcurve_vertex_domains(
+    let points = solve_pcurve_vertex_domains_with_authoritative_points(
         &constraints,
         &fixed_points,
         &analytic_domains,
         &incident_curves,
+        &authoritative_points,
     );
     diagnostics.solved_vertices = points.len();
     SolvedTopologicalVertices {

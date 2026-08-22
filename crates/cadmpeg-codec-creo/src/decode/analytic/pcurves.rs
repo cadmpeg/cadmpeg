@@ -93,6 +93,9 @@ pub fn mapped_pcurve_endpoints(
 pub struct PcurveEndpointEvidence {
     pub points: [[f64; 3]; 2],
     pub complete: bool,
+    /// The endpoints came from a complete native grammar that is allowed to
+    /// override an inconsistent inferred analytic intersection at a vertex.
+    pub authoritative: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -328,6 +331,7 @@ fn pcurve_endpoint_evidence_from_mapped(
         .then_some(PcurveEndpointEvidence {
             points: first,
             complete: mapped.len() == 2,
+            authoritative: false,
         })
 }
 
@@ -412,76 +416,78 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
     let carriers = placed_carriers(scan, ir);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
-    let mut process_paths = |curve_id: u32, faces: [u32; 2], paths: Vec<IndexedPcurvePath>| {
-        let mut mapped_paths = Vec::new();
-        let mut carrier_mapped_paths = Vec::new();
-        let mut carrier_proof_available = false;
-        for (face_index, (face_id, endpoints)) in paths {
-            let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
-            diagnostics.paths += mapped.paths;
-            diagnostics.missing_surfaces += mapped.missing_surfaces;
-            diagnostics.unevaluable_paths += mapped.unevaluable_paths;
-            diagnostics.mapped_paths += mapped.mapped.len();
-            mapped_paths.extend(mapped.mapped.iter().copied());
-            match pcurve_path_carrier_status(ir, &carriers, faces, face_index, endpoints) {
-                PcurveCarrierStatus::Validated => {
-                    carrier_proof_available = true;
-                    diagnostics.carrier_validated_paths += 1;
-                    carrier_mapped_paths.extend(mapped.mapped);
-                }
-                PcurveCarrierStatus::Rejected => {
-                    carrier_proof_available = true;
-                    diagnostics.carrier_rejected_paths += 1;
-                }
-                PcurveCarrierStatus::Unknown(reason) => {
-                    diagnostics.carrier_unknown_paths += 1;
-                    match reason {
-                        PcurveCarrierUnknownReason::MissingSurface => {
-                            diagnostics.carrier_unknown_missing_surface_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::MissingCarrier => {
-                            diagnostics.carrier_unknown_missing_carrier_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPair => {
-                            diagnostics.carrier_unknown_unsupported_pair_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::ParallelPlanePair => {
-                            diagnostics.carrier_unknown_parallel_plane_paths += 1;
-                        }
-                        PcurveCarrierUnknownReason::UnsupportedPath => {
-                            diagnostics.carrier_unknown_unsupported_path_paths += 1;
+    let mut process_paths =
+        |curve_id: u32, faces: [u32; 2], paths: Vec<IndexedPcurvePath>, authoritative: bool| {
+            let mut mapped_paths = Vec::new();
+            let mut carrier_mapped_paths = Vec::new();
+            let mut carrier_proof_available = false;
+            for (face_index, (face_id, endpoints)) in paths {
+                let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
+                diagnostics.paths += mapped.paths;
+                diagnostics.missing_surfaces += mapped.missing_surfaces;
+                diagnostics.unevaluable_paths += mapped.unevaluable_paths;
+                diagnostics.mapped_paths += mapped.mapped.len();
+                mapped_paths.extend(mapped.mapped.iter().copied());
+                match pcurve_path_carrier_status(ir, &carriers, faces, face_index, endpoints) {
+                    PcurveCarrierStatus::Validated => {
+                        carrier_proof_available = true;
+                        diagnostics.carrier_validated_paths += 1;
+                        carrier_mapped_paths.extend(mapped.mapped);
+                    }
+                    PcurveCarrierStatus::Rejected => {
+                        carrier_proof_available = true;
+                        diagnostics.carrier_rejected_paths += 1;
+                    }
+                    PcurveCarrierStatus::Unknown(reason) => {
+                        diagnostics.carrier_unknown_paths += 1;
+                        match reason {
+                            PcurveCarrierUnknownReason::MissingSurface => {
+                                diagnostics.carrier_unknown_missing_surface_paths += 1;
+                            }
+                            PcurveCarrierUnknownReason::MissingCarrier => {
+                                diagnostics.carrier_unknown_missing_carrier_paths += 1;
+                            }
+                            PcurveCarrierUnknownReason::UnsupportedPair => {
+                                diagnostics.carrier_unknown_unsupported_pair_paths += 1;
+                            }
+                            PcurveCarrierUnknownReason::ParallelPlanePair => {
+                                diagnostics.carrier_unknown_parallel_plane_paths += 1;
+                            }
+                            PcurveCarrierUnknownReason::UnsupportedPath => {
+                                diagnostics.carrier_unknown_unsupported_path_paths += 1;
+                            }
                         }
                     }
                 }
             }
-        }
-        let selected_paths = if carrier_proof_available {
-            carrier_mapped_paths
-        } else {
-            mapped_paths
+            let selected_paths = if carrier_proof_available {
+                carrier_mapped_paths
+            } else {
+                mapped_paths
+            };
+            if carrier_proof_available && selected_paths.is_empty() {
+                diagnostics.carrier_rejected_records += 1;
+            }
+            match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
+                Some(mut evidence) => {
+                    evidence.authoritative = authoritative;
+                    diagnostics.accepted_records += 1;
+                    diagnostics.complete_records += usize::from(evidence.complete);
+                    candidates.entry(curve_id).or_default().push(evidence);
+                }
+                None if selected_paths.is_empty() && !carrier_proof_available => {
+                    diagnostics.unmapped_records += 1;
+                }
+                None => {
+                    diagnostics.inconsistent_records += 1;
+                    if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
+                        if let Some(detail) = pcurve_mismatch_detail(curve_id, &selected_paths) {
+                            diagnostics.mismatch_samples.push(detail);
+                        }
+                    }
+                }
+            }
         };
-        if carrier_proof_available && selected_paths.is_empty() {
-            diagnostics.carrier_rejected_records += 1;
-        }
-        match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
-            Some(evidence) => {
-                diagnostics.accepted_records += 1;
-                diagnostics.complete_records += usize::from(evidence.complete);
-                candidates.entry(curve_id).or_default().push(evidence);
-            }
-            None if selected_paths.is_empty() && !carrier_proof_available => {
-                diagnostics.unmapped_records += 1;
-            }
-            None => {
-                diagnostics.inconsistent_records += 1;
-                if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
-                    if let Some(detail) = pcurve_mismatch_detail(curve_id, &selected_paths) {
-                        diagnostics.mismatch_samples.push(detail);
-                    }
-                }
-            }
-        }
-    };
     for (curve_id, faces, first, second, prototype) in scan
         .curves
         .pcurves
@@ -523,7 +529,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
             .enumerate()
             .filter(|(_, (face_id, _))| !ignored_surface_ids.contains(face_id))
             .collect::<Vec<_>>();
-        process_paths(curve_id, faces, paths);
+        process_paths(curve_id, faces, paths, false);
     }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
         &scan.curves.parameters,
@@ -546,7 +552,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
         let paths = (!ignored_surface_ids.contains(&pcurve.faces[0]))
             .then_some(vec![(0, (pcurve.faces[0], face_0_endpoints))])
             .unwrap_or_default();
-        process_paths(pcurve.curve_id, pcurve.faces, paths);
+        process_paths(pcurve.curve_id, pcurve.faces, paths, true);
     }
     let mut evidence = BTreeMap::new();
     for (curve_id, candidates) in candidates {
@@ -562,6 +568,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 PcurveEndpointEvidence {
                     points: first.points,
                     complete: candidates.iter().any(|candidate| candidate.complete),
+                    authoritative: candidates.iter().all(|candidate| candidate.authoritative),
                 },
             );
         } else {
@@ -950,11 +957,35 @@ pub fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Opt
     }
 }
 
+#[cfg(test)]
 pub fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+) -> BTreeMap<u32, [f64; 3]> {
+    solve_pcurve_vertex_domains_with_authoritative_points(
+        constraints,
+        fixed_points,
+        analytic_domains,
+        incident_curves,
+        &BTreeMap::new(),
+    )
+}
+
+/// Solve endpoint domains while preserving exact native one-sided witnesses.
+///
+/// An authoritative point is emitted only by a parser for a complete native
+/// grammar. Such a point is still checked against fixed carrier solutions and
+/// other pcurve constraints by the caller, but an inferred analytic
+/// intersection or carrier curve must not erase it merely because that
+/// inferred geometry is inconsistent.
+pub fn solve_pcurve_vertex_domains_with_authoritative_points(
+    constraints: &[PcurveVertexConstraint],
+    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+    authoritative_points: &BTreeMap<u32, [f64; 3]>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for (vertices, points) in constraints {
@@ -988,6 +1019,9 @@ pub fn solve_pcurve_vertex_domains(
         }
     }
     for (vertex, candidates) in analytic_domains {
+        if authoritative_points.contains_key(vertex) {
+            continue;
+        }
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(candidates.clone());
@@ -1018,6 +1052,9 @@ pub fn solve_pcurve_vertex_domains(
         }
     }
     for (vertex, curves) in incident_curves {
+        if authoritative_points.contains_key(vertex) {
+            continue;
+        }
         if let Some(domain) = domains.get_mut(vertex) {
             domain.retain(|candidate| {
                 curves
