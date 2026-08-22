@@ -3918,7 +3918,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 261 B
 
-Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all three admitted class pairs.
+Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all four admitted class pairs.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -3966,6 +3966,32 @@ Unstated regions:
 - `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
 - `26..34` (8 B): Eight zero bytes occupy offsets 26 through 33.
 - `39..46` (7 B): Seven zero bytes occupy offsets 39 through 45.
+- `51..57` (6 B): Six zero bytes occupy offsets 51 through 56.
+
+## `component_insert_relation_348_57`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the primary class-348 indexed header. The paired class-266 header begins at offset 57.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | a 57-byte class-`348`/class-`266` relation |
+| 21 | 1 | `first_marker` | `u8` | little | spec | the same three marked references and zero tails · value `1` |
+| 22 | 4 | `first_carrier_record_index` | `u32` | little | spec | Its first reference names a class-`341` grouped identity carrier |
+| 34 | 1 | `second_marker` | `u8` | little | spec | the same three marked references and zero tails · value `1` |
+| 35 | 4 | `second_record_index` | `u32` | little | spec | the same three marked references and zero tails |
+| 46 | 1 | `scope_marker` | `u8` | little | spec | the same three marked references and zero tails · value `1` |
+| 47 | 4 | `scope_record_index` | `u32` | little | spec | the same three marked references and zero tails |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `26..34` (8 B): Eight zero bytes follow the first relation member.
+- `39..46` (7 B): Seven zero bytes follow the middle relation member.
 - `51..57` (6 B): Six zero bytes occupy offsets 51 through 56.
 
 ## `component_insert_relation_child_393_58`
@@ -4121,6 +4147,33 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
+- `11..19` (8 B): Eight zero bytes occupy offsets 11 through 18.
+- `34..38` (4 B): Four zero bytes occupy offsets 34 through 37.
+
+## `component_insert_grouped_identity_carrier_341`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+This size-less record gives the fixed prefix of the variable-length class-341 carrier. The role length is 36 through 256 code units. The first two suffix markers and the repeated occurrence identity are defined in the specification; the relation header begins at the closure.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the grouped prefix through the occurrence identity |
+| 19 | 1 | `carrier_marker` | `u8` | little | spec | The carrier has the grouped prefix through the occurrence identity · value `1` |
+| 20 | 4 | `carrier_value` | `u32` | little | spec | the grouped prefix through the occurrence identity · value `1` |
+| 24 | 1 | `identity_marker` | `u8` | little | spec | the grouped prefix through the occurrence identity · value `1` |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | the carrier's occurrence identity u64 |
+| 33 | 1 | `reference_marker` | `u8` | little | spec | the grouped prefix through the occurrence identity · value `1` |
+| 38 | 76 | `first_component_guid` | `bytes[76]` | little | spec | the component, type, and role fields above |
+| 114 | 1 | `first_component_separator` | `u8` | little | spec | one zero separator byte · value `0` |
+| 115 | 40 | `first_type_guid` | `bytes[40]` | little | spec | an LP-ASCII type GUID |
+| 155 | 4 | `role_code_unit_count` | `u32` | little | spec | Its role is an LP-UTF16 value of 36 through 256 code units |
+
+Unstated regions:
+
 - `11..19` (8 B): Eight zero bytes occupy offsets 11 through 18.
 - `34..38` (4 B): Four zero bytes occupy offsets 34 through 37.
 

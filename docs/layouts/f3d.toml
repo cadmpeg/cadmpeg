@@ -13063,9 +13063,9 @@ name = "component_insert_identity_scope_compact"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The compact identity form is a 261-byte frame admitted for class-`296` paired with class `263`, class-`410` paired with class `261`, and class-`426` paired with class `258`"
+anchor = "The compact identity form is a 261-byte frame admitted for class-`296` paired with class `263`, class-`410` paired with class `261`, class-`426` paired with class `258`, and class-`434` paired with class `266`"
 size = 261
-note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all three admitted class pairs."
+note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all four admitted class pairs."
 
 [[record.field]]
 name = "indexed_header"
@@ -13225,6 +13225,87 @@ offset = 47
 type = "u32"
 source = "spec"
 anchor = "the scope back-reference at offset 47"
+
+[[record.gap]]
+offset = 51
+size = 6
+note = "Six zero bytes occupy offsets 51 through 56."
+
+[[record]]
+name = "component_insert_relation_348_57"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`434`/class-`266` identity form uses a 57-byte class-`348`/class-`266` relation"
+size = 57
+note = "Offsets are relative to the primary class-348 indexed header. The paired class-266 header begins at offset 57."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "a 57-byte class-`348`/class-`266` relation"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "first_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "the same three marked references and zero tails"
+value = 1
+
+[[record.field]]
+name = "first_carrier_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "Its first reference names a class-`341` grouped identity carrier"
+
+[[record.gap]]
+offset = 26
+size = 8
+note = "Eight zero bytes follow the first relation member."
+
+[[record.field]]
+name = "second_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "the same three marked references and zero tails"
+value = 1
+
+[[record.field]]
+name = "second_record_index"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "the same three marked references and zero tails"
+
+[[record.gap]]
+offset = 39
+size = 7
+note = "Seven zero bytes follow the middle relation member."
+
+[[record.field]]
+name = "scope_marker"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "the same three marked references and zero tails"
+value = 1
+
+[[record.field]]
+name = "scope_record_index"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "the same three marked references and zero tails"
 
 [[record.gap]]
 offset = 51
@@ -13813,6 +13894,99 @@ offset = 683
 type = "bytes[12]"
 source = "spec"
 anchor = "`00 01 04 00 00 00 00 00 00 00 00 00`"
+
+[[record]]
+name = "component_insert_grouped_identity_carrier_341"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The carrier has the grouped prefix through the occurrence identity"
+note = "This size-less record gives the fixed prefix of the variable-length class-341 carrier. The role length is 36 through 256 code units. The first two suffix markers and the repeated occurrence identity are defined in the specification; the relation header begins at the closure."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the grouped prefix through the occurrence identity"
+
+[[record.gap]]
+offset = 11
+size = 8
+note = "Eight zero bytes occupy offsets 11 through 18."
+
+[[record.field]]
+name = "carrier_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The carrier has the grouped prefix through the occurrence identity"
+value = 1
+
+[[record.field]]
+name = "carrier_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the grouped prefix through the occurrence identity"
+value = 1
+
+[[record.field]]
+name = "identity_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "the grouped prefix through the occurrence identity"
+value = 1
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "the carrier's occurrence identity u64"
+
+[[record.field]]
+name = "reference_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "the grouped prefix through the occurrence identity"
+value = 1
+
+[[record.gap]]
+offset = 34
+size = 4
+note = "Four zero bytes occupy offsets 34 through 37."
+
+[[record.field]]
+name = "first_component_guid"
+offset = 38
+type = "bytes[76]"
+source = "spec"
+anchor = "the component, type, and role fields above"
+
+[[record.field]]
+name = "first_component_separator"
+offset = 114
+type = "u8"
+source = "spec"
+anchor = "one zero separator byte"
+value = 0
+
+[[record.field]]
+name = "first_type_guid"
+offset = 115
+type = "bytes[40]"
+source = "spec"
+anchor = "an LP-ASCII type GUID"
+
+[[record.field]]
+name = "role_code_unit_count"
+offset = 155
+type = "u32"
+source = "spec"
+anchor = "Its role is an LP-UTF16 value of 36 through 256 code units"
 
 [[record]]
 name = "derived_instance_scope_279_261"

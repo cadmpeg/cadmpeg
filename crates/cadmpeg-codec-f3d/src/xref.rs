@@ -727,6 +727,23 @@ pub(crate) fn grouped_component_insert_identity_class369(
     )
 }
 
+/// Parse the variable-role grouped identity carrier used by the class-434/
+/// class-266 `Component Insert` generation.
+pub(crate) fn grouped_component_insert_identity_class341(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    grouped_component_insert_identity_with_layout(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index,
+        "341",
+    )
+}
+
 fn grouped_component_insert_identity_with_layout(
     bytes: &[u8],
     carrier_at: usize,
@@ -739,6 +756,7 @@ fn grouped_component_insert_identity_with_layout(
     const CLASS_369_EXTERNAL_ROLE_MARKER: &[u8] = &[0, 4, 0, 0, 0, 0, 1, 0, 0, 0];
     const MARKER_AFTER_METADATA: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
     const MARKER_AFTER_PLACEMENT: &[u8] = &[0, 1, 0, 0, 0, 0];
+    const CLASS_341_REPEAT_MARKER: &[u8] = &[1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
@@ -746,8 +764,11 @@ fn grouped_component_insert_identity_with_layout(
     if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
-        || (expected_class_tag != "369" && carrier_span != grouped_identity_layout::LEN)
-        || (expected_class_tag == "369" && carrier_span < grouped_identity_layout::LEN)
+        || (expected_class_tag != "369"
+            && expected_class_tag != "341"
+            && carrier_span != grouped_identity_layout::LEN)
+        || ((expected_class_tag == "369" || expected_class_tag == "341")
+            && carrier_span < grouped_identity_layout::LEN)
         || bytes.get(carrier_at + 11..carrier_at + 19)? != [0; 8]
         || bytes.get(carrier_at + 19) != Some(&1)
         || bytes.get(carrier_at + 20..carrier_at + 24)? != [1, 0, 0, 0]
@@ -757,6 +778,10 @@ fn grouped_component_insert_identity_with_layout(
     {
         return None;
     }
+    let occurrence_identity = View::u64_le_at(
+        bytes,
+        carrier_at + grouped_identity_layout::OCCURRENCE_IDENTITY,
+    )?;
     let (component_guid, mut at) = lp_utf16_bounded(
         bytes,
         carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
@@ -775,13 +800,10 @@ fn grouped_component_insert_identity_with_layout(
     }
     at = next;
     let first_role_at = at;
-    let role_bounds = if expected_class_tag == "369" {
-        36..=256
-    } else {
-        36..=36
-    };
+    let variable_role = matches!(expected_class_tag, "341" | "369");
+    let role_bounds = if variable_role { 36..=256 } else { 36..=36 };
     let (role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
-    let valid_role = if expected_class_tag == "369" {
+    let valid_role = if variable_role {
         is_guid_relaxed(&role)
             || (is_guid_prefix(&role)
                 && role
@@ -818,10 +840,23 @@ fn grouped_component_insert_identity_with_layout(
         return None;
     }
     at = next;
-    if bytes.get(at..at + MARKER_AFTER_METADATA.len())? != MARKER_AFTER_METADATA {
-        return None;
+    if expected_class_tag == "341" {
+        if bytes.get(at..at + 2)? != [0, 1]
+            || View::u64_le_at(bytes, at + 2)? != occurrence_identity
+        {
+            return None;
+        }
+        at += 10;
+        if bytes.get(at..at + CLASS_341_REPEAT_MARKER.len())? != CLASS_341_REPEAT_MARKER {
+            return None;
+        }
+        at += CLASS_341_REPEAT_MARKER.len();
+    } else {
+        if bytes.get(at..at + MARKER_AFTER_METADATA.len())? != MARKER_AFTER_METADATA {
+            return None;
+        }
+        at += MARKER_AFTER_METADATA.len();
     }
-    at += MARKER_AFTER_METADATA.len();
 
     let (repeated_component_guid, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
     if !is_guid_relaxed(&repeated_component_guid)
