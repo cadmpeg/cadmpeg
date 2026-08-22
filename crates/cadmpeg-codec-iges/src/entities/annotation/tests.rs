@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use crate::test_support::*;
@@ -16,7 +17,7 @@ use crate::global::Dialect;
 
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
-    general_symbol_note_valid, justification_valid, mirror_flag_valid,
+    general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
     new_general_note_charset_valid, new_general_note_font_valid, vertical_text_flag_valid,
 };
 
@@ -412,6 +413,73 @@ fn point_dimension_enclosure_types_follow_the_declared_dialect() {
     assert!(dimension_enclosure_type_allowed(102, 0, Dialect::V4_0));
     assert!(!dimension_enclosure_type_allowed(106, 63, Dialect::V4_0));
     assert!(dimension_enclosure_type_allowed(106, 63, Dialect::V5_0));
+}
+
+fn leader_record(arrowhead_height: f64, arrowhead_width: f64) -> ParameterRecord {
+    let values = [
+        TokenValue::Integer(214),
+        TokenValue::Integer(1),
+        TokenValue::Real(arrowhead_height),
+        TokenValue::Real(arrowhead_width),
+        TokenValue::Real(1.0),
+        TokenValue::Real(2.0),
+        TokenValue::Real(3.0),
+        TokenValue::Real(4.0),
+        TokenValue::Real(5.0),
+    ];
+    ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        parameter_end: values.len(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        comment: Vec::new(),
+    }
+}
+
+fn leader_entry(form: i64) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type: 214,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 1,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    }
+}
+
+#[test]
+fn leader_arrow_dimensions_follow_the_declared_dialect() {
+    let record = leader_record(1.0, 2.0);
+    let entry = leader_entry(5);
+
+    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
+    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
+
+    let record = leader_record(1.0, 2.0);
+    let entry = leader_entry(4);
+    assert!(leader_valid_for_dialect(&entry, &record, Dialect::V4_0));
+    assert!(!leader_valid_for_dialect(&entry, &record, Dialect::V5_3));
 }
 
 #[test]

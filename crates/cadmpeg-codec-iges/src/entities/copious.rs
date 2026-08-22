@@ -18,11 +18,26 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-pub(super) struct CopiousProjection {
+pub(super) struct CopiousProjectionOutcome {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
     pub(super) free_vertices: Vec<VertexId>,
+}
+
+impl CopiousProjectionOutcome {
+    pub(super) fn merge_into(
+        self,
+        decoded: &mut BTreeSet<u32>,
+        losses: &mut Vec<LossNote>,
+        wire_edges: &mut Vec<EdgeId>,
+        free_vertices: &mut Vec<VertexId>,
+    ) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+        wire_edges.extend(self.wire_edges);
+        free_vertices.extend(self.free_vertices);
+    }
 }
 
 fn expected_interpretation(form: i64) -> Option<i64> {
@@ -211,7 +226,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<CopiousProjection, CodecError> {
+) -> Result<CopiousProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -472,7 +487,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(CopiousProjection {
+    Ok(CopiousProjectionOutcome {
         decoded,
         losses,
         wire_edges,

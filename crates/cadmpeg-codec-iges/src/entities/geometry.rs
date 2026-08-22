@@ -529,6 +529,17 @@ pub(super) struct ProjectionOutcome {
     pub(super) losses: Vec<LossNote>,
 }
 
+// The `merge_into` drains on the outcome types take `self` by value: every
+// field a sub-projector returns has to be handed to an accumulator, so an
+// outcome field cannot be dropped silently at the merge site. The accumulator
+// element types are pairwise distinct, so arguments cannot be transposed.
+impl ProjectionOutcome {
+    fn merge_into(self, decoded: &mut BTreeSet<u32>, losses: &mut Vec<LossNote>) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+    }
+}
+
 /// A curve projector's result: the two-field outcome extended with the edges
 /// the caller collects into the free-geometry wire shell.
 pub(super) struct WireProjectionOutcome {
@@ -537,6 +548,20 @@ pub(super) struct WireProjectionOutcome {
     pub(super) wire_edges: Vec<EdgeId>,
 }
 
+impl WireProjectionOutcome {
+    fn merge_into(
+        self,
+        decoded: &mut BTreeSet<u32>,
+        losses: &mut Vec<LossNote>,
+        wire_edges: &mut Vec<EdgeId>,
+    ) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+        wire_edges.extend(self.wire_edges);
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct Projection {
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
@@ -1402,45 +1427,52 @@ pub(crate) fn project_geometry(
     }
     let mut admitted_entities = 0;
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_primitives")?;
-    let conics = super::conics::project(ir, directory, parameters, global, ctx);
-    decoded.extend(conics.decoded);
-    losses.extend(conics.losses);
-    wire_edges.extend(conics.wire_edges);
+    // The stanza sequence below is order-sensitive three ways: `losses`,
+    // `wire_edges`, and `free_vertices` are ordered vectors that reach the
+    // decode report and the free-geometry shell; every `project` call appends
+    // to `ir`; and every `admit_projected_entities` call can early-return on
+    // the entity budget.
+    super::conics::project(ir, directory, parameters, global, ctx).merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    let copious = super::copious::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(copious.decoded);
-    losses.extend(copious.losses);
-    wire_edges.extend(copious.wire_edges);
-    free_vertices.extend(copious.free_vertices);
+    super::copious::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+        &mut free_vertices,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
-    let splines = super::splines::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(splines.decoded);
-    losses.extend(splines.losses);
-    wire_edges.extend(splines.wire_edges);
+    super::splines::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    let composites = super::composite::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(composites.decoded);
-    losses.extend(composites.losses);
-    wire_edges.extend(composites.wire_edges);
+    super::composite::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    let offsets = super::offsets::project(ir, directory, parameters, global, ctx);
-    decoded.extend(offsets.decoded);
-    losses.extend(offsets.losses);
-    wire_edges.extend(offsets.wire_edges);
+    super::offsets::project(ir, directory, parameters, global, ctx).merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
-    let analytic_surfaces =
-        super::analytic_surfaces::project(ir, directory, parameters, global, ctx);
-    decoded.extend(analytic_surfaces.decoded);
-    losses.extend(analytic_surfaces.losses);
+    super::analytic_surfaces::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(surfaces.decoded);
-    losses.extend(surfaces.losses);
+    super::surfaces::project(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
         let body = BodyId("iges:model:body#free-geometry".into());
@@ -1474,52 +1506,45 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_wire_topology",
     )?;
-    let trimming = super::trimming::project(ir, directory, parameters, global, ctx);
-    decoded.extend(trimming.decoded);
-    losses.extend(trimming.losses);
+    super::trimming::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
-    let brep = super::brep::project(ir, directory, parameters, global, ctx);
-    decoded.extend(brep.decoded);
-    losses.extend(brep.losses);
+    super::brep::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
-    let csg = super::csg::project(ir, directory, parameters, global, ctx);
-    decoded.extend(csg.decoded);
-    losses.extend(csg.losses);
+    super::csg::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
-    let structure = super::structure::project(
+    super::structure::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    );
-    decoded.extend(structure.decoded);
-    losses.extend(structure.losses);
+    )
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
-    let presentation = super::presentation::project(ir, directory, parameters, global, ctx);
-    decoded.extend(presentation.decoded);
-    losses.extend(presentation.losses);
+    super::presentation::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_presentation",
     )?;
-    let drawing = super::drawing::project(
+    super::drawing::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    );
-    decoded.extend(drawing.decoded);
-    losses.extend(drawing.losses);
+    )
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
-    let annotation = super::annotation::project(ir, directory, parameters, global, ctx);
-    decoded.extend(annotation.decoded);
-    losses.extend(annotation.losses);
+    super::annotation::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
