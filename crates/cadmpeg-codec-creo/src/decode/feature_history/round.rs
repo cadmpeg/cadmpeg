@@ -11,6 +11,7 @@ use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
 use crate::legacy_feature::LegacyRoundRadius;
+use crate::surface::Type24RoundEnvelope;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -636,6 +637,163 @@ pub(in super::super) fn round_support_radius(
             .into_iter()
             .map(|plane| (plane.origin, plane.normal)),
     )
+}
+
+pub(in super::super) fn round_support_envelope_cylinder(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    envelope: Type24RoundEnvelope,
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let ([first_cap, second_cap], support_planes) =
+        resolved_round_support_planes(scan, ir, feature_id)?;
+    let axis = normalized(first_cap.normal)?;
+    let second_cap_normal = normalized(second_cap.normal)?;
+    if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        axis,
+        std::array::from_fn(|index| second_cap.origin[index] - first_cap.origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
+
+    let mut support_pairs = Vec::new();
+    for first in 0..support_planes.len() {
+        let first_normal = normalized(support_planes[first].normal)?;
+        for second in first + 1..support_planes.len() {
+            let second_normal = normalized(support_planes[second].normal)?;
+            if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+                continue;
+            }
+            let gap = dot(
+                first_normal,
+                std::array::from_fn(|index| {
+                    support_planes[second].origin[index] - support_planes[first].origin[index]
+                }),
+            )
+            .abs();
+            if gap <= EPS_ROUND_CAP_GAP {
+                continue;
+            }
+            if dot(first_normal, axis).abs() > EPS_ROUND_SUPPORT_ORTHOGONAL {
+                return None;
+            }
+            let first_offset = dot(first_normal, support_planes[first].origin);
+            let second_offset = dot(first_normal, support_planes[second].origin);
+            support_pairs.push((
+                first_normal,
+                0.5 * gap,
+                0.5 * (first_offset + second_offset),
+            ));
+        }
+    }
+    let (support_normal, radius, support_midpoint) = *support_pairs.first()?;
+    let scale = radius.max(cap_gap).max(1.0);
+    support_pairs
+        .iter()
+        .all(|(normal, candidate_radius, candidate_midpoint)| {
+            (candidate_radius - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+                && (dot(*normal, support_normal).abs() - 1.0).abs() <= EPS_ROUND_CAP_PARALLEL
+                && (candidate_midpoint - support_midpoint).abs()
+                    <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        })
+        .then_some(())?;
+
+    let [first_extent, second_extent] = envelope.extent_endpoints;
+    let extent_delta =
+        std::array::from_fn::<_, 3, _>(|index| second_extent[index] - first_extent[index]);
+    let radial_span = dot(support_normal, extent_delta).abs();
+    let axial_span = dot(axis, extent_delta).abs();
+    ((radial_span - 2.0 * radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        && (axial_span - cap_gap).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        && radial_span > EPS_ROUND_CAP_GAP
+        && axial_span > EPS_ROUND_CAP_GAP)
+        .then_some(())?;
+
+    let cap_residual = |point: [f64; 3], cap: PlaneEquation| {
+        dot(
+            axis,
+            std::array::from_fn(|index| point[index] - cap.origin[index]),
+        )
+        .abs()
+    };
+    let first_on_first = cap_residual(first_extent, first_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let second_on_first = cap_residual(second_extent, first_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let first_on_second = cap_residual(first_extent, second_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let second_on_second = cap_residual(second_extent, second_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let start = match (
+        first_on_first && second_on_second,
+        second_on_first && first_on_second,
+    ) {
+        (true, false) => first_extent,
+        (false, true) => second_extent,
+        _ => return None,
+    };
+    let start_offset = dot(support_normal, start);
+    let origin = std::array::from_fn(|index| {
+        start[index] + support_normal[index] * (support_midpoint - start_offset)
+    });
+    Some(crate::surface::PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction: support_normal,
+        radius,
+        length: Some(cap_gap),
+    })
+}
+
+fn resolved_round_support_planes(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<([PlaneEquation; 2], Vec<PlaneEquation>)> {
+    let affected_ids = agreed_feature_geometry_ids(
+        &scan.features.affected_ids,
+        &scan.features.replay_affected_ids,
+        feature_id,
+    )?;
+    let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
+        return None;
+    };
+    if first_cap_id == second_cap_id {
+        return None;
+    }
+    let local_planes = placed_planes(scan);
+    let caps = [
+        reconciled_model_plane(&local_planes, ir, *first_cap_id)?,
+        reconciled_model_plane(&local_planes, ir, *second_cap_id)?,
+    ];
+    let first_cap_normal = normalized(caps[0].normal)?;
+    let second_cap_normal = normalized(caps[1].normal)?;
+    if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        first_cap_normal,
+        std::array::from_fn(|index| caps[1].origin[index] - caps[0].origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
+    let support_planes = support_ids
+        .iter()
+        .filter_map(|id| reconciled_model_plane(&local_planes, ir, *id))
+        .collect::<Vec<_>>();
+    (support_planes.len() >= 2).then_some(())?;
+    support_planes
+        .iter()
+        .all(|plane| {
+            normalized(plane.normal).is_some_and(|normal| {
+                dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
+            })
+        })
+        .then_some(())?;
+    Some((caps, support_planes))
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(

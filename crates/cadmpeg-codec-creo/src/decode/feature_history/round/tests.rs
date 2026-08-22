@@ -365,6 +365,38 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         _ => panic!("transferred support plane"),
     }
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+
+    match &mut ir.model.surfaces[0].geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } => origin.x = -9.0,
+        _ => panic!("transferred support plane"),
+    }
+    scan.features.affected_ids[0].ids.insert(3, 99);
+    assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
+    let frame = super::round_support_envelope_cylinder(
+        &scan,
+        &ir,
+        913,
+        crate::surface::Type24RoundEnvelope {
+            diameter: 2.0,
+            extent_endpoints: [[-9.0, 0.0, -3.0], [-8.0, 2.0, -2.5]],
+        },
+    )
+    .expect("resolved support and envelope cylinder");
+    assert_eq!(frame.origin, [-8.5, 0.0, -3.0]);
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 0.5);
+    assert_eq!(frame.length, Some(2.0));
+    assert!(super::round_support_envelope_cylinder(
+        &scan,
+        &ir,
+        913,
+        crate::surface::Type24RoundEnvelope {
+            diameter: 2.0,
+            extent_endpoints: [[-9.0, 0.0, -3.0], [-7.0, 2.0, -2.5]],
+        },
+    )
+    .is_none());
 }
 
 #[test]
