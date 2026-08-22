@@ -25,6 +25,8 @@ const EPS_POINT_UNIQUE: f64 = 1e-7;
 const EPS_AGREE: f64 = 1e-9;
 const EPS_ORTHO: f64 = 1e-10;
 const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_STORED_FRAME_NONZERO: f64 = 1e-6;
+const EPS_STORED_FRAME_RELATIVE: f64 = 1e-9;
 
 pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
@@ -451,6 +453,308 @@ pub fn agreed_plane_surface(
         ))
 }
 
+fn stored_parameter_normal_candidate(
+    frame: &crate::surface::PlaneLocalSystem,
+    mirror_z: bool,
+) -> Option<PlaneCandidate> {
+    let slots: [f64; 12] = frame
+        .slots
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    if slots[3..6].iter().any(|value| *value != 0.0) {
+        return None;
+    }
+    let origin = slots[9..12].try_into().ok()?;
+    let mut u_axis: [f64; 3] = slots[0..3].try_into().ok()?;
+    let mut normal: [f64; 3] = slots[6..9].try_into().ok()?;
+    if mirror_z {
+        u_axis[2] = -u_axis[2];
+        normal[2] = -normal[2];
+    }
+    let u_magnitude = dot(u_axis, u_axis).sqrt();
+    let normal_magnitude = dot(normal, normal).sqrt();
+    let scale = u_magnitude.max(normal_magnitude).max(1.0);
+    if !u_magnitude.is_finite()
+        || !normal_magnitude.is_finite()
+        || u_magnitude <= EPS_STORED_FRAME_NONZERO
+        || normal_magnitude <= EPS_STORED_FRAME_NONZERO
+        || (u_magnitude - normal_magnitude).abs() > EPS_STORED_FRAME_RELATIVE * scale
+        || dot(u_axis, normal).abs() > EPS_STORED_FRAME_RELATIVE * u_magnitude * normal_magnitude
+    {
+        return None;
+    }
+    u_axis = u_axis.map(|value| value / u_magnitude);
+    normal = normal.map(|value| value / normal_magnitude);
+    Some(PlaneCandidate {
+        equation: PlaneEquation { origin, normal },
+        chart: Some(PlaneChart {
+            origin,
+            normal,
+            u_axis,
+        }),
+        offset: frame.offset,
+    })
+}
+
+pub(crate) fn stored_parameter_normal_candidates(
+    frame: &crate::surface::PlaneLocalSystem,
+) -> Option<Vec<PlaneCandidate>> {
+    let slots: [f64; 12] = frame
+        .slots
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    if slots[3..6].iter().any(|value| *value != 0.0) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for mirror_z in [false, true] {
+        let candidate = stored_parameter_normal_candidate(frame, mirror_z)?;
+        if !candidates
+            .iter()
+            .any(|known| plane_candidates_equivalent(*known, candidate))
+        {
+            candidates.push(candidate);
+        }
+    }
+    (candidates.len() > 1).then_some(candidates)
+}
+
+fn coordinate_vectors_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+    first.into_iter().zip(second).all(|(first, second)| {
+        (first - second).abs() <= EPS_AGREE * first.abs().max(second.abs()).max(1.0)
+    })
+}
+
+fn plane_candidates_equivalent(first: PlaneCandidate, second: PlaneCandidate) -> bool {
+    agreed_plane(&[first.equation, second.equation]).is_some()
+        && match (first.chart, second.chart) {
+            (Some(first), Some(second)) => {
+                coordinate_vectors_agree(first.origin, second.origin)
+                    && coordinate_vectors_agree(first.normal, second.normal)
+                    && coordinate_vectors_agree(first.u_axis, second.u_axis)
+            }
+            (None, None) => true,
+            _ => false,
+        }
+}
+
+fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]> {
+    let chart = candidate.chart?;
+    let normal = normalized(chart.normal)?;
+    let u_axis = normalized(chart.u_axis)?;
+    (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
+    let v_axis = cross(normal, u_axis);
+    let point = std::array::from_fn(|axis| {
+        chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
+    });
+    point.iter().all(|value| value.is_finite()).then_some(point)
+}
+
+fn pcurve_candidate_endpoint_witness(
+    candidate: PlaneCandidate,
+    adjacent: PlaneCandidate,
+    endpoints: [[f64; 2]; 2],
+) -> bool {
+    if candidate.chart.is_none() {
+        return false;
+    }
+    let Some(adjacent_normal) = normalized(adjacent.equation.normal) else {
+        return false;
+    };
+    let Some(candidate_normal) = normalized(candidate.equation.normal) else {
+        return false;
+    };
+    let cross_normals = cross(candidate_normal, adjacent_normal);
+    if dot(cross_normals, cross_normals) <= EPS_ORTHO * EPS_ORTHO {
+        return false;
+    }
+    let Some(points) = endpoints
+        .map(|uv| plane_chart_point(candidate, uv))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    if model_points_agree(points[0], points[1]) {
+        return false;
+    }
+    points
+        .into_iter()
+        .all(|point| point_on_carrier(point, CarrierEquation::Plane(adjacent.equation)))
+}
+
+fn pcurve_candidates_agree(
+    first: PlaneCandidate,
+    second: PlaneCandidate,
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+) -> bool {
+    pcurve_candidate_endpoint_witness(first, second, endpoint_sets[0])
+        || pcurve_candidate_endpoint_witness(second, first, endpoint_sets[1])
+}
+
+#[derive(Clone, Copy)]
+struct PlaneBranchConstraint {
+    faces: [u32; 2],
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+}
+
+fn stored_frame_branch_constraints(
+    scan: &ContainerScan,
+    domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
+) -> Vec<PlaneBranchConstraint> {
+    let mut constraints = Vec::new();
+    let mut add = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        if faces[0] == faces[1] {
+            return;
+        }
+        let (Some(first), Some(second)) = (domains.get(&faces[0]), domains.get(&faces[1])) else {
+            return;
+        };
+        let compatible = first
+            .iter()
+            .filter(|first| {
+                second
+                    .iter()
+                    .any(|second| pcurve_candidates_agree(**first, *second, endpoint_sets))
+            })
+            .count();
+        if compatible != 0 {
+            constraints.push(PlaneBranchConstraint {
+                faces,
+                endpoint_sets,
+            });
+        }
+    };
+    for pcurve in &scan.curves.pcurves {
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    constraints
+}
+
+fn select_stored_frame_branches(
+    scan: &ContainerScan,
+    candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
+    for frame in &scan.planes.local_systems {
+        let Some(options) = stored_parameter_normal_candidates(frame) else {
+            continue;
+        };
+        variable_domains.insert(frame.surface_id, options);
+    }
+    if variable_domains.is_empty() {
+        return;
+    }
+
+    let mut domains = variable_domains.clone();
+    for (surface_id, known) in candidates.iter() {
+        let fixed = if known.len() == 1 {
+            known
+                .first()
+                .copied()
+                .filter(|candidate| candidate.chart.is_some())
+        } else {
+            agreed_plane_surface(known).map(|(equation, u_axis, offset)| PlaneCandidate {
+                equation,
+                chart: Some(PlaneChart {
+                    origin: equation.origin,
+                    normal: equation.normal,
+                    u_axis,
+                }),
+                offset,
+            })
+        };
+        if let Some(fixed) = fixed {
+            domains.entry(*surface_id).or_insert_with(|| vec![fixed]);
+        }
+    }
+    let constraints = stored_frame_branch_constraints(scan, &domains);
+    if constraints.is_empty() {
+        return;
+    }
+
+    let variable_ids = variable_domains.keys().copied().collect::<BTreeSet<_>>();
+    let mut filtered = domains;
+    loop {
+        let mut changed = false;
+        for constraint in &constraints {
+            let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+                continue;
+            };
+            let Some(second) = filtered.get(&constraint.faces[1]).cloned() else {
+                continue;
+            };
+            if variable_ids.contains(&constraint.faces[0]) {
+                let retained = first
+                    .into_iter()
+                    .filter(|first| {
+                        second.iter().any(|second| {
+                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if retained.is_empty() {
+                    continue;
+                }
+                changed |= retained.len() != filtered[&constraint.faces[0]].len();
+                filtered.insert(constraint.faces[0], retained);
+            }
+            if variable_ids.contains(&constraint.faces[1]) {
+                let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+                    continue;
+                };
+                let retained = second
+                    .into_iter()
+                    .filter(|second| {
+                        first.iter().any(|first| {
+                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if retained.is_empty() {
+                    continue;
+                }
+                changed |= retained.len() != filtered[&constraint.faces[1]].len();
+                filtered.insert(constraint.faces[1], retained);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for surface_id in variable_ids {
+        let Some([candidate]) = filtered.get(&surface_id).map(Vec::as_slice) else {
+            continue;
+        };
+        candidates.insert(surface_id, vec![*candidate]);
+    }
+}
+
 pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
     let matrix_frame_ids = scan
         .planes
@@ -589,6 +893,7 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
             }],
         );
     }
+    select_stored_frame_branches(scan, &mut candidates);
     candidates
         .into_iter()
         .filter(|(id, _)| {

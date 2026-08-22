@@ -61,6 +61,9 @@ pub(super) use pcurves::{
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use planes::solve_carriers;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(super) use planes::stored_parameter_normal_candidates;
 #[allow(unused_imports)]
 pub(super) use planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,

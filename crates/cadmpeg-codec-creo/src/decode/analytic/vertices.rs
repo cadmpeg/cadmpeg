@@ -20,7 +20,7 @@ use super::equations::{
     PlaneConicEquation, PlaneEquation,
 };
 use super::pcurves::{
-    directed_pcurve_points, pcurve_edge_endpoint_evidence_with_diagnostics,
+    directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
     solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
@@ -520,7 +520,7 @@ pub fn solve_topological_vertices(
         .map(|(vertex, point)| (vertex, Some(point)))
         .collect::<BTreeMap<_, _>>();
     let (endpoint_evidence, pcurve_diagnostics) =
-        pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir);
+        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers);
     diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()

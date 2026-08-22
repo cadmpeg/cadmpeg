@@ -2,8 +2,8 @@ use crate::decode::analytic::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
     analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
     frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
-    PlaneCandidate, PlaneChart, PlaneEquation,
+    stored_parameter_normal_candidates, topology_bound_line_plane, topology_bound_plane,
+    transfer_topology_bound_planes, BoundaryLine, PlaneCandidate, PlaneChart, PlaneEquation,
 };
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
@@ -560,4 +560,107 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
     assert_eq!(plane.normal, [component, 0.0, component]);
     assert_eq!(u_axis, [component, 0.0, -component]);
+}
+
+fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for id in [1, 2] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.local_systems.extend([
+        crate::surface::PlaneLocalSystem {
+            surface_id: 1,
+            body: Vec::new(),
+            slots: vec![
+                Some(0.6),
+                Some(0.0),
+                Some(-0.8),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.8),
+                Some(0.0),
+                Some(0.6),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+            ],
+            origin: Some([0.0, 0.0, 0.0]),
+            u_axis: Some([0.6, 0.0, 0.8]),
+            normal: Some([0.8, 0.0, -0.6]),
+            classification: LocalSystemClassification::Unclassified,
+            row_offset: 1,
+            offset: 10,
+        },
+        crate::surface::PlaneLocalSystem {
+            surface_id: 2,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: Some([0.0, 1.0, 0.0]),
+            u_axis: Some([1.0, 0.0, 0.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Simple,
+            row_offset: 2,
+            offset: 20,
+        },
+    ]);
+    if with_pcurve {
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [1, 2],
+            face_0_endpoints: [[1.0, 1.0], [2.0, 1.0]],
+            face_1_endpoints: [[0.6, 0.8], [1.2, 1.6]],
+            offset: 30,
+        });
+    }
+    scan
+}
+
+#[test]
+fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
+    let scan = stored_frame_branch_scan(false);
+    let frame = &scan.planes.local_systems[0];
+    let candidates = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.normal == [0.8, 0.0, 0.6]
+            && candidate.chart.expect("chart").u_axis == [0.6, 0.0, -0.8]
+    }));
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.normal == [0.8, 0.0, -0.6]
+            && candidate.chart.expect("chart").u_axis == [0.6, 0.0, 0.8]
+    }));
+
+    let mut invalid = frame.clone();
+    invalid.slots[4] = Some(1.0);
+    assert!(stored_parameter_normal_candidates(&invalid).is_none());
+}
+
+#[test]
+fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
+    let scan = stored_frame_branch_scan(true);
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
+}
+
+#[test]
+fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
+    let scan = stored_frame_branch_scan(false);
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("existing plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
 }

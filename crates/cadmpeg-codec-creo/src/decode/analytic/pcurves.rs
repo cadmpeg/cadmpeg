@@ -410,10 +410,21 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
 ) {
+    let carriers = placed_carriers(scan, ir);
+    pcurve_edge_endpoint_evidence_with_carriers(scan, ir, &carriers)
+}
+
+pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    carriers: &BTreeMap<u32, CarrierEquation>,
+) -> (
+    BTreeMap<u32, PcurveEndpointEvidence>,
+    PcurveEndpointDiagnostics,
+) {
     let ignored_surface_ids =
         topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
     let path_activity = PcurvePathActivity::from_scan(scan);
-    let carriers = placed_carriers(scan, ir);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
     let mut process_paths =
@@ -428,7 +439,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 diagnostics.unevaluable_paths += mapped.unevaluable_paths;
                 diagnostics.mapped_paths += mapped.mapped.len();
                 mapped_paths.extend(mapped.mapped.iter().copied());
-                match pcurve_path_carrier_status(ir, &carriers, faces, face_index, endpoints) {
+                match pcurve_path_carrier_status(ir, carriers, faces, face_index, endpoints) {
                     PcurveCarrierStatus::Validated => {
                         carrier_proof_available = true;
                         diagnostics.carrier_validated_paths += 1;
