@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use cadmpeg_core::decode::View;
@@ -1858,6 +1858,8 @@ pub enum OperationStateGroupRow<'a> {
     /// direct byte; one generation uses the same compact token family as an
     /// object index for positions above the direct range.
     List {
+        /// Absolute byte offset of the row's `4a` marker.
+        offset: usize,
         /// Ordered feature-record member.
         object_index: OperationStateIndex<'a>,
         /// Serialized list-position token.
@@ -1865,6 +1867,8 @@ pub enum OperationStateGroupRow<'a> {
     },
     /// `tag object_index object_index ff ff` relation member.
     Pair {
+        /// Absolute byte offset of the row's relation tag.
+        offset: usize,
         /// Schema-generation relation tag (`4f` or `48`).
         tag: u8,
         /// First relation endpoint.
@@ -3002,6 +3006,23 @@ impl<'a> Section<'a> {
         let bytes = self.record_area?;
         let base_offset = self.record_area_offset?;
         operation_state_counter_map(bytes, base_offset)
+    }
+
+    /// Decode the field-declared `m_rollForwardStates` group table before the
+    /// bounded operation-state counter map.
+    pub fn operation_state_group_table(&self) -> Option<OperationStateGroupTable<'a>> {
+        if !self
+            .fields
+            .iter()
+            .any(|definition| definition.name == "m_rollForwardStates")
+        {
+            return None;
+        }
+        let map = self.operation_state_counter_map()?;
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let map_start = map.offset.checked_sub(base_offset)?;
+        operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -6984,6 +7005,7 @@ fn operation_state_group_at(
                 let row_end = sentinel_at.checked_add(1)?;
                 (bytes.get(sentinel_at) == Some(&0xff)).then_some(())?;
                 rows.push(OperationStateGroupRow::List {
+                    offset: base_offset.checked_add(cursor)?,
                     object_index,
                     position,
                 });
@@ -6999,7 +7021,12 @@ fn operation_state_group_at(
                 let sentinels_at = second_at.checked_add(second.raw.len())?;
                 let row_end = sentinels_at.checked_add(2)?;
                 (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some(())?;
-                rows.push(OperationStateGroupRow::Pair { tag, first, second });
+                rows.push(OperationStateGroupRow::Pair {
+                    offset: base_offset.checked_add(cursor)?,
+                    tag,
+                    first,
+                    second,
+                });
                 cursor = row_end;
             }
             _ => return None,
@@ -7012,6 +7039,63 @@ fn operation_state_group_at(
         declared_count,
         rows,
         end_offset: base_offset.checked_add(cursor)?,
+    })
+}
+
+fn operation_state_group_table_before_counter_map(
+    bytes: &[u8],
+    map_start: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroupTable<'_>> {
+    if map_start > bytes.len() {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for at in 0..map_start.saturating_sub(2) {
+        if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
+            continue;
+        }
+        let Some(group) = operation_state_group_at(bytes, at, map_start, base_offset) else {
+            continue;
+        };
+        let end = group.end_offset.checked_sub(base_offset)?;
+        if end <= map_start {
+            candidates.push((at, group, end));
+        }
+    }
+    candidates.sort_by_key(|(start, _, end)| (*end, *start));
+
+    let mut best_by_end = BTreeMap::<usize, Vec<usize>>::new();
+    for (candidate_index, (start, _, end)) in candidates.iter().enumerate() {
+        let mut path = best_by_end.get(start).cloned().unwrap_or_default();
+        path.push(candidate_index);
+        let replace = best_by_end.get(end).is_none_or(|current| {
+            path.len() > current.len()
+                || (path.len() == current.len() && candidates[path[0]].0 < candidates[current[0]].0)
+        });
+        if replace {
+            best_by_end.insert(*end, path);
+        }
+    }
+
+    let trailing_start =
+        if map_start >= 2 && bytes.get(map_start - 2..map_start) == Some(&[0x01, 0x01]) {
+            map_start - 2
+        } else {
+            map_start
+        };
+    let path = best_by_end.get(&trailing_start)?;
+    let first = *path.first()?;
+    let last = *path.last()?;
+    let groups = path
+        .iter()
+        .map(|candidate| candidates[*candidate].1.clone())
+        .collect();
+    Some(OperationStateGroupTable {
+        offset: base_offset.checked_add(candidates[first].0)?,
+        end_offset: base_offset.checked_add(map_start)?,
+        groups,
+        trailing_bytes: bytes.get(candidates[last].2..map_start)?,
     })
 }
 

@@ -193,6 +193,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "object_uuid_values",
     "offset_store_named_points",
     "om_operation_state_counters",
+    "om_roll_forward_state_groups",
     "om_record_areas",
     "parasolid_attribute_class_uses",
     "parasolid_attribute_field_uses",
@@ -863,13 +864,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 235, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 236, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| row.phase == Phase::GroupA)
             .count(),
-        111,
+        112,
         "group A family count"
     );
     assert_eq!(

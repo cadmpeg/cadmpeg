@@ -147,6 +147,45 @@ pub(crate) fn segment_om_record_area_with_state_counter_map() -> Vec<u8> {
     payload
 }
 
+pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<u8> {
+    let mut payload = segment_om_record_area_payload();
+    let section_start = 32;
+    let marker = b"unframed UGS::PayloadText";
+    let field = b"\x14m_rollForwardStates\xa0\x12\x8b";
+    let field_at = section_start
+        + payload[section_start..]
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("registry tail marker");
+    let pointer_at = field_at + marker.len();
+    payload.splice(field_at..field_at, field.iter().copied());
+    let pointer_at = pointer_at + field.len();
+    let pointer = u32::from_le_bytes(
+        payload[pointer_at..pointer_at + 4]
+            .try_into()
+            .expect("record-area pointer"),
+    );
+    payload[pointer_at..pointer_at + 4]
+        .copy_from_slice(&(pointer + field.len() as u32).to_le_bytes());
+    let state_bytes = [
+        0x01, 0x00, 0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01,
+        0x01, 0x01, 0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00, 0x01,
+        0x01, 0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04,
+        0x4e,
+    ];
+    payload.extend(state_bytes);
+    let section_len = u32::from_be_bytes(
+        payload[section_start + 8..section_start + 12]
+            .try_into()
+            .expect("section length field"),
+    );
+    payload[section_start + 8..section_start + 12].copy_from_slice(
+        &(section_len + u32::try_from(field.len() + state_bytes.len()).expect("fixture length"))
+            .to_be_bytes(),
+    );
+    payload
+}
+
 pub(crate) fn multi_section_feature_history_payload() -> Vec<u8> {
     let mut early = size_framed_om_section_with_record_area();
     let name = early

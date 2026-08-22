@@ -297,6 +297,11 @@ impl ContainerNoted for OmOperationStateCounter {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for OmRollForwardStateGroup {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureOperationLabel {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1768,6 +1773,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.operation_state_counters, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.operation_state_counters, r, ns),
         len: |m| m.om.operation_state_counters.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_roll_forward_state_groups",
+        tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_groups, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
+        len: |m| m.om.operation_state_groups.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

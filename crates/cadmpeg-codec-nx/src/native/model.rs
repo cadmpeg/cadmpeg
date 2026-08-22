@@ -249,6 +249,7 @@ pub(crate) struct FeatureRecords {
 pub(crate) struct OmRecords {
     pub(crate) om_record_areas: Vec<OmRecordArea>,
     pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
+    pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
     pub(crate) expression_declarations: Vec<ExpressionDeclaration>,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) classes: Vec<ClassDefinition>,
@@ -499,6 +500,7 @@ impl NativeModel {
         );
         let om_record_areas = om_record_areas(container);
         let operation_state_counters = operation_state_counters(container);
+        let operation_state_groups = operation_state_groups(container);
         let feature_operation_records = feature_operation_records(container);
         let feature_operation_object_relations = feature_operation_object_relations(container);
         let feature_operation_tagged_references = feature_operation_tagged_references(container);
@@ -1176,6 +1178,7 @@ impl NativeModel {
             om: OmRecords {
                 om_record_areas,
                 operation_state_counters,
+                operation_state_groups,
                 expression_declarations,
                 expressions,
                 classes,

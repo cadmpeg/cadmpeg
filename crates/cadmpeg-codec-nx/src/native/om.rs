@@ -74,6 +74,70 @@ pub struct OmOperationStateCounter {
     pub source_offset: u64,
 }
 
+/// One typed member in an `m_rollForwardStates` group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OmRollForwardStateRow {
+    /// Ordered feature-record member from a `4a` list row.
+    List {
+        /// Zero-based position within the group list.
+        ordinal: u32,
+        /// Ordered feature-history object index.
+        object_index: u32,
+        /// Exact serialized object-index token.
+        raw_object_index: Vec<u8>,
+        /// Serialized list position.
+        position: u32,
+        /// Exact serialized position token.
+        raw_position: Vec<u8>,
+        /// Absolute file offset of the `4a` row marker.
+        source_offset: u64,
+    },
+    /// Relation member from a `4f` or `48` pair row.
+    Pair {
+        /// Zero-based position within the group row list.
+        ordinal: u32,
+        /// Schema-generation relation tag.
+        tag: u8,
+        /// First relation endpoint.
+        first: u32,
+        /// Exact serialized first endpoint token.
+        raw_first: Vec<u8>,
+        /// Second relation endpoint.
+        second: u32,
+        /// Exact serialized second endpoint token.
+        raw_second: Vec<u8>,
+        /// Absolute file offset of the relation tag.
+        source_offset: u64,
+    },
+}
+
+/// One counted `m_rollForwardStates` group from a feature-history section.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmRollForwardStateGroup {
+    /// Globally unique group identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based group ordinal within the table.
+    pub ordinal: u32,
+    /// Exact two-byte group opener.
+    pub opener: [u8; 2],
+    /// Whether the count used the nonempty `01 count` form.
+    pub count_prefix: Option<u8>,
+    /// Serialized member count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered typed rows in the group.
+    pub rows: Vec<OmRollForwardStateRow>,
+    /// Exact bytes between the final group and the counter-map boundary.
+    pub table_trailing_bytes: Vec<u8>,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the group opener.
+    pub source_offset: u64,
+    /// Absolute file offset of the counter-map boundary.
+    pub table_end_offset: u64,
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
@@ -152,6 +216,91 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         object_index_source_offset: entry_offset + row.object_index.offset as u64,
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + row.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode field-declared roll-forward groups from canonical feature-history areas.
+pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGroup> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(table) = section.operation_state_group_table() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            table
+                .groups
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, group)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    let rows = group
+                        .rows
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(row_ordinal, row)| {
+                            let ordinal = u32::try_from(row_ordinal).ok()?;
+                            match row {
+                                crate::om::OperationStateGroupRow::List {
+                                    offset,
+                                    object_index,
+                                    position,
+                                } => Some(OmRollForwardStateRow::List {
+                                    ordinal,
+                                    object_index: object_index.value?,
+                                    raw_object_index: object_index.raw.to_vec(),
+                                    position: position.value?,
+                                    raw_position: position.raw.to_vec(),
+                                    source_offset: entry_offset + offset as u64,
+                                }),
+                                crate::om::OperationStateGroupRow::Pair {
+                                    offset,
+                                    tag,
+                                    first,
+                                    second,
+                                } => Some(OmRollForwardStateRow::Pair {
+                                    ordinal,
+                                    tag,
+                                    first: first.value?,
+                                    raw_first: first.raw.to_vec(),
+                                    second: second.value?,
+                                    raw_second: second.raw.to_vec(),
+                                    source_offset: entry_offset + offset as u64,
+                                }),
+                            }
+                        })
+                        .collect();
+                    Some(OmRollForwardStateGroup {
+                        id: format!(
+                            "nx:feature-history:roll-forward-state-group#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        opener: group.opener,
+                        count_prefix: group.count_prefix,
+                        declared_count: group.declared_count,
+                        rows,
+                        table_trailing_bytes: table.trailing_bytes.to_vec(),
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + group.offset as u64,
+                        table_end_offset: entry_offset + table.end_offset as u64,
                     })
                 })
                 .collect()

@@ -185,7 +185,10 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     assert_eq!(table.groups[0].count_prefix, Some(1));
     assert_eq!(table.groups[0].rows.len(), 2);
     assert_eq!(table.groups[1].rows.len(), 1);
-    let OperationStateGroupRow::Pair { tag, first, second } = table.groups[1].rows[0] else {
+    let OperationStateGroupRow::Pair {
+        tag, first, second, ..
+    } = table.groups[1].rows[0]
+    else {
         panic!("pair group row was not typed");
     };
     assert_eq!(tag, 0x4f);
@@ -193,6 +196,31 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     assert_eq!(second.value, Some(0x3e1));
     assert_eq!(table.groups[2].declared_count, 0);
     assert_eq!(table.groups[2].rows.len(), 0);
+}
+
+#[test]
+fn operation_state_group_table_anchors_to_counter_map_boundary() {
+    let mut bytes = vec![0xaa, 0xbb, 0xcc];
+    bytes.extend([
+        0x01, 0x00, 0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01,
+        0x01, 0x01, 0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00, 0x01,
+        0x01,
+    ]);
+    bytes.extend([
+        0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04, 0x4e,
+    ]);
+    bytes.extend([0x99; 16]);
+
+    let map = super::operation_state_counter_map(&bytes, 0).expect("counter map");
+    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset, 0)
+        .expect("group table");
+    assert_eq!(table.offset, 3);
+    assert_eq!(table.end_offset, map.offset);
+    assert_eq!(table.groups.len(), 3);
+    assert_eq!(table.groups[0].rows.len(), 2);
+    assert_eq!(table.groups[1].rows.len(), 1);
+    assert_eq!(table.groups[2].declared_count, 0);
+    assert_eq!(table.trailing_bytes, &[0x01, 0x01]);
 }
 
 #[test]
