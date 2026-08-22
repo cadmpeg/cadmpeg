@@ -3561,6 +3561,7 @@ fn build_metadata_ir(
     )?;
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
+    bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
@@ -4100,35 +4101,10 @@ fn assign_configuration_bodies(
             );
         }
     }
-    let active_name = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"));
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section))
-        .and_then(|index| u32::try_from(index).ok());
-    if let (Some(active_name), Some(active_index)) = (active_name, active_index) {
-        let matches = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| {
-                configuration.source_index.is_none()
-                    && configuration.name.resolved() == Some(active_name.as_str())
-            })
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>();
-        if matches.len() == 1 {
-            if let Some(bodies) = partition_map.remove(&active_index) {
-                let position = matches[0];
-                let configuration = &mut ir.model.configurations[position];
-                configuration.source_index = Some(active_index);
-                configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
-            }
+    if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
+        if let Some(bodies) = partition_map.remove(&active_index) {
+            ir.model.configurations[position].bodies =
+                cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
         }
     }
     for (source_index, bodies) in partition_map {
@@ -4159,6 +4135,51 @@ fn assign_configuration_bodies(
                 native_ref: None,
             });
     }
+}
+
+/// Bind the active configuration's partition identity from the two native
+/// selectors, without inferring body membership.
+fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
+    let active_name = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_configuration_name"));
+    let active_index = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("active_parasolid_block"))
+        .and_then(|section| crate::container::configuration_index(section))
+        .and_then(|index| u32::try_from(index).ok());
+    let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
+        return None;
+    };
+    let matches = ir
+        .model
+        .configurations
+        .iter()
+        .enumerate()
+        .filter(|(_, configuration)| {
+            configuration.source_index.is_none()
+                && configuration.name.resolved() == Some(active_name.as_str())
+        })
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    let source_identity_available = !ir
+        .model
+        .configurations
+        .iter()
+        .any(|configuration| configuration.source_index == Some(active_index));
+    if matches.len() != 1 || !source_identity_available {
+        return None;
+    }
+
+    // The container's active block and the native configuration name
+    // establish the partition identity even when that block yielded no
+    // decoded body list. Body membership remains unresolved until a decoded
+    // partition supplies its body identities.
+    let position = matches[0];
+    ir.model.configurations[position].source_index = Some(active_index);
+    Some((active_index, position))
 }
 
 fn stamp_configuration_baseline(ir: &mut CadIr) {
