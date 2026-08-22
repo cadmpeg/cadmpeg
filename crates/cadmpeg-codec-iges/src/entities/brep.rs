@@ -8,7 +8,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::draft::ModelDraft;
+use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -723,6 +723,16 @@ pub(super) fn project(
         }
     }
 
+    // One session serves every body commit in this call. That is sound for
+    // the same reason the position maps above are: the per-body commit is
+    // the only writer of `ir` here, and it only appends. Each successful
+    // commit moves its identities into the session, so a later body still
+    // collides with an earlier body's ids and can resolve references into
+    // them — exactly what a per-commit index rebuild provided. The session
+    // is built at the first commit rather than up front so that files with
+    // no explicit B-rep, and bodies rejected before reaching commit, never
+    // pay for the identity index.
+    let mut commit_session: Option<CommitSession> = None;
     for definition in body_definitions {
         let entry = definition.entry;
         let mut model_index = None;
@@ -1126,7 +1136,8 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        if candidate.commit_model(ir).is_err() {
+        let session = commit_session.get_or_insert_with(|| CommitSession::new(ir));
+        if session.commit_model(candidate, ir).is_err() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",
