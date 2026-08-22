@@ -6920,6 +6920,48 @@ struct ProductRecordRange {
     end: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct IndexedCandidateSpan {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IndexedCandidateKind {
+    Fixed {
+        base: usize,
+        entity_index_offset: usize,
+        object_id_table_offset: usize,
+        count: usize,
+    },
+    OffsetOnly {
+        entity_index_offset: usize,
+        object_id_table_offset: usize,
+        first: usize,
+        first_record: usize,
+        last: usize,
+        record_count: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IndexedCandidate {
+    span: IndexedCandidateSpan,
+    discovery_order: usize,
+    kind: IndexedCandidateKind,
+}
+
+fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
+    let suffix = bytes.get(offset..)?;
+    is_product_record(suffix).then_some(())?;
+    let text_length = usize::from(*suffix.get(2)?).checked_sub(2)?;
+    let record_len = 3usize.checked_add(text_length)?.checked_add(1)?;
+    Some(ProductRecordRange {
+        start: offset,
+        end: offset.checked_add(record_len)?,
+    })
+}
+
 /// Count validated product records fully contained in `[lower, upper]`.
 ///
 /// A validated product record cannot contain another validated product-record
@@ -6933,6 +6975,137 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
     end.saturating_sub(first)
 }
 
+/// Select outer indexed interpretations before materializing section records.
+///
+/// The entity-index and object-id arrays are the physical ownership envelope
+/// of an indexed section. A second valid table wholly inside that envelope is
+/// serialized record content, not another section. Partial overlap remains in
+/// the result because neither candidate owns the other candidate's bytes.
+///
+/// Sorting by start and then descending end makes the furthest end of all
+/// admitted candidates sufficient to recognize every nested candidate. This
+/// keeps the admission pass linear after sorting and, more importantly, keeps
+/// rejected candidates as layout metadata rather than allocated records.
+fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate>) -> Vec<IndexedCandidate> {
+    candidates.sort_by(|left, right| {
+        left.span
+            .start
+            .cmp(&right.span.start)
+            .then_with(|| right.span.end.cmp(&left.span.end))
+    });
+    let mut admitted = Vec::with_capacity(candidates.len());
+    let mut furthest_end = 0;
+    for candidate in candidates {
+        if candidate.span.end <= furthest_end {
+            continue;
+        }
+        furthest_end = candidate.span.end;
+        admitted.push(candidate);
+    }
+    admitted.sort_by_key(|candidate| candidate.discovery_order);
+    admitted
+}
+
+fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> IndexedSection<'_> {
+    match candidate.kind {
+        IndexedCandidateKind::Fixed {
+            base,
+            entity_index_offset: entity_index_start,
+            object_id_table_offset,
+            count,
+        } => {
+            let records = (1..count)
+                .map(|index| {
+                    let start_offset = entity_index_offset(bytes, entity_index_start, index)
+                        .expect("validated entity index remains readable");
+                    let end_offset = entity_index_offset(bytes, entity_index_start, index + 1)
+                        .expect("validated entity index remains readable");
+                    let start = base
+                        .checked_add(start_offset)
+                        .expect("validated entity index remains bounded");
+                    let end = base
+                        .checked_add(end_offset)
+                        .expect("validated entity index remains bounded");
+                    let payload = bytes
+                        .get(start..end)
+                        .expect("validated entity index remains readable");
+                    let object_id_offset = object_id_table_offset
+                        .checked_add(4)
+                        .and_then(|offset| {
+                            offset
+                                .checked_add(index.checked_mul(4).expect("object-id index bounded"))
+                        })
+                        .expect("object-id table offset remains bounded");
+                    let object_id = View::u32_le_at(bytes, object_id_offset)
+                        .expect("validated object-id table remains readable");
+                    EntityRecord {
+                        object_id: Some(object_id),
+                        object_id_offset: Some(object_id_offset),
+                        offset: start,
+                        bytes: payload,
+                    }
+                })
+                .collect::<Vec<_>>();
+            IndexedSection {
+                base,
+                entity_index_offset: entity_index_start,
+                object_id_table_offset,
+                types: type_definitions(bytes, base, entity_index_start).into(),
+                fields: all_field_definitions(bytes, base, entity_index_start).into(),
+                control: None,
+                column_storage: None,
+                records: records.into(),
+            }
+        }
+        IndexedCandidateKind::OffsetOnly {
+            entity_index_offset: entity_index_start,
+            object_id_table_offset,
+            first,
+            first_record,
+            last,
+            record_count,
+        } => {
+            let records = (0..record_count)
+                .map(|index| {
+                    let start = entity_index_offset(bytes, entity_index_start, index + 1)
+                        .expect("validated offset-only index remains readable");
+                    let end = entity_index_offset(bytes, entity_index_start, index + 2)
+                        .expect("validated offset-only index remains readable");
+                    EntityRecord {
+                        object_id: None,
+                        object_id_offset: None,
+                        offset: start,
+                        bytes: bytes
+                            .get(start..end)
+                            .expect("validated offset-only index remains readable"),
+                    }
+                })
+                .collect::<Vec<_>>();
+            IndexedSection {
+                base: 0,
+                entity_index_offset: entity_index_start,
+                object_id_table_offset,
+                types: type_definitions(bytes, 0, entity_index_start).into(),
+                fields: all_field_definitions(bytes, 0, entity_index_start).into(),
+                control: Some(EntityRecord {
+                    object_id: None,
+                    object_id_offset: None,
+                    offset: first,
+                    bytes: bytes
+                        .get(first..first_record)
+                        .expect("validated offset-only control range remains readable"),
+                }),
+                column_storage: Some(
+                    bytes
+                        .get(first_record..last)
+                        .expect("validated offset-only storage range remains readable"),
+                ),
+                records: records.into(),
+            }
+        }
+    }
+}
+
 /// Locate validated NX OM entity-index/object-id-table pairs.
 ///
 /// A candidate is accepted only when the arrays are adjacent, the index is
@@ -6940,19 +7113,10 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// entity exactly at the end of the object-id table, and that entity carries the
 /// NX root marker.
 pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
-    let mut out = Vec::new();
+    let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let product_record_ranges = (0..bytes.len())
-        .filter_map(|offset| {
-            let suffix = bytes.get(offset..)?;
-            is_product_record(suffix).then_some(())?;
-            let text_length = usize::from(*suffix.get(2)?).checked_sub(2)?;
-            let record_len = 3usize.checked_add(text_length)?.checked_add(1)?;
-            Some(ProductRecordRange {
-                start: offset,
-                end: offset.checked_add(record_len)?,
-            })
-        })
+        .filter_map(|offset| product_record_range_at(bytes, offset))
         .collect::<Vec<_>>();
     for table in 0..bytes.len().saturating_sub(4) {
         let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
@@ -6973,9 +7137,10 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if !is_product_record(bytes.get(table_end..).unwrap_or_default())
-            || View::u32_le_at(bytes, index_start) != Some(0)
-        {
+        let Some(_) = product_record_range_at(bytes, table_end) else {
+            continue;
+        };
+        if View::u32_le_at(bytes, index_start) != Some(0) {
             continue;
         }
         let Some(first) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
@@ -6988,46 +7153,25 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if !entity_index_is_valid(bytes, index_start, count, base) {
             continue;
         }
+        let section_end = entity_index_offset(bytes, index_start, count)
+            .and_then(|end| base.checked_add(end))
+            .expect("validated entity index remains bounded");
         if !seen_record_starts.insert(table_end) {
             continue;
         }
-        let mut records = Vec::with_capacity(count - 1);
-        for index in 1..count {
-            let start_offset = entity_index_offset(bytes, index_start, index)
-                .expect("validated entity index remains readable");
-            let end_offset = entity_index_offset(bytes, index_start, index + 1)
-                .expect("validated entity index remains readable");
-            let start = base + start_offset;
-            let end = base + end_offset;
-            let Some(payload) = bytes.get(start..end) else {
-                records.clear();
-                break;
-            };
-            let Some(object_id) = View::u32_le_at(bytes, table + 4 + index * 4) else {
-                records.clear();
-                break;
-            };
-            records.push(EntityRecord {
-                object_id: Some(object_id),
-                object_id_offset: Some(table + 4 + index * 4),
-                offset: start,
-                bytes: payload,
-            });
-        }
-        if records.len() == count - 1 {
-            let types = type_definitions(bytes, base, index_start);
-            let fields = all_field_definitions(bytes, base, index_start);
-            out.push(IndexedSection {
+        candidates.push(IndexedCandidate {
+            span: IndexedCandidateSpan {
+                start: index_start,
+                end: section_end,
+            },
+            discovery_order: candidates.len(),
+            kind: IndexedCandidateKind::Fixed {
                 base,
                 entity_index_offset: index_start,
                 object_id_table_offset: table,
-                types: types.into(),
-                fields: fields.into(),
-                control: None,
-                column_storage: None,
-                records: records.into(),
-            });
-        }
+                count,
+            },
+        });
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
         let Some(record_count) = View::u32_le_at(bytes, count_offset).map(|value| value as usize)
@@ -7085,37 +7229,26 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if !seen_record_starts.insert(first_record) {
             continue;
         }
-        let records = (0..record_count)
-            .map(|index| {
-                let start = entity_index_offset(bytes, index_start, index + 1)
-                    .expect("validated offset-only index remains readable");
-                let end = entity_index_offset(bytes, index_start, index + 2)
-                    .expect("validated offset-only index remains readable");
-                EntityRecord {
-                    object_id: None,
-                    object_id_offset: None,
-                    offset: start,
-                    bytes: &bytes[start..end],
-                }
-            })
-            .collect::<Vec<_>>();
-        out.push(IndexedSection {
-            base: 0,
-            entity_index_offset: index_start,
-            object_id_table_offset: first,
-            types: type_definitions(bytes, 0, index_start).into(),
-            fields: all_field_definitions(bytes, 0, index_start).into(),
-            control: Some(EntityRecord {
-                object_id: None,
-                object_id_offset: None,
-                offset: first,
-                bytes: &bytes[first..first_record],
-            }),
-            column_storage: Some(&bytes[first_record..last]),
-            records: records.into(),
+        candidates.push(IndexedCandidate {
+            span: IndexedCandidateSpan {
+                start: index_start,
+                end: last,
+            },
+            discovery_order: candidates.len(),
+            kind: IndexedCandidateKind::OffsetOnly {
+                entity_index_offset: index_start,
+                object_id_table_offset: first,
+                first,
+                first_record,
+                last,
+                record_count,
+            },
         });
     }
-    out
+    select_outer_indexed_candidates(candidates)
+        .into_iter()
+        .map(|candidate| materialize_indexed_candidate(bytes, candidate))
+        .collect()
 }
 
 fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option<usize> {

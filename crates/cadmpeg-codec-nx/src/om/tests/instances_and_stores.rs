@@ -3,7 +3,42 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::View;
+
 use crate::test_support::*;
+
+fn fixed_indexed_section_with_embedded_section(adjust_outer_bounds: bool) -> Vec<u8> {
+    let outer = indexed_om_section();
+    let inner = indexed_om_section();
+    let table = outer
+        .windows(16)
+        .enumerate()
+        .find_map(|(offset, window)| {
+            (View::u32_le_at(window, 0) == Some(3)
+                && View::u32_le_at(window, 4) == Some(0x100)
+                && View::u32_le_at(window, 8) == Some(0x101)
+                && View::u32_le_at(window, 12) == Some(0x102))
+            .then_some(offset)
+        })
+        .expect("outer object-id table");
+    let index_start = table - 16;
+    let table_end = table + 16;
+    let first_offset = usize::try_from(View::u32_le_at(&outer, index_start + 4).unwrap()).unwrap();
+    let second_offset = usize::try_from(View::u32_le_at(&outer, index_start + 8).unwrap()).unwrap();
+    let base = table_end - first_offset;
+    let insertion_at = base + second_offset;
+    let mut bytes = outer[..insertion_at].to_vec();
+    bytes.extend_from_slice(&inner);
+    bytes.extend_from_slice(&outer[insertion_at..]);
+    if adjust_outer_bounds {
+        for ordinal in 2..=3 {
+            let offset = index_start + ordinal * 4;
+            let value = View::u32_le_at(&outer, offset).unwrap() as usize + inner.len();
+            bytes[offset..offset + 4].copy_from_slice(&(value as u32).to_le_bytes());
+        }
+    }
+    bytes
+}
 
 #[test]
 fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
@@ -1146,6 +1181,38 @@ fn om_index_accepts_length_framed_root_version_text() {
     assert!(sections[0].records[0]
         .bytes
         .starts_with(b"\x04\x01\x0fNX 2027.3102 \0"));
+}
+
+#[test]
+fn om_index_discards_nested_indexed_interpretation() {
+    let bytes = fixed_indexed_section_with_embedded_section(true);
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].records.len(), 2);
+}
+
+#[test]
+fn om_index_retains_disjoint_indexed_sections() {
+    let mut bytes = indexed_om_section();
+    bytes.extend_from_slice(&indexed_om_section());
+
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 2);
+    assert!(sections[0].entity_index_offset < sections[1].entity_index_offset);
+}
+
+#[test]
+fn om_index_retains_partially_overlapping_indexed_interpretations() {
+    let bytes = fixed_indexed_section_with_embedded_section(false);
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 2);
+    assert_ne!(
+        sections[0].entity_index_offset,
+        sections[1].entity_index_offset
+    );
 }
 
 #[test]
