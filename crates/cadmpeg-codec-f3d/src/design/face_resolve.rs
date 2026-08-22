@@ -1600,8 +1600,30 @@ fn extrude_start_plane_geometry_candidates(
     Some(faces.iter().map(|face| face.id.clone()).collect())
 }
 
-/// Resolve selected-face Extrude starts from exact sketch-plane coincidence.
-pub(crate) struct ExtrudeStartPlaneResolution<'a> {
+fn extrude_profile_sketch_id(
+    profile: &cadmpeg_ir::features::ProfileRef,
+) -> Option<&cadmpeg_ir::sketches::SketchId> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    match profile {
+        ProfileRef::Sketch(sketch)
+        | ProfileRef::SketchProfiles { sketch, .. }
+        | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchEntities { sketch, .. }
+        | ProfileRef::SketchSelection { sketch, .. } => Some(sketch),
+        ProfileRef::Native(_)
+        | ProfileRef::Unresolved(_)
+        | ProfileRef::Feature(_)
+        | ProfileRef::Generated { .. }
+        | ProfileRef::SpatialSketchProfiles { .. }
+        | ProfileRef::SpatialSketchSelection { .. }
+        | ProfileRef::HistoricalFaces { .. }
+        | ProfileRef::Faces(_) => None,
+    }
+}
+
+/// Geometry and native records used to resolve selected-face Extrude inputs.
+pub(crate) struct ExtrudeFaceResolution<'a> {
     pub faces: &'a [cadmpeg_ir::topology::Face],
     pub surfaces: &'a [cadmpeg_ir::geometry::Surface],
     pub groups: &'a [DesignConstructionOperandGroup],
@@ -1613,28 +1635,16 @@ pub(crate) struct ExtrudeStartPlaneResolution<'a> {
 pub(crate) fn bind_extrude_start_planes(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
-    resolution: &mut ExtrudeStartPlaneResolution<'_>,
+    resolution: &mut ExtrudeFaceResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition};
 
     for feature in features {
         let FeatureDefinition::Extrude { profile, start, .. } = &mut feature.definition else {
             continue;
         };
-        let sketch_id = match profile {
-            ProfileRef::Sketch(sketch)
-            | ProfileRef::SketchProfiles { sketch, .. }
-            | ProfileRef::SketchRegions { sketch, .. }
-            | ProfileRef::SketchEntities { sketch, .. }
-            | ProfileRef::SketchSelection { sketch, .. } => sketch,
-            ProfileRef::Native(_)
-            | ProfileRef::Unresolved(_)
-            | ProfileRef::Feature(_)
-            | ProfileRef::Generated { .. }
-            | ProfileRef::SpatialSketchProfiles { .. }
-            | ProfileRef::SpatialSketchSelection { .. }
-            | ProfileRef::HistoricalFaces { .. }
-            | ProfileRef::Faces(_) => continue,
+        let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
+            continue;
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             continue;
@@ -1712,6 +1722,178 @@ pub(crate) fn bind_extrude_start_planes(
             }
         }
     }
+}
+
+/// Resolve a legacy Extrude target face from a unique forward planar face.
+///
+/// Some bounded-face target operands retain only support references after
+/// history projection. A target face is still exact when one referenced face
+/// is planar, parallel to the sweep direction, and lies strictly ahead of
+/// the profile plane. Ambiguous, nonplanar, and non-forward candidates remain
+/// native.
+pub(crate) fn bind_extrude_target_faces(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    resolution: &mut ExtrudeFaceResolution<'_>,
+) {
+    use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, FeatureDefinition};
+
+    for feature in features {
+        let FeatureDefinition::Extrude {
+            profile,
+            direction,
+            extent,
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
+            continue;
+        };
+        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            continue;
+        };
+        let Some((sketch_origin, profile_normal, _)) = sketch.resolved_placement() else {
+            continue;
+        };
+        let sweep_direction = match direction {
+            ExtrudeDirection::ProfileNormal => profile_normal,
+            ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
+            ExtrudeDirection::Explicit(direction) => *direction,
+            ExtrudeDirection::Unresolved => continue,
+        };
+        if !sweep_direction.x.is_finite()
+            || !sweep_direction.y.is_finite()
+            || !sweep_direction.z.is_finite()
+            || sweep_direction.norm() <= 0.0
+        {
+            continue;
+        }
+        match extent {
+            ExtrudeExtent::OneSided { side } => bind_extrude_target_face(
+                &mut side.termination,
+                sketch_origin,
+                sweep_direction,
+                resolution,
+            ),
+            ExtrudeExtent::TwoSided { first, second } => {
+                bind_extrude_target_face(
+                    &mut first.termination,
+                    sketch_origin,
+                    sweep_direction,
+                    resolution,
+                );
+                bind_extrude_target_face(
+                    &mut second.termination,
+                    sketch_origin,
+                    sweep_direction.scale(-1.0),
+                    resolution,
+                );
+            }
+            ExtrudeExtent::Symmetric { .. } => {}
+        }
+    }
+}
+
+fn bind_extrude_target_face(
+    termination: &mut cadmpeg_ir::features::Termination,
+    sketch_origin: Point3,
+    sweep_direction: Vector3,
+    resolution: &mut ExtrudeFaceResolution<'_>,
+) {
+    use cadmpeg_ir::features::{FaceSelection, Termination};
+
+    let Termination::ToFace {
+        face: FaceSelection::Native(native),
+        ..
+    } = termination
+    else {
+        return;
+    };
+    let native = native.clone();
+    let mut matching_groups = resolution.groups.iter().filter(|group| {
+        group.id == native && group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination)
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() {
+        return;
+    }
+    let Some(face) =
+        extrude_target_plane_candidate(group, resolution, sketch_origin, sweep_direction)
+    else {
+        return;
+    };
+    let offset = match termination {
+        Termination::ToFace { offset, .. } => *offset,
+        _ => return,
+    };
+    if retain_face_operand_resolution(group, resolution.operands, &face) {
+        *termination = Termination::ToFace {
+            face: FaceSelection::Resolved {
+                faces: vec![face],
+                native,
+            },
+            offset,
+        };
+    }
+}
+
+fn extrude_target_plane_candidate(
+    group: &DesignConstructionOperandGroup,
+    resolution: &ExtrudeFaceResolution<'_>,
+    sketch_origin: Point3,
+    sweep_direction: Vector3,
+) -> Option<cadmpeg_ir::ids::FaceId> {
+    let [record_index] = group.members.as_slice() else {
+        return None;
+    };
+    let stream = native_stream(&group.id)?;
+    let mut matching_operands = resolution.operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == group.scope_record_index
+            && operand.record_index == *record_index
+    });
+    let operand = matching_operands.next()?;
+    if matching_operands.next().is_some() {
+        return None;
+    }
+    let mut candidates = face_operand_candidates(operand).to_vec();
+    if candidates.is_empty() {
+        candidates = nested_bounded_face_history_candidates(operand)?;
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.dedup();
+    let direction_length = sweep_direction.norm();
+    let mut matches = candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            let face = resolution.faces.iter().find(|face| face.id == candidate)?;
+            let surface = resolution
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)?;
+            let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, normal, .. } =
+                &surface.geometry
+            else {
+                return None;
+            };
+            if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
+                return None;
+            }
+            let distance =
+                origin.vector_from(sketch_origin).dot(sweep_direction) / direction_length;
+            (distance > resolution.linear_tolerance).then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|left, right| left.0.cmp(&right.0));
+    matches.dedup();
+    let [face] = matches.as_slice() else {
+        return None;
+    };
+    Some(face.clone())
 }
 
 pub(crate) fn retain_face_operand_resolution(
@@ -2705,5 +2887,154 @@ mod tests {
                 1.0e-10,
             ));
         }
+    }
+
+    fn target_plane_operand(candidates: &[i64]) -> DesignFaceOperand {
+        let candidate_faces = candidates
+            .iter()
+            .map(|slot| face(*slot).0)
+            .collect::<Vec<_>>();
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "group_record_index": 150,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "271",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "261",
+            "recipe_record_index": 201,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "face",
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "candidate_faces": candidate_faces,
+            "unreferenced_candidate_faces": [],
+            "alternate_selector_candidate_faces": [],
+            "preceding_candidate_faces": [],
+            "changed_candidate_faces": [],
+            "historical_support_contexts": [],
+            "resolved_face_slots": [],
+            "next_record_index": 202,
+            "next_byte_offset": 100
+        }))
+        .expect("target face operand")
+    }
+
+    fn target_face_group() -> DesignConstructionOperandGroup {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:construction-group#150",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 150,
+            "byte_offset": 0,
+            "class_tag": "338",
+            "members": [200],
+            "member_offsets": [0],
+            "frame": {
+                "member_count_offset": 0,
+                "auxiliary_record_indices": [],
+                "auxiliary_record_offsets": [],
+                "auxiliary_paths": [],
+                "trailing_record_indices": [],
+                "trailing_record_offsets": [],
+                "trailing_transforms": [],
+                "trailing_dual_transforms": [],
+                "trailing_flags": [],
+                "opaque_index": 0,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role": 0,
+            "extrude_role": "faces",
+            "extrude_face_role": "termination",
+            "role_offset": 0,
+            "paired_class_tag": "261",
+            "paired_byte_offset": 0
+        }))
+        .expect("target face group")
+    }
+
+    #[test]
+    fn extrude_target_geometry_requires_one_forward_parallel_plane() {
+        const TARGET_LINEAR_TOLERANCE: f64 = 1.0e-9;
+        const TARGET_ANGULAR_TOLERANCE: f64 = 1.0e-9;
+
+        let face_with_surface = |slot: i64, surface: &str| Face {
+            id: face(slot),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId(surface.into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
+            id: SurfaceId(id.into()),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        };
+        let faces = [
+            face_with_surface(1, "surface-forward"),
+            face_with_surface(2, "surface-forward-2"),
+            face_with_surface(3, "surface-backward"),
+            face_with_surface(4, "surface-tilted"),
+        ];
+        let surfaces = [
+            plane(
+                "surface-forward",
+                Point3::new(3.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ),
+            plane(
+                "surface-forward-2",
+                Point3::new(5.0, 0.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+            ),
+            plane(
+                "surface-backward",
+                Point3::new(-2.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ),
+            plane(
+                "surface-tilted",
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            ),
+        ];
+        let group = target_face_group();
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let sweep_direction = Vector3::new(1.0, 0.0, 0.0);
+        let candidate = |candidates: &[i64]| {
+            let mut operands = vec![target_plane_operand(candidates)];
+            let resolution = ExtrudeFaceResolution {
+                faces: &faces,
+                surfaces: &surfaces,
+                groups: &[],
+                operands: &mut operands,
+                linear_tolerance: TARGET_LINEAR_TOLERANCE,
+                angular_tolerance: TARGET_ANGULAR_TOLERANCE,
+            };
+            extrude_target_plane_candidate(&group, &resolution, origin, sweep_direction)
+        };
+
+        assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
+        assert!(candidate(&[1, 2, 3, 4]).is_none());
+        assert!(candidate(&[3, 4]).is_none());
     }
 }

@@ -1216,6 +1216,8 @@ An Extrude selection against a spatial Sketch resolves each complete selection g
 
 Inserted Extrude side faces that all project to the same nonempty sketch-loop selection prove that selection; inserted regions are Boolean result context. When side faces project to differing loops, one inserted cap selecting a loop-defined region remains the proof only when every loop selection names exterior or hole loops of that region. A loop outside the cap region or multiple distinct cap regions contradicts the proof.
 
+A native `ToFace` target selection resolves from exactly one qualifying referenced face in its termination group. The qualifying face has a planar surface whose normal is parallel to that side's oriented sweep direction and whose plane origin lies in that direction beyond the profile plane. More than one qualifying candidate, or no candidate with all three properties, retains the native selection.
+
 Each parameter-owning Sketch scope references exactly one paired placement record. The compact placement frame is 201 bytes from its primary indexed header to its same-index paired header and denotes the identity local-to-model transform. The explicit placement frame is 329 bytes and inserts a row-major 4×4 f64 local-to-model matrix at primary-record offset 55. The 305- and 325-byte placement frames store the same matrix at primary-record offset 48. Its bottom row is `(0, 0, 0, 1)` and its three basis columns are orthonormal. Matrix column 0 is the sketch u-axis, column 1 is the sketch v-axis, column 2 is the sketch normal, and column 3 is the model-space origin.
 
 A `Sketch` scope joined to `EntityGenesis`-form entity headers references its placement in a wider frame. The placement class holds one class level whose members are, in order:

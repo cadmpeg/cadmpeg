@@ -2638,17 +2638,23 @@ impl<'a> F3dDecodeSession<'a> {
         if self.geometry.is_some() {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
+        let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
+            faces: &self.ir.model.faces,
+            surfaces: &self.ir.model.surfaces,
+            groups: &self.native.design_construction_operand_groups,
+            operands: &mut self.native.design_face_operands,
+            linear_tolerance: self.ir.tolerances.linear,
+            angular_tolerance: self.ir.tolerances.angular,
+        };
         crate::design::face_resolve::bind_extrude_start_planes(
             &mut self.ir.model.features,
             &self.ir.model.sketches,
-            &mut crate::design::face_resolve::ExtrudeStartPlaneResolution {
-                faces: &self.ir.model.faces,
-                surfaces: &self.ir.model.surfaces,
-                groups: &self.native.design_construction_operand_groups,
-                operands: &mut self.native.design_face_operands,
-                linear_tolerance: self.ir.tolerances.linear,
-                angular_tolerance: self.ir.tolerances.angular,
-            },
+            &mut extrude_face_resolution,
+        );
+        crate::design::face_resolve::bind_extrude_target_faces(
+            &mut self.ir.model.features,
+            &self.ir.model.sketches,
+            &mut extrude_face_resolution,
         );
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
             &self.native.design_sketch_placements,
