@@ -74,6 +74,15 @@ rejected atomically when feature identities repeat, a dependency has no
 feature, a dependency is not earlier than its consumer, or any member is
 explicitly suppressed.
 
+When neutral output projection cannot bind an operation to the selected body,
+the retained-history input may carry a native primary-body closure witness.
+The witness is admitted only when the retained input owns the selected body
+set and every admitted primary-body relation is a unique bounded relation. It adds
+the operations with those primary-body relations as closure roots and applies
+the same dependency, ordinal, and explicit-state checks. This witness assigns
+active state only; it does not create a neutral operation output or construction
+semantics.
+
 When exactly one active configuration has complete body membership, the same
 closure rule produces its configuration-local feature states. Each state
 retains the neutral definition, ordered dependencies, and outputs. Ambiguous

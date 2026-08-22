@@ -41,7 +41,10 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::EntryContent;
 use crate::decode::Scan;
-use crate::native::history::{active_feature_closure, BodyWriterHistory};
+use crate::native::history::{
+    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+};
 use crate::native::segments::BooleanOffsetStoreResolution;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
@@ -2092,7 +2095,10 @@ fn attach_feature_operations(
                 _ => None,
             });
         if let Some(body) = body_references.get(label.id.as_str()) {
-            source_properties.insert("primary_body_object_index".to_string(), body.to_string());
+            source_properties.insert(
+                NATIVE_PRIMARY_BODY_OBJECT_INDEX.to_string(),
+                body.to_string(),
+            );
         }
         if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
             source_properties.insert("primary_body_reference".to_string(), reference.id.clone());
@@ -3453,6 +3459,25 @@ fn attach_feature_operations(
                         vertices: Vec::new(),
                         native_ref: Some(native_ref),
                     });
+            }
+        }
+    }
+    // Only namespace-admitted primary-body relations can open the state-only
+    // witness. Unique fields rejected by native_primary_body_references remain
+    // native evidence without becoming current-body state roots.
+    if !body_references.is_empty() {
+        if let Some(initial_body_id) = initial_body_id.as_ref() {
+            if let Some(initial_feature) = ir
+                .model
+                .features
+                .iter_mut()
+                .find(|feature| feature.id == *initial_body_id)
+            {
+                initial_feature.source_properties.insert(
+                    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.to_string(),
+                    "primary-body-relations".to_string(),
+                );
+                annotations.derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
             }
         }
     }

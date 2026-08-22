@@ -4,8 +4,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::ids::BodyId;
+
+/// Source property on the retained-history input that admits the native
+/// primary-body active-state witness.
+pub(crate) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
+/// Source property carrying an admitted native primary-body object index.
+pub(crate) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
 
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
@@ -113,7 +119,8 @@ impl BodyWriterHistory {
 ///
 /// The closure exists only when feature identities are unique, every
 /// dependency names an earlier feature, at least one feature writes a selected
-/// body, and no member is explicitly suppressed.
+/// body or has an admitted native primary-body relation, and no member is
+/// explicitly suppressed.
 pub(crate) fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BTreeSet<FeatureId>> {
     let features = ir
         .model
@@ -138,6 +145,37 @@ pub(crate) fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BT
         })
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
+    let has_neutral_body_writer = active_features.iter().any(|id| {
+        features.get(id).is_some_and(|feature| {
+            !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+        })
+    });
+    let has_native_body_witness = active_features.iter().any(|id| {
+        features.get(id).is_some_and(|feature| {
+            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+                && feature.outputs.len() == active_bodies.len()
+                && feature.outputs.iter().collect::<BTreeSet<_>>() == active_bodies
+                && feature
+                    .source_properties
+                    .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+        })
+    });
+    if !has_neutral_body_writer && has_native_body_witness {
+        active_features.extend(
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| {
+                    feature.native_ref.is_some()
+                        && feature.source_tag.is_some()
+                        && feature
+                            .source_properties
+                            .get(NATIVE_PRIMARY_BODY_OBJECT_INDEX)
+                            .is_some_and(|reference| !reference.is_empty())
+                })
+                .map(|feature| feature.id.clone()),
+        );
+    }
     if active_features.is_empty() {
         return None;
     }
@@ -165,6 +203,38 @@ pub(crate) fn active_feature_closure(ir: &CadIr, bodies: &[BodyId]) -> Option<BT
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
+    use cadmpeg_ir::units::Units;
+
+    fn history_feature(
+        id: &str,
+        ordinal: u64,
+        dependencies: Vec<FeatureId>,
+        outputs: Vec<BodyId>,
+        source_properties: BTreeMap<String, String>,
+        native: bool,
+    ) -> Feature {
+        Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: Some(id.into()),
+            suppressed: None,
+            parent: None,
+            dependencies,
+            source_properties,
+            source_tag: native.then(|| "NX_OPERATION".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs,
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: Vec::new(),
+                active_child: None,
+            },
+            native_ref: native.then(|| format!("native:{id}")),
+        }
+    }
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
@@ -290,5 +360,82 @@ mod tests {
             &mut dependencies,
         );
         assert_eq!(dependencies, [second]);
+    }
+
+    #[test]
+    fn native_primary_body_witness_closes_history_without_neutral_outputs() {
+        let body = BodyId("body".into());
+        let dependency = FeatureId("dependency".into());
+        let writer = FeatureId("writer".into());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features = vec![
+            Feature {
+                id: FeatureId("base".into()),
+                ordinal: 0,
+                name: Some("base".into()),
+                suppressed: Some(false),
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: vec![body.clone()],
+                definition: FeatureDefinition::BaseFeature {
+                    bodies: BodySelection::Resolved {
+                        bodies: vec![body.clone()],
+                        native: "test".into(),
+                    },
+                },
+                native_ref: None,
+            },
+            history_feature(
+                "dependency",
+                1,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+                false,
+            ),
+            history_feature(
+                "writer",
+                2,
+                vec![dependency.clone()],
+                Vec::new(),
+                BTreeMap::from([
+                    (
+                        "primary_body_reference".into(),
+                        "nx:feature-history:body-reference#writer".into(),
+                    ),
+                    (NATIVE_PRIMARY_BODY_OBJECT_INDEX.into(), "7".into()),
+                ]),
+                true,
+            ),
+            history_feature(
+                "unadmitted",
+                3,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::from([(
+                    "primary_body_reference".into(),
+                    "nx:feature-history:body-reference#unadmitted".into(),
+                )]),
+                true,
+            ),
+        ];
+        ir.model.features[0].source_properties.insert(
+            NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.into(),
+            "primary-body-relations".into(),
+        );
+
+        assert_eq!(
+            active_feature_closure(&ir, &[body]),
+            Some(BTreeSet::from([
+                FeatureId("base".into()),
+                dependency,
+                writer
+            ]))
+        );
+        assert!(active_feature_closure(&ir, &[BodyId("other".into())]).is_none());
     }
 }
