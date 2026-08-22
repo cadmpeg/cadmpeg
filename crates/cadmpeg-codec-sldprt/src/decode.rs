@@ -3147,11 +3147,10 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         let mut message = Vec::new();
         if s.unknown_surface_faces > 0 {
             message.push(format!(
-                "{} face(s) rest on a support surface this codec does not type (swept, blended, \
-                 intersection, spline-on-surface, or another unsupported family); the face, its \
-                 loops, and trims are emitted with an unknown-geometry surface linking to the \
-                 preserved record bytes. Topology is transferred; the underlying surface shape \
-                 is not.",
+                "{} face(s) rest on a support surface whose stored carrier this codec does not \
+                 type; the face, its loops, and trims are emitted with an unknown-geometry \
+                 surface linking to the preserved record bytes. Topology is transferred; the \
+                 underlying surface shape is not.",
                 s.unknown_surface_faces
             ));
         }

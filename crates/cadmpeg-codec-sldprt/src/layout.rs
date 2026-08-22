@@ -177,6 +177,43 @@ pub(crate) mod zlb_wrapper_header {
     pub(crate) const ZLIB_MEMBER_SIZE: usize = 20;
 }
 
+/// Byte offsets for the `parasolid_chain_section_header` record.
+///
+/// Spec §1. Record length 20 B.
+///
+/// ```text
+/// The chain length is followed by the wrapper magic; frame headers and zero padding follow.
+/// ```
+pub(crate) mod parasolid_chain_section_header {
+    /// Record length in bytes. Spec §1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `chain_len` (`u32`, little-endian). Spec §1.
+    pub(crate) const CHAIN_LEN: usize = 0;
+    /// Offset of `magic` (`bytes[16]`). Spec §1.
+    pub(crate) const MAGIC: usize = 4;
+    /// Stated value of `magic` (`bytes[16]`). Spec §1.
+    pub(crate) const MAGIC_VALUE: [u8; 16] = [
+        0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef,
+        0x99,
+    ];
+}
+
+/// Byte offsets for the `parasolid_chain_frame_header` record.
+///
+/// Spec §1. Record length 8 B.
+///
+/// ```text
+/// The zlib member immediately follows this fixed header and occupies the declared member size.
+/// ```
+pub(crate) mod parasolid_chain_frame_header {
+    /// Record length in bytes. Spec §1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `uncompressed_size` (`u32`, little-endian). Spec §1.
+    pub(crate) const UNCOMPRESSED_SIZE: usize = 0;
+    /// Offset of `zlib_member_size` (`u32`, little-endian). Spec §1.
+    pub(crate) const ZLIB_MEMBER_SIZE: usize = 4;
+}
+
 /// Byte offsets for the `world_point` record.
 ///
 /// Spec §4. Record length 38 B.

@@ -37,6 +37,27 @@ LE, that zlib member, and an 8-byte trailer. The zlib member expands to exactly
 the declared uncompressed byte count. Decoders retain the wrapper bytes and
 apply semantic parsers to the inflated bytes.
 
+Native block payloads that carry wrapped Parasolid streams use a chained-section
+form. The payload is a sequence of sections, with optional zero padding inside
+each section:
+
+```
+section := chain_len u32 LE, magic bytes[16], frame+, zero padding
+frame   := uncompressed_size u32 LE, zlib_member_size u32 LE,
+           zlib_member[zlib_member_size]
+```
+
+The magic is the same 16-byte value as the compound wrapper. `chain_len` is the
+number of bytes after the `chain_len` field and before the next `chain_len`
+field, or the end of the payload. It includes the magic, every frame, and the
+section's zero padding. Each frame inflates to exactly `uncompressed_size`;
+the declared member extent is the complete zlib member. Concatenating the
+inflated frames of one section in payload order produces one complete
+Parasolid stream. The concatenation occurs before stream-header parsing and
+record scanning, so records may cross frame boundaries. Every section is
+extracted independently, including partition and deltas sections. A section
+with one frame is the degenerate chained form.
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
@@ -103,7 +124,7 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | BITMAPINFOHEADER size 40 + valid bit depth      | BMP thumbnail               |
 | OLE2 compound-file header                       | OLE2                        |
 | `PS 00 00`                                      | plain Parasolid stream      |
-| Parasolid wrapper magic at offset 4             | wrapped Parasolid           |
+| Parasolid chained-section magic at offset 4     | wrapped Parasolid           |
 | nested compressed member → `PS 00 00`           | nested Parasolid            |
 | `uoTempBodyTessData_c` / `uoTempFaceTessData_c` | tessellation / DisplayLists |
 | `ff ff 01 00`                                   | SW Objects                  |

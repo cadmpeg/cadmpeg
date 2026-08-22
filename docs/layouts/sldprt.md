@@ -139,6 +139,34 @@ Parsed by:
 | 16 | 4 | `uncompressed_size` | `u32` | little | spec | followed by the uncompressed byte count as u32 LE |
 | 20 | 4 | `zlib_member_size` | `u32` | little | spec | the complete zlib-member byte count as u32 LE |
 
+## `parasolid_chain_section_header`
+
+Spec §1 · layout: byte offsets · size: 20 B
+
+The chain length is followed by the wrapper magic; frame headers and zero padding follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `chain_len` | `u32` | little | spec | `chain_len` is the number of bytes after the `chain_len` field and before the next `chain_len` field, or the end of the payload |
+| 4 | 16 | `magic` | `bytes[16]` | little | spec | The magic is the same 16-byte value as the compound wrapper. · value `[35, 29, 213, 113, 218, 129, 72, 162, 168, 88, 152, 178, 27, 137, 239, 153]` |
+
+## `parasolid_chain_frame_header`
+
+Spec §1 · layout: byte offsets · size: 8 B
+
+The zlib member immediately follows this fixed header and occupies the declared member size.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `uncompressed_size` | `u32` | little | spec | Each frame inflates to exactly `uncompressed_size` |
+| 4 | 4 | `zlib_member_size` | `u32` | little | spec | the declared member extent is the complete zlib member |
+
 ## `world_point`
 
 Spec §4 · layout: byte offsets · size: 38 B

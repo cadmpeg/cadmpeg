@@ -324,6 +324,55 @@ type = "u32"
 source = "spec"
 anchor = "the complete zlib-member byte count as u32 LE"
 
+[[record]]
+name = "parasolid_chain_section_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid.rs"
+kind = "byte"
+section = "1"
+anchor = "Native block payloads that carry wrapped Parasolid streams use a chained-section form."
+size = 20
+endianness = "little"
+note = "The chain length is followed by the wrapper magic; frame headers and zero padding follow."
+
+[[record.field]]
+name = "chain_len"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`chain_len` is the number of bytes after the `chain_len` field and before the next `chain_len` field, or the end of the payload"
+
+[[record.field]]
+name = "magic"
+offset = 4
+type = "bytes[16]"
+source = "spec"
+anchor = "The magic is the same 16-byte value as the compound wrapper."
+value = [0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99]
+
+[[record]]
+name = "parasolid_chain_frame_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/parasolid.rs"
+kind = "byte"
+section = "1"
+anchor = "frame   := uncompressed_size u32 LE, zlib_member_size u32 LE"
+size = 8
+endianness = "little"
+note = "The zlib member immediately follows this fixed header and occupies the declared member size."
+
+[[record.field]]
+name = "uncompressed_size"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Each frame inflates to exactly `uncompressed_size`"
+
+[[record.field]]
+name = "zlib_member_size"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the declared member extent is the complete zlib member"
+
 
 # --- §4 Typed topology tag inventory ---------------------------------------
 
