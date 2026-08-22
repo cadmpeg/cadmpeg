@@ -648,6 +648,147 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     );
     assert_eq!(alignment.operand_paths, None);
 
+    let write_guid = |bytes: &mut [u8], at: usize, guid: &str| {
+        let encoded = guid.encode_utf16().collect::<Vec<_>>();
+        bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+        for (ordinal, code_unit) in encoded.into_iter().enumerate() {
+            bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2]
+                .copy_from_slice(&code_unit.to_le_bytes());
+        }
+    };
+    let append_locator =
+        |bytes: &mut Vec<u8>, locator_record_index: u32, wrapper_record_index: u32| {
+            let start = bytes.len();
+            let mut locator = vec![0_u8; 190];
+            locator[..4].copy_from_slice(&3_u32.to_le_bytes());
+            locator[4..7].copy_from_slice(b"451");
+            locator[7..11].copy_from_slice(&locator_record_index.to_le_bytes());
+            write_reference(&mut locator, 21, 9_001 + locator_record_index);
+            for (ordinal, value) in [
+                1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                locator[33 + ordinal * 8..41 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+            }
+            write_reference(&mut locator, 162, scope_record_index);
+            write_reference(&mut locator, 173, wrapper_record_index);
+            locator[184..188].copy_from_slice(&2_u32.to_le_bytes());
+            bytes.extend(locator);
+            start
+        };
+    let append_path = |bytes: &mut Vec<u8>, record_index: u32, occurrence_guid: &str| {
+        let start = bytes.len();
+        let mut path = vec![0_u8; 425];
+        path[..4].copy_from_slice(&3_u32.to_le_bytes());
+        path[4..7].copy_from_slice(b"412");
+        path[7..11].copy_from_slice(&record_index.to_le_bytes());
+        path[21] = 1;
+        write_guid(&mut path, 25, occurrence_guid);
+        for (at, guid) in [
+            (101, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            (177, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            (261, "cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            (337, "dddddddd-dddd-dddd-dddd-dddddddddddd"),
+        ] {
+            write_guid(&mut path, at, guid);
+        }
+        path[253..261].copy_from_slice(&2_u64.to_le_bytes());
+        path[413..417].copy_from_slice(&2_u32.to_le_bytes());
+        bytes.extend(path);
+        start
+    };
+    let append_wrapper =
+        |bytes: &mut Vec<u8>, wrapper_record_index: u32, path_record_indices: &[u32]| {
+            let start = bytes.len();
+            let mut wrapper = vec![0_u8; 37 + (path_record_indices.len() - 1) * 11];
+            wrapper[..4].copy_from_slice(&3_u32.to_le_bytes());
+            wrapper[4..7].copy_from_slice(b"369");
+            wrapper[7..11].copy_from_slice(&wrapper_record_index.to_le_bytes());
+            wrapper[21] = 1;
+            wrapper[22..26].copy_from_slice(&(path_record_indices.len() as u32).to_le_bytes());
+            for (ordinal, path_record_index) in path_record_indices.iter().copied().enumerate() {
+                write_reference(&mut wrapper, 26 + ordinal * 11, path_record_index);
+            }
+            bytes.extend(wrapper);
+            start
+        };
+    let mut path_bytes = bytes.clone();
+    write_reference(&mut path_bytes, 366, 5_001);
+    write_reference(&mut path_bytes, 377, 5_101);
+    let first_locator_at = append_locator(&mut path_bytes, 5_001, 5_004);
+    let first_path_at = append_path(
+        &mut path_bytes,
+        5_002,
+        "11111111-1111-1111-1111-111111111111",
+    );
+    append_path(
+        &mut path_bytes,
+        5_003,
+        "22222222-2222-2222-2222-222222222222",
+    );
+    let first_wrapper_at = append_wrapper(&mut path_bytes, 5_004, &[5_002, 5_003]);
+    append_locator(&mut path_bytes, 5_101, 5_103);
+    append_path(
+        &mut path_bytes,
+        5_102,
+        "33333333-3333-3333-3333-333333333333",
+    );
+    append_wrapper(&mut path_bytes, 5_103, &[5_102]);
+    path_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    path_bytes.extend_from_slice(b"396");
+    path_bytes.extend_from_slice(&5_200_u32.to_le_bytes());
+    let paths = exact_assembly_alignment(
+        &path_bytes,
+        &IndexedRecordOffsets::build(&path_bytes),
+        &scope,
+        &owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("legacy class-388 occurrence paths");
+    assert_eq!(paths[0].link.locator_record_index, 5_001);
+    assert_eq!(paths[0].link.locator_class_tag, "451");
+    assert_eq!(paths[0].link.locator_byte_offset, first_locator_at as u64);
+    assert_eq!(paths[0].link.wrapper_record_index, 5_004);
+    assert_eq!(paths[0].link.wrapper_class_tag, "369");
+    assert_eq!(paths[0].link.wrapper_byte_offset, first_wrapper_at as u64);
+    assert_eq!(paths[0].record_index, 5_003);
+    assert_eq!(paths[0].class_tag, "412");
+    assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
+    assert_eq!(
+        paths[0].occurrence_guids,
+        [
+            "11111111-1111-1111-1111-111111111111".to_owned(),
+            "22222222-2222-2222-2222-222222222222".to_owned(),
+        ]
+    );
+    assert_eq!(paths[0].identity_guids.len(), 4);
+    assert_eq!(paths[1].link.locator_record_index, 5_101);
+    assert_eq!(paths[1].link.wrapper_record_index, 5_103);
+    assert_eq!(paths[1].record_index, 5_102);
+    assert_eq!(paths[1].occurrence_guids.len(), 1);
+
+    let mut malformed_wrapper = path_bytes.clone();
+    malformed_wrapper[first_wrapper_at + 22..first_wrapper_at + 26]
+        .copy_from_slice(&3_u32.to_le_bytes());
+    assert!(exact_assembly_alignment(
+        &malformed_wrapper,
+        &IndexedRecordOffsets::build(&malformed_wrapper),
+        &scope,
+        &owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    let mut malformed_path = path_bytes.clone();
+    malformed_path[first_path_at + 417] = 1;
+    assert!(exact_assembly_alignment(
+        &malformed_path,
+        &IndexedRecordOffsets::build(&malformed_path),
+        &scope,
+        &owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+
     let mut malformed = bytes;
     malformed[25] = 0;
     assert!(

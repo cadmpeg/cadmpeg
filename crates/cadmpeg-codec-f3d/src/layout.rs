@@ -1344,12 +1344,12 @@ pub(crate) mod assembly_class_388_266_scope_968 {
     pub(crate) const SECOND_OPERAND_REFERENCE: usize = 168;
     /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 180;
-    /// Offset of `typed_external_reference_count` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const TYPED_EXTERNAL_REFERENCE_COUNT: usize = 362;
-    /// Stated value of `typed_external_reference_count` (`u32`). Spec §Assembly operands.
-    pub(crate) const TYPED_EXTERNAL_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
-    /// Offset of `typed_external_references` (`bytes[22]`). Spec §Assembly operands.
-    pub(crate) const TYPED_EXTERNAL_REFERENCES: usize = 366;
+    /// Offset of `operand_path_locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const OPERAND_PATH_LOCATOR_COUNT: usize = 362;
+    /// Stated value of `operand_path_locator_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const OPERAND_PATH_LOCATOR_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `operand_path_locator_references` (`bytes[22]`). Spec §Assembly operands.
+    pub(crate) const OPERAND_PATH_LOCATOR_REFERENCES: usize = 366;
     /// Offset of `external_component_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const EXTERNAL_COMPONENT_REFERENCE: usize = 388;
     /// Offset of `component_identity` (`bytes[76]`). Spec §Assembly operands.
@@ -1372,6 +1372,90 @@ pub(crate) mod assembly_class_388_266_scope_968 {
     pub(crate) const KIND: usize = 875;
     /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const FEATURE_ORDINAL: usize = 891;
+}
+
+/// Byte offsets for the `assembly_legacy_class_412_path_425` record.
+///
+/// Spec §Assembly operands. Record length 425 B.
+///
+/// ```text
+/// Offsets are relative to the class-412 indexed header. Each GUID field is a 36-code-unit LP-UTF16 value.
+/// ```
+pub(crate) mod assembly_legacy_class_412_path_425 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 425;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `path_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const PATH_MARKER: usize = 21;
+    /// Stated value of `path_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const PATH_MARKER_VALUE: u8 = 1;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 25;
+    /// Offset of `first_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const FIRST_IDENTITY_GUID: usize = 101;
+    /// Offset of `second_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const SECOND_IDENTITY_GUID: usize = 177;
+    /// Offset of `identity_separator` (`u64`, little-endian). Spec §Assembly operands.
+    pub(crate) const IDENTITY_SEPARATOR: usize = 253;
+    /// Stated value of `identity_separator` (`u64`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_SEPARATOR_VALUE: u64 = 0x0000_0000_0000_0002;
+    /// Offset of `third_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const THIRD_IDENTITY_GUID: usize = 261;
+    /// Offset of `fourth_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const FOURTH_IDENTITY_GUID: usize = 337;
+    /// Offset of `path_tail_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PATH_TAIL_COUNT: usize = 413;
+    /// Stated value of `path_tail_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PATH_TAIL_COUNT_VALUE: u32 = 0x0000_0002;
+}
+
+/// Byte offsets for the `assembly_legacy_class_369_path_wrapper_one` record.
+///
+/// Spec §Assembly operands. Record length 37 B.
+///
+/// ```text
+/// Offsets are relative to the class-369 indexed header.
+/// ```
+pub(crate) mod assembly_legacy_class_369_path_wrapper_one {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `wrapper_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_MARKER: usize = 21;
+    /// Stated value of `wrapper_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PATH_COUNT: usize = 22;
+    /// Stated value of `path_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `path_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const PATH_REFERENCE: usize = 26;
+}
+
+/// Byte offsets for the `assembly_legacy_class_369_path_wrapper_two` record.
+///
+/// Spec §Assembly operands. Record length 48 B.
+///
+/// ```text
+/// Offsets are relative to the class-369 indexed header.
+/// ```
+pub(crate) mod assembly_legacy_class_369_path_wrapper_two {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `wrapper_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_MARKER: usize = 21;
+    /// Stated value of `wrapper_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PATH_COUNT: usize = 22;
+    /// Stated value of `path_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `path_references` (`bytes[22]`). Spec §Assembly operands.
+    pub(crate) const PATH_REFERENCES: usize = 26;
 }
 
 /// Byte offsets for the `assembly_class_383_258_frame_387_leading` record.

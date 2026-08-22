@@ -27,6 +27,9 @@ use crate::layout::assembly_class_383_258_frame_394 as class_383_face;
 use crate::layout::assembly_class_383_258_scope_1011 as class_383_scope;
 use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
+use crate::layout::assembly_legacy_class_369_path_wrapper_one as class_369_wrapper_one;
+use crate::layout::assembly_legacy_class_369_path_wrapper_two as class_369_wrapper_two;
+use crate::layout::assembly_legacy_class_412_path_425 as class_412_path;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
@@ -1580,6 +1583,8 @@ pub(crate) fn exact_assembly_alignment(
                 alignment.operand_frames.as_ref().and_then(|frames| {
                     exact_legacy_class_383_operand_paths(bytes, records, scope, frames)
                 })
+            } else if legacy_class_388 {
+                exact_legacy_class_388_operand_paths(bytes, records, scope)
             } else {
                 exact_assembly_operand_paths(bytes, records, scope)
             };
@@ -2622,9 +2627,9 @@ fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> O
         bytes.get(start + 26..start + class_388_assemble::FIRST_OPERAND_REFERENCE)?;
     let first_separator = bytes.get(start + 39);
     let second_separator = bytes.get(start + 179);
-    let typed_reference_count = View::u32_le_at(
+    let operand_path_locator_count = View::u32_le_at(
         bytes,
-        start + class_388_assemble::TYPED_EXTERNAL_REFERENCE_COUNT,
+        start + class_388_assemble::OPERAND_PATH_LOCATOR_COUNT,
     )?;
     let reference_trailer = bytes.get(
         start + class_388_assemble::REFERENCE_TRAILER
@@ -2650,7 +2655,7 @@ fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> O
     if second_separator != Some(&0) {
         return None;
     }
-    if typed_reference_count != class_388_assemble::TYPED_EXTERNAL_REFERENCE_COUNT_VALUE {
+    if operand_path_locator_count != class_388_assemble::OPERAND_PATH_LOCATOR_COUNT_VALUE {
         return None;
     }
     if reference_trailer != class_388_assemble::REFERENCE_TRAILER_VALUE {
@@ -2659,16 +2664,16 @@ fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> O
     if kind_code_unit_count != class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE {
         return None;
     }
-    let typed_references = [
-        start + class_388_assemble::TYPED_EXTERNAL_REFERENCES,
-        start + class_388_assemble::TYPED_EXTERNAL_REFERENCES + 11,
+    let operand_path_locator_references = [
+        start + class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES,
+        start + class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES + 11,
     ];
-    let [Some(first_typed), Some(second_typed)] =
-        typed_references.map(|at| marked_record_reference(bytes, at))
+    let [Some(first_locator), Some(second_locator)] =
+        operand_path_locator_references.map(|at| marked_record_reference(bytes, at))
     else {
         return None;
     };
-    if first_typed == 0 || second_typed == 0 || first_typed == second_typed {
+    if first_locator == 0 || second_locator == 0 || first_locator == second_locator {
         return None;
     }
     let external_component = marked_record_reference(
@@ -3073,6 +3078,314 @@ fn exact_legacy_class_383_identity_guids(
         u64::try_from(first_at.checked_add(4)?).ok()?,
         u64::try_from(second_at.checked_add(4)?).ok()?,
     ))
+}
+
+struct LegacyClass412Path {
+    record_index: u32,
+    byte_offset: u64,
+    occurrence_guid: String,
+    occurrence_guid_offset: u64,
+    identity_guids: Vec<String>,
+    identity_guid_offsets: Vec<u64>,
+}
+
+fn exact_legacy_class_388_operand_paths(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<[DesignAssemblyOperandPath; 2]> {
+    if !matches!(
+        crate::design::assembly::operand_frame_variant(
+            scope.frame_length,
+            &scope.class_tag,
+            &scope.paired_class_tag,
+        ),
+        Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
+    ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+    {
+        return None;
+    }
+    let scope_at = usize::try_from(scope.byte_offset).ok()?;
+    let search_start = usize::try_from(scope.paired_byte_offset)
+        .ok()?
+        .checked_add(11)?;
+    let locator_offsets = [
+        class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES,
+        class_388_assemble::OPERAND_PATH_LOCATOR_REFERENCES + 11,
+    ];
+    let paths = locator_offsets.map(|relative_offset| {
+        let locator_reference_at = scope_at.checked_add(relative_offset)?;
+        let (locator_record_index, locator_reference_offset) =
+            exact_same_segment_record_reference(bytes, locator_reference_at)?;
+        let mut candidates = records
+            .offsets(locator_record_index)
+            .iter()
+            .copied()
+            .filter(|locator_at| *locator_at >= search_start)
+            .filter_map(|locator_at| {
+                exact_legacy_class_388_operand_path_envelope(
+                    bytes,
+                    records,
+                    scope,
+                    locator_record_index,
+                    locator_reference_offset,
+                    locator_at,
+                )
+            });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    });
+    let [Some(first), Some(second)] = paths else {
+        return None;
+    };
+    let wrapper_end = |path: &DesignAssemblyOperandPath| {
+        let wrapper_at = usize::try_from(path.link.wrapper_byte_offset).ok()?;
+        next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)
+    };
+    let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
+    let first_end = wrapper_end(&first)?;
+    let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
+    let second_end = wrapper_end(&second)?;
+    if first.link.locator_record_index == second.link.locator_record_index
+        || first.link.wrapper_record_index == second.link.wrapper_record_index
+        || (first_start < second_end && second_start < first_end)
+    {
+        return None;
+    }
+    Some([first, second])
+}
+
+fn exact_legacy_class_388_operand_path_envelope(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    locator_record_index: u32,
+    locator_reference_offset: u64,
+    locator_at: usize,
+) -> Option<DesignAssemblyOperandPath> {
+    let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
+    if locator_class_tag != "451"
+        || next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?
+            != locator_at.checked_add(path_locator::LEN)?
+        || bytes.get(
+            locator_at.checked_add(path_locator::ZERO_RUN_10)?
+                ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+        )? != [0; 10]
+        || exact_same_segment_record_reference(
+            bytes,
+            locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+        )?
+        .0 == 0
+        || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+        || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?).is_none()
+        || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+    {
+        return None;
+    }
+    let (scope_record_index, locator_scope_reference_offset) = exact_same_segment_record_reference(
+        bytes,
+        locator_at.checked_add(path_locator::SCOPE_BACKLINK)?,
+    )?;
+    if scope_record_index != scope.record_index {
+        return None;
+    }
+    let (wrapper_record_index, wrapper_reference_offset) = exact_same_segment_record_reference(
+        bytes,
+        locator_at.checked_add(path_locator::WRAPPER_REFERENCE)?,
+    )?;
+    if wrapper_record_index == 0
+        || View::u32_le_at(bytes, locator_at.checked_add(path_locator::CONSTANT_TWO)?)? != 2
+        || bytes.get(
+            locator_at.checked_add(path_locator::ZERO_TAIL_2)?
+                ..locator_at.checked_add(path_locator::LEN)?,
+        )? != [0; 2]
+    {
+        return None;
+    }
+    let locator_end = locator_at.checked_add(path_locator::LEN)?;
+    let mut wrapper_candidates = records
+        .offsets(wrapper_record_index)
+        .iter()
+        .copied()
+        .filter(|wrapper_at| *wrapper_at >= locator_end)
+        .filter(|wrapper_at| {
+            exact_indexed_header_at(bytes, *wrapper_at, wrapper_record_index).as_deref()
+                == Some("369")
+        });
+    let wrapper_at = wrapper_candidates.next()?;
+    if wrapper_candidates.next().is_some() {
+        return None;
+    }
+    let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
+    if bytes.get(
+        wrapper_at.checked_add(11)?
+            ..wrapper_at.checked_add(class_369_wrapper_one::WRAPPER_MARKER)?,
+    )? != [0; 10]
+        || bytes.get(wrapper_at.checked_add(class_369_wrapper_one::WRAPPER_MARKER)?) != Some(&1)
+    {
+        return None;
+    }
+    let path_count = View::u32_le_at(
+        bytes,
+        wrapper_at.checked_add(class_369_wrapper_one::PATH_COUNT)?,
+    )?;
+    let (wrapper_length, path_reference_offset) = match path_count {
+        value if value == class_369_wrapper_one::PATH_COUNT_VALUE => (
+            class_369_wrapper_one::LEN,
+            class_369_wrapper_one::PATH_REFERENCE,
+        ),
+        value if value == class_369_wrapper_two::PATH_COUNT_VALUE => (
+            class_369_wrapper_two::LEN,
+            class_369_wrapper_two::PATH_REFERENCES,
+        ),
+        _ => return None,
+    };
+    let wrapper_end = wrapper_at.checked_add(wrapper_length)?;
+    if next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end
+        || wrapper_record_index
+            != locator_record_index
+                .checked_add(path_count)?
+                .checked_add(1)?
+    {
+        return None;
+    }
+    let mut path_at = next_indexed_record_offset(bytes, locator_end)?;
+    let mut path_records = Vec::with_capacity(path_count as usize);
+    let mut final_path_reference_offset = None;
+    for ordinal in 0..path_count {
+        let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
+        if exact_indexed_header_at(bytes, path_at, path_record_index).as_deref() != Some("412") {
+            return None;
+        }
+        let path_end = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
+        let path = exact_legacy_class_412_path(bytes, path_at, path_record_index, path_end)?;
+        path_records.push(path);
+        let (referenced_path_record_index, reference_offset) = exact_same_segment_record_reference(
+            bytes,
+            wrapper_at
+                .checked_add(path_reference_offset)?
+                .checked_add(usize::try_from(ordinal).ok()?.checked_mul(11)?)?,
+        )?;
+        if referenced_path_record_index != path_record_index {
+            return None;
+        }
+        if ordinal + 1 == path_count {
+            if path_end != wrapper_at {
+                return None;
+            }
+            final_path_reference_offset = Some(reference_offset);
+        } else {
+            path_at = path_end;
+        }
+    }
+    let final_path = path_records.pop()?;
+    let occurrence_guids = path_records
+        .iter()
+        .map(|path| path.occurrence_guid.clone())
+        .chain(std::iter::once(final_path.occurrence_guid.clone()))
+        .collect::<Vec<_>>();
+    let occurrence_guid_offsets = path_records
+        .iter()
+        .map(|path| path.occurrence_guid_offset)
+        .chain(std::iter::once(final_path.occurrence_guid_offset))
+        .collect::<Vec<_>>();
+    Some(DesignAssemblyOperandPath {
+        link: DesignAssemblyOperandPathLink {
+            locator_reference_offset,
+            locator_record_index,
+            locator_class_tag,
+            locator_byte_offset: u64::try_from(locator_at).ok()?,
+            locator_scope_reference_offset,
+            wrapper_record_index,
+            wrapper_reference_offset,
+            wrapper_class_tag,
+            wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
+            path_reference_offset: final_path_reference_offset?,
+        },
+        record_index: final_path.record_index,
+        class_tag: "412".into(),
+        byte_offset: final_path.byte_offset,
+        occurrence_guids,
+        occurrence_guid_offsets,
+        identity_guids: final_path.identity_guids,
+        identity_guid_offsets: final_path.identity_guid_offsets,
+    })
+}
+
+fn exact_legacy_class_412_path(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    end: usize,
+) -> Option<LegacyClass412Path> {
+    if exact_indexed_header_at(bytes, start, record_index)?.as_str() != "412"
+        || end != start.checked_add(class_412_path::LEN)?
+        || bytes.get(start.checked_add(11)?..start.checked_add(class_412_path::PATH_MARKER)?)?
+            != [0; 10]
+        || bytes.get(start.checked_add(class_412_path::PATH_MARKER)?)
+            != Some(&class_412_path::PATH_MARKER_VALUE)
+        || bytes.get(
+            start.checked_add(class_412_path::PATH_MARKER + 1)?
+                ..start.checked_add(class_412_path::OCCURRENCE_GUID)?,
+        )? != [0; 3]
+        || View::u64_le_at(
+            bytes,
+            start.checked_add(class_412_path::IDENTITY_SEPARATOR)?,
+        )? != class_412_path::IDENTITY_SEPARATOR_VALUE
+        || View::u32_le_at(bytes, start.checked_add(class_412_path::PATH_TAIL_COUNT)?)?
+            != class_412_path::PATH_TAIL_COUNT_VALUE
+        || bytes.get(start.checked_add(class_412_path::PATH_TAIL_COUNT + 4)?..end)? != [0; 8]
+    {
+        return None;
+    }
+    let (occurrence_guid, occurrence_end) = lp_utf16_bounded(
+        bytes,
+        start.checked_add(class_412_path::OCCURRENCE_GUID)?,
+        36..=36,
+    )?;
+    if !is_guid_relaxed(&occurrence_guid)
+        || occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)?
+    {
+        return None;
+    }
+    let identity_offsets = [
+        class_412_path::FIRST_IDENTITY_GUID,
+        class_412_path::SECOND_IDENTITY_GUID,
+        class_412_path::THIRD_IDENTITY_GUID,
+        class_412_path::FOURTH_IDENTITY_GUID,
+    ];
+    let mut identity_guids = Vec::with_capacity(identity_offsets.len());
+    let mut identity_guid_offsets = Vec::with_capacity(identity_offsets.len());
+    for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
+        let identity_at = start.checked_add(relative_offset)?;
+        let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
+        if !is_guid_relaxed(&identity_guid) {
+            return None;
+        }
+        let expected_end = match ordinal {
+            0 => class_412_path::SECOND_IDENTITY_GUID,
+            1 => class_412_path::IDENTITY_SEPARATOR,
+            2 => class_412_path::FOURTH_IDENTITY_GUID,
+            3 => class_412_path::PATH_TAIL_COUNT,
+            _ => return None,
+        };
+        if identity_end != start.checked_add(expected_end)? {
+            return None;
+        }
+        identity_guid_offsets.push(u64::try_from(identity_at.checked_add(4)?).ok()?);
+        identity_guids.push(identity_guid);
+    }
+    Some(LegacyClass412Path {
+        record_index,
+        byte_offset: u64::try_from(start).ok()?,
+        occurrence_guid,
+        occurrence_guid_offset: u64::try_from(
+            start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?,
+        )
+        .ok()?,
+        identity_guids,
+        identity_guid_offsets,
+    })
 }
 
 fn exact_as_built_operand_frames(

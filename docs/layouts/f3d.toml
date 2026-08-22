@@ -3259,26 +3259,26 @@ size = 54
 note = "The fixed construction tail before the typed external-reference run is outside this table."
 
 [[record.field]]
-name = "typed_external_reference_count"
+name = "operand_path_locator_count"
 offset = 362
 type = "u32"
 source = "spec"
-anchor = "The class-388 form stores two typed external-entity references at offset 362."
+anchor = "The class-388 form stores operand-path locator count 2 at offset 362."
 value = 2
 
 [[record.field]]
-name = "typed_external_references"
+name = "operand_path_locator_references"
 offset = 366
 type = "bytes[22]"
 source = "spec"
-anchor = "The two marked typed external-entity references occupy offsets 366 and 377."
+anchor = "The two marked operand-path locator references occupy offsets 366 and 377."
 
 [[record.field]]
 name = "external_component_reference"
 offset = 388
 type = "bytes[11]"
 source = "spec"
-anchor = "The marked external component reference follows the typed external-entity run."
+anchor = "The marked external component reference follows the operand-path locator run."
 
 [[record.field]]
 name = "component_identity"
@@ -3341,6 +3341,184 @@ anchor = "The feature ordinal follows the kind payload at offset 891."
 offset = 895
 size = 73
 note = "The fixed class-388 tail before the paired class-266 header is outside this table."
+
+[[record]]
+name = "assembly_legacy_class_412_path_425"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A class-412 path record is 425 bytes in the class-388 legacy envelope."
+size = 425
+note = "Offsets are relative to the class-412 indexed header. Each GUID field is a 36-code-unit LP-UTF16 value."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-412 path record is 425 bytes in the class-388 legacy envelope."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "path_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24."
+value = 1
+
+[[record.gap]]
+offset = 22
+size = 3
+note = "Three zero bytes follow the class-412 path marker."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 25
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-412 path stores one occurrence GUID followed by four identity GUIDs."
+
+[[record.field]]
+name = "first_identity_guid"
+offset = 101
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-412 path stores one occurrence GUID followed by four identity GUIDs."
+
+[[record.field]]
+name = "second_identity_guid"
+offset = 177
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-412 path stores one occurrence GUID followed by four identity GUIDs."
+
+[[record.field]]
+name = "identity_separator"
+offset = 253
+type = "u64"
+source = "spec"
+anchor = "The class-412 path stores u64 value 2 between its identity pairs."
+value = 2
+
+[[record.field]]
+name = "third_identity_guid"
+offset = 261
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-412 path stores one occurrence GUID followed by four identity GUIDs."
+
+[[record.field]]
+name = "fourth_identity_guid"
+offset = 337
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-412 path stores one occurrence GUID followed by four identity GUIDs."
+
+[[record.field]]
+name = "path_tail_count"
+offset = 413
+type = "u32"
+source = "spec"
+anchor = "The class-412 path stores u32 value 2 before its zero tail."
+value = 2
+
+[[record.gap]]
+offset = 417
+size = 8
+note = "The class-412 path ends with eight zero bytes."
+
+[[record]]
+name = "assembly_legacy_class_369_path_wrapper_one"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A class-369 wrapper with path count 1 is 37 bytes."
+size = 37
+note = "Offsets are relative to the class-369 indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-369 wrapper with path count 1 is 37 bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "wrapper_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "A class-369 wrapper stores marker 1 and its path count."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "A class-369 wrapper with path count 1 is 37 bytes."
+value = 1
+
+[[record.field]]
+name = "path_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-369 wrapper stores one marked path reference at offset 26."
+
+[[record]]
+name = "assembly_legacy_class_369_path_wrapper_two"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A class-369 wrapper with path count 2 is 48 bytes."
+size = 48
+note = "Offsets are relative to the class-369 indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-369 wrapper with path count 2 is 48 bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes follow the indexed header."
+
+[[record.field]]
+name = "wrapper_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "A class-369 wrapper stores marker 1 and its path count."
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "A class-369 wrapper with path count 2 is 48 bytes."
+value = 2
+
+[[record.field]]
+name = "path_references"
+offset = 26
+type = "bytes[22]"
+source = "spec"
+anchor = "A class-369 wrapper stores two marked path references at offsets 26 and 37."
 
 [[record]]
 name = "assembly_class_383_258_frame_387_leading"

@@ -1002,9 +1002,9 @@ Parsed by:
 | 40 | 128 | `first_operand_transform` | `f64[16]` | little | spec | The two row-major rigid operand transforms start at offsets 40 and 180. |
 | 168 | 11 | `second_operand_reference` | `bytes[11]` | little | spec | The two marked operand references are at offsets 28 and 168. |
 | 180 | 128 | `second_operand_transform` | `f64[16]` | little | spec | The two row-major rigid operand transforms start at offsets 40 and 180. |
-| 362 | 4 | `typed_external_reference_count` | `u32` | little | spec | The class-388 form stores two typed external-entity references at offset 362. · value `2` |
-| 366 | 22 | `typed_external_references` | `bytes[22]` | little | spec | The two marked typed external-entity references occupy offsets 366 and 377. |
-| 388 | 11 | `external_component_reference` | `bytes[11]` | little | spec | The marked external component reference follows the typed external-entity run. |
+| 362 | 4 | `operand_path_locator_count` | `u32` | little | spec | The class-388 form stores operand-path locator count 2 at offset 362. · value `2` |
+| 366 | 22 | `operand_path_locator_references` | `bytes[22]` | little | spec | The two marked operand-path locator references occupy offsets 366 and 377. |
+| 388 | 11 | `external_component_reference` | `bytes[11]` | little | spec | The marked external component reference follows the operand-path locator run. |
 | 399 | 76 | `component_identity` | `bytes[76]` | little | spec | The class-388 form stores a 36-code-unit LP-UTF16 component identity at offset 399. |
 | 478 | 4 | `reference_count` | `u32` | little | spec | The class-388 form stores u32 value 35 at offset 478. · value `35` |
 | 482 | 385 | `reference_entries` | `bytes[385]` | little | spec | Thirty-five marked same-segment reference entries occupy offsets 482 through 866. |
@@ -1022,6 +1022,73 @@ Unstated regions:
 - `308..362` (54 B): The fixed construction tail before the typed external-reference run is outside this table.
 - `475..478` (3 B): Three zero bytes precede the ordered scope reference table.
 - `895..968` (73 B): The fixed class-388 tail before the paired class-266 header is outside this table.
+
+## `assembly_legacy_class_412_path_425`
+
+Spec §Assembly operands · layout: byte offsets · size: 425 B
+
+Offsets are relative to the class-412 indexed header. Each GUID field is a 36-code-unit LP-UTF16 value.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A class-412 path record is 425 bytes in the class-388 legacy envelope. |
+| 21 | 1 | `path_marker` | `u8` | little | spec | The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24. · value `1` |
+| 25 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-412 path stores one occurrence GUID followed by four identity GUIDs. |
+| 101 | 76 | `first_identity_guid` | `bytes[76]` | little | spec | A class-412 path stores one occurrence GUID followed by four identity GUIDs. |
+| 177 | 76 | `second_identity_guid` | `bytes[76]` | little | spec | A class-412 path stores one occurrence GUID followed by four identity GUIDs. |
+| 253 | 8 | `identity_separator` | `u64` | little | spec | The class-412 path stores u64 value 2 between its identity pairs. · value `2` |
+| 261 | 76 | `third_identity_guid` | `bytes[76]` | little | spec | A class-412 path stores one occurrence GUID followed by four identity GUIDs. |
+| 337 | 76 | `fourth_identity_guid` | `bytes[76]` | little | spec | A class-412 path stores one occurrence GUID followed by four identity GUIDs. |
+| 413 | 4 | `path_tail_count` | `u32` | little | spec | The class-412 path stores u32 value 2 before its zero tail. · value `2` |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+- `22..25` (3 B): Three zero bytes follow the class-412 path marker.
+- `417..425` (8 B): The class-412 path ends with eight zero bytes.
+
+## `assembly_legacy_class_369_path_wrapper_one`
+
+Spec §Assembly operands · layout: byte offsets · size: 37 B
+
+Offsets are relative to the class-369 indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A class-369 wrapper with path count 1 is 37 bytes. |
+| 21 | 1 | `wrapper_marker` | `u8` | little | spec | A class-369 wrapper stores marker 1 and its path count. · value `1` |
+| 22 | 4 | `path_count` | `u32` | little | spec | A class-369 wrapper with path count 1 is 37 bytes. · value `1` |
+| 26 | 11 | `path_reference` | `bytes[11]` | little | spec | A class-369 wrapper stores one marked path reference at offset 26. |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
+
+## `assembly_legacy_class_369_path_wrapper_two`
+
+Spec §Assembly operands · layout: byte offsets · size: 48 B
+
+Offsets are relative to the class-369 indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A class-369 wrapper with path count 2 is 48 bytes. |
+| 21 | 1 | `wrapper_marker` | `u8` | little | spec | A class-369 wrapper stores marker 1 and its path count. · value `1` |
+| 22 | 4 | `path_count` | `u32` | little | spec | A class-369 wrapper with path count 2 is 48 bytes. · value `2` |
+| 26 | 22 | `path_references` | `bytes[22]` | little | spec | A class-369 wrapper stores two marked path references at offsets 26 and 37. |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes follow the indexed header.
 
 ## `assembly_class_383_258_frame_387_leading`
 

@@ -212,6 +212,10 @@ pub(crate) const fn alignment_lane_bounds(
 pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
     match frame_length {
         399 => Some([51, 62]),
+        length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => Some([
+            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
+            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
+        ]),
         627 | 637 | 692 | 748 => Some([366, 377]),
         671 => Some([
             crate::layout::assembly_class_406_261_scope_671::FIRST_LOCATOR_REFERENCE,
@@ -679,6 +683,11 @@ mod tests {
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
+        let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+        assert_eq!(
+            super::operand_path_locator_offsets(class_388_length),
+            Some([366, 377])
+        );
         for frame_length in [627, 637, 692, 748] {
             assert_eq!(
                 super::operand_path_locator_offsets(frame_length),
