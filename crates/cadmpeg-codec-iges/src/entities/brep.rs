@@ -9,7 +9,7 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::{CurveGeometry, Pcurve};
+use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -131,18 +131,16 @@ fn topology_vertex(
 
 fn source_edge_for_vertices<'a>(
     ir: &'a CadIr,
-    curve_id: &CurveId,
+    candidates: &[usize],
     curve_geometry: &CurveGeometry,
     natural_start: Point3,
     natural_end: Point3,
     tolerance: f64,
 ) -> Result<&'a Edge, SourceEdgeSelectionError> {
     let mut matching = None;
-    for edge in ir
-        .model
-        .edges
+    for edge in candidates
         .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+        .filter_map(|position| ir.model.edges.get(*position))
     {
         let endpoints_agree = edge.param_range.is_some_and(|range| {
             evaluation::curve(curve_geometry, range[0])
@@ -160,22 +158,17 @@ fn source_edge_for_vertices<'a>(
     matching.ok_or(SourceEdgeSelectionError::NoMatch)
 }
 
-#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
 fn project_pcurve_uses(
     candidate: &mut ModelDraft,
-    source: &CadIr,
     uses: &[(bool, u32)],
-    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
-    factor: f64,
+    resolved: Vec<(PcurveGeometry, [f64; 2])>,
     fit_tolerance: Option<f64>,
     id_stem: &str,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Option<Vec<PcurveUse>> {
+) -> Vec<PcurveUse> {
     uses.iter()
+        .zip(resolved)
         .enumerate()
-        .map(|(index, (isoparametric, sequence))| {
-            let (geometry, range) =
-                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance, ctx, None)?;
+        .map(|(index, ((isoparametric, _), (geometry, range)))| {
             let id = PcurveId(format!("{id_stem}:{index}"));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
@@ -185,17 +178,24 @@ fn project_pcurve_uses(
                 parameter_range: Some(range),
                 fit_tolerance,
             });
-            Some(PcurveUse {
+            PcurveUse {
                 pcurve: id,
                 isoparametric: Some(*isoparametric),
                 parameter_range: None,
-            })
+            }
         })
         .collect()
 }
 
+// Validation hands back the resolved pcurve geometry instead of a verdict:
+// projection needs exactly what was just computed, from the same unmutated
+// `ir` with the same arguments, so returning it keeps each pcurve resolved
+// once instead of twice. The per-use interleave in the loop body is
+// load-bearing — `pcurve_geometry` can fuse the decode budget, so a later
+// use's geometry must not be resolved once an earlier use's evaluation has
+// already failed.
 #[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
-fn pcurves_agree<'a>(
+fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
@@ -204,40 +204,38 @@ fn pcurves_agree<'a>(
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
-) -> bool {
+) -> Option<Vec<(PcurveGeometry, [f64; 2])>> {
     if uses.is_empty() {
-        return true;
+        return Some(Vec::new());
     }
     let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
-    let mapped = uses
-        .iter()
-        .map(|(_, sequence)| {
-            let (geometry, range) = pcurve_geometry(
-                source,
-                *sequence,
-                support.geometry,
-                support.factor,
-                Some(tolerance),
-                ctx,
-                None,
-            )?;
-            let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-            })?;
-            let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-            })?;
-            Some((start, end))
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(mapped) = mapped else {
-        return false;
-    };
-    evaluation::distance(mapped[0].0, expected_start) <= tolerance
+    let mut resolved = Vec::with_capacity(uses.len());
+    let mut mapped = Vec::with_capacity(uses.len());
+    for (_, sequence) in uses {
+        let (geometry, range) = pcurve_geometry(
+            source,
+            *sequence,
+            support.geometry,
+            support.factor,
+            Some(tolerance),
+            ctx,
+            None,
+        )?;
+        let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
+            cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
+        })?;
+        let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
+            cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
+        })?;
+        resolved.push((geometry, range));
+        mapped.push((start, end));
+    }
+    (evaluation::distance(mapped[0].0, expected_start) <= tolerance
         && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
         && mapped
             .windows(2)
-            .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance)
+            .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance))
+    .then_some(resolved)
 }
 
 pub(super) fn project(
@@ -704,9 +702,36 @@ pub(super) fn project(
         }
     }
 
+    // The surface and curve arenas never change while bodies project: the
+    // only writer is the per-body draft commit, which appends, and a
+    // topology draft carries no surface or curve. One first-occurrence
+    // position map per arena therefore serves the whole call, replacing a
+    // linear scan per face. The emptiness guard keeps files without
+    // explicit B-rep from paying for either map.
+    let mut surface_positions = BTreeMap::<String, usize>::new();
+    let mut curve_positions = BTreeMap::<String, usize>::new();
+    if !body_definitions.is_empty() {
+        for (position, surface) in ir.model.surfaces.iter().enumerate() {
+            surface_positions
+                .entry(surface.id.0.clone())
+                .or_insert(position);
+        }
+        for (position, curve) in ir.model.curves.iter().enumerate() {
+            curve_positions
+                .entry(curve.id.0.clone())
+                .or_insert(position);
+        }
+    }
+
     for definition in body_definitions {
         let entry = definition.entry;
         let mut model_index = None;
+        // The edge arena does grow — every committed body appends to it —
+        // so this index lives for one body and is built on first use, where
+        // it replaces a full-arena scan per distinct edge. Its `&str` keys
+        // borrow from `ir`; the borrow must stay dead by the time the body
+        // commits below, or the commit's `&mut ir` will not compile.
+        let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
@@ -731,11 +756,9 @@ pub(super) fn project(
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
                     SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
-                let Some(support_geometry) = ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == surface_id)
+                let Some(support_geometry) = surface_positions
+                    .get(surface_id.0.as_str())
+                    .and_then(|position| ir.model.surfaces.get(*position))
                     .map(|surface| surface.geometry.clone())
                 else {
                     valid = false;
@@ -802,7 +825,7 @@ pub(super) fn project(
                                 })
                             };
                             let expected = vertex_lists[vertex_list][*vertex_index];
-                            if !pcurves_agree(
+                            let Some(resolved) = resolve_pcurve_uses(
                                 ir,
                                 pcurves,
                                 &SurfaceSupport {
@@ -815,29 +838,23 @@ pub(super) fn project(
                                 tolerance,
                                 ctx,
                                 &mut model_index,
-                            ) {
+                            ) else {
                                 losses.push(entity_loss(
                                     entry,
                                     "loop vertex-use pcurves disagree with the pole vertex",
                                 ));
                                 valid = false;
                                 break;
-                            }
-                            let Some(projected) = project_pcurve_uses(
+                            };
+                            let projected = project_pcurve_uses(
                                 &mut candidate,
-                                ir,
                                 pcurves,
-                                &support_geometry,
-                                factor,
+                                resolved,
                                 Some(tolerance),
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
-                                ctx,
-                            ) else {
-                                valid = false;
-                                break;
-                            };
+                            );
                             loop_vertex_uses.push(VertexUse {
                                 vertex,
                                 after,
@@ -869,7 +886,7 @@ pub(super) fn project(
                         } else {
                             (natural_end, natural_start)
                         };
-                        if !pcurves_agree(
+                        let Some(resolved) = resolve_pcurve_uses(
                             ir,
                             pcurves,
                             &SurfaceSupport {
@@ -882,30 +899,38 @@ pub(super) fn project(
                             tolerance,
                             ctx,
                             &mut model_index,
-                        ) {
+                        ) else {
                             losses.push(entity_loss(
                                 entry,
                                 "loop edge-use pcurves disagree with the edge vertices",
                             ));
                             valid = false;
                             break;
-                        }
+                        };
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
                             let curve_id =
                                 CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
-                            if !ir
-                                .model
-                                .edges
-                                .iter()
-                                .any(|edge| edge.curve.as_ref() == Some(&curve_id))
-                            {
+                            let curve_edges = edges_by_curve.get_or_insert_with(|| {
+                                let mut positions = BTreeMap::<&str, Vec<usize>>::new();
+                                for (position, edge) in ir.model.edges.iter().enumerate() {
+                                    if let Some(curve) = &edge.curve {
+                                        positions
+                                            .entry(curve.0.as_str())
+                                            .or_default()
+                                            .push(position);
+                                    }
+                                }
+                                positions
+                            });
+                            let Some(candidates) = curve_edges.get(curve_id.0.as_str()) else {
                                 valid = false;
                                 break;
-                            }
-                            let Some(curve) =
-                                ir.model.curves.iter().find(|curve| curve.id == curve_id)
+                            };
+                            let Some(curve) = curve_positions
+                                .get(curve_id.0.as_str())
+                                .and_then(|position| ir.model.curves.get(*position))
                             else {
                                 losses.push(entity_loss(
                                     entry,
@@ -916,7 +941,7 @@ pub(super) fn project(
                             };
                             let source_edge = match source_edge_for_vertices(
                                 ir,
-                                &curve_id,
+                                candidates,
                                 &curve.geometry,
                                 natural_start,
                                 natural_end,
@@ -960,19 +985,13 @@ pub(super) fn project(
                             edge_ids.insert(edge_key, id.clone());
                             id
                         };
-                        let Some(projected) = project_pcurve_uses(
+                        let projected = project_pcurve_uses(
                             &mut candidate,
-                            ir,
                             pcurves,
-                            &support_geometry,
-                            factor,
+                            resolved,
                             Some(tolerance),
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
-                            ctx,
-                        ) else {
-                            valid = false;
-                            break;
-                        };
+                        );
                         let Some(coedge_position) = edge_use_indices
                             .iter()
                             .position(|index| *index == use_index)
