@@ -1346,6 +1346,38 @@ fn decode_overdeclared_solid_assembly_charges_the_loss_and_reads_no_item() {
     );
 }
 
+fn manifold_solid_entities(
+    parameters: impl Fn(u32, u32) -> String,
+) -> (Vec<OwnedTestEntity>, u32, u32, u32) {
+    let mut entities = Vec::new();
+    let outer = append_tetrahedral_shell(&mut entities, "OUT", [0.0, 0.0, 0.0], 4.0);
+    let void = append_tetrahedral_shell(&mut entities, "VOID", [0.5, 0.5, 0.5], 0.5);
+    let solid = u32::try_from(entities.len() * 2 + 1).unwrap();
+    let parameters = parameters(outer, void);
+    entities.push(OwnedTestEntity {
+        entity_type: 186,
+        form: 0,
+        label: "MSBO".into(),
+        status: "00000000",
+        parameters,
+    });
+    (entities, solid, outer, void)
+}
+
+#[test]
+fn decode_overdeclared_manifold_solid_charges_the_loss_and_reads_no_void_shell() {
+    let (entities, solid, _, _) =
+        manifold_solid_entities(|outer, void| format!("186,{outer},1,2,{void},0;"));
+    overdeclared_site(
+        &entities,
+        solid,
+        "manifold_solids",
+        "declared_void_count",
+        2,
+        "voids",
+    );
+}
+
 #[test]
 fn decode_overdeclared_units_data_charges_the_loss_and_reads_no_unit() {
     overdeclared_site(
@@ -1716,6 +1748,104 @@ fn decode_segmented_visibility_retains_a_negative_declared_block_count() {
 
     assert_eq!(fields["declared_block_count"], -1);
     assert!(fields["blocks"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_manifold_solid_reads_its_shell_uses_and_resolves_both_closed_shells() {
+    let (bytes, solid, outer, void) = explicit_void_solid_file();
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let solids = &native.arenas["manifold_solids"];
+    assert_eq!(solids.len(), 1);
+    let fields = solids[0].fields();
+    let voids = fields["voids"].as_array().unwrap();
+
+    assert_eq!(solids[0].id(), format!("iges:solid:manifold-brep#D{solid}"));
+    assert_eq!(
+        fields["source_entity"],
+        format!("iges:entity:directory#{solid}")
+    );
+    assert_eq!(fields["shell"], format!("iges:entity:directory#{outer}"));
+    assert_eq!(fields["shell_orientation"], 1);
+    assert_eq!(fields["declared_void_count"], 1);
+    assert!(fields["transformation"].is_null());
+    assert_eq!(voids.len(), 1);
+    assert_eq!(voids[0]["shell"], format!("iges:entity:directory#{void}"));
+    assert_eq!(voids[0]["orientation"], 0);
+    assert_no_count_loss(&result);
+}
+
+// §4.49 gives VOF no default, so a final pair the record delimiter cuts
+// short keeps a null orientation instead of an invented flag. The trailing
+// partial pair is admitted by the `div_ceil` branch of
+// `items_before_default_tail_at`, the same path the segmented-visibility
+// twin exercises.
+#[test]
+fn decode_manifold_solid_reads_a_final_void_shell_use_present_in_part() {
+    let (entities, solid, _, void) =
+        manifold_solid_entities(|outer, void| format!("186,{outer},1,1,{void};"));
+    let result = salvage(&owned_test_file(&entities));
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["manifold_solids"][0].fields();
+    let voids = fields["voids"].as_array().unwrap();
+
+    assert_eq!(
+        fields["source_entity"],
+        format!("iges:entity:directory#{solid}")
+    );
+    assert_eq!(fields["declared_void_count"], 1);
+    assert_eq!(voids.len(), 1);
+    assert_eq!(voids[0]["shell"], format!("iges:entity:directory#{void}"));
+    assert!(voids[0]["orientation"].is_null());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_manifold_solid_retains_a_negative_declared_void_count() {
+    let (entities, _, outer, _) = manifold_solid_entities(|outer, _| format!("186,{outer},1,-1;"));
+    let result = salvage(&owned_test_file(&entities));
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["manifold_solids"][0].fields();
+
+    assert_eq!(fields["declared_void_count"], -1);
+    assert!(fields["voids"].as_array().unwrap().is_empty());
+    assert_eq!(fields["shell"], format!("iges:entity:directory#{outer}"));
+    assert_eq!(fields["shell_orientation"], 1);
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_manifold_solid_leaves_an_open_shell_pointer_unresolved() {
+    let (mut entities, closed_solid, outer, _) =
+        manifold_solid_entities(|outer, _| format!("186,{outer},1,0;"));
+    entities.push(entity(514, 2, "OPEN", "514,0;"));
+    let open_shell = u32::try_from(entities.len() * 2 - 1).unwrap();
+    let open_solid = u32::try_from(entities.len() * 2 + 1).unwrap();
+    entities.push(entity(186, 0, "OPENSLD", &format!("186,{open_shell},1,0;")));
+    let result = salvage(&owned_test_file(&entities));
+    let native = result.ir().native.namespace("iges").unwrap();
+    let solids = &native.arenas["manifold_solids"];
+    assert_eq!(solids.len(), 2);
+    let closed = solids[0].fields();
+    let rejected = solids[1].fields();
+
+    assert_eq!(
+        closed["source_entity"],
+        format!("iges:entity:directory#{closed_solid}")
+    );
+    assert_eq!(closed["shell"], format!("iges:entity:directory#{outer}"));
+    assert_eq!(
+        rejected["source_entity"],
+        format!("iges:entity:directory#{open_solid}")
+    );
+    assert!(rejected["shell"].is_null());
+    assert_eq!(rejected["declared_void_count"], 0);
+    assert!(rejected["voids"].as_array().unwrap().is_empty());
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::PointerUnresolved),
+        1
+    );
     assert_no_count_loss(&result);
 }
 

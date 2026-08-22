@@ -16760,7 +16760,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#53"
+              ],
               "parameter_bytes": [
                 49,
                 56,
@@ -16866,7 +16868,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-514-form-1",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 53,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#53"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -18244,6 +18255,17 @@
           "external_references": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [
+            {
+              "declared_void_count": 0,
+              "id": "iges:solid:manifold-brep#D55",
+              "shell": "iges:entity:directory#53",
+              "shell_orientation": 1,
+              "source_entity": "iges:entity:directory#55",
+              "transformation": null,
+              "voids": []
+            }
+          ],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [
@@ -18320,7 +18342,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 4
       }
     },
     "source": {
@@ -18369,7 +18391,7 @@
       "parameter_records=32",
       "parameter_tokens=246",
       "external_references=0",
-      "references.resolved=5"
+      "references.resolved=6"
     ],
     "transfer_ledger": {
       "entries": [

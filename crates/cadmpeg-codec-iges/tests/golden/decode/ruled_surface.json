@@ -2191,6 +2191,7 @@
           "external_references": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -2224,7 +2225,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 4
       }
     },
     "source": {

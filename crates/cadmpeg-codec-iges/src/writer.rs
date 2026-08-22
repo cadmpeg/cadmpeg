@@ -33,6 +33,10 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "directions",
     "display_attributes",
     "entities",
+    // Type 186 sits in this writer's encodable entity-type list and
+    // `brep_entities` emits complete 186 records, void pairs included, so
+    // the typed arena never blocks a semantic write.
+    "manifold_solids",
     "product_occurrence_expansion",
     "quarantined_directory_records",
     "quarantined_parameter_records",

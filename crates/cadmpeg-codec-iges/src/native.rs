@@ -304,6 +304,23 @@ struct NativeSolidAssembly {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeVoidShell {
+    shell: Option<String>,
+    orientation: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeManifoldSolid {
+    id: String,
+    source_entity: String,
+    shell: Option<String>,
+    shell_orientation: Option<i64>,
+    declared_void_count: Option<i64>,
+    voids: Vec<NativeVoidShell>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeSolidInstance {
     id: String,
     source_entity: String,
@@ -2222,6 +2239,47 @@ pub(crate) fn store(
                                 )
                             })
                             .map(|sequence| format!("iges:native:transformation#D{sequence}")),
+                    })
+                    .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
+    // IGES 5.3 §4.49 lays out Type 186 as SHELL at parameter index 1, the
+    // orientation flag at 2, the void count N at 3, and one (VOID, VOF) pair
+    // per void shell from index 4. §4.147 forbids an MSBO from pointing at a
+    // Form 2 open shell, so the outer shell and every void resolve strictly
+    // against Type 514 Form 1.
+    let manifold_solids = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 186 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 2);
+            let closed_shell = |index: usize| {
+                record
+                    .and_then(|record| record.integer(index))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, index, sequence, 514, &[1])
+                    })
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+            };
+            NativeManifoldSolid {
+                id: format!("iges:solid:manifold-brep#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                shell: closed_shell(1),
+                shell_orientation: record.and_then(|record| record.integer(2)),
+                declared_void_count: record.and_then(|record| record.integer(3)),
+                // Struct fields evaluate in written order, so the outer shell
+                // records its reference edge before any void pair records its
+                // own, pinning the serialized edge order to ascending
+                // parameter index.
+                voids: (0..count)
+                    .map(|index| NativeVoidShell {
+                        shell: closed_shell(4 + index * 2),
+                        orientation: record.and_then(|record| record.integer(5 + index * 2)),
                     })
                     .collect(),
                 transformation: (entry.transform > 0)
@@ -4398,6 +4456,7 @@ pub(crate) fn store(
         boolean_trees.len(),
         selected_components.len(),
         solid_assemblies.len(),
+        manifold_solids.len(),
         solid_instances.len(),
         subfigure_definitions.len(),
         subfigure_instances.len(),
@@ -4430,7 +4489,7 @@ pub(crate) fn store(
         ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     }
     let namespace = ir.native.namespace_mut("iges");
-    namespace.version = 3;
+    namespace.version = 4;
     namespace.set_arena_from("cards", cards)?;
     namespace.set_arena_from("entities", entities)?;
     namespace.set_arena_from("directions", directions)?;
@@ -4447,6 +4506,7 @@ pub(crate) fn store(
     namespace.set_arena_from("boolean_trees", boolean_trees)?;
     namespace.set_arena_from("selected_components", selected_components)?;
     namespace.set_arena_from("solid_assemblies", solid_assemblies)?;
+    namespace.set_arena_from("manifold_solids", manifold_solids)?;
     namespace.set_arena_from("solid_instances", solid_instances)?;
     namespace.set_arena_from("subfigure_definitions", subfigure_definitions)?;
     namespace.set_arena_from("subfigure_instances", subfigure_instances)?;

@@ -2755,6 +2755,7 @@
           "external_references": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [
             {
               "connect_points": [
@@ -2889,7 +2890,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 4
       }
     },
     "source": {
