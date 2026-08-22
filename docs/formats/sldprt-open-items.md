@@ -98,14 +98,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 2. Geometry carriers
 
-### GC-01. Non-isoparametric B-spline trim UV
-
-**Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
-
-**Known.** `sldprt.md` §7.1 "00 TT [ff]?" through `sldprt.md` §7.3 "The chart is a solved cache" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, ruled-surface, and complete intersection-cache cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. A complete width-4 intersection witness supplies co-parameterized solved UV caches for both support surfaces. The Parasolid stream does not store a general two-dimensional NURBS trim control array.
-
-**Need.** We must know the convention to construct the trim in the surface parameter space.
-
 ### GC-02. Missing intersection witnesses
 
 **Question.** Where are the authoritative chart and terminator replacements when an intersection composite references an absent witness record?

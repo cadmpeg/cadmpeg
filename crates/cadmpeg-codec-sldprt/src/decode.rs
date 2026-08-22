@@ -2130,6 +2130,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
+    target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.ambiguous_body_assignments += source.stats.ambiguous_body_assignments;
     target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
@@ -3176,6 +3177,12 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
             "{} pcurve(s) were withheld because more than one geometric parameter satisfies the stored edge or ruling geometry; the decoder does not choose by residual order.",
             s.ambiguous_pcurve_parameters
+        )));
+    }
+    if s.off_surface_nurbs_pcurves > 0 {
+        losses.push(SldprtLossCode::TopologyPcurveCarrierOffSurface.note(format!(
+            "{} NURBS edge carrier(s) have vertex ranges off their bound B-spline surface; pcurve derivation is withheld because the defect is upstream of parameter-space geometry.",
+            s.off_surface_nurbs_pcurves
         )));
     }
     if s.ambiguous_body_assignments > 0 {

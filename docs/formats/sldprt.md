@@ -1739,6 +1739,12 @@ A NURBS surface is ruled in one parameter when that parameter axis has degree on
 
 The fixed parameter is selected only when the ruling inverse has one parameter candidate across the complete active knot domain. Both parameter axes are tested. Exact boundary matches are candidates alongside interior rulings. Multiple parameters or matches in both axes leave the pcurve unresolved; residual magnitude does not select one candidate.
 
+An extended isoparametric NURBS edge carries the isocurve of the underlying surface before the face domain was re-clamped. Its curve domain contains the face's active domain in the running axis. The decoder inserts each running-axis face-domain endpoint into the curve's homogeneous knot representation until multiplicity `degree + 1`, extracts the middle segment, and accepts it only when its degree, knot vector, poles, and weights equal the exact surface isocurve at one fixed parameter. Fixed-parameter candidates are both active-domain boundaries and the unique interior value obtained by seeded inversion of an interior edge point. Both fixed axes are tested; exactly one axis and value is required. The resulting pcurve is the fixed-coordinate line with the edge's vertex parameter range.
+
+A degree-one, non-rational NURBS edge with a list-curve knot vector is a boundary cache when its edge-range endpoints invert to the bound surface. Each pole is inverted with the preceding UV as the branch seed. The pcurve keeps the carrier degree, knots, and parameter, and its fit tolerance is the measured maximum distance between the surface-evaluated pcurve and the stored edge curve over every nonzero knot span. This family is accepted at its measured carrier error; no stricter fixed exactness floor or subdivision is applied.
+
+Before either construction, the edge curve is evaluated over its vertex parameter range and its endpoints are tested against the bound surface. A range whose endpoints are off the surface is an upstream face, loop, or surface-association defect: the pcurve is withheld and the topology defect is reported. A full curve-domain endpoint test is not used for an extended isocurve because its carrier intentionally extends beyond the face domain.
+
 ### 7.3 Surface-intersection curve carriers
 
 An edge's `00 10.refs[3]` can point to either intersection carrier for a curve defined by the intersection of two support surfaces. The compact composite has this shape:
