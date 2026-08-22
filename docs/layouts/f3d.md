@@ -1418,6 +1418,18 @@ Offsets are relative to the primary indexed header. The same-index paired header
 | 74 | 2 | `flags` | `bytes[2]` | little | spec | flags `[00 00]` are at offset 74 |
 | 76 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` starts at offset 76 |
 
+## `legacy_loft_body_carrier_class_322_tail`
+
+Spec §3.1 · layout: byte offsets · size: 99 B
+
+Offsets are relative to the primary indexed header. The same-index paired header begins at offset 99.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 87 | `common_prefix` | `bytes[87]` | little | spec | uses the class-`322`/`262` carrier prefix through offset 86 |
+| 87 | 1 | `tail_zero` | `u8` | little | spec | stores a zero byte at offset 87 |
+| 88 | 11 | `trailing_scope_reference` | `bytes[11]` | little | spec | a marked reference to the owning scope at offset 88 |
+
 ## `legacy_loft_body_carrier_class_411`
 
 Spec §3.1 · layout: byte offsets · size: 99 B

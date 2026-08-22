@@ -39,8 +39,9 @@ use crate::records::{
     DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
     DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
     DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier,
+    DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction,
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
@@ -67,6 +68,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
+    pub(crate) legacy_loft_body_carriers: &'a [DesignLoftLegacyBodyCarrier],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
@@ -484,6 +486,7 @@ pub fn project_parameter_design(
         curve_identities: &[],
         face_operands,
         body_recipe_operands: &[],
+        legacy_loft_body_carriers: &[],
         placements,
         body_bindings: &[],
         histories: &[],
@@ -519,6 +522,7 @@ pub fn project_parameter_design_with_edge_identities(
         curve_identities,
         face_operands,
         body_recipe_operands,
+        legacy_loft_body_carriers,
         placements,
         body_bindings,
         histories,
@@ -703,6 +707,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(
                     scope,
                     construction_groups,
+                    legacy_loft_body_carriers,
                     edge_operands,
                     edge_identity_operands,
                     face_operands,
@@ -2658,6 +2663,7 @@ pub fn bind_work_point_sketch_point_constructions(
 /// Fusion serializes these as opaque tags; each role is interpreted only in
 /// the feature family that owns the group.
 const ROLE_0X4: u64 = 0x0000_0004_0000_0000;
+const ROLE_0X8: u64 = 0x0000_0008_0000_0000;
 const ROLE_0X5: u64 = 0x0000_0005_0000_0000;
 const ROLE_0X9: u64 = 0x0000_0009_0000_0000;
 const ROLE_0X10: u64 = 0x0000_0010_0000_0000;
@@ -5832,6 +5838,7 @@ fn resolve_sketch_axis_selection(
 pub(crate) fn project_fixed_loft(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    legacy_body_carriers: &[DesignLoftLegacyBodyCarrier],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     face_operands: &[DesignFaceOperand],
@@ -5852,14 +5859,51 @@ pub(crate) fn project_fixed_loft(
         })
         .collect::<Vec<_>>();
     groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let body_count = groups.iter().filter(|group| group.role == ROLE_0X4).count();
+    let matching_legacy_carriers = legacy_body_carriers
+        .iter()
+        .filter(|carrier| {
+            native_stream(&carrier.id) == Some(stream)
+                && carrier.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let legacy_body_group_identity = match matching_legacy_carriers.as_slice() {
+        [] => None,
+        [carrier] => {
+            if carrier.scope_reference_ordinal != 0
+                || groups.iter().any(|group| group.role == ROLE_0X4)
+            {
+                return None;
+            }
+            let mut body_groups = groups.iter().filter(|group| {
+                group.role == ROLE_0X8 && group.scope_reference_ordinal == 1
+            });
+            let body_group = body_groups.next()?;
+            if body_groups.next().is_some() {
+                return None;
+            }
+            Some((
+                body_group.record_index,
+                body_group.scope_reference_ordinal,
+            ))
+        }
+        _ => return None,
+    };
+    let is_body_group = |group: &DesignConstructionOperandGroup| {
+        group.role == ROLE_0X4
+            || legacy_body_group_identity
+                == Some((group.record_index, group.scope_reference_ordinal))
+    };
+    let body_count = groups
+        .iter()
+        .filter(|group| is_body_group(**group))
+        .count();
     let expected_body_count = usize::from(*operation != DesignExtrudeOperation::NewBody);
     if body_count != expected_body_count {
         return None;
     }
     let operands = groups
         .iter()
-        .filter(|group| group.role != ROLE_0X4)
+        .filter(|group| !is_body_group(**group))
         .copied()
         .collect::<Vec<_>>();
     let profile_groups = operands

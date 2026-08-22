@@ -488,6 +488,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
             histories: &[],
@@ -1399,7 +1400,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
 }
 
 #[test]
-fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
+fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(class_tag);
@@ -1417,6 +1418,7 @@ fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
         paired_class: &[u8; 3],
         scope_record_index: u32,
         record_index: u32,
+        with_scope_tail: bool,
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
         header(&mut bytes, primary_class, record_index);
@@ -1432,7 +1434,7 @@ fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
         reference(&mut bytes, record_index + 2);
         bytes.extend_from_slice(&[0, 0]);
         reference(&mut bytes, record_index + 1);
-        if primary_class == b"411" {
+        if with_scope_tail {
             bytes.push(0);
             reference(&mut bytes, scope_record_index);
         }
@@ -1452,7 +1454,7 @@ fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
         },
     );
 
-    let class_322 = carrier(b"322", b"262", 12, 100);
+    let class_322 = carrier(b"322", b"262", 12, 100, false);
     let parsed_322 = parse_loft_legacy_body_carrier(
         &class_322,
         &scope,
@@ -1475,14 +1477,32 @@ fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
     assert_eq!(parsed_322.next_record_index, 101);
     assert_eq!(parsed_322.trailing_scope_record_index, None);
 
-    let class_411 = carrier(b"411", b"266", 12, 200);
+    let class_322_tail = carrier(b"322", b"262", 12, 200, true);
+    let parsed_322_tail = parse_loft_legacy_body_carrier(
+        &class_322_tail,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-322-tail".into(),
+            record_index: 200,
+            class_tag: "322".into(),
+            byte_offset: 0,
+        },
+    )
+    .expect("class-322 legacy Loft carrier with scope tail");
+    assert_eq!(parsed_322_tail.paired_class_tag, "262");
+    assert_eq!(parsed_322_tail.paired_byte_offset, 99);
+    assert_eq!(parsed_322_tail.trailing_scope_record_index, Some(12));
+    assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
+
+    let class_411 = carrier(b"411", b"266", 12, 300, true);
     let parsed_411 = parse_loft_legacy_body_carrier(
         &class_411,
         &scope,
         0,
         &crate::records::DesignRecordHeader {
             id: "header-411".into(),
-            record_index: 200,
+            record_index: 300,
             class_tag: "411".into(),
             byte_offset: 0,
         },
@@ -1508,14 +1528,14 @@ fn legacy_loft_body_carriers_admit_only_the_two_class_keyed_frames() {
     )
     .is_none());
 
-    let wrong_pair = carrier(b"322", b"266", 12, 300);
+    let wrong_pair = carrier(b"322", b"266", 12, 400, false);
     assert!(parse_loft_legacy_body_carrier(
         &wrong_pair,
         &scope,
         0,
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
-            record_index: 300,
+            record_index: 400,
             class_tag: "322".into(),
             byte_offset: 0,
         },

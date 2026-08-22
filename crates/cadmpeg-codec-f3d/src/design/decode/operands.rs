@@ -21,6 +21,7 @@ use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
+use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
@@ -1362,12 +1363,38 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
+    let start = usize::try_from(header.byte_offset).ok()?;
     let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
-        "322" => ("262", legacy_loft_322::LEN, false),
+        "322" => {
+            let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
+            let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
+            let short_pair_matches = indexed_record_index(bytes, short_paired_offset)
+                == Some(header.record_index)
+                && bytes
+                    .get(
+                        short_paired_offset + indexed_header::CLASS_TAG
+                            ..short_paired_offset + indexed_header::CLASS_TAG + 3,
+                    )
+                    .is_some_and(|class_tag| class_tag == b"262");
+            let long_pair_matches = indexed_record_index(bytes, long_paired_offset)
+                == Some(header.record_index)
+                && bytes
+                    .get(
+                        long_paired_offset + indexed_header::CLASS_TAG
+                            ..long_paired_offset + indexed_header::CLASS_TAG + 3,
+                    )
+                    .is_some_and(|class_tag| class_tag == b"262");
+            if short_pair_matches {
+                ("262", legacy_loft_322::LEN, false)
+            } else if long_pair_matches {
+                ("262", legacy_loft_322_tail::LEN, true)
+            } else {
+                return None;
+            }
+        }
         "411" => ("266", legacy_loft_411::LEN, true),
         _ => return None,
     };
-    let start = usize::try_from(header.byte_offset).ok()?;
     if indexed_record_index(bytes, start) != Some(header.record_index)
         || bytes.get(
             start + legacy_loft_322::ZERO_RUN_10
@@ -1415,15 +1442,18 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         return None;
     }
     let (trailing_scope_record_index, trailing_scope_reference_offset) = if has_trailing_scope {
-        if cursor != start + legacy_loft_411::TAIL_ZERO || bytes.get(cursor)? != &0 {
+        if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
             return None;
         }
         cursor = cursor.checked_add(1)?;
-        if cursor != start + legacy_loft_411::TRAILING_SCOPE_REFERENCE {
+        if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
             return None;
         }
         let reference_offset = cursor;
         let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        if record_index != scope.record_index {
+            return None;
+        }
         (Some(record_index), Some(u64::try_from(reference_offset).ok()?))
     } else {
         (None, None)

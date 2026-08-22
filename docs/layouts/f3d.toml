@@ -4636,6 +4636,35 @@ source = "spec"
 anchor = "a marked reference to record `N+1` starts at offset 76"
 
 [[record]]
+name = "legacy_loft_body_carrier_class_322_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier with an owner tail is 99 bytes"
+size = 99
+note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 99."
+
+[[record.field]]
+name = "common_prefix"
+offset = 0
+type = "bytes[87]"
+source = "spec"
+anchor = "uses the class-`322`/`262` carrier prefix through offset 86"
+
+[[record.field]]
+name = "tail_zero"
+offset = 87
+type = "u8"
+source = "spec"
+anchor = "stores a zero byte at offset 87"
+
+[[record.field]]
+name = "trailing_scope_reference"
+offset = 88
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to the owning scope at offset 88"
+
+[[record]]
 name = "legacy_loft_body_carrier_class_411"
 kind = "byte"
 section = "3.1"

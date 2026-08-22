@@ -10,6 +10,7 @@
 use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
+use crate::records::DesignLoftLegacyBodyCarrier;
 
 pub(super) fn continue_fixed_kind_operations(
     mut bytes: Vec<u8>,
@@ -944,7 +945,14 @@ pub(super) fn continue_fixed_kind_operations(
     };
     let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &role_41, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &role_41,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 2 && guides.is_empty()
     ));
@@ -958,6 +966,7 @@ pub(super) fn continue_fixed_kind_operations(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
             &guided_role_41,
+            &[],
             &[],
             &[],
             &[],
@@ -985,7 +994,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x43_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &cut,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -996,6 +1012,67 @@ pub(super) fn continue_fixed_kind_operations(
         DesignExtrudeOperation::Cut,
         &role_shape(&cut),
     ));
+    let legacy_carrier = DesignLoftLegacyBodyCarrier {
+        id: "stream:legacy-loft-carrier".into(),
+        scope_record_index: loft_scope.record_index,
+        scope_reference_ordinal: 0,
+        record_index: 500,
+        byte_offset: 0,
+        class_tag: "322".into(),
+        owner_scope_record_index: loft_scope.record_index,
+        owner_scope_record_index_offset: 22,
+        members: vec![900],
+        member_offsets: vec![36],
+        member_count: 1,
+        member_count_offset: 32,
+        opaque_index: 89,
+        opaque_index_offset: 47,
+        opaque_scalar: 1.25,
+        opaque_scalar_offset: 51,
+        repeated_opaque_index: 89,
+        repeated_opaque_index_offset: 59,
+        next_next_record_index: 502,
+        next_next_reference_offset: 63,
+        flags: [0, 0],
+        flags_offset: 74,
+        next_record_index: 501,
+        next_reference_offset: 76,
+        trailing_scope_record_index: None,
+        trailing_scope_reference_offset: None,
+        paired_class_tag: "262".into(),
+        paired_byte_offset: 87,
+    };
+    let legacy_cut = [
+        loft_group(1, 0x8_0000_0000),
+        loft_group(2, 0x41_0000_0000),
+        loft_group(3, 0x43_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &legacy_cut,
+            std::slice::from_ref(&legacy_carrier),
+            &[],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }) if sections.len() == 2
+    ));
+    assert_eq!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &legacy_cut,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
+        None
+    );
     loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: (loft_start + 29) as u64,
@@ -1006,7 +1083,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x5_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &role_5, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &role_5,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 3 && guides.is_empty()
     ));
@@ -1016,7 +1100,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x7_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &centered, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &centered,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
             guides,
@@ -1031,7 +1122,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(3, 0x7_0000_0000),
     ];
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &mixed,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         None
     );
     assert!(!crate::validate::loft_operand_roles_are_valid(
@@ -1047,6 +1145,7 @@ pub(super) fn continue_fixed_kind_operations(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
             &[point.clone(), profile.clone(), boundary.clone()],
+            &[],
             &[],
             &[],
             &[],

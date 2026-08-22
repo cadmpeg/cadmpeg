@@ -1942,6 +1942,24 @@ pub(crate) mod legacy_loft_body_carrier_class_322 {
     pub(crate) const NEXT_REFERENCE: usize = 76;
 }
 
+/// Byte offsets for the `legacy_loft_body_carrier_class_322_tail` record.
+///
+/// Spec §3.1. Record length 99 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The same-index paired header begins at offset 99.
+/// ```
+pub(crate) mod legacy_loft_body_carrier_class_322_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 99;
+    /// Offset of `common_prefix` (`bytes[87]`). Spec §3.1.
+    pub(crate) const COMMON_PREFIX: usize = 0;
+    /// Offset of `tail_zero` (`u8`). Spec §3.1.
+    pub(crate) const TAIL_ZERO: usize = 87;
+    /// Offset of `trailing_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRAILING_SCOPE_REFERENCE: usize = 88;
+}
+
 /// Byte offsets for the `legacy_loft_body_carrier_class_411` record.
 ///
 /// Spec §3.1. Record length 99 B.
