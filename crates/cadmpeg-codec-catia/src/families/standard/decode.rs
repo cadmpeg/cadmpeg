@@ -53,6 +53,7 @@ const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
 const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
 const STANDARD_FACE_BOUNDS_TOLERANCE: f64 = 2e-3;
 const NURBS_SURFACE_MEMBERSHIP_TOLERANCE: f64 = 2e-3;
+const NURBS_SHARED_BOUNDARY_TOLERANCE: f64 = 1e-9;
 const NURBS_SURFACE_SEEDS_PER_SPAN: usize = 3;
 const NURBS_SURFACE_MAX_SEEDS: usize = 256;
 const NURBS_SURFACE_REFINEMENT_ITERATIONS: usize = 24;
@@ -4025,18 +4026,6 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect();
-    let circle_constraint_edges = supports
-        .iter()
-        .enumerate()
-        .map(|(edge, support)| {
-            matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            ) && constrained_endpoint_options
-                .as_ref()
-                .is_some_and(|options| options[edge].len() > 1)
-        })
-        .collect::<Vec<_>>();
     let mut mesh_search_exhausted = false;
     let native_fbb_topology = if fbb_only && !has_open_face_domains {
         native_endpoint_pairs.as_ref().and_then(|pairs| {
@@ -4106,6 +4095,12 @@ fn attach_standard_topology(
                 )
             })
         };
+        let point_positions = ir
+            .model
+            .points
+            .iter()
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
@@ -4113,13 +4108,21 @@ fn attach_standard_topology(
              solve_budget: &WorkBudget<'_>| {
                 // FBB-only rows are complete boundary runs. Their table-scoped
                 // handle quotient, not allocation rank, is the incidence source.
+                let solver_options = standard_endpoint_options_for_selected_faces(
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    selected_supports,
+                    &point_positions,
+                    options,
+                    &edge_identity_evidence,
+                );
                 let branch_groups = if fbb_only {
                     Vec::new()
                 } else {
-                    standard_curve_branch_groups(selected_supports, options)
+                    standard_curve_branch_groups(selected_supports, &solver_options)
                 };
-                let solver_options = options.clone();
-                let mut branch_preferred_edges = vec![false; options.len()];
+                let mut branch_preferred_edges = vec![false; solver_options.len()];
                 for edge in branch_groups
                     .iter()
                     .flat_map(|group| group.edges.iter().copied())
@@ -4145,14 +4148,27 @@ fn attach_standard_topology(
                         })
                     })
                 };
-                let line_preference =
-                    StandardLinePairPreference::new(&ir.model.points, selected_supports, options);
+                let line_preference = StandardLinePairPreference::new(
+                    &ir.model.points,
+                    selected_supports,
+                    &solver_options,
+                );
                 let line_preference_active = line_preference.has_flexible_edges();
                 let face_domain_edges = open_face_domains.as_ref().map_or_else(
-                    || options.iter().map(|_| false).collect::<Vec<_>>(),
+                    || solver_options.iter().map(|_| false).collect::<Vec<_>>(),
                     |domains| domains.iter().map(|domain| !domain.is_empty()).collect(),
                 );
-                let partial_constraint_edges = circle_constraint_edges
+                let selected_circle_constraint_edges = selected_supports
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, support)| {
+                        matches!(
+                            support.geometry,
+                            crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+                        ) && solver_options[edge].len() > 1
+                    })
+                    .collect::<Vec<_>>();
+                let partial_constraint_edges = selected_circle_constraint_edges
                     .iter()
                     .zip(line_preference.flexible_edge_mask())
                     .zip(&face_domain_edges)
@@ -4202,7 +4218,7 @@ fn attach_standard_topology(
                         mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
                     );
                 }
-                let has_circle_preference = circle_constraint_edges
+                let has_circle_preference = selected_circle_constraint_edges
                     .iter()
                     .any(|constrained| *constrained);
                 let has_line_preference = !fbb_only && line_preference_active;
@@ -6674,6 +6690,209 @@ fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2
         .into_iter()
         .all(|[lower, upper]| lower.is_finite() && upper.is_finite() && lower < upper)
         .then_some(domains)
+}
+
+fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
+    let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
+    let sum = lower + upper;
+    if !sum.is_finite() {
+        return None;
+    }
+    let knots = curve
+        .knots
+        .iter()
+        .rev()
+        .map(|knot| sum - knot)
+        .collect::<Vec<_>>();
+    knots
+        .iter()
+        .copied()
+        .all(f64::is_finite)
+        .then_some(NurbsCurve {
+            degree: curve.degree,
+            knots,
+            control_points: curve.control_points.iter().rev().copied().collect(),
+            weights: curve
+                .weights
+                .as_ref()
+                .map(|weights| weights.iter().rev().copied().collect()),
+            periodic: curve.periodic,
+        })
+}
+
+fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
+    left.is_finite()
+        && right.is_finite()
+        && (left - right).abs()
+            <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+}
+
+fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
+    let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
+        left.degree == right.degree
+            && left.periodic == right.periodic
+            && left.knots.len() == right.knots.len()
+            && left
+                .knots
+                .iter()
+                .zip(&right.knots)
+                .all(|(left, right)| nurbs_shared_boundary_scalar_matches(*left, *right))
+            && left.control_points.len() == right.control_points.len()
+            && left
+                .control_points
+                .iter()
+                .zip(&right.control_points)
+                .all(|(left, right)| {
+                    [left.x, left.y, left.z]
+                        .into_iter()
+                        .zip([right.x, right.y, right.z])
+                        .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
+                })
+            && match (&left.weights, &right.weights) {
+                (None, None) => true,
+                (Some(left), Some(right)) => {
+                    left.len() == right.len()
+                        && left.iter().zip(right).all(|(left, right)| {
+                            nurbs_shared_boundary_scalar_matches(*left, *right)
+                        })
+                }
+                _ => false,
+            }
+    };
+    same_payload(left, right)
+        || reverse_nurbs_curve(right).is_some_and(|reversed| same_payload(left, &reversed))
+}
+
+fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 4]> {
+    let [[u_lower, u_upper], [v_lower, v_upper]] = nurbs_surface_parameter_domain(surface)?;
+    Some([
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            u_lower,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            u_upper,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            v_lower,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            v_upper,
+        )?,
+    ])
+}
+
+fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
+    let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
+        return false;
+    };
+    [lower, 0.5 * (lower + upper), upper]
+        .into_iter()
+        .any(|seed| {
+            cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                curve,
+                point,
+                NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+                seed,
+            )
+            .is_some()
+        })
+}
+
+/// Return endpoint pairs that lie on an exact shared NURBS carrier boundary.
+///
+/// A shared boundary is a positive relation between two tensor-product
+/// carriers. It is not inferred from carrier AABBs or from a sampled surface
+/// intersection. `None` means that the relation is unavailable; `Some` may be
+/// empty when the relation is present but no supplied pair lies on it.
+pub(crate) fn standard_shared_nurbs_boundary_pair_options(
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+    points: &[Point3],
+    options: &[[usize; 2]],
+) -> Option<Vec<[usize; 2]>> {
+    let (SurfaceGeometry::Nurbs(left), SurfaceGeometry::Nurbs(right)) = (left, right) else {
+        return None;
+    };
+    let left_boundaries = nurbs_surface_boundary_curves(left)?;
+    let right_boundaries = nurbs_surface_boundary_curves(right)?;
+    let shared_boundaries = left_boundaries
+        .iter()
+        .filter(|left| {
+            right_boundaries
+                .iter()
+                .any(|right| nurbs_shared_boundary_curves_match(left, right))
+        })
+        .collect::<Vec<_>>();
+    if shared_boundaries.is_empty() {
+        return None;
+    }
+    Some(
+        options
+            .iter()
+            .copied()
+            .filter(|pair| {
+                shared_boundaries.iter().any(|boundary| {
+                    pair.iter().all(|point| {
+                        points
+                            .get(*point)
+                            .is_some_and(|point| nurbs_boundary_contains_point(boundary, *point))
+                    })
+                })
+            })
+            .collect(),
+    )
+}
+
+fn standard_endpoint_options_for_selected_faces(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    points: &[Point3],
+    options: &[Vec<[usize; 2]>],
+    edge_identity_evidence: &[bool],
+) -> Vec<Vec<[usize; 2]>> {
+    supports
+        .iter()
+        .enumerate()
+        .map(|(edge, support)| {
+            let Some(pairs) = options.get(edge) else {
+                return Vec::new();
+            };
+            if edge_identity_evidence.get(edge).copied().unwrap_or(false)
+                || !matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Bspline
+                )
+                || support.faces[0] == support.faces[1]
+            {
+                return pairs.clone();
+            }
+            let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
+                return pairs.clone();
+            };
+            let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
+                return pairs.clone();
+            };
+            let filtered = standard_shared_nurbs_boundary_pair_options(
+                &left.geometry,
+                &right.geometry,
+                points,
+                pairs,
+            );
+            filtered
+                .filter(|filtered| !filtered.is_empty())
+                .unwrap_or_else(|| pairs.clone())
+        })
+        .collect()
 }
 
 fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {

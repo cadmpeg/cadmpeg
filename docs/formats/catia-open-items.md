@@ -618,6 +618,8 @@ binding remains open pending the allocation-group relation.
 
 **Known.** `catia.md` §5.5 retains the repeated slot as a face domain. The production solver carries each non-empty alternate set into a bounded joint assignment phase, applies each concrete face pair to trim coverage and endpoint incidence, and preserves multiple complete assignments as ambiguity. An empty alternate set retains the serialized same-face wildcard.
 
+For a concrete candidate pair of distinct NURBS carriers, `catia.md` §5.6 supplies a positive shared-boundary witness for an identity-free Bspline row and narrows its endpoint-pair domain when both endpoints lie on that boundary. The rule is candidate-specific and does not select the candidate face pair.
+
 **Need.** A native owner or other admitted relation that selects one concrete second face when the joint topology constraints admit more than one assignment.
 
 **Conflict.** None.

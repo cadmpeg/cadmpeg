@@ -371,6 +371,63 @@ fn standard_line_pair_preference_rejects_partial_collinear_overlap() {
 }
 
 #[test]
+fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
+    let surface = |reverse_shared_boundary: bool, offset: f64| {
+        let shared = if reverse_shared_boundary {
+            [Point3::new(offset, 1.0, 0.0), Point3::new(offset, 0.0, 0.0)]
+        } else {
+            [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
+        };
+        SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                shared[0],
+                shared[1],
+                Point3::new(
+                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                    shared[0].y,
+                    0.0,
+                ),
+                Point3::new(
+                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                    shared[1].y,
+                    0.0,
+                ),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        })
+    };
+    let left = surface(false, 0.0);
+    let right = surface(true, 0.0);
+    let points = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 0.5, 1.0),
+    ];
+    let options = [[0, 1], [0, 2], [2, 3], [0, 3]];
+
+    assert_eq!(
+        standard_shared_nurbs_boundary_pair_options(&left, &right, &points, &options),
+        Some(vec![[0, 1]])
+    );
+    assert!(standard_shared_nurbs_boundary_pair_options(
+        &left,
+        &surface(false, 2.0),
+        &points,
+        &options,
+    )
+    .is_none());
+}
+
+#[test]
 fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
