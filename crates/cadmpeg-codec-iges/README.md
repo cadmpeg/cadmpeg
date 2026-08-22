@@ -97,6 +97,20 @@ Records that block faithful transfer land in `DecodeReport::losses`.
 closure against the decoded model. Coverage for each envelope lives in the
 [format-support profile][support].
 
+## Stress inputs
+
+Regenerate the deterministic stress corpus into a directory of your choice:
+
+```sh
+cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
+```
+
+Six files, 3–8 MB each, cover composite chains, trimmed surfaces, counted
+lists, trailing pointer groups, annotation text runs, and free curves. Add
+`--fast` for a ~0.5 MB smoke set. Output is byte-stable: the crate's tests
+pin each file's length and SHA-256, so a deliberate change to the emitted
+bytes must repin those digests from a fresh run.
+
 ## Documentation
 
 - [API documentation][docs]

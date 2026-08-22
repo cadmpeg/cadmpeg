@@ -31,5 +31,13 @@ toml = "1.1"
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
 
+[[bin]]
+name = "iges_stress"
+path = "src/bin/iges_stress.rs"
+
+# Local stress-input generator. cargo-dist would otherwise ship it as a release app.
+[package.metadata.dist]
+dist = false
+
 [lints]
 workspace = true
