@@ -12261,7 +12261,7 @@ name = "component_insert_relation_345_57"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "a shifted 57-byte class-`345`/class-`258` relation"
+anchor = "a 57-byte class-`345`/class-`258` relation"
 size = 57
 note = "Offsets are relative to the primary class-345 indexed header. The paired class-258 header begins at offset 57."
 
@@ -12274,28 +12274,28 @@ anchor = "class-`345`/class-`258` relation"
 
 [[record.gap]]
 offset = 11
-size = 9
-note = "Nine zero bytes occupy offsets 11 through 19."
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
 
 [[record.field]]
 name = "first_marker"
-offset = 20
+offset = 21
 type = "u8"
 source = "spec"
-anchor = "stores the carrier reference at offset 21"
+anchor = "the carrier reference at offset 22"
 value = 1
 
 [[record.field]]
 name = "first_carrier_record_index"
-offset = 21
+offset = 22
 type = "u32"
 source = "spec"
-anchor = "stores the carrier reference at offset 21"
+anchor = "the carrier reference at offset 22"
 
 [[record.gap]]
-offset = 25
-size = 9
-note = "Nine zero bytes occupy offsets 25 through 33."
+offset = 26
+size = 8
+note = "Eight zero bytes occupy offsets 26 through 33."
 
 [[record.field]]
 name = "second_marker"
@@ -12761,9 +12761,9 @@ name = "component_insert_grouped_identity_carrier"
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`382`, class-`380`, and class-`369` carriers share a 695-byte grouped identity grammar"
+anchor = "The class-`382`, class-`380`, and compact class-`369` carriers share a 695-byte grouped identity envelope"
 size = 695
-note = "Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes."
+note = "Offsets are relative to the primary class-380, class-382, or compact class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes."
 
 [[record.gap]]
 offset = 0
@@ -12848,7 +12848,7 @@ name = "metadata_marker"
 offset = 231
 type = "bytes[10]"
 source = "spec"
-anchor = "The role is followed by `00 01 00 00 00 00 01 00 00 00`"
+anchor = "The class-`382` and class-`380` forms use `00 01 00 00 00 00 01 00 00 00` after the role"
 
 [[record.field]]
 name = "metadata_guid_a"

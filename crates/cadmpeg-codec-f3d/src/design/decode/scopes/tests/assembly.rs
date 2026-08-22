@@ -1463,6 +1463,154 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
 }
 
 #[test]
+fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
+    let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    };
+    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
+        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+    };
+    let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    };
+    let component_guid = "11111111-2222-3333-4444-555555555555";
+    let type_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+    let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    let role = "cccccccc-dddd-eeee-ffff-000000000000";
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"369", 10);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&17_u64.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 4]);
+    push_utf16(&mut bytes, component_guid);
+    bytes.push(0);
+    push_ascii(&mut bytes, type_guid);
+    push_utf16(&mut bytes, role);
+    bytes.extend_from_slice(&[0, 3, 0, 0, 0, 0, 1, 0, 0, 0]);
+    push_utf16(&mut bytes, metadata_guid_a);
+    push_utf16(&mut bytes, metadata_guid_b);
+    bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    push_utf16(&mut bytes, component_guid);
+    bytes.push(0);
+    push_ascii(&mut bytes, type_guid);
+    push_utf16(&mut bytes, role);
+    bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
+    push_utf16(&mut bytes, role);
+    bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(bytes.len(), 695);
+
+    let relation_at = bytes.len();
+    header(&mut bytes, b"345", 20);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&10_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&21_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.push(1);
+    bytes.extend_from_slice(&30_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    assert_eq!(bytes.len(), relation_at + 57);
+    header(&mut bytes, b"258", 20);
+    bytes.extend_from_slice(&[0; 19]);
+
+    let child_at = bytes.len();
+    header(&mut bytes, b"393", 21);
+    bytes.extend_from_slice(&[0; 20]);
+    bytes.push(1);
+    bytes.extend_from_slice(&20_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&42_u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    assert_eq!(bytes.len(), child_at + 58);
+
+    let scope_at = bytes.len();
+    header(&mut bytes, b"426", 30);
+    bytes.resize(scope_at + 261, 0);
+    bytes[scope_at + 20] = 1;
+    bytes[scope_at + 25..scope_at + 33].copy_from_slice(&17_u64.to_le_bytes());
+    bytes[scope_at + 37] = 1;
+    bytes[scope_at + 38..scope_at + 42].copy_from_slice(&20_u32.to_le_bytes());
+    bytes[scope_at + 48..scope_at + 50].copy_from_slice(&[1, 1]);
+    bytes[scope_at + 50..scope_at + 54].copy_from_slice(&36_u32.to_le_bytes());
+    bytes[scope_at + 54..scope_at + 126].copy_from_slice(
+        &"00000000-0000-0000-0000-000000000000"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    header(&mut bytes, b"258", 30);
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#30",
+        "Component Insert",
+        30,
+    );
+    scope.byte_offset = scope_at as u64;
+    scope.class_tag = "426".into();
+    scope.frame_length = 261;
+    scope.reference_members = vec![20];
+    scope.reference_member_offsets = vec![(scope_at + 38) as u64];
+    scope.paired_class_tag = "258".into();
+    scope.paired_byte_offset = (scope_at + 261) as u64;
+
+    let construction =
+        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("class-426 component insert construction");
+    assert_eq!(construction.relation_record_index, 20);
+    assert_eq!(construction.carrier_record_index, 10);
+    assert_eq!(construction.occurrence_identity, Some(17));
+    assert_eq!(construction.neutron_role, role);
+    assert_eq!(construction.neutron_role_offset, 159);
+    assert_eq!(construction.transform, identity_matrix());
+    assert_eq!(construction.transform_offset, None);
+    assert_eq!(construction.carrier_transform_offset, None);
+
+    let external_role = "cccccccc-dddd-eeee-ffff-000000000000_urn:adsk.test:asset";
+    let mut external_bytes = bytes[..155].to_vec();
+    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role));
+    external_bytes.extend_from_slice(&[0, 4, 0, 0, 0, 0, 1, 0, 0, 0]);
+    external_bytes.extend_from_slice(&bytes[241..525]);
+    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role));
+    external_bytes.extend_from_slice(&bytes[601..607]);
+    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role));
+    external_bytes.extend_from_slice(&bytes[683..695]);
+    let carrier_shift = external_bytes.len() - 695;
+    external_bytes.extend_from_slice(&bytes[695..]);
+    let external_scope_at = scope_at + carrier_shift;
+    let mut external_scope = scope.clone();
+    external_scope.byte_offset = external_scope_at as u64;
+    external_scope.reference_member_offsets = vec![(external_scope_at + 38) as u64];
+    external_scope.paired_byte_offset = (external_scope_at + 261) as u64;
+    let external_construction = exact_component_insert_construction(
+        &external_bytes,
+        &IndexedRecordOffsets::build(&external_bytes),
+        &external_scope,
+    )
+    .expect("class-426 external-role component insert construction");
+    assert_eq!(external_construction.neutron_role, external_role);
+    assert_eq!(external_construction.neutron_role_offset, 159);
+
+    bytes[4..7].copy_from_slice(b"380");
+    assert!(exact_component_insert_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope
+    )
+    .is_none());
+}
+
+#[test]
 fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
         bytes.extend_from_slice(&3_u32.to_le_bytes());

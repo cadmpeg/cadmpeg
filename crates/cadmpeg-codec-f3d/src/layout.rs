@@ -5051,11 +5051,11 @@ pub(crate) mod component_insert_relation_345_57 {
     /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
     pub(crate) const INDEXED_HEADER: usize = 0;
     /// Offset of `first_marker` (`u8`). Spec §3.1.
-    pub(crate) const FIRST_MARKER: usize = 20;
+    pub(crate) const FIRST_MARKER: usize = 21;
     /// Stated value of `first_marker` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MARKER_VALUE: u8 = 1;
     /// Offset of `first_carrier_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FIRST_CARRIER_RECORD_INDEX: usize = 21;
+    pub(crate) const FIRST_CARRIER_RECORD_INDEX: usize = 22;
     /// Offset of `second_marker` (`u8`). Spec §3.1.
     pub(crate) const SECOND_MARKER: usize = 34;
     /// Stated value of `second_marker` (`u8`). Spec §3.1.
@@ -5231,7 +5231,7 @@ pub(crate) mod component_insert_carrier_334_prefix {
 /// Spec §3.1. Record length 695 B.
 ///
 /// ```text
-/// Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+/// Offsets are relative to the primary class-380, class-382, or compact class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 /// ```
 pub(crate) mod component_insert_grouped_identity_carrier {
     /// Record length in bytes. Spec §3.1.

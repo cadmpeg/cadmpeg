@@ -3646,8 +3646,8 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class-`345`/class-`258` relation |
-| 20 | 1 | `first_marker` | `u8` | little | spec | stores the carrier reference at offset 21 · value `1` |
-| 21 | 4 | `first_carrier_record_index` | `u32` | little | spec | stores the carrier reference at offset 21 |
+| 21 | 1 | `first_marker` | `u8` | little | spec | the carrier reference at offset 22 · value `1` |
+| 22 | 4 | `first_carrier_record_index` | `u32` | little | spec | the carrier reference at offset 22 |
 | 34 | 1 | `second_marker` | `u8` | little | spec | the child reference at offset 35 · value `1` |
 | 35 | 4 | `second_child_record_index` | `u32` | little | spec | the child reference at offset 35 |
 | 46 | 1 | `scope_marker` | `u8` | little | spec | the scope back-reference at offset 47 · value `1` |
@@ -3655,8 +3655,8 @@ Parsed by:
 
 Unstated regions:
 
-- `11..20` (9 B): Nine zero bytes occupy offsets 11 through 19.
-- `25..34` (9 B): Nine zero bytes occupy offsets 25 through 33.
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `26..34` (8 B): Eight zero bytes occupy offsets 26 through 33.
 - `39..46` (7 B): Seven zero bytes occupy offsets 39 through 45.
 - `51..57` (6 B): Six zero bytes occupy offsets 51 through 56.
 
@@ -3782,7 +3782,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 695 B
 
-Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+Offsets are relative to the primary class-380, class-382, or compact class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`
@@ -3798,7 +3798,7 @@ Parsed by:
 | 114 | 1 | `first_component_separator` | `u8` | little | spec | one zero separator byte |
 | 115 | 40 | `first_type_guid` | `bytes[40]` | little | spec | an LP-ASCII type GUID |
 | 155 | 76 | `first_role_guid` | `bytes[76]` | little | spec | an LP-UTF16 occurrence-role GUID |
-| 231 | 10 | `metadata_marker` | `bytes[10]` | little | spec | The role is followed by `00 01 00 00 00 00 01 00 00 00` |
+| 231 | 10 | `metadata_marker` | `bytes[10]` | little | spec | The class-`382` and class-`380` forms use `00 01 00 00 00 00 01 00 00 00` after the role |
 | 241 | 76 | `metadata_guid_a` | `bytes[76]` | little | spec | two LP-UTF16 metadata GUIDs |
 | 317 | 76 | `metadata_guid_b` | `bytes[76]` | little | spec | two LP-UTF16 metadata GUIDs |
 | 393 | 15 | `placement_marker` | `bytes[15]` | little | spec | `00 01 03 00 00 00 00 00 00 00 01 00 00 00 00` |

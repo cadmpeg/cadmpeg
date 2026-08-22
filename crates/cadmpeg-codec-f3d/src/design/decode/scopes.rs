@@ -62,6 +62,8 @@ use crate::layout::compact_shifted_extrude_mixed_extent_and_table_prefix as comp
 use crate::layout::compact_shifted_extrude_prologue as compact_extrude;
 use crate::layout::component_insert_carrier_334_prefix as component_carrier_334;
 use crate::layout::component_insert_identity_scope_compact as component_identity_scope;
+use crate::layout::component_insert_relation_345_57 as component_insert_relation_345;
+use crate::layout::component_insert_relation_child_393_58 as component_insert_relation_child_393;
 use crate::layout::component_insert_scope_283_262_257 as component_scope_283_257;
 use crate::layout::component_insert_scope_283_262_385 as component_scope_283_385;
 use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
@@ -1712,6 +1714,11 @@ pub(crate) fn exact_component_insert_construction(
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
+            (261, "258") if scope.class_tag == "426" => (
+                identity_matrix(),
+                None,
+                exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+            ),
             (257, "262") if scope.class_tag == "283" => {
                 exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
             }
@@ -1761,6 +1768,15 @@ pub(crate) fn exact_component_insert_construction(
             }
         }
         (carrier_record_index, placements)
+    } else if scope.class_tag == "426" && scope.paired_class_tag == "258" {
+        exact_component_insert_class_426_relation(
+            bytes,
+            records,
+            relation_at,
+            start,
+            relation_record_index,
+            scope.record_index,
+        )?
     } else {
         if relation_at >= start
             || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
@@ -1844,6 +1860,113 @@ pub(crate) fn exact_component_insert_construction(
         carrier_transform_offset: carrier_transform_offset
             .and_then(|offset| u64::try_from(offset).ok()),
     })
+}
+
+fn exact_component_insert_class_426_relation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    relation_at: usize,
+    scope_at: usize,
+    relation_record_index: u32,
+    scope_record_index: u32,
+) -> Option<(u32, Vec<(String, usize, Option<usize>)>)> {
+    let relation_end = relation_at + component_insert_relation_345::LEN;
+    let (relation_class, relation_after_tag) =
+        lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
+    if relation_class != "345"
+        || relation_after_tag != relation_at + 7
+        || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
+        || relation_at >= scope_at
+        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_end
+        || bytes.get(
+            relation_at + component_insert_relation_345::INDEXED_HEADER + 11
+                ..relation_at + component_insert_relation_345::FIRST_MARKER,
+        )? != [0; 10]
+        || bytes.get(relation_at + component_insert_relation_345::FIRST_MARKER)
+            != Some(&component_insert_relation_345::FIRST_MARKER_VALUE)
+        || bytes.get(
+            relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX + 4
+                ..relation_at + component_insert_relation_345::SECOND_MARKER,
+        )? != [0; 8]
+        || bytes.get(relation_at + component_insert_relation_345::SECOND_MARKER)
+            != Some(&component_insert_relation_345::SECOND_MARKER_VALUE)
+        || bytes.get(
+            relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX + 4
+                ..relation_at + component_insert_relation_345::SCOPE_MARKER,
+        )? != [0; 7]
+        || bytes.get(relation_at + component_insert_relation_345::SCOPE_MARKER)
+            != Some(&component_insert_relation_345::SCOPE_MARKER_VALUE)
+        || View::u32_le_at(
+            bytes,
+            relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX,
+        )? != scope_record_index
+        || bytes.get(
+            relation_at + component_insert_relation_345::SCOPE_RECORD_INDEX + 4..relation_end,
+        )? != [0; 6]
+    {
+        return None;
+    }
+
+    let paired_at = relation_end;
+    let (paired_class, paired_after_tag) =
+        lp_ascii_filtered(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+    if paired_class != "258"
+        || paired_after_tag != paired_at + 7
+        || View::u32_le_at(bytes, paired_after_tag)? != relation_record_index
+    {
+        return None;
+    }
+
+    let carrier_record_index = View::u32_le_at(
+        bytes,
+        relation_at + component_insert_relation_345::FIRST_CARRIER_RECORD_INDEX,
+    )?;
+    let child_record_index = View::u32_le_at(
+        bytes,
+        relation_at + component_insert_relation_345::SECOND_CHILD_RECORD_INDEX,
+    )?;
+    let child_at = records.first_at_or_after(paired_at + 11, child_record_index)?;
+    let child_end = child_at + component_insert_relation_child_393::LEN;
+    let (child_class, child_after_tag) =
+        lp_ascii_filtered(bytes, child_at, 3..=3, u8::is_ascii_digit)?;
+    if child_class != "393"
+        || child_after_tag != child_at + 7
+        || View::u32_le_at(bytes, child_after_tag)? != child_record_index
+        || next_indexed_record_offset(bytes, paired_at + 1)? != child_at
+        || next_indexed_record_offset(bytes, child_at + 1)? != child_end
+        || child_end != scope_at
+        || bytes
+            .get(child_at + 11..child_at + component_insert_relation_child_393::RELATION_MARKER)?
+            != [0; 20]
+        || bytes.get(child_at + component_insert_relation_child_393::RELATION_MARKER)
+            != Some(&component_insert_relation_child_393::RELATION_MARKER_VALUE)
+        || View::u32_le_at(
+            bytes,
+            child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX,
+        )? != relation_record_index
+        || bytes.get(
+            child_at + component_insert_relation_child_393::RELATION_RECORD_INDEX + 4
+                ..child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
+        )? != [0; 6]
+        || View::u64_le_at(
+            bytes,
+            child_at + component_insert_relation_child_393::OPAQUE_TOKEN,
+        )
+        .is_none()
+        || bytes.get(child_at + component_insert_relation_child_393::OPAQUE_TOKEN + 8..child_end)?
+            != [0; 8]
+    {
+        return None;
+    }
+
+    let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
+    let (role, role_offset) = crate::xref::grouped_component_insert_identity_class369(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index,
+    )?;
+    Some((carrier_record_index, vec![(role, role_offset, None)]))
 }
 
 fn exact_component_insert_carrier_334(

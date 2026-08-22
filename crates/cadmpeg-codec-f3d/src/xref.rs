@@ -20,7 +20,8 @@ use cadmpeg_ir::products::{
 };
 
 use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded, take_reference,
+    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
+    take_reference,
 };
 use crate::container::role;
 use crate::container::ContainerScan;
@@ -709,6 +710,23 @@ pub(crate) fn grouped_component_insert_identity_class380(
     )
 }
 
+/// Parse the class-369 grouped identity carrier used by the class-426/class-258
+/// `Component Insert` generation.
+pub(crate) fn grouped_component_insert_identity_class369(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    grouped_component_insert_identity_with_layout(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index,
+        "369",
+    )
+}
+
 fn grouped_component_insert_identity_with_layout(
     bytes: &[u8],
     carrier_at: usize,
@@ -717,15 +735,19 @@ fn grouped_component_insert_identity_with_layout(
     expected_class_tag: &str,
 ) -> Option<(String, usize)> {
     const MARKER_AFTER_ROLE: &[u8] = &[0, 1, 0, 0, 0, 0, 1, 0, 0, 0];
+    const CLASS_369_GUID_ROLE_MARKER: &[u8] = &[0, 3, 0, 0, 0, 0, 1, 0, 0, 0];
+    const CLASS_369_EXTERNAL_ROLE_MARKER: &[u8] = &[0, 4, 0, 0, 0, 0, 1, 0, 0, 0];
     const MARKER_AFTER_METADATA: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
     const MARKER_AFTER_PLACEMENT: &[u8] = &[0, 1, 0, 0, 0, 0];
     const CLOSURE: &[u8] = &[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let carrier_span = relation_at.checked_sub(carrier_at)?;
     if class_tag != expected_class_tag
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
-        || relation_at.checked_sub(carrier_at)? != grouped_identity_layout::LEN
+        || (expected_class_tag != "369" && carrier_span != grouped_identity_layout::LEN)
+        || (expected_class_tag == "369" && carrier_span < grouped_identity_layout::LEN)
         || bytes.get(carrier_at + 11..carrier_at + 19)? != [0; 8]
         || bytes.get(carrier_at + 19) != Some(&1)
         || bytes.get(carrier_at + 20..carrier_at + 24)? != [1, 0, 0, 0]
@@ -735,7 +757,6 @@ fn grouped_component_insert_identity_with_layout(
     {
         return None;
     }
-
     let (component_guid, mut at) = lp_utf16_bounded(
         bytes,
         carrier_at + grouped_identity_layout::FIRST_COMPONENT_GUID,
@@ -754,15 +775,38 @@ fn grouped_component_insert_identity_with_layout(
     }
     at = next;
     let first_role_at = at;
-    let (role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&role) {
+    let role_bounds = if expected_class_tag == "369" {
+        36..=256
+    } else {
+        36..=36
+    };
+    let (role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
+    let valid_role = if expected_class_tag == "369" {
+        is_guid_relaxed(&role)
+            || (is_guid_prefix(&role)
+                && role
+                    .get(36..)
+                    .is_some_and(|suffix| suffix.starts_with("_urn:")))
+    } else {
+        is_guid_relaxed(&role)
+    };
+    if !valid_role {
         return None;
     }
     at = next;
-    if bytes.get(at..at + MARKER_AFTER_ROLE.len())? != MARKER_AFTER_ROLE {
+    let marker_after_role = if expected_class_tag == "369" {
+        if role.len() == 36 {
+            CLASS_369_GUID_ROLE_MARKER
+        } else {
+            CLASS_369_EXTERNAL_ROLE_MARKER
+        }
+    } else {
+        MARKER_AFTER_ROLE
+    };
+    if bytes.get(at..at + marker_after_role.len())? != marker_after_role {
         return None;
     }
-    at += MARKER_AFTER_ROLE.len();
+    at += marker_after_role.len();
 
     let (metadata_guid_a, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
     if !is_guid_relaxed(&metadata_guid_a) {
@@ -796,8 +840,8 @@ fn grouped_component_insert_identity_with_layout(
         return None;
     }
     at = next;
-    let (repeated_role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&repeated_role) || !repeated_role.eq_ignore_ascii_case(&role) {
+    let (repeated_role, next) = lp_utf16_bounded(bytes, at, role_bounds.clone())?;
+    if !repeated_role.eq_ignore_ascii_case(&role) {
         return None;
     }
     at = next;
@@ -806,8 +850,8 @@ fn grouped_component_insert_identity_with_layout(
     }
     at += MARKER_AFTER_PLACEMENT.len();
 
-    let (final_role, next) = lp_utf16_bounded(bytes, at, 36..=36)?;
-    if !is_guid_relaxed(&final_role) || !final_role.eq_ignore_ascii_case(&role) {
+    let (final_role, next) = lp_utf16_bounded(bytes, at, role_bounds)?;
+    if !final_role.eq_ignore_ascii_case(&role) {
         return None;
     }
     at = next;
