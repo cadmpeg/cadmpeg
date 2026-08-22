@@ -12,8 +12,8 @@ use std::io::Cursor;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::{
-    parametrically_bounded_plane_file, point_file_with_global, trimmed_plane_file,
-    trimmed_plane_with_inner_loop_file,
+    fixed_ascii_with_global, parametrically_bounded_plane_file, point_file_with_global,
+    trimmed_plane_file, trimmed_plane_with_inner_loop_file,
 };
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesEncoder, IgesVersion};
@@ -128,13 +128,31 @@ fn type_508_requires_an_explicit_isoparametric_flag() {
 #[test]
 fn generation_timestamp_uses_utc_calendar_fields() {
     assert_eq!(
-        generation_timestamp(UNIX_EPOCH).expect("Unix epoch is representable"),
+        generation_timestamp(UNIX_EPOCH, IgesVersion::V5_3).expect("Unix epoch is representable"),
         "19700101.000000"
     );
     assert_eq!(
-        generation_timestamp(UNIX_EPOCH + std::time::Duration::from_secs(951_827_696))
-            .expect("leap-day timestamp is representable"),
+        generation_timestamp(
+            UNIX_EPOCH + std::time::Duration::from_secs(951_827_696),
+            IgesVersion::V5_3,
+        )
+        .expect("leap-day timestamp is representable"),
         "20000229.123456"
+    );
+}
+
+#[test]
+fn generation_timestamp_uses_the_declared_version_width() {
+    let instant = UNIX_EPOCH + std::time::Duration::from_secs(951_827_696);
+    assert_eq!(
+        generation_timestamp(instant, IgesVersion::V4_0)
+            .expect("IGES 4.0 timestamp is representable"),
+        "000229.123456"
+    );
+    assert_eq!(
+        generation_timestamp(instant, IgesVersion::V5_0)
+            .expect("IGES 5.0 timestamp is representable"),
+        "000229.123456"
     );
 }
 
@@ -272,6 +290,37 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
 }
 
 #[test]
+fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
+    for (version, name, timestamp, tail) in [
+        (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
+        (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
+    ] {
+        let global_bytes = generated_global(version, timestamp, 0.001, 1000.0);
+        let fixture = fixed_ascii_with_global(&global_bytes);
+        let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
+        let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
+        assert_eq!(global.version(), name);
+        assert!(losses.is_empty(), "{name}: {losses:#?}");
+
+        let global_text = scan
+            .lines
+            .iter()
+            .filter(|line| line.section == Some(crate::card::Section::Global))
+            .flat_map(|line| line.payload.iter().take(72).copied())
+            .collect::<Vec<_>>();
+        let global_text = String::from_utf8(global_text).expect("Global is ASCII");
+        assert!(
+            global_text.contains(&format!(",{}H{timestamp}", timestamp.len())),
+            "{name}: {global_text}"
+        );
+        assert!(
+            global_text.trim_end().ends_with(tail),
+            "{name}: {global_text}"
+        );
+    }
+}
+
+#[test]
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty(Units::default());
     ir.tolerances.linear = 2.5;
@@ -399,6 +448,22 @@ fn target_profiles_cover_every_emitted_entity_form() {
     for unsupported in [(514, 3), (999, 0)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_3),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+
+    for unsupported in [(141, 0), (143, 0), (186, 0), (190, 1)] {
+        assert!(matches!(
+            ensure_version_support(&[entity(unsupported)], IgesVersion::V4_0),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+    for supported in [(141, 0), (143, 0)] {
+        assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
+    }
+    for unsupported in [(104, 0), (186, 0), (190, 1)] {
+        assert!(matches!(
+            ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
             Err(CodecError::NotImplemented(_))
         ));
     }

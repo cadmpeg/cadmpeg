@@ -335,17 +335,33 @@ impl TargetProfile {
         if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
             return false;
         }
-        match entity.type_code {
-            100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144 | 186 => {
-                entity.form == 0
+        match self.version {
+            crate::IgesVersion::V4_0 => matches!(
+                (entity.type_code, entity.form),
+                (100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
+            ),
+            crate::IgesVersion::V5_0 => matches!(
+                (entity.type_code, entity.form),
+                (
+                    100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
+                    0
+                ) | (104, 2 | 3)
+            ),
+            crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
+                match entity.type_code {
+                    100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144 | 186 => {
+                        entity.form == 0
+                    }
+                    104 => matches!(entity.form, 0 | 2 | 3),
+                    190 | 192 | 194 | 196 | 198 => entity.form == 1,
+                    502 | 504 | 508 | 510 => entity.form == 1,
+                    514 => {
+                        entity.form == 1
+                            || (entity.form == 2 && self.version == crate::IgesVersion::V5_3)
+                    }
+                    _ => false,
+                }
             }
-            104 => matches!(entity.form, 0 | 2 | 3),
-            190 | 192 | 194 | 196 | 198 => entity.form == 1,
-            502 | 504 | 508 | 510 => entity.form == 1,
-            514 => {
-                entity.form == 1 || (entity.form == 2 && self.version == crate::IgesVersion::V5_3)
-            }
-            _ => false,
         }
     }
 }
@@ -5071,7 +5087,7 @@ fn encode_file(
     version: crate::IgesVersion,
     minimum_resolution: f64,
 ) -> Result<Vec<u8>, CodecError> {
-    let generation_timestamp = generation_timestamp(SystemTime::now())?;
+    let generation_timestamp = generation_timestamp(SystemTime::now(), version)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
     let global = generated_global(
         version,
@@ -5207,7 +5223,7 @@ fn generated_global(
     minimum_resolution: f64,
     maximum_coordinate: f64,
 ) -> Vec<u8> {
-    let fields = [
+    let mut fields = vec![
         "1H,".to_owned(),
         "1H;".to_owned(),
         global_hollerith(WRITER_SENDER_PRODUCT),
@@ -5232,9 +5248,15 @@ fn generated_global(
         global_hollerith(WRITER_AUTHOR_ORGANIZATION),
         version.global_flag().to_string(),
         WRITER_DRAFTING_STANDARD_FLAG.to_string(),
-        global_hollerith(""),
-        global_hollerith(""),
     ];
+    match version {
+        crate::IgesVersion::V4_0 => {}
+        crate::IgesVersion::V5_0 => fields.push(global_hollerith("")),
+        crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
+            fields.push(global_hollerith(""));
+            fields.push(global_hollerith(""));
+        }
+    }
     let mut global = fields.join(",");
     global.push(';');
     global.into_bytes()
@@ -5282,7 +5304,10 @@ fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
         .or(Some(0.0))
 }
 
-fn generation_timestamp(now: SystemTime) -> Result<String, CodecError> {
+fn generation_timestamp(
+    now: SystemTime,
+    version: crate::IgesVersion,
+) -> Result<String, CodecError> {
     let seconds = now
         .duration_since(UNIX_EPOCH)
         .map_err(|_| CodecError::Malformed("IGES generation time precedes 1970".into()))?
@@ -5299,8 +5324,16 @@ fn generation_timestamp(now: SystemTime) -> Result<String, CodecError> {
             "IGES generation year is outside the four-digit timestamp range".into(),
         ));
     }
+    let year = match version {
+        crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0 => year % 100,
+        crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => year,
+    };
+    let width = match version {
+        crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0 => 2,
+        crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => 4,
+    };
     Ok(format!(
-        "{year:04}{month:02}{day:02}.{hour:02}{minute:02}{second:02}"
+        "{year:0width$}{month:02}{day:02}.{hour:02}{minute:02}{second:02}"
     ))
 }
 

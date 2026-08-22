@@ -120,6 +120,49 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
 }
 
 #[test]
+fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
+    for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId(format!("point#{name}")),
+            source_object: None,
+            position: Point3::new(4.0, 5.0, 6.0),
+        });
+        let plan = IgesEncoder::new(IgesWriteOptions { version })
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap();
+        let mut written = Vec::new();
+        let report = plan.write_to(&mut written).unwrap();
+        assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
+
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(written.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            name
+        );
+        assert_eq!(decoded.ir().model.points.len(), 1);
+        assert_eq!(
+            decoded.report().losses.len(),
+            1,
+            "{name}: {:#?}",
+            decoded.report()
+        );
+        assert_eq!(
+            decoded.report().losses[0].code,
+            IgesLossCode::SourceDialectUnverified.kind()
+        );
+    }
+}
+
+#[test]
 fn encode_rejects_open_shells_before_iges_5_3() {
     let decoded = IgesCodec
         .decode(
