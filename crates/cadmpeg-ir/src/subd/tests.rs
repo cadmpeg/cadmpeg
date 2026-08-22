@@ -47,14 +47,17 @@ fn subd_round_trip_and_directed_ring_validation() {
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(0.0, 1.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
         ],
         edges: vec![

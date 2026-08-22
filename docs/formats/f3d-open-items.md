@@ -288,25 +288,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 ## 4. T-splines
 
-### TS-01. `0m cg` wedge partition
-
-**Question.** How does a `0m cg` record's grip run divide into wedges? Two sub-questions remain:
-
-- whether the cross term pairs wedge `k` with wedge `k + 1` or with wedge `k - 1`
-- whether the cross term is the product of the two spoke lengths or their minimum
-
-**Known.** `f3d.md` §1.1.1 "A `0m cg vertex wedges S G`" gives the record's fields and fixes the length of `G` at `sum(S[k] + S[k] * S[(k + 1) mod wedges])`. That sum is invariant under reversing the neighbour direction, so the arity rule does not distinguish the two pairings; it only distinguishes the per-wedge block sizes. The two forms of the cross term agree whenever every spoke length is zero or one.
-
-**Need.** A neutral model that keeps grip connectivity must place each grip index in the correct wedge, which the arity rule alone does not fix. A cage with a spoke length of two or more, or one whose per-wedge grip positions can be matched geometrically, settles both sub-questions.
-
-### TS-02. `0m cg` wedge count
-
-**Question.** What fixes a `0m cg` record's wedge count?
-
-**Known.** `f3d.md` §1.1.1 "A `0m cg vertex wedges S G`" defines the count as the number of wedges around the named vertex. It is not the vertex's valence and it is not the number of incident faces: records exist whose vertex has either quantity different from the stored count.
-
-**Need.** Without the rule we cannot write a `0m cg` record for a vertex, only retain one.
-
 ### TS-03. `e`-record scalar
 
 **Question.** What geometric or topological quantity does the scalar after an `e` record's half-edge root hold?

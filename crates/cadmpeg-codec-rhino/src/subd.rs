@@ -971,6 +971,7 @@ fn materialize(
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                 ),
                 tag,
+                secondary_grips: None,
             })
         })
         .collect::<Result<Vec<_>, SubdError>>()?;

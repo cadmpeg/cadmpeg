@@ -126,8 +126,8 @@ pub use source_fidelity::{
 };
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{

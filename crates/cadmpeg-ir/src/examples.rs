@@ -300,14 +300,17 @@ pub fn directed_subd_sum() -> CadIr {
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Crease,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(0.0, 1.0, 0.0),
                 tag: SubdVertexTag::Corner,
+                secondary_grips: None,
             },
         ],
         edges: vec![

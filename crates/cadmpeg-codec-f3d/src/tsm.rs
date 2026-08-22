@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -25,6 +25,12 @@ struct HalfEdge {
     mate: usize,
     vertex: usize,
     face: i64,
+}
+
+#[derive(Clone, Copy)]
+struct GripPoint {
+    point: Point3,
+    weight: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -98,6 +104,16 @@ fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<f64, CodecE
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
 }
 
+fn parse_direction(name: &str, value: Option<&str>) -> Result<SubdGripDirection, CodecError> {
+    match value {
+        Some("NORTH") => Ok(SubdGripDirection::North),
+        Some("EAST") => Ok(SubdGripDirection::East),
+        Some("SOUTH") => Ok(SubdGripDirection::South),
+        Some("WEST") => Ok(SubdGripDirection::West),
+        _ => Err(malformed(name, "invalid vertex direction")),
+    }
+}
+
 /// Map each program slot to its IR index, or `None` for a deleted slot.
 fn compact(live: impl Iterator<Item = bool>) -> Vec<Option<u32>> {
     let mut next = 0u32;
@@ -131,7 +147,26 @@ struct ParsedCage {
 #[derive(Debug)]
 struct DerivedGripConnectivity {
     vertex: usize,
+    wedges: usize,
+    spoke_lengths: Vec<usize>,
     grip_indices: Vec<i64>,
+}
+
+#[derive(Clone, Copy)]
+struct FanSlot {
+    half_edge: Option<usize>,
+    face: Option<usize>,
+    phantom: bool,
+}
+
+impl FanSlot {
+    fn phantom() -> Self {
+        Self {
+            half_edge: None,
+            face: None,
+            phantom: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -221,6 +256,346 @@ fn validate_symmetry_map(
     Ok(())
 }
 
+fn direction_offset(direction: SubdGripDirection) -> usize {
+    match direction {
+        SubdGripDirection::North => 0,
+        SubdGripDirection::East => 1,
+        SubdGripDirection::South => 2,
+        SubdGripDirection::West => 3,
+    }
+}
+
+fn build_fan(
+    name: &str,
+    vertex: usize,
+    root: usize,
+    half_edges: &[Option<HalfEdge>],
+    face_live: &[bool],
+) -> Result<Vec<FanSlot>, CodecError> {
+    let root_half = half_edges
+        .get(root)
+        .and_then(Option::as_ref)
+        .ok_or_else(|| malformed(name, "vertex root names a deleted half-edge"))?;
+    if root_half.vertex != vertex {
+        return Err(malformed(
+            name,
+            "vertex root does not terminate at its vertex",
+        ));
+    }
+
+    let mut fan = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut current = root;
+    loop {
+        if !seen.insert(current) {
+            if current == root {
+                break;
+            }
+            return Err(malformed(
+                name,
+                "vertex half-edge fan repeats before its root",
+            ));
+        }
+        let half = half_edges
+            .get(current)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| malformed(name, "vertex half-edge fan names a deleted slot"))?;
+        if half.vertex != vertex {
+            return Err(malformed(
+                name,
+                "vertex half-edge fan leaves its terminal vertex",
+            ));
+        }
+        let face = match half.face {
+            -1 => None,
+            face if face >= 0 && face_live.get(face as usize).copied().unwrap_or(false) => {
+                Some(face as usize)
+            }
+            _ => {
+                return Err(malformed(
+                    name,
+                    "vertex half-edge fan names an invalid face",
+                ))
+            }
+        };
+        fan.push(FanSlot {
+            half_edge: Some(current),
+            face,
+            phantom: false,
+        });
+
+        let next = half_edges
+            .get(half.next)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| malformed(name, "vertex fan next half-edge is deleted"))?;
+        current = half_edges
+            .get(next.mate)
+            .and_then(Option::as_ref)
+            .map(|mate| {
+                if mate.vertex == vertex {
+                    next.mate
+                } else {
+                    usize::MAX
+                }
+            })
+            .ok_or_else(|| malformed(name, "vertex fan mate half-edge is deleted"))?;
+        if current == usize::MAX {
+            return Err(malformed(
+                name,
+                "vertex fan rotation leaves its terminal vertex",
+            ));
+        }
+        if current == root {
+            break;
+        }
+        if seen.len() >= half_edges.len() {
+            return Err(malformed(name, "vertex half-edge fan does not close"));
+        }
+    }
+
+    let gap_positions = fan
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| slot.face.is_none().then_some(index))
+        .collect::<Vec<_>>();
+    if gap_positions.len() > 1 {
+        return Err(malformed(
+            name,
+            "vertex half-edge fan has multiple boundary gaps",
+        ));
+    }
+    if let Some(gap) = gap_positions.first().copied() {
+        let phantom_count = 4usize.saturating_sub(fan.len());
+        for _ in 0..phantom_count {
+            fan.insert(gap + 1, FanSlot::phantom());
+        }
+    }
+    Ok(fan)
+}
+
+struct GripDecodeContext<'a> {
+    name: &'a str,
+    vertex: usize,
+    grip_vertices: &'a [GripVertexMarker],
+    grip_points: &'a [Option<GripPoint>],
+    grip_owners: &'a mut [Option<usize>],
+}
+
+impl GripDecodeContext<'_> {
+    fn block(
+        &mut self,
+        indices: &[i64],
+        cursor: &mut usize,
+        count: usize,
+    ) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
+        let end = cursor
+            .checked_add(count)
+            .ok_or_else(|| malformed(self.name, "derived-grip block arity overflows"))?;
+        let values = indices.get(*cursor..end).ok_or_else(|| {
+            malformed(
+                self.name,
+                "derived-grip run is shorter than its declared arity",
+            )
+        })?;
+        *cursor = end;
+        values
+            .iter()
+            .map(|index| match *index {
+                -1 => Ok(None),
+                index if index >= 0 => {
+                    let index = usize::try_from(index)
+                        .map_err(|_| malformed(self.name, "derived-grip index overflows"))?;
+                    if !matches!(
+                        self.grip_vertices.get(index),
+                        Some(GripVertexMarker::Secondary(Some(owner))) if *owner == self.vertex
+                    ) {
+                        return Err(malformed(
+                            self.name,
+                            "derived-grip entry is not a secondary grip of its vertex",
+                        ));
+                    }
+                    let point =
+                        self.grip_points
+                            .get(index)
+                            .copied()
+                            .flatten()
+                            .ok_or_else(|| {
+                                malformed(self.name, "derived-grip entry names a deleted grip")
+                            })?;
+                    let owner_slot = self.grip_owners.get_mut(index).ok_or_else(|| {
+                        malformed(self.name, "derived-grip entry is out of range")
+                    })?;
+                    if owner_slot.replace(self.vertex).is_some() {
+                        return Err(malformed(
+                            self.name,
+                            "secondary grip is named more than once",
+                        ));
+                    }
+                    Ok(Some(SubdSecondaryGrip {
+                        source_index: u32::try_from(index).map_err(|_| {
+                            malformed(self.name, "secondary grip index overflows IR")
+                        })?,
+                        point: point.point,
+                        weight: point.weight,
+                    }))
+                }
+                _ => Err(malformed(self.name, "derived-grip index is below -1")),
+            })
+            .collect()
+    }
+}
+
+struct SecondaryLayoutContext<'a> {
+    name: &'a str,
+    vertex_roots: &'a [Option<(usize, SubdGripDirection)>],
+    vertex_live: &'a [bool],
+    vertex_ir: &'a [Option<u32>],
+    face_live: &'a [bool],
+    face_ir: &'a [Option<u32>],
+    half_edges: &'a [Option<HalfEdge>],
+    edge_by_half: &'a [Option<(u32, bool)>],
+    grip_vertices: &'a [GripVertexMarker],
+    grip_points: &'a [Option<GripPoint>],
+}
+
+fn build_secondary_layouts(
+    context: &SecondaryLayoutContext<'_>,
+    derived_grips: &[DerivedGripConnectivity],
+) -> Result<Vec<Option<SubdVertexGripLayout>>, CodecError> {
+    let SecondaryLayoutContext {
+        name,
+        vertex_roots,
+        vertex_live,
+        vertex_ir,
+        face_live,
+        face_ir,
+        half_edges,
+        edge_by_half,
+        grip_vertices,
+        grip_points,
+    } = *context;
+    let live_vertices = vertex_ir.iter().flatten().count();
+    let mut layouts = vec![None; live_vertices];
+    let mut has_cg = vec![false; vertex_live.len()];
+    let mut secondary_counts = vec![0usize; vertex_live.len()];
+    let mut grip_owners = vec![None; grip_vertices.len()];
+    for marker in grip_vertices {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            *secondary_counts
+                .get_mut(*vertex)
+                .ok_or_else(|| malformed(name, "secondary grip vertex is out of range"))? += 1;
+        }
+    }
+
+    for connectivity in derived_grips {
+        let vertex = connectivity.vertex;
+        if !vertex_live.get(vertex).copied().unwrap_or(false) {
+            return Err(malformed(name, "derived-grip vertex is out of range"));
+        }
+        if has_cg[vertex] {
+            return Err(malformed(
+                name,
+                "vertex has more than one derived-grip record",
+            ));
+        }
+        has_cg[vertex] = true;
+        let (root, direction) = vertex_roots
+            .get(vertex)
+            .copied()
+            .flatten()
+            .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
+        let fan = build_fan(name, vertex, root, half_edges, face_live)?;
+        if connectivity.wedges != fan.len() {
+            return Err(malformed(
+                name,
+                "derived-grip wedge count does not match the completed vertex fan",
+            ));
+        }
+
+        let offset = direction_offset(direction);
+        let mut cursor = 0usize;
+        let mut wedges = Vec::with_capacity(connectivity.wedges);
+        for wedge in 0..connectivity.wedges {
+            let spoke_count = connectivity.spoke_lengths[wedge];
+            let sector_count = spoke_count
+                .checked_mul(connectivity.spoke_lengths[(wedge + 1) % connectivity.wedges])
+                .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
+            let slot = fan[(wedge + offset) % fan.len()];
+            if slot.phantom && spoke_count != 0 {
+                return Err(malformed(
+                    name,
+                    "phantom wedge carries a nonzero spoke length",
+                ));
+            }
+            let edge = match slot.half_edge {
+                Some(half) => Some(
+                    edge_by_half
+                        .get(half)
+                        .copied()
+                        .flatten()
+                        .map(|(edge, _)| edge)
+                        .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
+                ),
+                None => None,
+            };
+            let sector_face = match slot.face {
+                Some(face) => Some(
+                    face_ir
+                        .get(face)
+                        .copied()
+                        .flatten()
+                        .ok_or_else(|| malformed(name, "fan sector names a deleted face"))?,
+                ),
+                None => None,
+            };
+            let mut grip_context = GripDecodeContext {
+                name,
+                vertex,
+                grip_vertices,
+                grip_points,
+                grip_owners: &mut grip_owners,
+            };
+            let spokes =
+                grip_context.block(&connectivity.grip_indices, &mut cursor, spoke_count)?;
+            let sectors =
+                grip_context.block(&connectivity.grip_indices, &mut cursor, sector_count)?;
+            wedges.push(SubdGripWedge {
+                edge,
+                sector_face,
+                phantom: slot.phantom,
+                spokes,
+                sectors,
+            });
+        }
+        if cursor != connectivity.grip_indices.len() {
+            return Err(malformed(name, "derived-grip run has trailing entries"));
+        }
+        let vertex_ir =
+            vertex_ir[vertex].ok_or_else(|| malformed(name, "derived-grip vertex is deleted"))?;
+        layouts[vertex_ir as usize] = Some(SubdVertexGripLayout { direction, wedges });
+    }
+
+    for (vertex, count) in secondary_counts.into_iter().enumerate() {
+        if (count != 0) != has_cg[vertex] {
+            return Err(malformed(
+                name,
+                "secondary-grip ownership does not have exactly one derived-grip record",
+            ));
+        }
+    }
+    for (index, marker) in grip_vertices.iter().enumerate() {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            if grip_owners[index] != Some(*vertex) {
+                return Err(malformed(
+                    name,
+                    "secondary grip is not named exactly once by derived connectivity",
+                ));
+            }
+        }
+    }
+    Ok(layouts)
+}
+
 fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
@@ -234,11 +609,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     // through validation and compacted only when the IR cage is built.
     let mut face_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
+    let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
     let mut crease_edges = BTreeSet::new();
     let mut grip_vertices: Vec<GripVertexMarker> = Vec::new();
-    let mut grip_points: Vec<Option<Point3>> = Vec::new();
+    let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
     let mut derived_grips = Vec::new();
@@ -299,14 +675,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("v") => match fields.next() {
-                None => vertex_live.push(false),
+                None => {
+                    vertex_live.push(false);
+                    vertex_roots.push(None);
+                }
                 root => {
-                    parse_usize(name, root, "vertex root")?;
-                    if fields.next().is_none() {
-                        return Err(malformed(name, "missing vertex direction"));
-                    }
+                    let root = parse_usize(name, root, "vertex root")?;
+                    let direction = parse_direction(name, fields.next())?;
                     require_end(name, fields, "vertex")?;
                     vertex_live.push(true);
+                    vertex_roots.push(Some((root, direction)));
                 }
             },
             Some("l") => match fields.next() {
@@ -379,6 +757,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
                         vertex,
+                        wedges,
+                        spoke_lengths,
                         grip_indices,
                     });
                 }
@@ -396,7 +776,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     if weight <= 0.0 || fields.next().is_some() {
                         return Err(malformed(name, "grip weight is not positive"));
                     }
-                    grip_points.push(Some(point));
+                    grip_points.push(Some(GripPoint { point, weight }));
                 }
             },
             Some(selection @ ("100edges" | "100verts" | "50000grip")) => {
@@ -642,10 +1022,21 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "half-edge topology is inconsistent"));
         }
     }
+    for (vertex, live) in vertex_live.iter().copied().enumerate() {
+        if live {
+            let (root, _) = vertex_roots
+                .get(vertex)
+                .copied()
+                .flatten()
+                .ok_or_else(|| malformed(name, "live vertex has no root direction"))?;
+            build_fan(name, vertex, root, &half_edges, &face_live)?;
+        }
+    }
 
     // Slot indices address the program; IR indices address only populated slots.
     let vertex_ir = compact(vertex_live.iter().copied());
     let edge_ir = compact(edge_roots.iter().map(Option::is_some));
+    let face_ir = compact(face_roots.iter().map(Option::is_some));
     let vertex_of = |slot: usize| {
         vertex_ir
             .get(slot)
@@ -659,17 +1050,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         if grip_points.len() != vertex_live.len() {
             return Err(malformed(name, "positional grip vertex map is incomplete"));
         }
-        for (slot, point) in grip_points.into_iter().enumerate() {
+        for (slot, point) in grip_points.iter().enumerate() {
             if let (true, Some(point)) = (vertex_live[slot], point) {
-                vertex_points.insert(vertex_of(slot)?, point);
+                vertex_points.insert(vertex_of(slot)?, point.point);
             }
         }
     } else {
-        for (marker, point) in grip_vertices.into_iter().zip(grip_points) {
+        for (marker, point) in grip_vertices.iter().zip(grip_points.iter()) {
             let (GripVertexMarker::Primary(slot), Some(point)) = (marker, point) else {
                 continue;
             };
-            if vertex_points.insert(vertex_of(slot)?, point).is_some() {
+            if vertex_points
+                .insert(vertex_of(*slot)?, point.point)
+                .is_some()
+            {
                 return Err(malformed(name, "primary grip vertex map is inconsistent"));
             }
         }
@@ -702,6 +1096,22 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
     }
+
+    let secondary_layouts = build_secondary_layouts(
+        &SecondaryLayoutContext {
+            name,
+            vertex_roots: &vertex_roots,
+            vertex_live: &vertex_live,
+            vertex_ir: &vertex_ir,
+            face_live: &face_live,
+            face_ir: &face_ir,
+            half_edges: &half_edges,
+            edge_by_half: &edge_by_half,
+            grip_vertices: &grip_vertices,
+            grip_points: &grip_points,
+        },
+        &derived_grips,
+    )?;
 
     let mut faces = Vec::new();
     for (face_slot, start) in face_roots.iter().copied().enumerate() {
@@ -751,6 +1161,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 2 => SubdVertexTag::Crease,
                 _ => SubdVertexTag::Corner,
             },
+            secondary_grips: secondary_layouts[index].clone(),
         })
         .collect();
     let creased_edges = crease_edges
@@ -863,9 +1274,9 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     fn parses_editor_metadata_and_derived_grip_connectivity() {
         let source = format!(
             "#TS0200\n{QUAD_TOPOLOGY}\
-             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
-             0m cg 0 1 1 -1 -1\n\
-             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gv 0\n\
+             0m cg 0 4 1 0 0 0 4\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g 0.5 0 0 1\n\
              100edges 0 2\n100verts 1\n50000grip 0\n50000grip 1\n\
              105sym 0\n105plane 0 2 0 1 0 1 0 0 0 0 1 0\n\
              105a fr 0 0\n105a er 0 0 1 2\n105a e 2 1\n\
@@ -875,6 +1286,68 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
         assert_eq!(cage.unknown_records, 0);
         assert_quad(&cage.surface);
+        let layout = cage.surface.vertices[0]
+            .secondary_grips
+            .as_ref()
+            .expect("secondary grip layout");
+        assert_eq!(layout.direction, cadmpeg_ir::SubdGripDirection::North);
+        assert_eq!(layout.wedges.len(), 4);
+        assert_eq!(layout.wedges[0].spokes[0].as_ref().unwrap().source_index, 4);
+        assert!(layout.wedges[2..]
+            .iter()
+            .all(|wedge| wedge.phantom && wedge.spokes.is_empty()));
+        assert!(layout.wedges[1].sector_face.is_none());
+    }
+
+    #[test]
+    fn partitions_rectangular_sector_grids_with_product_arity() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0m gv 0\n0m gv 0\n0m gv 0\n0m gv 0\n0m gv 0\n\
+             0m cg 0 4 2 1 0 0 4 5 6 7 8\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0g 0.1 0 0 1\n0g 0.2 0 0 1\n0g 0.3 0 0 1\n0g 0.4 0 0 1\n0g 0.5 0 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("rectangular sector grid");
+        let layout = cage.surface.vertices[0]
+            .secondary_grips
+            .as_ref()
+            .expect("secondary grip layout");
+        assert_eq!(layout.wedges[0].spokes.len(), 2);
+        assert_eq!(layout.wedges[0].sectors.len(), 2);
+        assert_eq!(layout.wedges[1].spokes.len(), 1);
+        assert!(layout.wedges[1].sectors.is_empty());
+        assert_eq!(
+            layout.wedges[0]
+                .spokes
+                .iter()
+                .chain(layout.wedges[0].sectors.iter())
+                .chain(layout.wedges[1].spokes.iter())
+                .map(|grip| grip.as_ref().unwrap().source_index)
+                .collect::<Vec<_>>(),
+            vec![4, 5, 6, 7, 8]
+        );
+    }
+
+    #[test]
+    fn maps_compass_words_to_north_anchored_offsets() {
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::North),
+            0
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::East),
+            1
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::South),
+            2
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::West),
+            3
+        );
     }
 
     #[test]

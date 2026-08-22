@@ -2,6 +2,8 @@
 //! Validation for `SubD` cages and free-carrier source associations.
 #![allow(clippy::wildcard_imports)]
 
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::math::Point3;
 use crate::validate::geometry_payloads::bounds_err;
@@ -58,6 +60,8 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for subd in &ir.model.subds {
         let vertex_count = subd.vertices.len();
         let edge_count = subd.edges.len();
+        let face_count = subd.faces.len();
+        let mut grip_indices = BTreeSet::new();
         for (index, vertex) in subd.vertices.iter().enumerate() {
             if !finite_point(&vertex.point) {
                 bounds_err(
@@ -65,6 +69,72 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &subd.id.0,
                     &format!("SubD vertex {index} is not finite"),
                 );
+            }
+            let Some(layout) = &vertex.secondary_grips else {
+                continue;
+            };
+            if layout.wedges.is_empty() {
+                bounds_err(
+                    findings,
+                    &subd.id.0,
+                    &format!("SubD vertex {index} has an empty secondary-grip layout"),
+                );
+                continue;
+            }
+            for (wedge_index, wedge) in layout.wedges.iter().enumerate() {
+                let next = &layout.wedges[(wedge_index + 1) % layout.wedges.len()];
+                let expected_sectors = wedge.spokes.len().checked_mul(next.spokes.len());
+                if expected_sectors != Some(wedge.sectors.len()) {
+                    bounds_err(
+                        findings,
+                        &subd.id.0,
+                        &format!(
+                            "SubD vertex {index} wedge {wedge_index} has invalid sector arity"
+                        ),
+                    );
+                }
+                if wedge.phantom
+                    && (wedge.edge.is_some()
+                        || wedge.sector_face.is_some()
+                        || !wedge.spokes.is_empty()
+                        || !wedge.sectors.is_empty())
+                {
+                    bounds_err(
+                        findings,
+                        &subd.id.0,
+                        &format!(
+                            "SubD vertex {index} wedge {wedge_index} has invalid phantom data"
+                        ),
+                    );
+                }
+                if wedge.edge.is_some_and(|edge| edge as usize >= edge_count)
+                    || wedge
+                        .sector_face
+                        .is_some_and(|face| face as usize >= face_count)
+                {
+                    bounds_err(
+                        findings,
+                        &subd.id.0,
+                        &format!(
+                            "SubD vertex {index} wedge {wedge_index} has an invalid topology reference"
+                        ),
+                    );
+                }
+                for grip in wedge.spokes.iter().chain(&wedge.sectors).flatten() {
+                    if !finite_point(&grip.point)
+                        || !grip.weight.is_finite()
+                        || grip.weight <= 0.0
+                        || !grip_indices.insert(grip.source_index)
+                    {
+                        bounds_err(
+                            findings,
+                            &subd.id.0,
+                            &format!(
+                                "SubD vertex {index} has an invalid or repeated secondary grip"
+                            ),
+                        );
+                    }
+                }
             }
         }
         for (index, edge) in subd.edges.iter().enumerate() {

@@ -26,8 +26,8 @@ use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossKind, LossNote, LossTaxonomy, Severity};
 use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
@@ -47,10 +47,12 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
         ],
         edges: vec![SubdEdge {
@@ -80,6 +82,52 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("edge 0 is invalid")));
+}
+
+#[test]
+fn subd_rejects_invalid_secondary_grip_sector_arity() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grips".into()),
+        scheme: SubdScheme::CatmullClark,
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: Some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: None,
+                        phantom: false,
+                        spokes: vec![Some(SubdSecondaryGrip {
+                            source_index: 0,
+                            point: Point3::new(0.25, 0.0, 0.0),
+                            weight: 1.0,
+                        })],
+                        sectors: Vec::new(),
+                    }],
+                }),
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [0, 1],
+            sharpness: [0.0, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: Vec::new(),
+        source_object: None,
+    });
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid sector arity")));
 }
 
 #[test]
