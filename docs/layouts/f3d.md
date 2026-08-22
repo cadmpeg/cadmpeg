@@ -2576,6 +2576,42 @@ Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
 
+## `legacy_class_338_two_sided_distance_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 495 B
+
+Offsets are relative to the class-338 primary indexed header. The paired class-262 header begins at offset 495. The class-local envelope contains a ten-byte null scope-and-scalar lane, shifted two-sided extent fields, and ten ordered references beginning at offset 286.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` at primary-header offset 20 · value `1` |
+| 27 | 4 | `operation` | `u32` | little | spec | result operation: `1 = join` |
+| 31 | 4 | `direction` | `u32` | little | spec | travel direction `2` (two sides) · value `2` |
+| 35 | 4 | `face_extend` | `u32` | little | spec | face-extend value `0` · value `0` |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | direction reversal |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | geometry kind |
+| 41 | 1 | `start_support` | `u8` | little | spec | start support |
+| 45 | 24 | `profile_normal` | `f64[3]` | little | spec | finite unit profile normal |
+| 69 | 70 | `class_local_envelope` | `bytes[70]` | little | spec | class-local nullable-selection and parameter envelope |
+| 139 | 10 | `null_scope_scalar_lane` | `bytes[10]` | little | spec | null scope-and-scalar lane |
+| 149 | 11 | `first_side_parameter_reference` | `bytes[11]` | little | spec | marked first-side parameter reference |
+| 165 | 4 | `first_side_extent` | `u32` | little | spec | first-side extent `1` (distance) · value `1` |
+| 169 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | marked profile construction-group reference |
+| 188 | 4 | `second_side_extent` | `u32` | little | spec | second-side extent `1` (distance) · value `1` |
+| 192 | 11 | `body_group_reference` | `bytes[11]` | little | spec | marked body construction-group reference |
+| 203 | 76 | `guid` | `bytes[76]` | little | spec | LP-UTF16 GUID: 36 code units |
+| 282 | 4 | `reference_count` | `u32` | little | spec | ordered reference count `10` · value `10` |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and preceding shifted-operation envelope are outside this fixed frame prefix.
+- `24..27` (3 B): Three zero bytes separate the prefix constant from the result operation.
+- `42..45` (3 B): Three zero bytes precede the profile normal.
+- `160..165` (5 B): Five zero bytes separate the first-side parameter reference from the first-side extent.
+- `180..188` (8 B): Eight zero bytes separate the profile-group reference from the second-side extent.
+- `279..282` (3 B): Three zero bytes separate the GUID from the ordered reference count.
+- `286..495` (209 B): The ten ordered reference entries and common scope tail precede the paired indexed header at offset 495.
+
 ## `legacy_class_397_symmetric_extrude_frame`
 
 Spec §3.1 · layout: byte offsets · size: 473 B
@@ -3574,7 +3610,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 261 B
 
-Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for both admitted class pairs.
+Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all three admitted class pairs.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -3597,6 +3633,54 @@ Unstated regions:
 - `33..37` (4 B): Four zero bytes occupy offsets 33 through 36.
 - `42..48` (6 B): Six zero bytes occupy offsets 42 through 47.
 - `126..261` (135 B): The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame.
+
+## `component_insert_relation_345_57`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to the primary class-345 indexed header. The paired class-258 header begins at offset 57.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class-`345`/class-`258` relation |
+| 20 | 1 | `first_marker` | `u8` | little | spec | stores the carrier reference at offset 21 · value `1` |
+| 21 | 4 | `first_carrier_record_index` | `u32` | little | spec | stores the carrier reference at offset 21 |
+| 34 | 1 | `second_marker` | `u8` | little | spec | the child reference at offset 35 · value `1` |
+| 35 | 4 | `second_child_record_index` | `u32` | little | spec | the child reference at offset 35 |
+| 46 | 1 | `scope_marker` | `u8` | little | spec | the scope back-reference at offset 47 · value `1` |
+| 47 | 4 | `scope_record_index` | `u32` | little | spec | the scope back-reference at offset 47 |
+
+Unstated regions:
+
+- `11..20` (9 B): Nine zero bytes occupy offsets 11 through 19.
+- `25..34` (9 B): Nine zero bytes occupy offsets 25 through 33.
+- `39..46` (7 B): Seven zero bytes occupy offsets 39 through 45.
+- `51..57` (6 B): Six zero bytes occupy offsets 51 through 56.
+
+## `component_insert_relation_child_393_58`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the primary class-393 indexed header. The paired header begins at offset 58.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class-`393` child record |
+| 31 | 1 | `relation_marker` | `u8` | little | spec | stores the relation back-reference at offset 32 · value `1` |
+| 32 | 4 | `relation_record_index` | `u32` | little | spec | stores the relation back-reference at offset 32 |
+| 42 | 8 | `opaque_token` | `u64` | little | spec | carries an opaque u64 token |
+
+Unstated regions:
+
+- `11..31` (20 B): Twenty zero bytes occupy offsets 11 through 30.
+- `36..42` (6 B): Six zero bytes occupy offsets 36 through 41.
+- `50..58` (8 B): Eight zero bytes occupy offsets 50 through 57.
 
 ## `component_insert_scope_283_262_257`
 
@@ -3698,7 +3782,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 695 B
 
-Offsets are relative to the primary class-380 or class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/xref.rs`

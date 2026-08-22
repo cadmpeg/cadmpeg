@@ -12169,9 +12169,9 @@ name = "component_insert_identity_scope_compact"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The compact identity form is a 261-byte frame admitted for class-`296` paired with class `263` and class-`410` paired with class `261`"
+anchor = "The compact identity form is a 261-byte frame admitted for class-`296` paired with class `263`, class-`410` paired with class `261`, and class-`426` paired with class `258`"
 size = 261
-note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for both admitted class pairs."
+note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all three admitted class pairs."
 
 [[record.field]]
 name = "indexed_header"
@@ -12255,6 +12255,140 @@ anchor = "the 36-code-unit null GUID `00000000-0000-0000-0000-000000000000` at o
 offset = 126
 size = 135
 note = "The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame."
+
+[[record]]
+name = "component_insert_relation_345_57"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "a shifted 57-byte class-`345`/class-`258` relation"
+size = 57
+note = "Offsets are relative to the primary class-345 indexed header. The paired class-258 header begins at offset 57."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "class-`345`/class-`258` relation"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "Nine zero bytes occupy offsets 11 through 19."
+
+[[record.field]]
+name = "first_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "stores the carrier reference at offset 21"
+value = 1
+
+[[record.field]]
+name = "first_carrier_record_index"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "stores the carrier reference at offset 21"
+
+[[record.gap]]
+offset = 25
+size = 9
+note = "Nine zero bytes occupy offsets 25 through 33."
+
+[[record.field]]
+name = "second_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "the child reference at offset 35"
+value = 1
+
+[[record.field]]
+name = "second_child_record_index"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "the child reference at offset 35"
+
+[[record.gap]]
+offset = 39
+size = 7
+note = "Seven zero bytes occupy offsets 39 through 45."
+
+[[record.field]]
+name = "scope_marker"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "the scope back-reference at offset 47"
+value = 1
+
+[[record.field]]
+name = "scope_record_index"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "the scope back-reference at offset 47"
+
+[[record.gap]]
+offset = 51
+size = 6
+note = "Six zero bytes occupy offsets 51 through 56."
+
+[[record]]
+name = "component_insert_relation_child_393_58"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "a following 58-byte class-`393` child record"
+size = 58
+note = "Offsets are relative to the primary class-393 indexed header. The paired header begins at offset 58."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "class-`393` child record"
+
+[[record.gap]]
+offset = 11
+size = 20
+note = "Twenty zero bytes occupy offsets 11 through 30."
+
+[[record.field]]
+name = "relation_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "stores the relation back-reference at offset 32"
+value = 1
+
+[[record.field]]
+name = "relation_record_index"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "stores the relation back-reference at offset 32"
+
+[[record.gap]]
+offset = 36
+size = 6
+note = "Six zero bytes occupy offsets 36 through 41."
+
+[[record.field]]
+name = "opaque_token"
+offset = 42
+type = "u64"
+source = "spec"
+anchor = "carries an opaque u64 token"
+
+[[record.gap]]
+offset = 50
+size = 8
+note = "Eight zero bytes occupy offsets 50 through 57."
 
 [[record]]
 name = "component_insert_scope_283_262_257"
@@ -12627,9 +12761,9 @@ name = "component_insert_grouped_identity_carrier"
 parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
 kind = "byte"
 section = "3.1"
-anchor = "Both carriers are 695 bytes from their primary indexed header to the relation header"
+anchor = "The class-`382`, class-`380`, and class-`369` carriers share a 695-byte grouped identity grammar"
 size = 695
-note = "Offsets are relative to the primary class-380 or class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes."
+note = "Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes."
 
 [[record.gap]]
 offset = 0

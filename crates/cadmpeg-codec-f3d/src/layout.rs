@@ -5013,7 +5013,7 @@ pub(crate) mod legacy_body_group_frame_123 {
 /// Spec §3.1. Record length 261 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for both admitted class pairs.
+/// Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all three admitted class pairs.
 /// ```
 pub(crate) mod component_insert_identity_scope_compact {
     /// Record length in bytes. Spec §3.1.
@@ -5036,6 +5036,60 @@ pub(crate) mod component_insert_identity_scope_compact {
     pub(crate) const OPAQUE_CODE_UNIT_COUNT: usize = 50;
     /// Offset of `opaque_utf16_payload` (`bytes[72]`). Spec §3.1.
     pub(crate) const OPAQUE_UTF16_PAYLOAD: usize = 54;
+}
+
+/// Byte offsets for the `component_insert_relation_345_57` record.
+///
+/// Spec §3.1. Record length 57 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-345 indexed header. The paired class-258 header begins at offset 57.
+/// ```
+pub(crate) mod component_insert_relation_345_57 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER: usize = 20;
+    /// Stated value of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER_VALUE: u8 = 1;
+    /// Offset of `first_carrier_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_CARRIER_RECORD_INDEX: usize = 21;
+    /// Offset of `second_marker` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_MARKER: usize = 34;
+    /// Stated value of `second_marker` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_MARKER_VALUE: u8 = 1;
+    /// Offset of `second_child_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_CHILD_RECORD_INDEX: usize = 35;
+    /// Offset of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER: usize = 46;
+    /// Stated value of `scope_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_MARKER_VALUE: u8 = 1;
+    /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
+}
+
+/// Byte offsets for the `component_insert_relation_child_393_58` record.
+///
+/// Spec §3.1. Record length 58 B.
+///
+/// ```text
+/// Offsets are relative to the primary class-393 indexed header. The paired header begins at offset 58.
+/// ```
+pub(crate) mod component_insert_relation_child_393_58 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 58;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER: usize = 31;
+    /// Stated value of `relation_marker` (`u8`). Spec §3.1.
+    pub(crate) const RELATION_MARKER_VALUE: u8 = 1;
+    /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RELATION_RECORD_INDEX: usize = 32;
+    /// Offset of `opaque_token` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OPAQUE_TOKEN: usize = 42;
 }
 
 /// Byte offsets for the `component_insert_scope_283_262_257` record.
@@ -5177,7 +5231,7 @@ pub(crate) mod component_insert_carrier_334_prefix {
 /// Spec §3.1. Record length 695 B.
 ///
 /// ```text
-/// Offsets are relative to the primary class-380 or class-382 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
+/// Offsets are relative to the primary class-380, class-382, or class-369 grouped identity carrier header. The relation header begins at offset 695. Every GUID field has 36 code units or ASCII bytes.
 /// ```
 pub(crate) mod component_insert_grouped_identity_carrier {
     /// Record length in bytes. Spec §3.1.
