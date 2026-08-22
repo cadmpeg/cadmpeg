@@ -283,7 +283,7 @@ fn the_4_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
 }
 
 #[test]
-fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_four_digit_date_later() {
+fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_short_date() {
     let mut fields = valid_global_fields();
     fields[17] = "13H260714.000000".into();
     fields[22] = "8".into();
@@ -293,6 +293,28 @@ fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_four_digit_date_lat
 
     assert_eq!(parsed.version(), "5.0");
     assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn the_5_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
+    let mut fields = valid_global_fields();
+    fields[17] = "15H20260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (_, losses) = resolve_global_fields(&fields);
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        1
+    );
+
+    let mut extended = fields;
+    extended.push("0H".into());
+    let (_, losses) = resolve_global_fields(&extended);
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        1
+    );
 }
 
 #[test]

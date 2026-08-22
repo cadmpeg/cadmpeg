@@ -941,6 +941,10 @@ impl ResolvedGlobal {
         }
     }
 
+    pub(crate) fn dialect(&self) -> Dialect {
+        self.dialect
+    }
+
     /// The loss charged when field 23 does not name a verified specification version.
     ///
     /// It is `None` only for a readable, unclamped flag whose effective version

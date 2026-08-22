@@ -93,7 +93,7 @@ pub enum IgesLossCode {
     GlobalSemanticContextSubstituted,
     /// The Global fields 13, 14, and 15 produced no millimetre length factor.
     GlobalLengthUnitUnresolved,
-    /// The Global record is recoverable but departs from IGES 5.3 Table 1.
+    /// Global framing is recoverable but noncanonical for the declared profile.
     GlobalNoncanonicalFraming,
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified,

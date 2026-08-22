@@ -606,6 +606,15 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
     }
 }
 
+impl CardScan<'_> {
+    pub(crate) fn post_terminate_count(&self) -> usize {
+        self.lines
+            .iter()
+            .position(|line| line.section == Some(Section::Terminate))
+            .map_or(0, |index| self.lines.len().saturating_sub(index + 1))
+    }
+}
+
 #[cfg(test)]
 mod quarantine_tests;
 #[cfg(test)]

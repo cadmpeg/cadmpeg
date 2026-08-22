@@ -179,6 +179,14 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let mut losses = Vec::new();
         losses.extend(self.global.dialect_loss());
         losses.extend(self.global_losses.iter().cloned());
+        if matches!(self.global.dialect(), global::Dialect::V4_0) {
+            let post_terminate_count = self.scan.post_terminate_count();
+            if post_terminate_count > 0 {
+                losses.push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
+                    "IGES 4.0 requires the Terminate Section to be the last physical line; retained {post_terminate_count} trailing record(s) as source data"
+                )));
+            }
+        }
         losses
     }
 
