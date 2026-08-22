@@ -31,14 +31,15 @@ from_endian_bytes = 115
 codec_error_malformed_format = 1415
 loss_note_struct_literals = 2
 bare_tolerance_literals = 708
-nonliteral_vec_repeat = 152
+nonliteral_vec_repeat = 153
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 13913
+test_line_debt = 13949
 production_line_debt = 0
 
 [reasons]
 from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
 codec_error_malformed_format = "The merged FreeCAD, IGES, Rhino, and STEP admission paths retain explicit malformed-input diagnostics: DP-10 and SA-03 require exact carrier and annotation checks, while IGES Type 186 and Rhino V1/RhinoIO checks preserve field-specific failures rather than collapsing distinct producer fields into one generic error."
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, and the IGES solid test support file at 2,039 lines while test ownership migration remains incomplete."
+nonliteral_vec_repeat = "The current IGES writer retains one parsed-count vector repeat while the allocation convergence work remains open."
+test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, the IGES solid test support file at 2,039 lines, and the IGES writer encoding test file at 2,036 lines while test ownership migration remains incomplete."
