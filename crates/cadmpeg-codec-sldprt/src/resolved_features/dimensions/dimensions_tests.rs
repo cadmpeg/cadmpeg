@@ -1983,6 +1983,7 @@ fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
     assert_eq!(extended_radial_circle_index(&payload, 0), None);
 }
 
+mod direct_circle_carrier;
 mod duplicate_link_arc;
 mod point_identity;
 mod point_projection;

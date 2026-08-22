@@ -1124,6 +1124,115 @@ pub(super) fn radial_dimension_radius(
     (radius.is_finite() && radius > 0.0).then_some(radius)
 }
 
+/// Remove a native circular marker after its exact circle-dimension relation
+/// has materialized the same geometry.
+///
+/// A direct circular operand is an identity carrier for the dimensioned circle,
+/// not an additional sketch entity. Remove only a native entity that carries
+/// that marker and only when the relation projector left a typed circle linked
+/// to the relation. This keeps unresolved, indirect, and non-circular markers
+/// native.
+fn reconcile_direct_circle_dimension_carriers(
+    entities: &mut Vec<SketchEntity>,
+    sketches: &mut [Sketch],
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    feature: &str,
+    lanes: &[FeatureInputLane],
+) {
+    let replacements = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .filter(|relation| {
+            relation.feature_ref == feature
+                && relation.family == FeatureInputRelationFamily::CircleDiameter
+        })
+        .filter_map(|relation| {
+            let ([operand] | [_, operand]) = relation.operands.as_slice() else {
+                return None;
+            };
+            let marker_id = operand.entity_ref.as_deref()?;
+            let markers = lanes
+                .iter()
+                .flat_map(|lane| &lane.sketch_entities)
+                .filter(|marker| {
+                    marker.id == marker_id && marker.feature_ref.as_deref() == Some(feature)
+                })
+                .collect::<Vec<_>>();
+            let [marker] = markers.as_slice() else {
+                return None;
+            };
+            if !matches!(marker.kind, SketchInputKind::LineOrCircle)
+                || !marker
+                    .coordinates_m
+                    .is_some_and(|[u, v]| u.is_finite() && v.is_finite())
+            {
+                return None;
+            }
+            let typed_entities = entities
+                .iter()
+                .filter(|entity| {
+                    entity.sketch == *sketch_id
+                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                        && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                })
+                .collect::<Vec<_>>();
+            let [typed_entity] = typed_entities.as_slice() else {
+                return None;
+            };
+            Some((marker.id.clone(), typed_entity.id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    if replacements.is_empty() {
+        return;
+    }
+    let removed = entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch_id
+                && matches!(entity.geometry, SketchGeometry::Native { .. })
+                && entity
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| replacements.get(native_ref))
+                    .is_some()
+        })
+        .filter_map(|entity| {
+            let native_ref = entity.native_ref.as_deref()?;
+            Some((entity.id.clone(), replacements.get(native_ref)?.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    if removed.is_empty() {
+        return;
+    }
+    entities.retain(|entity| !removed.contains_key(&entity.id));
+    if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
+        for profile in &mut sketch.profiles {
+            let usages = std::mem::take(profile);
+            let mut present = usages
+                .iter()
+                .filter(|usage| !removed.contains_key(&usage.entity))
+                .map(|usage| usage.entity.clone())
+                .collect::<HashSet<_>>();
+            let mut updated = Vec::with_capacity(usages.len());
+            for usage in usages {
+                let Some(replacement) = removed.get(&usage.entity) else {
+                    updated.push(usage);
+                    continue;
+                };
+                if present.insert(replacement.clone()) {
+                    updated.push(SketchEntityUse {
+                        entity: replacement.clone(),
+                        reversed: usage.reversed,
+                    });
+                }
+            }
+            *profile = updated;
+        }
+        sketch.profiles.retain(|profile| !profile.is_empty());
+    }
+}
+
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
@@ -1158,6 +1267,9 @@ pub(crate) fn project_marker_dimensioned_circles(
         else {
             continue;
         };
+        reconcile_direct_circle_dimension_carriers(
+            entities, sketches, sketch_id, native_ref, lanes,
+        );
         let radial_dimensions = parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
