@@ -1673,6 +1673,98 @@ pub struct OperationTerminalFrame {
     pub object_index_offset: usize,
 }
 
+/// Encoding family for an object index in an operation-state lane.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateIndexForm {
+    /// One-byte value in `00..7f`.
+    Direct,
+    /// `80..8f` followed by one low byte.
+    Compact,
+    /// `90` followed by a big-endian `u16`.
+    Wide16,
+    /// `a0..af` followed by a big-endian `u16`.
+    Wide20,
+    /// `f1` followed by a big-endian `u16`.
+    Extended16,
+    /// The `ff` null token.
+    Null,
+}
+
+/// One operation-state object-index token with its exact serialized form.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateIndex<'a> {
+    /// Decoded value, or `None` for the `ff` null token.
+    pub value: Option<u32>,
+    /// Encoding family selected by the first byte.
+    pub form: OperationStateIndexForm,
+    /// Exact serialized token.
+    pub raw: &'a [u8],
+    /// Absolute byte offset of the token.
+    pub offset: usize,
+}
+
+/// Width family for one tagged integer in the operation-state block.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateTaggedValueForm {
+    /// `a0..bf` followed by two bytes.
+    Two,
+    /// `c0..df` followed by three bytes.
+    Three,
+    /// `e0..ef` or `ff` followed by four bytes.
+    Four,
+}
+
+/// One operation-state tagged integer with its exact serialized form.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateTaggedValue<'a> {
+    /// Decoded unsigned value.
+    pub value: u32,
+    /// Width family selected by the marker.
+    pub form: OperationStateTaggedValueForm,
+    /// First serialized marker byte.
+    pub marker: u8,
+    /// Exact marker and payload bytes.
+    pub raw: &'a [u8],
+    /// Absolute byte offset of the marker.
+    pub offset: usize,
+}
+
+/// One row in the operation-state object counter map.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateCounter<'a> {
+    /// Absolute byte offset of the row's `05` marker.
+    pub offset: usize,
+    /// Row-kind byte following `05`; modern files use `01` and `02`.
+    pub row_kind: u8,
+    /// Object whose state-counter pair is recorded.
+    pub object_index: OperationStateIndex<'a>,
+    /// Journal state at which the object was introduced.
+    pub introduced_state: u8,
+    /// Journal state at which the object was last modified.
+    pub modified_state: u8,
+    /// Exclusive absolute end offset after the `4e` terminator.
+    pub end_offset: usize,
+}
+
+/// Contiguous object state-counter map at the end of a feature-history area.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateCounterMap<'a> {
+    /// Absolute byte offset of the first counter row.
+    pub offset: usize,
+    /// Absolute byte offset after the final counter row.
+    pub end_offset: usize,
+    /// Rows in serialized order.
+    pub rows: Vec<OperationStateCounter<'a>>,
+    /// Exact bytes after the counter rows within the bounded record area.
+    pub trailing_bytes: &'a [u8],
+}
+
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
@@ -2716,6 +2808,28 @@ impl<'a> Section<'a> {
             base_offset,
             &self.cached_operation_labels,
         )
+    }
+
+    /// Decode the bounded state-counter map of a feature-history record area.
+    ///
+    /// The section-role check is intentional. The same byte patterns occur in
+    /// ordinary model-store payloads, where they do not carry operation state.
+    #[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+    pub fn operation_state_counter_map(&self) -> Option<OperationStateCounterMap<'a>> {
+        let is_feature_history = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::FEATURE_RECORD")
+            || self
+                .fields
+                .iter()
+                .any(|definition| definition.name == "m_rollForwardStates");
+        if !is_feature_history {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        operation_state_counter_map(bytes, base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -6256,6 +6370,186 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
+}
+
+/// Decode one object-index token used by the operation-state block.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_index(bytes: &[u8], at: usize) -> Option<OperationStateIndex<'_>> {
+    operation_state_index_at(bytes, at, 0)
+}
+
+fn operation_state_index_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateIndex<'_>> {
+    let prefix = *bytes.get(at)?;
+    let (form, value, width) = match prefix {
+        0x00..=0x7f => (OperationStateIndexForm::Direct, Some(u32::from(prefix)), 1),
+        0x80..=0x8f => (
+            OperationStateIndexForm::Compact,
+            Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
+            2,
+        ),
+        0x90 => (
+            OperationStateIndexForm::Wide16,
+            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xa0..=0xaf => (
+            OperationStateIndexForm::Wide20,
+            Some(u32::from(prefix - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xf1 => (
+            OperationStateIndexForm::Extended16,
+            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xff => (OperationStateIndexForm::Null, None, 1),
+        _ => return None,
+    };
+    Some(OperationStateIndex {
+        value,
+        form,
+        raw: bytes.get(at..at + width)?,
+        offset: base_offset.checked_add(at)?,
+    })
+}
+
+/// Decode one tagged integer used by an operation-state row.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_tagged_value(
+    bytes: &[u8],
+    at: usize,
+) -> Option<OperationStateTaggedValue<'_>> {
+    operation_state_tagged_value_at(bytes, at, 0)
+}
+
+fn operation_state_tagged_value_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateTaggedValue<'_>> {
+    let marker = *bytes.get(at)?;
+    let (form, width, value) = match marker {
+        0xa0..=0xbf => (
+            OperationStateTaggedValueForm::Two,
+            3,
+            u32::from(marker - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?),
+        ),
+        0xc0..=0xdf => (
+            OperationStateTaggedValueForm::Three,
+            4,
+            u32::from(marker - 0xc0) * 0x1_000_000
+                + (u32::from(*bytes.get(at + 1)?) << 16)
+                + (u32::from(*bytes.get(at + 2)?) << 8)
+                + u32::from(*bytes.get(at + 3)?),
+        ),
+        0xe0 | 0xff => (
+            OperationStateTaggedValueForm::Four,
+            5,
+            View::u32_be_at(bytes, at + 1)?,
+        ),
+        _ => return None,
+    };
+    Some(OperationStateTaggedValue {
+        value,
+        form,
+        marker,
+        raw: bytes.get(at..at + width)?,
+        offset: base_offset.checked_add(at)?,
+    })
+}
+
+fn operation_state_counter_row(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateCounter<'_>> {
+    if bytes.get(at) != Some(&0x05) {
+        return None;
+    }
+    let row_kind = *bytes.get(at + 1)?;
+    if !matches!(row_kind, 0x01 | 0x02) {
+        return None;
+    }
+    let object_at = at.checked_add(2)?;
+    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+    object_index.value?;
+    let state_at = object_at.checked_add(object_index.raw.len())?;
+    let introduced_state = *bytes.get(state_at)?;
+    let modified_state = *bytes.get(state_at + 1)?;
+    let end = state_at.checked_add(3)?;
+    (bytes.get(end - 1) == Some(&0x4e)).then_some(OperationStateCounter {
+        offset: base_offset.checked_add(at)?,
+        row_kind,
+        object_index,
+        introduced_state,
+        modified_state,
+        end_offset: base_offset.checked_add(end)?,
+    })
+}
+
+/// Decode the contiguous operation-state counter-map suffix of a bounded area.
+///
+/// The map is selected by the longest run of complete `05, row_kind, index,
+/// state, state, 4e` rows whose remaining bounded tail is small enough to be
+/// an area footer. This end anchor prevents a syntactically valid short lane in
+/// an operation payload from becoming a state map.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_counter_map(
+    bytes: &[u8],
+    base_offset: usize,
+) -> Option<OperationStateCounterMap<'_>> {
+    const MAX_COUNTER_TAIL_BYTES: usize = 64;
+    let mut best: Option<(usize, usize, usize)> = None;
+    let mut run_start = 0;
+    let mut run_end = 0;
+    let mut run_len = 0;
+    for at in 0..bytes.len().saturating_sub(2) {
+        if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
+            continue;
+        }
+        let Some(row) = operation_state_counter_row(bytes, at, base_offset) else {
+            continue;
+        };
+        let row_end = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("counter row offset is based on the same record area");
+        if at == run_end {
+            run_end = row_end;
+            run_len += 1;
+        } else {
+            run_start = at;
+            run_end = row_end;
+            run_len = 1;
+        }
+        if run_len >= 2
+            && bytes.len().saturating_sub(run_end) <= MAX_COUNTER_TAIL_BYTES
+            && best.is_none_or(|(_, _, current_len)| run_len > current_len)
+        {
+            best = Some((run_start, run_end, run_len));
+        }
+    }
+    let (start, end, row_count) = best?;
+    let mut rows = Vec::with_capacity(row_count);
+    let mut cursor = start;
+    while cursor < end {
+        let row = operation_state_counter_row(bytes, cursor, base_offset)?;
+        cursor = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("counter row offset is based on the same record area");
+        rows.push(row);
+    }
+    (cursor == end).then_some(OperationStateCounterMap {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(end)?,
+        rows,
+        trailing_bytes: bytes.get(end..)?,
+    })
 }
 
 fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {

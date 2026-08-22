@@ -21,4 +21,5 @@ mod instances_and_stores;
 mod operation_data_block_references;
 mod pattern_lanes;
 mod sketch_payload;
+mod state_block;
 mod tagged_references;
