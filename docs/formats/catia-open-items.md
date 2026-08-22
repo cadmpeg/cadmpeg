@@ -642,6 +642,19 @@ extent `15`; the allocation scope is absent. No face-domain assignment is
 derived from those values. Verdict: repeated edge-face slot assignment
 remains open.
 
+A second FBB-only stream has 84 face rows and 166 standard supports. Its
+`0x02` edge row at ordinal `12` serializes the repeated face pair `[0,0]` and
+has the alternate face domain `[1,2,3,76,79]`. The stream has no parseable B5
+object graph, so it supplies no native edge owner for that row. The `05 08 01`
+vertex lane and the FBB endpoint rows provide endpoint candidates but no
+face-owner relation. A concrete-branch walk still rejects at quotient
+preparation on an independent closed Bspline row at ordinal `22`: its only
+endpoint pair is `[6,7]`, while both roots in its settled port component have
+domain `{6}`. The narrow rule in `catia.md` §5.5 now withholds placement and
+boundary-pruned endpoint domains from the open row before joint assignment;
+the evidence does not select its second face. Verdict: repeated edge-face slot
+assignment remains open.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face

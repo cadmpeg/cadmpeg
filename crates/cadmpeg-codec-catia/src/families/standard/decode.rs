@@ -3756,6 +3756,9 @@ fn attach_standard_topology(
                 missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
+                    if deferred_port_edges[edge] {
+                        continue;
+                    }
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     if domain.is_empty() {
                         continue;
@@ -3786,6 +3789,9 @@ fn attach_standard_topology(
                 .flatten()
             {
                 for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
+                    if deferred_port_edges[edge] {
+                        continue;
+                    }
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     let previous = options[edge].clone();
                     if options[edge].is_empty() {
