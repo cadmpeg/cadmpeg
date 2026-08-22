@@ -133,6 +133,23 @@ fn operation_state_messages_decode_text_value_and_severity() {
 }
 
 #[test]
+fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
+    let mut bytes = message_bytes(b"terminal", &[0xaa, 0x39, 0x4e], [1, 0]);
+    let group_start = bytes.len() - 2;
+    bytes.extend([0x01, 0x02, 0x4a, 0x83, 0x20, 0x01, 0xff]);
+    let table = super::operation_state_group_table(&bytes, group_start, bytes.len(), 500)
+        .expect("group table");
+    let messages = super::operation_state_block_before_boundary(&bytes, 0, group_start + 2, 500)
+        .expect("terminal message")
+        .messages;
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].text, "terminal");
+    assert_eq!(messages[0].end_offset, 500 + group_start + 2);
+    assert_eq!(table.offset, 500 + group_start);
+    assert_eq!(table.groups[0].opener, [0x01, 0x00]);
+}
+
+#[test]
 fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() {
     let mut bytes = vec![
         0x41, 0x83, 0x20, 0x3f, 0x3e, 0x80, 0xac, 0x45, 0xff, 0x82, 0x52, 0xff, 0x3c, 0x81, 0x23,
@@ -170,6 +187,44 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     assert_eq!(table.slot_lanes[0].slots.len(), 3);
     assert_eq!(table.slot_lanes[0].slots[1].value, Some(0x3ad));
     assert_eq!(table.trailing_bytes, &b""[..]);
+}
+
+#[test]
+fn operation_state_block_keeps_inline_diagnostics_out_of_standalone_messages() {
+    let mut bytes = vec![0x3c, 0x81, 0x23];
+    let diagnostic = message_bytes(b"inline", &[0xaa, 0x60, 0x6b], [0, 1]);
+    bytes.extend_from_slice(&diagnostic);
+    bytes.extend(message_bytes(b"standalone", &[0xaa, 0x39, 0x4e], [0, 2]));
+
+    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+        .expect("complete operation-state block");
+    assert_eq!(block.rows.len(), 1);
+    assert!(matches!(
+        block.rows[0].payload,
+        OperationStateStatusPayload::Diagnostic { .. }
+    ));
+    assert_eq!(block.messages.len(), 1);
+    assert_eq!(block.messages[0].text, "standalone");
+    assert_eq!(block.status_end_offset, 500 + 3 + diagnostic.len());
+}
+
+#[test]
+fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
+    let mut bytes = vec![
+        0x41, 0x80, 0x01, 0x3f, 0x31, 0x80, 0x55, 0x87, 0xb3, 0xff, 0x81, 0x36, 0xff, 0x41, 0x80,
+        0x20, 0x3f, 0x44, 0x80, 0x21, 0x4b, 0xff, 0x80, 0x22, 0xff,
+    ];
+    let message = message_bytes(b"boundary", &[0xaa, 0x01, 0x02], [0, 1]);
+    let boundary = bytes.len();
+    bytes.extend(message);
+
+    let block = super::operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+        .expect("complete status chain");
+    assert_eq!(block.offset, 500 + 13);
+    assert_eq!(block.rows.len(), 2);
+    assert_eq!(block.rows[0].object_index.value, Some(0x20));
+    assert_eq!(block.rows[1].status_code.value, Some(0x44));
+    assert_eq!(block.status_end_offset, 500 + boundary);
 }
 
 #[test]

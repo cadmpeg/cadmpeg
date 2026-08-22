@@ -1674,7 +1674,7 @@ pub struct OperationTerminalFrame {
 }
 
 /// Encoding family for an object index in an operation-state lane.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[allow(dead_code)] // Retained for the exact parser API and focused tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationStateIndexForm {
     /// One-byte value in `00..7f`.
@@ -1692,7 +1692,6 @@ pub enum OperationStateIndexForm {
 }
 
 /// One operation-state object-index token with its exact serialized form.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateIndex<'a> {
     /// Decoded value, or `None` for the `ff` null token.
@@ -1706,7 +1705,7 @@ pub struct OperationStateIndex<'a> {
 }
 
 /// Width family for one tagged integer in the operation-state block.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[allow(dead_code)] // Retained for the exact parser API and focused tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationStateTaggedValueForm {
     /// `a0..bf` followed by two bytes.
@@ -1718,7 +1717,6 @@ pub enum OperationStateTaggedValueForm {
 }
 
 /// One operation-state tagged integer with its exact serialized form.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateTaggedValue<'a> {
     /// Decoded unsigned value.
@@ -1764,7 +1762,6 @@ pub struct OperationStateCounterMap<'a> {
 }
 
 /// One diagnostic/message record in the operation-state block.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateMessage<'a> {
     /// Absolute byte offset of the opening `03` marker.
@@ -1782,7 +1779,6 @@ pub struct OperationStateMessage<'a> {
 }
 
 /// Payload form of one per-object operation-state status row.
-#[allow(dead_code)] // Retained until status-to-operation identity is proven.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationStateStatusPayload<'a> {
     /// Normal built/healthy object state, encoded as `3f`.
@@ -1807,7 +1803,6 @@ pub enum OperationStateStatusPayload<'a> {
 }
 
 /// One per-object status row in the operation-state block.
-#[allow(dead_code)] // Retained until status-to-operation identity is proven.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateStatus<'a> {
     /// Absolute byte offset of the status-code token.
@@ -1823,7 +1818,6 @@ pub struct OperationStateStatus<'a> {
 }
 
 /// A bounded sequence of operation-state status rows.
-#[allow(dead_code)] // Direct bounded parser result retained for focused tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateStatusTable<'a> {
     /// Absolute byte offset of the first status row.
@@ -1839,7 +1833,6 @@ pub struct OperationStateStatusTable<'a> {
 }
 
 /// One standalone feature-record slot lane in the operation-state block.
-#[allow(dead_code)] // Retained until the slots receive a proven feature join.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateSlotLane<'a> {
     /// Absolute byte offset of the `02 01 11` lane prefix.
@@ -1850,8 +1843,15 @@ pub struct OperationStateSlotLane<'a> {
     pub end_offset: usize,
 }
 
+struct OperationStateBlock<'a> {
+    offset: usize,
+    status_end_offset: usize,
+    rows: Vec<OperationStateStatus<'a>>,
+    slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    messages: Vec<OperationStateMessage<'a>>,
+}
+
 /// One row in an `m_rollForwardStates` group table.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationStateGroupRow<'a> {
     /// `4a object_index position ff` list member. The common position is a
@@ -1879,7 +1879,6 @@ pub enum OperationStateGroupRow<'a> {
 }
 
 /// One counted `m_rollForwardStates` group.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateGroup<'a> {
     /// Absolute byte offset of the two-byte group opener.
@@ -1897,7 +1896,6 @@ pub struct OperationStateGroup<'a> {
 }
 
 /// A bounded sequence of `m_rollForwardStates` groups.
-#[allow(dead_code)] // Direct bounded parser result retained for focused tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateGroupTable<'a> {
     /// Absolute byte offset of the first group.
@@ -3023,6 +3021,58 @@ impl<'a> Section<'a> {
         let base_offset = self.record_area_offset?;
         let map_start = map.offset.checked_sub(base_offset)?;
         operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
+    }
+
+    fn operation_state_block(&self) -> Option<OperationStateBlock<'a>> {
+        let map = self.operation_state_counter_map()?;
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let (_, last_record) = self
+            .operation_records_with_label_ordinals()
+            .into_iter()
+            .last()?;
+        let start_offset = last_record.payload_offset;
+        let start = start_offset.checked_sub(base_offset)?;
+        let group = self.operation_state_group_table();
+        let terminal = group
+            .as_ref()
+            .map_or(map.offset, |table| table.offset)
+            .checked_sub(base_offset)?;
+        let mut ends = Vec::with_capacity(2);
+        if let Some(table) = &group {
+            let overlap_end = terminal.checked_add(table.groups.first()?.opener.len())?;
+            ends.push(overlap_end);
+        }
+        ends.push(terminal);
+        ends.into_iter()
+            .find_map(|end| operation_state_block_before_boundary(bytes, start, end, base_offset))
+    }
+
+    /// Decode the bounded per-object status lane after the operation records.
+    pub fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let block = self.operation_state_block()?;
+        let status_after = block.status_end_offset.checked_sub(base_offset)?;
+        let message_start = match block.messages.first() {
+            Some(message) => message.offset.checked_sub(base_offset)?,
+            None => status_after,
+        };
+        (!block.rows.is_empty() || !block.slot_lanes.is_empty()).then_some(
+            OperationStateStatusTable {
+                offset: block.offset,
+                end_offset: block.status_end_offset,
+                rows: block.rows,
+                slot_lanes: block.slot_lanes,
+                trailing_bytes: bytes.get(status_after..message_start)?,
+            },
+        )
+    }
+
+    /// Decode the contiguous standalone message records immediately before
+    /// the roll-forward table or counter-map boundary.
+    pub fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
+        Some(self.operation_state_block()?.messages)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -6785,6 +6835,163 @@ fn operation_state_message_at(
     })
 }
 
+fn operation_state_status_end_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+    opaque_ends: Option<(&[usize], usize)>,
+) -> Option<usize> {
+    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+        operation_state_slot_lane_end_at(bytes, at, end)
+    } else {
+        operation_state_status_row_at(bytes, at, end, base_offset, opaque_ends)
+            .and_then(|row| row.end_offset.checked_sub(base_offset))
+    }
+}
+
+fn operation_state_block_before_boundary(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateBlock<'_>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+
+    let span = end - start;
+    let mut opaque_ends = std::iter::repeat_n(usize::MAX, span).collect::<Vec<usize>>();
+    let mut next_lane_end = usize::MAX;
+    for at in (start..end).rev() {
+        if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
+            next_lane_end = at.saturating_add(2);
+        }
+        opaque_ends[at - start] = next_lane_end;
+    }
+
+    let mut status_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
+    let mut message_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
+    for at in (start..end).rev() {
+        let relative = at - start;
+        if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
+            let next = message.end_offset.checked_sub(base_offset)?;
+            if next >= start && next <= end && (next == end || message_lengths[next - start] > 0) {
+                let length = if next == end {
+                    1
+                } else {
+                    1 + message_lengths[next - start]
+                };
+                message_lengths[relative] = length;
+            }
+        }
+
+        let status_length =
+            operation_state_status_end_at(bytes, at, end, base_offset, Some((&opaque_ends, start)))
+                .filter(|next| {
+                    *next >= start
+                        && *next <= end
+                        && (*next == end || status_lengths[*next - start] > 0)
+                })
+                .map_or(0, |next| {
+                    if next == end {
+                        1
+                    } else {
+                        1 + status_lengths[next - start]
+                    }
+                });
+        status_lengths[relative] = status_length.max(message_lengths[relative]);
+    }
+
+    let (offset, _) = (start..end)
+        .map(|at| (at, status_lengths[at - start]))
+        .filter(|(_, length)| *length > 0)
+        .max_by_key(|(at, length)| (*length, std::cmp::Reverse(*at)))?;
+
+    let mut rows = Vec::new();
+    let mut slot_lanes = Vec::new();
+    let mut messages = Vec::new();
+    let mut status_end_offset = base_offset.checked_add(offset)?;
+    let mut at = offset;
+    let mut in_messages = false;
+    while at < end {
+        if in_messages {
+            let message = operation_state_message_at(bytes, at, base_offset)?;
+            let next = message.end_offset.checked_sub(base_offset)?;
+            (next >= start && next <= end && (next == end || message_lengths[next - start] > 0))
+                .then_some(())?;
+            messages.push(message);
+            at = next;
+            continue;
+        }
+
+        let status_next =
+            operation_state_status_end_at(bytes, at, end, base_offset, Some((&opaque_ends, start)));
+        let status_length = status_next
+            .filter(|next| {
+                *next >= start
+                    && *next <= end
+                    && (*next == end || status_lengths[*next - start] > 0)
+            })
+            .map_or(0, |next| {
+                if next == end {
+                    1
+                } else {
+                    1 + status_lengths[next - start]
+                }
+            });
+        let message = operation_state_message_at(bytes, at, base_offset);
+        let message_next = message
+            .as_ref()
+            .and_then(|message| message.end_offset.checked_sub(base_offset));
+        let message_length = if message_lengths[at - start] > 0 {
+            message_lengths[at - start]
+        } else {
+            0
+        };
+
+        if status_length >= message_length && status_length > 0 {
+            let next = status_next?;
+            if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+                let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
+                let lane_end = lane.end_offset.checked_sub(base_offset)?;
+                (lane_end == next).then_some(())?;
+                let lane_end_offset = lane.end_offset;
+                slot_lanes.push(lane);
+                at = next;
+                status_end_offset = lane_end_offset;
+            } else {
+                let row = operation_state_status_row_at(
+                    bytes,
+                    at,
+                    end,
+                    base_offset,
+                    Some((&opaque_ends, start)),
+                )?;
+                let row_end = row.end_offset.checked_sub(base_offset)?;
+                (row_end == next).then_some(())?;
+                rows.push(row);
+                at = next;
+                status_end_offset = row.end_offset;
+            }
+        } else {
+            let message = message?;
+            let next = message_next?;
+            (next >= start && next <= end && message_length > 0).then_some(())?;
+            messages.push(message);
+            at = next;
+            in_messages = true;
+        }
+    }
+    Some(OperationStateBlock {
+        offset: base_offset.checked_add(offset)?,
+        status_end_offset,
+        rows,
+        slot_lanes,
+        messages,
+    })
+}
+
 /// Decode complete message records in one already bounded state region.
 #[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
 pub fn operation_state_messages(
@@ -6881,13 +7088,30 @@ fn operation_state_slot_lane_at(
     None
 }
 
-fn operation_state_status_row_at(
-    bytes: &[u8],
+fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
+        return None;
+    }
+    let mut cursor = at + 3;
+    while cursor < end {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            return cursor.checked_add(2);
+        }
+        let slot = operation_state_index_at(bytes, cursor, 0)?;
+        cursor = cursor.checked_add(slot.raw.len())?;
+    }
+    None
+}
+
+fn operation_state_status_row_at<'a>(
+    bytes: &'a [u8],
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateStatus<'_>> {
+    opaque_ends: Option<(&[usize], usize)>,
+) -> Option<OperationStateStatus<'a>> {
     let status_code = operation_state_index_at(bytes, at, base_offset)?;
+    status_code.value?;
     let object_at = at.checked_add(status_code.raw.len())?;
     let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
     object_index.value?;
@@ -6909,7 +7133,14 @@ fn operation_state_status_row_at(
             )
         }
         0x02 | 0x1e | 0xff => {
-            let payload_end = operation_state_opaque_payload_end(bytes, payload_at, end)?;
+            let precomputed_end = opaque_ends.and_then(|(ends, origin)| {
+                payload_at
+                    .checked_sub(origin)
+                    .and_then(|relative| ends.get(relative).copied())
+                    .filter(|end| *end != usize::MAX)
+            });
+            let payload_end = precomputed_end
+                .or_else(|| operation_state_opaque_payload_end(bytes, payload_at, end))?;
             (
                 OperationStateStatusPayload::Opaque {
                     raw: bytes.get(payload_at..payload_end)?,
@@ -6955,7 +7186,7 @@ pub fn operation_state_status_table(
             slot_lanes.push(lane);
             continue;
         }
-        let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset) else {
+        let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
             break;
         };
         at = row

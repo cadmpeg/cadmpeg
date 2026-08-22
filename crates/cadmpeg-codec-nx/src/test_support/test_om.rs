@@ -167,12 +167,16 @@ pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<
     );
     payload[pointer_at..pointer_at + 4]
         .copy_from_slice(&(pointer + field.len() as u32).to_le_bytes());
-    let state_bytes = [
-        0x01, 0x00, 0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01,
-        0x01, 0x01, 0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00, 0x01,
-        0x01, 0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04,
-        0x4e,
+    let message_bytes = [
+        0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w', b'a', b'r', b'n', b'i', b'n', b'g',
+        0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01, 0x00,
     ];
+    let state_bytes = [
+        0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01, 0x01, 0x01,
+        0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00, 0x01, 0x01, 0x05,
+        0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04, 0x4e,
+    ];
+    payload.extend(message_bytes);
     payload.extend(state_bytes);
     let section_len = u32::from_be_bytes(
         payload[section_start + 8..section_start + 12]
@@ -180,9 +184,47 @@ pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<
             .expect("section length field"),
     );
     payload[section_start + 8..section_start + 12].copy_from_slice(
-        &(section_len + u32::try_from(field.len() + state_bytes.len()).expect("fixture length"))
+        &(section_len
+            + u32::try_from(field.len() + message_bytes.len() + state_bytes.len())
+                .expect("fixture length"))
+        .to_be_bytes(),
+    );
+    payload
+}
+
+pub(crate) fn composed_feature_history_payload_with_operation_state_statuses() -> Vec<u8> {
+    let mut section =
+        composed_feature_history_section(&[(&[1, 0xff, 0xff, 0xff], "SKETCH", vec![0x00])]);
+    let state_bytes = [
+        0x41, 0x80, 0x20, 0x3f, 0x44, 0x80, 0x21, 0x4b, 0xff, 0x80, 0x22, 0xff, 0x02, 0x01, 0x11,
+        0xff, 0x83, 0xad, 0xff, 0x02, 0x11, 0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w',
+        b'a', b'r', b'n', b'i', b'n', b'g', 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01,
+        0x00, 0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04,
+        0x4e,
+    ];
+    let section_len = u32::from_be_bytes(section[8..12].try_into().expect("section length field"));
+    section[8..12].copy_from_slice(
+        &(section_len + u32::try_from(state_bytes.len()).expect("state fixture length"))
             .to_be_bytes(),
     );
+    section.extend_from_slice(&state_bytes);
+
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+
+    let mut store = composed_offset_store(&[]);
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    for index in 0..2 {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
     payload
 }
 

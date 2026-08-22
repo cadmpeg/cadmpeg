@@ -1464,6 +1464,58 @@ by the ascending absolute source offset of their first label. These serialized
 offsets are the construction-order fields; no sequence field, timestamp, or
 predecessor reference is required.
 
+The feature-history state block follows the operation records. Its object-index
+token is one byte for `00..7f`, `80..8f` plus one low byte for
+`(prefix-80)*256+low`, `90` plus big-endian `u16`, `a0..af` plus big-endian
+`u16` for a 20-bit value, `f1` plus big-endian `u16` for an extended value,
+or `ff` for null. A tagged state value is `a0..bf` plus big-endian `u16`,
+`c0..df` plus three big-endian payload bytes, or `e0`/`ff` plus big-endian
+`u32`. Every token retains its marker, decoded value, exact bytes, and source
+offset.
+
+The state journal consists of one or more groups opened by
+`04, selector[2], 00` with an optional additional `00`. Each row is
+`e0, timestamp:u32 BE, tagged_value, schema_id, ordinal, 13`; the schema and
+ordinal use the object-index token. Journal ordinals are the state-counter
+value space. An operation's terminal duplicated local ordinal is the journal
+ordinal at which that operation was last modified.
+
+The status lane consists of rows
+`status_code, object_index, payload`. A plain payload is `3f`. A linked
+payload is `link_code, ff, linked_object_index, ff`. A diagnostic payload is
+the complete message grammar below. An opaque status retains its exact bounded
+payload bytes through its lane terminator. A feature-record slot lane is
+`02 01 11, object_index*, 02 11`; null slots are retained in order. Status
+code `41` with plain payload is the built, normal state. Other status codes
+retain their exact values and payloads without a semantic suppression name.
+
+A diagnostic or standalone message is
+`03, declared_len:u8, text[declared_len-2], 00, 00 00 00 00,
+tagged_value, count_or_severity:u16 BE`. The text is printable ASCII. The
+record retains its declared length, text, tagged value, count or severity, and
+source offsets. In the terminal-message form, the two-byte count or severity
+word is also the first two bytes of the first roll-forward-state group opener;
+the message ends two bytes after the group-table offset. This shared boundary
+is admitted only when both complete grammars consume the same two bytes.
+
+The field roster of a feature-history section declares `m_rollForwardStates`
+only when its value is present. Its value is a sequence of counted groups. A
+group opener is `01 00` or `01 01`, followed by the counted header `01,
+declared_count:u8`; the row count is `max(declared_count-1, 0)`. A list row is
+`4a, object_index, position, ff`. A relation row is `4f` or `48`, two object
+indices, and `ff ff`. Rows retain order, exact tokens, and source offsets.
+An empty group has declared count zero. The table ends before the state-counter
+map and retains any exact table-boundary bytes.
+
+The object state-counter map is the contiguous suffix
+`05, row_kind:u8, object_index, introduced_state:u8, modified_state:u8, 4e`.
+Modern row kinds are `01` and `02`. The map retains every row and its exact
+trailing bytes. A section without the field-declared group table may carry
+message records directly before this map. The state block does not assign
+feature suppression from a status code, group endpoint, common-frame byte, or
+empty collection without both serialized operation-to-state-object and
+state-object-to-value relations.
+
 A `SKETCH` operation carries one ordered counted-reference field beginning `01 00, nonempty:u8`. When `nonempty` is one, `declared_count:u8` follows and is nonzero, followed by `declared_count - 1` contiguous indices. When `nonempty` is zero, the declared count is zero and no leading indices follow. The field then contains `00 00`, one terminal index, and `01 00 00 00`. Each index uses a canonical width marker: `f0, value:u8` represents `0..255`, while `f1, value:u16 BE` represents `256..65535`. Each reference retains the exact two- or three-byte index token and its width-marker offset. The indices address offset-only OM data blocks; resolution is retained only when one indexed store contains the addressed block.
 
 A complete sketch construction-input record requires exactly one joined sketch operation record, a consistent declared count, contiguous reference ordinals, exactly `max(declared_count-1, 0)` leading member references, one final terminal reference, and unique data-block resolution for every reference. It retains the leading member lane and separated terminal reference as distinct ordered fields. Any missing, duplicated, inconsistent, noncontiguous, multiply terminal, or unresolved field is rejected atomically.

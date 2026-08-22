@@ -250,6 +250,9 @@ pub(crate) struct OmRecords {
     pub(crate) om_record_areas: Vec<OmRecordArea>,
     pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
     pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
+    pub(crate) operation_state_messages: Vec<OmOperationStateMessage>,
+    pub(crate) operation_state_statuses: Vec<OmOperationStateStatus>,
+    pub(crate) operation_state_slot_lanes: Vec<OmOperationStateSlotLane>,
     pub(crate) expression_declarations: Vec<ExpressionDeclaration>,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) classes: Vec<ClassDefinition>,
@@ -501,6 +504,9 @@ impl NativeModel {
         let om_record_areas = om_record_areas(container);
         let operation_state_counters = operation_state_counters(container);
         let operation_state_groups = operation_state_groups(container);
+        let operation_state_messages = operation_state_messages(container);
+        let operation_state_statuses = operation_state_statuses(container);
+        let operation_state_slot_lanes = operation_state_slot_lanes(container);
         let feature_operation_records = feature_operation_records(container);
         let feature_operation_object_relations = feature_operation_object_relations(container);
         let feature_operation_tagged_references = feature_operation_tagged_references(container);
@@ -1179,6 +1185,9 @@ impl NativeModel {
                 om_record_areas,
                 operation_state_counters,
                 operation_state_groups,
+                operation_state_messages,
+                operation_state_statuses,
+                operation_state_slot_lanes,
                 expression_declarations,
                 expressions,
                 classes,

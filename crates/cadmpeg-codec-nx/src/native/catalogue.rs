@@ -302,6 +302,21 @@ impl ContainerNoted for OmRollForwardStateGroup {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for OmOperationStateMessage {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateStatus {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateSlotLane {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureOperationLabel {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1783,6 +1798,36 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.operation_state_groups, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
         len: |m| m.om.operation_state_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_messages",
+        tag: Some("OM_OPERATION_STATE_MESSAGE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_messages, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_messages, r, ns),
+        len: |m| m.om.operation_state_messages.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_statuses",
+        tag: Some("OM_OPERATION_STATE_STATUS"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_statuses, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_statuses, r, ns),
+        len: |m| m.om.operation_state_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_slot_lanes",
+        tag: Some("OM_OPERATION_STATE_SLOT_LANE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_slot_lanes, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_slot_lanes, r, ns),
+        len: |m| m.om.operation_state_slot_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

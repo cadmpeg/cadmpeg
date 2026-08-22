@@ -138,6 +138,126 @@ pub struct OmRollForwardStateGroup {
     pub table_end_offset: u64,
 }
 
+/// One standalone operation-state message record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateMessage {
+    /// Globally unique message identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based message ordinal within the bounded state block.
+    pub ordinal: u32,
+    /// Serialized length byte.
+    pub declared_length: u8,
+    /// Exact Part Navigator diagnostic text.
+    pub text: String,
+    /// Tagged value marker following the four zero bytes.
+    pub value_marker: u8,
+    /// Decoded tagged value.
+    pub value: u32,
+    /// Exact serialized tagged value.
+    pub raw_value: Vec<u8>,
+    /// Big-endian count or severity word.
+    pub count_or_severity: u16,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the opening `03` marker.
+    pub source_offset: u64,
+}
+
+/// Native payload retained by one operation-state status row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OmOperationStateStatusPayload {
+    /// Normal built/healthy state marker.
+    Plain,
+    /// Status carrying one linked object index.
+    Linked {
+        /// Serialized link discriminator.
+        link_code: u8,
+        /// Linked object index.
+        object_index: u32,
+        /// Exact linked object-index token.
+        raw_object_index: Vec<u8>,
+    },
+    /// Status carrying an inline diagnostic message.
+    Diagnostic {
+        /// Serialized message length byte.
+        declared_length: u8,
+        /// Exact diagnostic text.
+        text: String,
+        /// Tagged value marker.
+        value_marker: u8,
+        /// Decoded tagged value.
+        value: u32,
+        /// Exact tagged value token.
+        raw_value: Vec<u8>,
+        /// Big-endian count or severity word.
+        count_or_severity: u16,
+    },
+    /// Typed status whose payload grammar is not assigned.
+    Opaque {
+        /// Exact bounded payload bytes.
+        raw: Vec<u8>,
+    },
+}
+
+/// One per-object operation-state status row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateStatus {
+    /// Globally unique status-row identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based row ordinal within the status table.
+    pub ordinal: u32,
+    /// Decoded non-null status-code value.
+    pub status_code: u32,
+    /// Exact serialized status-code token.
+    pub raw_status_code: Vec<u8>,
+    /// Decoded non-null object carrying the status.
+    pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Exact typed status payload.
+    pub payload: OmOperationStateStatusPayload,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the status-code token.
+    pub source_offset: u64,
+    /// Absolute exclusive end offset of the row.
+    pub end_offset: u64,
+}
+
+/// One serialized feature-record slot in an operation-state slot lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateSlot {
+    /// Zero-based slot ordinal.
+    pub ordinal: u32,
+    /// Decoded object index; null slots remain null.
+    pub object_index: Option<u32>,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+}
+
+/// One `02 01 11 ... 02 11` operation-state slot lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateSlotLane {
+    /// Globally unique slot-lane identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based lane ordinal within the status table.
+    pub ordinal: u32,
+    /// Ordered null or object-index slots.
+    pub slots: Vec<OmOperationStateSlot>,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the lane prefix.
+    pub source_offset: u64,
+    /// Absolute exclusive end offset after the lane terminator.
+    pub end_offset: u64,
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
@@ -301,6 +421,186 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + group.offset as u64,
                         table_end_offset: entry_offset + table.end_offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode standalone operation-state messages from canonical feature-history areas.
+pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMessage> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(messages) = section.operation_state_messages() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            messages
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, message)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    Some(OmOperationStateMessage {
+                        id: format!(
+                            "nx:feature-history:operation-state-message#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        declared_length: message.declared_length,
+                        text: message.text.to_string(),
+                        value_marker: message.value.marker,
+                        value: message.value.value,
+                        raw_value: message.value.raw.to_vec(),
+                        count_or_severity: message.count_or_severity,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + message.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode exact per-object operation-state status rows from feature-history areas.
+pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateStatus> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(table) = section.operation_state_status_table() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            table
+                .rows
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, row)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    let status_code = row.status_code.value?;
+                    let object_index = row.object_index.value?;
+                    let payload = match row.payload {
+                        crate::om::OperationStateStatusPayload::Plain => {
+                            OmOperationStateStatusPayload::Plain
+                        }
+                        crate::om::OperationStateStatusPayload::Linked {
+                            link_code,
+                            object_index,
+                        } => OmOperationStateStatusPayload::Linked {
+                            link_code,
+                            object_index: object_index.value?,
+                            raw_object_index: object_index.raw.to_vec(),
+                        },
+                        crate::om::OperationStateStatusPayload::Diagnostic { message } => {
+                            OmOperationStateStatusPayload::Diagnostic {
+                                declared_length: message.declared_length,
+                                text: message.text.to_string(),
+                                value_marker: message.value.marker,
+                                value: message.value.value,
+                                raw_value: message.value.raw.to_vec(),
+                                count_or_severity: message.count_or_severity,
+                            }
+                        }
+                        crate::om::OperationStateStatusPayload::Opaque { raw } => {
+                            OmOperationStateStatusPayload::Opaque { raw: raw.to_vec() }
+                        }
+                    };
+                    Some(OmOperationStateStatus {
+                        id: format!(
+                            "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        status_code,
+                        raw_status_code: row.status_code.raw.to_vec(),
+                        object_index,
+                        raw_object_index: row.object_index.raw.to_vec(),
+                        payload,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + row.offset as u64,
+                        end_offset: entry_offset + row.end_offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode exact feature-record slot lanes from feature-history status blocks.
+pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationStateSlotLane> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(table) = section.operation_state_status_table() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            table
+                .slot_lanes
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, lane)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    let slots = lane
+                        .slots
+                        .into_iter()
+                        .enumerate()
+                        .map(|(slot_ordinal, slot)| OmOperationStateSlot {
+                            ordinal: u32::try_from(slot_ordinal).expect("slot ordinal fits u32"),
+                            object_index: slot.value,
+                            raw_object_index: slot.raw.to_vec(),
+                        })
+                        .collect();
+                    Some(OmOperationStateSlotLane {
+                        id: format!(
+                            "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        slots,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + lane.offset as u64,
+                        end_offset: entry_offset + lane.end_offset as u64,
                     })
                 })
                 .collect()
