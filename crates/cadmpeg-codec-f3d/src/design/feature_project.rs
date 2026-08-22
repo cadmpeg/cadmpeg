@@ -6585,7 +6585,6 @@ fn project_fixed_pipe(
     if scope.kind != "Pipe"
         || *operation != DesignExtrudeOperation::NewBody
         || *section_shape != 1
-        || !*filled
         || values[0..2] != [1.0, 1.0]
         || values[2] <= 0.0
         || values[3] <= 0.0
@@ -6621,6 +6620,13 @@ fn project_fixed_pipe(
     {
         return None;
     }
+    let wall_thickness = if *filled {
+        None
+    } else if section_thickness.0 < section_size.0 / 2.0 {
+        Some(section_thickness)
+    } else {
+        return None;
+    };
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
         .iter()
@@ -6686,7 +6692,7 @@ fn project_fixed_pipe(
     Some(FeatureDefinition::Sweep {
         section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
             outer_radius: cadmpeg_ir::features::Length(section_size.0 / 2.0),
-            wall_thickness: None,
+            wall_thickness,
         }),
         sections: Vec::new(),
         path: Some(path),

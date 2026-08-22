@@ -119,6 +119,75 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         } if path == path_group.id
     ));
 
+    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 26,
+        section_shape: 1,
+        section_shape_offset: 30,
+        filled: false,
+        filled_offset: 31,
+        values: [1.0, 1.0, 0.6, 0.15],
+        record_indexes: [10, 11, 12, 13],
+        value_offsets: [40, 151, 262, 373],
+    });
+    let hollow_definition = crate::design::feature_project::project_fixed_pipe(
+        &scope,
+        &parameter_refs,
+        std::slice::from_ref(&path_group),
+        &[],
+        &[],
+    )
+    .expect("exact hollow circular Pipe reference form");
+    assert!(matches!(
+        hollow_definition,
+        FeatureDefinition::Sweep {
+            section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+                outer_radius: Length(3.0),
+                wall_thickness: Some(Length(1.5)),
+            }),
+            path: Some(PathRef::Native(path)),
+            ..
+        } if path == path_group.id
+    ));
+
+    let mut too_thick_parameters = parameters.clone();
+    too_thick_parameters[3].evaluated_value = 0.35;
+    let too_thick_parameter_refs = too_thick_parameters
+        .iter()
+        .map(|parameter| (parameter.record_index, parameter))
+        .collect::<Vec<_>>();
+    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 26,
+        section_shape: 1,
+        section_shape_offset: 30,
+        filled: false,
+        filled_offset: 31,
+        values: [1.0, 1.0, 0.6, 0.35],
+        record_indexes: [10, 11, 12, 13],
+        value_offsets: [40, 151, 262, 373],
+    });
+    assert!(crate::design::feature_project::project_fixed_pipe(
+        &scope,
+        &too_thick_parameter_refs,
+        std::slice::from_ref(&path_group),
+        &[],
+        &[],
+    )
+    .is_none());
+
+    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 26,
+        section_shape: 1,
+        section_shape_offset: 30,
+        filled: true,
+        filled_offset: 31,
+        values: [1.0, 1.0, 0.6, 0.15],
+        record_indexes: [10, 11, 12, 13],
+        value_offsets: [40, 151, 262, 373],
+    });
+
     scope.reference_members.push(23);
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
