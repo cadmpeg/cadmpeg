@@ -1001,6 +1001,7 @@ struct NativeSegmentDisplay {
 struct NativeSegmentedVisibility {
     id: String,
     source_entity: String,
+    declared_block_count: Option<i64>,
     blocks: Vec<NativeSegmentDisplay>,
 }
 
@@ -4005,6 +4006,7 @@ pub(crate) fn store(
             NativeSegmentedVisibility {
                 id: format!("iges:presentation:segmented-visibility#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                declared_block_count: record.and_then(|record| record.integer(1)),
                 blocks: (0..count)
                     .map(|index| {
                         let start = 2 + index * 6;

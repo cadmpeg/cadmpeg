@@ -1187,6 +1187,7 @@ fn decode_complete_leader_and_island_lists_keep_every_declared_item() {
             .fields()
     };
 
+    assert_eq!(annotation("sectioned_area")["declared_island_count"], 1);
     assert_eq!(
         annotation("sectioned_area")["islands"]
             .as_array()
@@ -1432,16 +1433,17 @@ fn decode_overdeclared_external_reference_index_charges_the_loss_and_reads_no_en
 
 #[test]
 fn decode_overdeclared_segmented_visibility_charges_the_loss_and_reads_no_block() {
-    let bytes = owned_test_file(&[
-        entity(410, 0, "VIEW", "410,1;"),
-        entity(402, 19, "SEGVIS", "402,2,1,0.5,1,0,0,0;"),
-    ]);
-    assert_overdeclared_contract(&bytes, 3);
-
-    let result = salvage(&bytes);
-    let native = result.ir().native.namespace("iges").unwrap();
-    let visibility = &native.arenas["segmented_visibility"][0];
-    assert!(visibility.fields()["blocks"].as_array().unwrap().is_empty());
+    overdeclared_site(
+        &[
+            entity(410, 0, "VIEW", "410,1;"),
+            entity(402, 19, "SEGVIS", "402,2,1,0.5,1,0,0,0;"),
+        ],
+        3,
+        "segmented_visibility",
+        "declared_block_count",
+        2,
+        "blocks",
+    );
 }
 
 #[test]
@@ -1606,16 +1608,33 @@ fn decode_overdeclared_flag_note_and_general_label_charge_the_loss_and_read_no_l
 
 #[test]
 fn decode_overdeclared_sectioned_area_charges_the_loss_and_reads_no_island() {
+    overdeclared_site(
+        &[
+            entity(100, 0, "BOUND", "100,0.0,0.0,0.0,1.0,0.0,1.0,0.0;"),
+            entity(230, 0, "SECTION", "230,1,0,0.0,0.0,0.0,0.0,0.0,2,1;"),
+        ],
+        3,
+        "annotations",
+        "declared_island_count",
+        2,
+        "islands",
+    );
+}
+
+#[test]
+fn decode_sectioned_area_retains_a_negative_declared_island_count() {
     let bytes = owned_test_file(&[
         entity(100, 0, "BOUND", "100,0.0,0.0,0.0,1.0,0.0,1.0,0.0;"),
-        entity(230, 0, "SECTION", "230,1,0,0.0,0.0,0.0,0.0,0.0,2,1;"),
+        entity(230, 0, "SECTION", "230,1,0,0.0,0.0,0.0,0.0,0.0,-1,1;"),
     ]);
-    assert_overdeclared_contract(&bytes, 3);
-
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
     let section = &native.arenas["annotations"][0];
-    assert!(section.fields()["islands"].as_array().unwrap().is_empty());
+    let fields = section.fields();
+
+    assert_eq!(fields["declared_island_count"], -1);
+    assert!(fields["islands"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
 }
 
 fn assert_no_count_loss(result: &cadmpeg_ir::codec::DecodeResult) {
@@ -1673,8 +1692,30 @@ fn decode_segmented_visibility_reads_a_final_block_present_in_part() {
     let fields = visibility.fields();
     let blocks = fields["blocks"].as_array().unwrap();
 
+    assert_eq!(fields["declared_block_count"], 2);
     assert_eq!(blocks.len(), 2);
     assert!(blocks[1]["display_flag"].is_null());
+    assert_no_count_loss(&result);
+}
+
+// A negative declared count fails `usize::try_from`, so the counted tail is
+// `Unreadable` and charges no overdeclaration loss. The retained
+// `declared_*_count` field is then the only witness that the file declared
+// anything at all. The sectioned-area twin of this test exercises the same
+// path through `counted_tail_at`.
+#[test]
+fn decode_segmented_visibility_retains_a_negative_declared_block_count() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(402, 19, "SEGVIS", "402,-1,1,0.5,1,0,0,0;"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let visibility = &native.arenas["segmented_visibility"][0];
+    let fields = visibility.fields();
+
+    assert_eq!(fields["declared_block_count"], -1);
+    assert!(fields["blocks"].as_array().unwrap().is_empty());
     assert_no_count_loss(&result);
 }
 

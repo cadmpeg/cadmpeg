@@ -169,6 +169,7 @@ pub(super) enum NativeAnnotation {
         pattern_anchor: [Option<f64>; 3],
         pattern_spacing: Option<f64>,
         pattern_angle: Option<f64>,
+        declared_island_count: Option<i64>,
         islands: Vec<Option<String>>,
         transformation: Option<String>,
     },
@@ -604,6 +605,7 @@ fn sectioned_area(
         ],
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
+        declared_island_count: record.and_then(|record| record.integer(8)),
         islands: (0..island_count)
             .map(|offset| subject.section_boundary_link(9 + offset))
             .collect(),
