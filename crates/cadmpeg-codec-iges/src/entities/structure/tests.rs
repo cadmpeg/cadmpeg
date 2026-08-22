@@ -523,7 +523,7 @@ fn decode_types_scalar_and_string_property_forms() {
         )
         .unwrap();
     let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
-    assert_eq!(properties.len(), 14);
+    assert_eq!(properties.len(), 15);
     assert!(properties
         .iter()
         .all(|property| property.id().starts_with("iges:application:property#D")));
@@ -535,6 +535,9 @@ fn decode_types_scalar_and_string_property_forms() {
     };
     assert_eq!(property(2).fields()["property_kind"], "region_restriction");
     assert_eq!(property(2).fields()["electrical_circuitry"], 2);
+    assert_eq!(property(4).fields()["property_kind"], "region_fill");
+    assert_eq!(property(4).fields()["fill_code"], 1);
+    assert_eq!(property(4).fields()["obsolete_pointer"], 0);
     assert_eq!(property(5).fields()["extension_flag"], 2);
     assert_eq!(property(6).fields()["lower_layer"], 2);
     assert_eq!(property(6).fields()["upper_layer"], 8);

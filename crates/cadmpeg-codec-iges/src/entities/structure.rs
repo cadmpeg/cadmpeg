@@ -355,6 +355,13 @@ fn property_fields_valid(
     match entry.form {
         2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
         3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
+        4 => {
+            exact(2)
+                && integer_range(2, 0..=2)
+                && record.integer(3).is_some_and(|value| {
+                    value == 0 || existing_pointer(record, 3, entries).is_some()
+                })
+        }
         5 => {
             exact(5)
                 && record
@@ -1175,7 +1182,7 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));

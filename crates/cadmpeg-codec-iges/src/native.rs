@@ -619,6 +619,10 @@ enum NativePropertyValue {
         function_code: Option<i64>,
         description: Option<Vec<u8>>,
     },
+    RegionFill {
+        fill_code: Option<i64>,
+        obsolete_pointer: Option<i64>,
+    },
     LineWidening {
         width: Option<f64>,
         cornering: Option<i64>,
@@ -3507,7 +3511,7 @@ pub(crate) fn store(
         .collect::<Vec<_>>();
     let properties = directory
         .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
             let end = clamped_primary_end(entry.sequence, record);
@@ -3528,6 +3532,10 @@ pub(crate) fn store(
                 3 => NativePropertyValue::LevelFunction {
                     function_code: record.integer(2),
                     description: record.string(3).map(<[u8]>::to_vec),
+                },
+                4 => NativePropertyValue::RegionFill {
+                    fill_code: record.integer(2),
+                    obsolete_pointer: record.integer(3),
                 },
                 5 => NativePropertyValue::LineWidening {
                     width: record.number(2),

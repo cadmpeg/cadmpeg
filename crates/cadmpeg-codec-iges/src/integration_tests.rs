@@ -214,7 +214,7 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
         "dimension_forms" => (3, 11, 3),
         "legacy_dimension_and_label_forms" => (1, 8, 1),
         "symbol_and_sectioned_area" => (1, 4, 1),
-        "scalar_property_forms" => (14, 14, 14),
+        "scalar_property_forms" => (15, 15, 15),
         "dimension_property_forms" | "flow_associativity" => (4, 4, 4),
         "bounded_associativity_forms" | "external_reference_forms" => (5, 5, 5),
         "primitive_solids" => (1, 8, 1),
