@@ -13,9 +13,122 @@ use super::{
     enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
     DeclaredInterval, DeclaredTransformFrameError,
 };
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
+
+#[test]
+fn point_display_symbol_targets_follow_the_declared_dialect() {
+    assert!(super::point_display_symbol_type_allowed(408, Dialect::V4_0));
+    assert!(!super::point_display_symbol_type_allowed(
+        308,
+        Dialect::V4_0
+    ));
+    assert!(super::point_display_symbol_type_allowed(308, Dialect::V5_0));
+    assert!(!super::point_display_symbol_type_allowed(
+        408,
+        Dialect::V5_0
+    ));
+    assert!(super::point_display_symbol_type_allowed(
+        308,
+        Dialect::Legacy
+    ));
+    assert!(super::point_display_symbol_type_allowed(
+        408,
+        Dialect::Legacy
+    ));
+}
+
+#[test]
+fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
+    fn file(global: &[u8], pointer: u32) -> Vec<u8> {
+        owned_test_file_with_global(
+            &[
+                OwnedTestEntity {
+                    entity_type: 308,
+                    form: 0,
+                    label: "DEF".into(),
+                    status: "00000200",
+                    parameters: "308,0,3HDEF,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 408,
+                    form: 0,
+                    label: "INST".into(),
+                    status: "00000000",
+                    parameters: "408,1,0,0,0,1;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "POINT".into(),
+                    status: "00000000",
+                    parameters: format!("116,1,2,3,{pointer};"),
+                },
+            ],
+            global,
+        )
+    }
+
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    let v4 = IgesCodec
+        .decode(
+            &mut Cursor::new(file(global_v4, 3)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(v4
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.0 == "iges:model:point#D5"));
+    assert!(!v4.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("Type 116 display symbol pointer is invalid")
+    }));
+
+    let v5 = IgesCodec
+        .decode(
+            &mut Cursor::new(file(global_v5, 1)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(v5
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.0 == "iges:model:point#D5"));
+    assert!(!v5.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("Type 116 display symbol pointer is invalid")
+    }));
+
+    for (global, pointer) in [(&global_v4[..], 1), (&global_v5[..], 3)] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(file(global, pointer)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(result
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.0 == "iges:model:point#D5"));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+                && loss
+                    .message
+                    .contains("Type 116 display symbol pointer is invalid")
+        }));
+    }
+}
 
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {

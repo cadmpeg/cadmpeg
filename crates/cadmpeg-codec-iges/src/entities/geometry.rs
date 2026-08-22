@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::{ProjectedGlobal, RealPrecision};
+use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -18,6 +18,37 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+
+pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::Legacy => matches!(entity_type, 308 | 408),
+        Dialect::V4_0 => entity_type == 408,
+        Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => entity_type == 308,
+    }
+}
+
+fn point_display_symbol_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> bool {
+    match record.value(4) {
+        None | Some(crate::parameter::TokenValue::Omitted) => true,
+        Some(crate::parameter::TokenValue::Integer(0)) => true,
+        Some(crate::parameter::TokenValue::Integer(sequence)) => {
+            u32::try_from(*sequence).ok().is_some_and(|sequence| {
+                sequence % 2 == 1
+                    && entries.get(&sequence).is_some_and(|target| {
+                        target.form == 0
+                            && point_display_symbol_type_allowed(target.entity_type, dialect)
+                    })
+            })
+        }
+        Some(crate::parameter::TokenValue::Real(_) | crate::parameter::TokenValue::String(_)) => {
+            false
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 enum ControlPointPlane {
@@ -940,6 +971,13 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
             continue;
         };
+        if !point_display_symbol_valid(record, &entries, global.dialect()) {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 116 display symbol pointer is invalid for the declared dialect")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
         let transform = match resolve_transform(
             entry.transform,
             &entries,
