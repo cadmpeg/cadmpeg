@@ -181,6 +181,39 @@ fn note_file_with_form(entity_type: i64, form: i64, parameters: String) -> Vec<u
 }
 
 #[test]
+fn decode_v5_general_note_one_blank_string_as_null() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = |global: &[u8]| {
+        owned_test_file_with_global(
+            &[OwnedTestEntity {
+                entity_type: 212,
+                form: 0,
+                label: "NOTE".into(),
+                status: "00000100",
+                parameters: general_note_parameters(1, &[" "], 0),
+            }],
+            global,
+        )
+    };
+
+    let v4 = IgesCodec
+        .decode(&mut Cursor::new(file(global_v4)), &DecodeOptions::default())
+        .unwrap();
+    let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas["annotations"][0].fields()
+        ["strings"][0]["text"];
+    assert_eq!(v4_text[0], u64::from(b' '));
+
+    let v5 = IgesCodec
+        .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
+        .unwrap();
+    let v5_text =
+        &v5.ir().native.namespace("iges").unwrap().arenas["annotations"][0].fields()["strings"][0];
+    assert_eq!(v5_text["declared_character_count"], 1);
+    assert!(v5_text["text"].is_null());
+}
+
+#[test]
 fn decode_general_note_preserves_non_simple_form() {
     let bytes = note_file_with_form(212, 7, general_note_parameters(2, &["TOP", "BOTTOM"], 0));
     let result = IgesCodec

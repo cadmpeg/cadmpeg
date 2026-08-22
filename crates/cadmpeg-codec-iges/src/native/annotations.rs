@@ -9,6 +9,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
+use crate::global::Dialect;
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -188,6 +189,7 @@ struct Subject<'a> {
     primary_end: usize,
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     parameter_resolver: &'a ParameterResolver<'a>,
+    v5_null_string_rule: bool,
 }
 
 impl Subject<'_> {
@@ -234,11 +236,16 @@ impl Subject<'_> {
     fn text_run(&self, start: usize) -> NativeTextRun {
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
+        let text = record.and_then(|record| record.string(start + 11));
+        let v5_null_string = self.v5_null_string_rule
+            && record.and_then(|record| record.integer(1)) == Some(1)
+            && record.and_then(|record| record.integer(start)) == Some(1)
+            && text.is_some_and(|value| value == b" ");
         NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
-            text: record
-                .and_then(|record| record.string(start + 11))
-                .map(<[u8]>::to_vec),
+            text: (!v5_null_string)
+                .then(|| text.map(<[u8]>::to_vec))
+                .flatten(),
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),
@@ -635,6 +642,7 @@ pub(super) fn build(
     parameter_resolver: &ParameterResolver<'_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
+    dialect: Dialect,
 ) -> Vec<NativeAnnotation> {
     directory
         .iter()
@@ -648,6 +656,8 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
+                v5_null_string_rule: dialect == Dialect::V5_0
+                    && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));

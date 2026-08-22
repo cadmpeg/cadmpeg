@@ -4266,6 +4266,7 @@ pub(crate) fn store(
         &parameter_resolver,
         &clamped_primary_end,
         &mut overdeclared_counts,
+        global.dialect(),
     );
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
