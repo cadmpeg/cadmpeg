@@ -532,6 +532,33 @@ fn reference_flip_for_reference(
     .and_then(|row| row.reference_flip)
 }
 
+fn unique_carrier_reference_id(section: &crate::feature::FeatureSection3d) -> Option<u32> {
+    if let Some(id) = section.reference_plane_datum_geometry_id {
+        return Some(id);
+    }
+    let mut ids = section.reference_plane_entity_ids.iter().copied();
+    let id = ids.next()?;
+    ids.all(|candidate| candidate == id).then_some(id)
+}
+
+fn apply_section_orientation(
+    transform: &mut FeatureSectionTransform,
+    section: &crate::feature::FeatureSection3d,
+) {
+    if section.sketch_plane_flip == Some(BinaryFlag::Set) {
+        transform.normal = scale(transform.normal, -1.0);
+    }
+    if section.orientation.section_flip == Some(BinaryFlag::Set) {
+        transform.normal = scale(transform.normal, -1.0);
+    }
+    if reference_flip_for_reference(section, unique_carrier_reference_id(section))
+        == Some(BinaryFlag::Set)
+    {
+        transform.u_axis = scale(transform.u_axis, -1.0);
+    }
+    transform.v_axis = cross(transform.normal, transform.u_axis);
+}
+
 fn definition_local_frame_transform(
     definition: &FeatureDefinition,
     section: &crate::feature::FeatureSection3d,
@@ -994,7 +1021,11 @@ pub(crate) fn resolve(
         };
         let carrier_transform =
             generated_cylinder_section_transform(definition, sources, entity_tables)
-                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables));
+                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
+                .map(|mut transform| {
+                    apply_section_orientation(&mut transform, section);
+                    transform
+                });
         let mut reference_ids = section
             .reference_plane_datum_geometry_id
             .map_or_else(|| section.reference_plane_entity_ids.clone(), |id| vec![id]);

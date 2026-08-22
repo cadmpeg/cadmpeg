@@ -1235,6 +1235,81 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             offset: 200,
         })
     );
+
+    let mut oriented_definition = definition;
+    oriented_definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(999),
+        sketch_plane_flip: None,
+        reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation {
+            section_flip: Some(BinaryFlag::Set),
+            reference_flip: Some(BinaryFlag::Clear),
+            ..FeatureSectionOrientation::default()
+        },
+        dimension_ids: Vec::new(),
+        offset: 200,
+    });
+    assert_eq!(
+        resolve(&[oriented_definition.clone()], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, -1.0, 0.0],
+            offset: 200,
+        }]
+    );
+
+    let mut row_flipped_definition = oriented_definition.clone();
+    let row_flipped_section = row_flipped_definition
+        .section_3d
+        .as_mut()
+        .expect("test section");
+    row_flipped_section.orientation.section_flip = Some(BinaryFlag::Clear);
+    row_flipped_section.reference_plane_entity_ids = vec![1];
+    row_flipped_section.reference_plane_rows = vec![FeatureSectionReferencePlane {
+        plane_entity_id: 1,
+        reference_type: None,
+        external_reference_id: None,
+        segment_id: None,
+        sub_index: None,
+        reference_flip: Some(BinaryFlag::Set),
+    }];
+    assert_eq!(
+        resolve(&[row_flipped_definition], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [-1.0, -0.0, -0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 200,
+        }]
+    );
+
+    let mut doubly_flipped_definition = oriented_definition;
+    doubly_flipped_definition
+        .section_3d
+        .as_mut()
+        .expect("test section")
+        .sketch_plane_flip = Some(BinaryFlag::Set);
+    assert_eq!(
+        resolve(&[doubly_flipped_definition], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, -1.0],
+            normal: [-0.0, 1.0, 0.0],
+            offset: 200,
+        }]
+    );
 }
 
 #[test]
