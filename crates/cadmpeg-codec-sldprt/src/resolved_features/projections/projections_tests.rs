@@ -6,7 +6,9 @@ use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
     FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureId, Length};
+use cadmpeg_ir::features::{
+    BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId, Length,
+};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -124,6 +126,136 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         ),
         None
     );
+}
+
+#[test]
+fn legacy_face_alias_support_preserves_native_identity() {
+    let surface = Surface {
+        id: SurfaceId("plane".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let face = Face {
+        id: FaceId("face".into()),
+        shell: ShellId("shell".into()),
+        surface: surface.id.clone(),
+        sense: Sense::Forward,
+        loops: Vec::new(),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let native = "sldprt:feature-input:legacy-face-alias#lane:40:200";
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(native.into()),
+                origin: Point3::new(0.0, 0.0, 5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(4.0),
+        },
+        native_ref: None,
+    }];
+
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
+
+    let FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Face { face, .. }),
+        ..
+    } = &features[0].definition
+    else {
+        panic!("expected offset-plane face reference");
+    };
+    assert_eq!(
+        face,
+        &FaceSelection::Resolved {
+            faces: vec![FaceId("face".into())],
+            native: native.into(),
+        }
+    );
+}
+
+#[test]
+fn generic_native_offset_plane_support_stays_native() {
+    let surface = Surface {
+        id: SurfaceId("plane".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let face = Face {
+        id: FaceId("face".into()),
+        shell: ShellId("shell".into()),
+        surface: surface.id.clone(),
+        sense: Sense::Forward,
+        loops: Vec::new(),
+        name: None,
+        color: None,
+        tolerance: None,
+    };
+    let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(native.into()),
+                origin: Point3::new(0.0, 0.0, 5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(4.0),
+        },
+        native_ref: None,
+    }];
+
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
+
+    let FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Face { face, .. }),
+        ..
+    } = &features[0].definition
+    else {
+        panic!("expected offset-plane face reference");
+    };
+    assert_eq!(face, &FaceSelection::Native(native.into()));
 }
 
 #[test]

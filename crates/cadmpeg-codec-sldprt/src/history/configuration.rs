@@ -358,12 +358,10 @@ pub(crate) fn bind_configuration_topology_selections(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        if !matches!(
+        let body_membership_resolved = matches!(
             ir.model.configurations[configuration_index].bodies,
             ConfigurationBodies::Resolved(_)
-        ) {
-            continue;
-        }
+        );
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut features = {
             let states = &ir.model.configurations[configuration_index].feature_states;
@@ -381,19 +379,29 @@ pub(crate) fn bind_configuration_topology_selections(
                 })
                 .collect::<Vec<_>>()
         };
-        let topology_selection_inputs = crate::history::TopologySelectionInputs {
-            bodies: &ir.model.bodies,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
-            edges: &ir.model.edges,
-            curves: &ir.model.curves,
-            lanes: scoped_lanes,
-            face_identities,
-        };
-        crate::history::bind_topology_selections(
+        if body_membership_resolved {
+            let topology_selection_inputs = crate::history::TopologySelectionInputs {
+                bodies: &ir.model.bodies,
+                faces: &ir.model.faces,
+                surfaces: &ir.model.surfaces,
+                edges: &ir.model.edges,
+                curves: &ir.model.curves,
+                lanes: scoped_lanes,
+                face_identities,
+            };
+            crate::history::bind_topology_selections(
+                &mut features,
+                histories,
+                &topology_selection_inputs,
+            );
+        }
+        // A legacy offset-plane alias carries a complete support frame. That
+        // frame can bind a unique planar face even when the configuration has
+        // no independently established body membership.
+        crate::resolved_features::projections::project_unbound_offset_plane_faces(
             &mut features,
-            histories,
-            &topology_selection_inputs,
+            &ir.model.faces,
+            &ir.model.surfaces,
         );
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {

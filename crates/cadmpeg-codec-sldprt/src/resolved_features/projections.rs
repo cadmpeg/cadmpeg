@@ -1891,13 +1891,25 @@ pub(crate) fn project_unbound_offset_plane_faces(
         else {
             continue;
         };
-        if !matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved) {
-            continue;
-        }
+        let native = match face {
+            cadmpeg_ir::features::FaceSelection::Unresolved => None,
+            cadmpeg_ir::features::FaceSelection::Native(native)
+                if native.starts_with("sldprt:feature-input:legacy-face-alias#") =>
+            {
+                Some(native.clone())
+            }
+            _ => continue,
+        };
         let Some(selected) = unique_planar_face(*origin, *normal, faces, surfaces) else {
             continue;
         };
-        *face = cadmpeg_ir::features::FaceSelection::Faces(vec![selected]);
+        *face = match native {
+            Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![selected],
+                native,
+            },
+            None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
+        };
     }
 }
 
