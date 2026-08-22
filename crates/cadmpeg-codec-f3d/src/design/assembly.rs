@@ -48,6 +48,13 @@ pub(crate) fn operand_frame_variant(
     paired_class_tag: &str,
 ) -> Option<AssemblyOperandFrameVariant> {
     match frame_length {
+        length
+            if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+                && class_tag == "383"
+                && paired_class_tag == "258" =>
+        {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
         627 | 637 | 692 => Some(AssemblyOperandFrameVariant::Standard),
         671 if class_tag == "406" && paired_class_tag == "261" => {
             Some(AssemblyOperandFrameVariant::Standard)
@@ -62,6 +69,17 @@ pub(crate) fn operand_frame_variant(
         705 | 772 => Some(AssemblyOperandFrameVariant::Axial),
         _ => None,
     }
+}
+
+/// Admit the legacy 383/258 assembly scope only as its exact generation.
+pub(crate) fn legacy_class_383_258_scope(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    frame_length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+        && class_tag == "383"
+        && paired_class_tag == "258"
 }
 
 impl LegacyAsBuilt421Generation {
@@ -166,6 +184,9 @@ pub(crate) const fn alignment_lane_bounds(
     owner_count: usize,
 ) -> Option<(usize, usize)> {
     match (frame_length, owner_count) {
+        (length, 20) if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => {
+            Some((8, 12))
+        }
         (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
         (671, 6) => Some((4, 6)),
         (604 | 732 | 744 | 748, 8) => Some((4, 8)),
@@ -610,6 +631,11 @@ mod tests {
     #[test]
     fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
         for (frame_length, owner_count, expected) in [
+            (
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                20,
+                (8, 12),
+            ),
             (627, 4, (0, 4)),
             (633, 4, (0, 4)),
             (637, 4, (0, 4)),
@@ -656,7 +682,33 @@ mod tests {
     }
 
     #[test]
-    fn class_430_operand_frames_are_scoped_by_class_pair() {
+    fn operand_frames_are_scoped_by_class_pair() {
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                "383",
+                "258"
+            ),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                "383",
+                "261"
+            ),
+            None
+        );
+        assert!(super::legacy_class_383_258_scope(
+            crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+            "383",
+            "258"
+        ));
+        assert!(!super::legacy_class_383_258_scope(
+            crate::layout::assembly_class_383_258_scope_1011::LEN as u64 - 1,
+            "383",
+            "258"
+        ));
         assert_eq!(
             super::operand_frame_variant(744, "430", "262"),
             Some(super::AssemblyOperandFrameVariant::Compact)

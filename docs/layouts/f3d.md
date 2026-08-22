@@ -958,6 +958,145 @@ Unstated regions:
 - `308..384` (76 B): The standard frame tail before the locator run is outside this table.
 - `410..671` (261 B): The standard frame tail after the locator run is outside this table; the paired header starts at offset 671.
 
+## `assembly_class_383_258_scope_1011`
+
+Spec §Assembly operands · layout: byte offsets · size: 1011 B
+
+Offsets are relative to the primary indexed header. The paired class-258 header starts at offset 1011.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-383/258 `Assemble` scope is a 1011-byte standard form. |
+| 28 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | The operand references are at scope offsets 28 and 168 |
+| 40 | 128 | `first_operand_transform` | `f64[16]` | little | spec | their row-major rigid transforms start at offsets 40 and 180 |
+| 168 | 11 | `second_operand_reference` | `bytes[11]` | little | spec | The operand references are at scope offsets 28 and 168 |
+| 180 | 128 | `second_operand_transform` | `f64[16]` | little | spec | their row-major rigid transforms start at offsets 40 and 180 |
+| 308 | 4 | `standard_tail_marker` | `bytes[4]` | little | spec | Bytes 308 through 311 are zero |
+
+Unstated regions:
+
+- `11..28` (17 B): The fixed scope prologue before the first operand reference is outside this table.
+- `39..40` (1 B): One zero byte separates the first operand reference from its transform.
+- `179..180` (1 B): One zero byte separates the second operand reference from its transform.
+- `312..1011` (699 B): The remainder of the standard scope frame before the paired header is outside this table.
+
+## `assembly_class_383_258_frame_387_leading`
+
+Spec §Assembly operands · layout: byte offsets · size: 188 B
+
+Offsets are relative to the class-387 primary indexed header; the paired class-258 header starts at offset 188.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The leading and child class-387 frames are 188 and 199 bytes |
+| 70 | 11 | `identity_reference` | `bytes[11]` | little | spec | The leading class-387 frame references its class-359 identity at +70 |
+| 177 | 11 | `scope_reference` | `bytes[11]` | little | spec | the owning scope at +177 |
+
+Unstated regions:
+
+- `11..70` (59 B): The leading class-387 payload before its identity reference is outside this table.
+- `81..177` (96 B): The leading class-387 payload before its scope backlink is outside this table.
+
+## `assembly_class_383_258_frame_387_child`
+
+Spec §Assembly operands · layout: byte offsets · size: 199 B
+
+Offsets are relative to the class-387 primary indexed header; the paired class-258 header starts at offset 199.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The leading and child class-387 frames are 188 and 199 bytes |
+| 70 | 11 | `identity_reference` | `bytes[11]` | little | spec | The child class-387 frame references its class-359 identity at +70 |
+| 81 | 11 | `leading_reference` | `bytes[11]` | little | spec | its leading class-387 frame at +81 |
+| 188 | 11 | `scope_reference` | `bytes[11]` | little | spec | the owning scope at +188 |
+
+Unstated regions:
+
+- `11..70` (59 B): The child class-387 payload before its identity reference is outside this table.
+- `92..188` (96 B): The child class-387 payload before its scope backlink is outside this table.
+
+## `assembly_class_383_258_frame_394`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Offsets are relative to the class-394 primary indexed header; the paired class-258 header starts at offset 215.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | each class-394 frame is 215 bytes |
+| 97 | 11 | `identity_reference` | `bytes[11]` | little | spec | Each class-394 frame references its class-359 identity at +97 |
+| 204 | 11 | `scope_reference` | `bytes[11]` | little | spec | the owning scope at +204 |
+
+Unstated regions:
+
+- `11..97` (86 B): The class-394 payload before its identity reference is outside this table.
+- `108..204` (96 B): The class-394 payload before its scope backlink is outside this table.
+
+## `assembly_class_383_258_frame_359_identity`
+
+Spec §Assembly operands · layout: byte offsets · size: 282 B
+
+Offsets are relative to the class-359 primary indexed header; the paired class-258 header starts at offset 282.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | every class-359 frame is 282 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | two 36-code-unit LP-UTF16 GUIDs at +37 and +113 |
+| 113 | 76 | `identity_guid` | `bytes[76]` | little | spec | two 36-code-unit LP-UTF16 GUIDs at +37 and +113 |
+| 271 | 11 | `scope_reference` | `bytes[11]` | little | spec | the owning scope reference at +271 |
+
+Unstated regions:
+
+- `11..37` (26 B): The class-359 payload before its first GUID is outside this table.
+- `189..271` (82 B): The class-359 payload between its GUIDs and scope backlink is outside this table.
+
+## `assembly_class_383_258_frame_378_carrier`
+
+Spec §Assembly operands · layout: byte offsets · size: 410 B
+
+Offsets are relative to the class-378 primary indexed header; the paired class-258 header starts at offset 410.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Each operand carrier is a 410-byte class-378 frame. |
+| 49 | 128 | `transform` | `f64[16]` | little | spec | Its matrix at +49 equals the corresponding scope transform |
+| 197 | 11 | `child_reference` | `bytes[11]` | little | spec | It references the child class-387 frame at +197 |
+| 212 | 11 | `second_face_reference` | `bytes[11]` | little | spec | the second class-394 frame at +212 |
+| 223 | 11 | `first_face_reference` | `bytes[11]` | little | spec | the first class-394 frame at +223 |
+| 242 | 44 | `placement_owner_references` | `bytes[44]` | little | spec | Four placement-owner references occupy +242, +253, +264, and +275 |
+| 290 | 11 | `repeated_child_reference` | `bytes[11]` | little | spec | Repeated references to the child, first face, and second face occur at +290 |
+| 301 | 11 | `repeated_first_face_reference` | `bytes[11]` | little | spec | first face, and second face occur at +290, +301, and +312 |
+| 312 | 11 | `repeated_second_face_reference` | `bytes[11]` | little | spec | second face occur at +290, +301, and +312 |
+| 399 | 11 | `scope_reference` | `bytes[11]` | little | spec | the owning scope at +399 |
+
+Unstated regions:
+
+- `11..49` (38 B): The class-378 carrier payload before its matrix is outside this table.
+- `177..197` (20 B): The class-378 carrier payload before its first child reference is outside this table.
+- `208..212` (4 B): The class-378 carrier payload before its second face reference is outside this table.
+- `234..242` (8 B): The class-378 carrier payload before its placement-owner reference run is outside this table.
+- `286..290` (4 B): The class-378 carrier payload before its repeated child reference is outside this table.
+- `323..399` (76 B): The class-378 carrier payload before its scope backlink is outside this table.
+
 ## `assembly_operand_path_locator_reference_run`
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B

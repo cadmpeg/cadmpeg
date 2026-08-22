@@ -3105,6 +3105,363 @@ size = 261
 note = "The standard frame tail after the locator run is outside this table; the paired header starts at offset 671."
 
 [[record]]
+name = "assembly_class_383_258_scope_1011"
+parsed_by = [
+    "crates/cadmpeg-codec-f3d/src/design/assembly.rs",
+    "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs",
+]
+kind = "byte"
+section = "Assembly operands"
+anchor = "The class-383/258 `Assemble` scope is a 1011-byte standard form."
+size = 1011
+note = "Offsets are relative to the primary indexed header. The paired class-258 header starts at offset 1011."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-383/258 `Assemble` scope is a 1011-byte standard form."
+
+[[record.gap]]
+offset = 11
+size = 17
+note = "The fixed scope prologue before the first operand reference is outside this table."
+
+[[record.field]]
+name = "first_operand_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "The operand references are at scope offsets 28 and 168"
+
+[[record.gap]]
+offset = 39
+size = 1
+note = "One zero byte separates the first operand reference from its transform."
+
+[[record.field]]
+name = "first_operand_transform"
+offset = 40
+type = "f64[16]"
+source = "spec"
+anchor = "their row-major rigid transforms start at offsets 40 and 180"
+
+[[record.field]]
+name = "second_operand_reference"
+offset = 168
+type = "bytes[11]"
+source = "spec"
+anchor = "The operand references are at scope offsets 28 and 168"
+
+[[record.gap]]
+offset = 179
+size = 1
+note = "One zero byte separates the second operand reference from its transform."
+
+[[record.field]]
+name = "second_operand_transform"
+offset = 180
+type = "f64[16]"
+source = "spec"
+anchor = "their row-major rigid transforms start at offsets 40 and 180"
+
+[[record.field]]
+name = "standard_tail_marker"
+offset = 308
+type = "bytes[4]"
+source = "spec"
+anchor = "Bytes 308 through 311 are zero"
+
+[[record.gap]]
+offset = 312
+size = 699
+note = "The remainder of the standard scope frame before the paired header is outside this table."
+
+[[record]]
+name = "assembly_class_383_258_frame_387_leading"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The leading and child class-387 frames are 188 and 199 bytes"
+size = 188
+note = "Offsets are relative to the class-387 primary indexed header; the paired class-258 header starts at offset 188."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The leading and child class-387 frames are 188 and 199 bytes"
+
+[[record.gap]]
+offset = 11
+size = 59
+note = "The leading class-387 payload before its identity reference is outside this table."
+
+[[record.field]]
+name = "identity_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "The leading class-387 frame references its class-359 identity at +70"
+
+[[record.gap]]
+offset = 81
+size = 96
+note = "The leading class-387 payload before its scope backlink is outside this table."
+
+[[record.field]]
+name = "scope_reference"
+offset = 177
+type = "bytes[11]"
+source = "spec"
+anchor = "the owning scope at +177"
+
+[[record]]
+name = "assembly_class_383_258_frame_387_child"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The leading and child class-387 frames are 188 and 199 bytes"
+size = 199
+note = "Offsets are relative to the class-387 primary indexed header; the paired class-258 header starts at offset 199."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The leading and child class-387 frames are 188 and 199 bytes"
+
+[[record.gap]]
+offset = 11
+size = 59
+note = "The child class-387 payload before its identity reference is outside this table."
+
+[[record.field]]
+name = "identity_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "The child class-387 frame references its class-359 identity at +70"
+
+[[record.field]]
+name = "leading_reference"
+offset = 81
+type = "bytes[11]"
+source = "spec"
+anchor = "its leading class-387 frame at +81"
+
+[[record.gap]]
+offset = 92
+size = 96
+note = "The child class-387 payload before its scope backlink is outside this table."
+
+[[record.field]]
+name = "scope_reference"
+offset = 188
+type = "bytes[11]"
+source = "spec"
+anchor = "the owning scope at +188"
+
+[[record]]
+name = "assembly_class_383_258_frame_394"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "each class-394 frame is 215 bytes"
+size = 215
+note = "Offsets are relative to the class-394 primary indexed header; the paired class-258 header starts at offset 215."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "each class-394 frame is 215 bytes"
+
+[[record.gap]]
+offset = 11
+size = 86
+note = "The class-394 payload before its identity reference is outside this table."
+
+[[record.field]]
+name = "identity_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "Each class-394 frame references its class-359 identity at +97"
+
+[[record.gap]]
+offset = 108
+size = 96
+note = "The class-394 payload before its scope backlink is outside this table."
+
+[[record.field]]
+name = "scope_reference"
+offset = 204
+type = "bytes[11]"
+source = "spec"
+anchor = "the owning scope at +204"
+
+[[record]]
+name = "assembly_class_383_258_frame_359_identity"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "every class-359 frame is 282 bytes"
+size = 282
+note = "Offsets are relative to the class-359 primary indexed header; the paired class-258 header starts at offset 282."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "every class-359 frame is 282 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "The class-359 payload before its first GUID is outside this table."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "two 36-code-unit LP-UTF16 GUIDs at +37 and +113"
+
+[[record.field]]
+name = "identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "two 36-code-unit LP-UTF16 GUIDs at +37 and +113"
+
+[[record.gap]]
+offset = 189
+size = 82
+note = "The class-359 payload between its GUIDs and scope backlink is outside this table."
+
+[[record.field]]
+name = "scope_reference"
+offset = 271
+type = "bytes[11]"
+source = "spec"
+anchor = "the owning scope reference at +271"
+
+[[record]]
+name = "assembly_class_383_258_frame_378_carrier"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Each operand carrier is a 410-byte class-378 frame."
+size = 410
+note = "Offsets are relative to the class-378 primary indexed header; the paired class-258 header starts at offset 410."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Each operand carrier is a 410-byte class-378 frame."
+
+[[record.gap]]
+offset = 11
+size = 38
+note = "The class-378 carrier payload before its matrix is outside this table."
+
+[[record.field]]
+name = "transform"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "Its matrix at +49 equals the corresponding scope transform"
+
+[[record.gap]]
+offset = 177
+size = 20
+note = "The class-378 carrier payload before its first child reference is outside this table."
+
+[[record.field]]
+name = "child_reference"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "It references the child class-387 frame at +197"
+
+[[record.gap]]
+offset = 208
+size = 4
+note = "The class-378 carrier payload before its second face reference is outside this table."
+
+[[record.field]]
+name = "second_face_reference"
+offset = 212
+type = "bytes[11]"
+source = "spec"
+anchor = "the second class-394 frame at +212"
+
+[[record.field]]
+name = "first_face_reference"
+offset = 223
+type = "bytes[11]"
+source = "spec"
+anchor = "the first class-394 frame at +223"
+
+[[record.gap]]
+offset = 234
+size = 8
+note = "The class-378 carrier payload before its placement-owner reference run is outside this table."
+
+[[record.field]]
+name = "placement_owner_references"
+offset = 242
+type = "bytes[44]"
+source = "spec"
+anchor = "Four placement-owner references occupy +242, +253, +264, and +275"
+
+[[record.gap]]
+offset = 286
+size = 4
+note = "The class-378 carrier payload before its repeated child reference is outside this table."
+
+[[record.field]]
+name = "repeated_child_reference"
+offset = 290
+type = "bytes[11]"
+source = "spec"
+anchor = "Repeated references to the child, first face, and second face occur at +290"
+
+[[record.field]]
+name = "repeated_first_face_reference"
+offset = 301
+type = "bytes[11]"
+source = "spec"
+anchor = "first face, and second face occur at +290, +301, and +312"
+
+[[record.field]]
+name = "repeated_second_face_reference"
+offset = 312
+type = "bytes[11]"
+source = "spec"
+anchor = "second face occur at +290, +301, and +312"
+
+[[record.gap]]
+offset = 323
+size = 76
+note = "The class-378 carrier payload before its scope backlink is outside this table."
+
+[[record.field]]
+name = "scope_reference"
+offset = 399
+type = "bytes[11]"
+source = "spec"
+anchor = "the owning scope at +399"
+
+[[record]]
 name = "assembly_operand_path_locator_reference_run"
 parsed_by = [
     "crates/cadmpeg-codec-f3d/src/design/assembly.rs",

@@ -1409,6 +1409,44 @@ starts at offset 671. Each locator uses the fixed 190-byte envelope and the
 37-byte wrapper; the path record is class-307 and uses the fixed four-identity
 path form.
 
+The class-383/258 `Assemble` scope is a 1011-byte standard form. Its 20
+parameter owners all use the class-284, 103-byte owner frame. Owner ordinals
+0 through 7 and 12 through 19 are placement lanes. Owner ordinals 8 through
+11 are the signed angle and signed local X, Y, and Z alignment lanes. The
+scope reference table has 38 entries. Entries 0 through 11, 20 through 23,
+and 33 through 36 are the owners in ordinal order. Entries 12 through 19
+and 25 through 32 are two interleaved operand envelope groups. Entries 24
+and 37 are the two operand carriers. The operand references are at scope
+offsets 28 and 168, and their row-major rigid transforms start at offsets 40
+and 180. Bytes 308 through 311 are zero. The paired class-258 header starts
+at offset 1011.
+
+Each operand envelope has a leading class-387 frame, an identity class-359
+frame, a child class-387 frame, a second identity class-359 frame, two
+class-394 face frames, and one class-359 identity frame after each face. The
+leading and child class-387 frames are 188 and 199 bytes; each class-394
+frame is 215 bytes; every class-359 frame is 282 bytes; and every paired
+header is class 258. The leading class-387 frame references its class-359
+identity at +70 and the owning scope at +177. The child class-387 frame
+references its class-359 identity at +70, its leading class-387 frame at +81,
+and the owning scope at +188. Each class-394 frame references its class-359
+identity at +97 and the owning scope at +204. A class-359 identity stores
+two 36-code-unit LP-UTF16 GUIDs at +37 and +113 and the owning scope
+reference at +271. The four identities in one operand envelope contain the
+same two GUID values.
+
+Each operand carrier is a 410-byte class-378 frame. Its matrix at +49 equals
+the corresponding scope transform. It references the child class-387 frame
+at +197, the second class-394 frame at +212, the first class-394 frame at
++223, and the owning scope at +399. Four placement-owner references occupy
++242, +253, +264, and +275. Repeated references to the child, first face,
+and second face occur at +290, +301, and +312. The carrier paired class-258
+header starts at +410. A scope operand reference resolves only when it names
+the carrier at the corresponding reference-table position and every fixed
+envelope, identity, matrix, owner, and scope backlink above agrees. The
+carrier and identity envelopes are the path locator and wrapper for the
+external operand; the path record is class 386.
+
 An `Assemble` or `As-built` scope stores finite alignment parameter owners.
 The serialized frame length and total owner count select the lane layout; the
 class pair is an additional admission key for the 744- and 748-byte forms.
@@ -1425,9 +1463,10 @@ exactly six owners: one group of `OffsetX`,
 `OffsetY`, `OffsetZ`, and `AngleZ` placement lanes followed by `alignAngle`
 and `alignOffset`. The 772-byte form has exactly ten owners: two such
 placement groups followed by `alignAngle` and `alignOffset`. The final scalar
-of each axial form is an alignment offset and maps to local Z. No other
-frame-length, owner-count, and class-pair combination carries an assembly
-alignment. Joint forms store two operand frames. The 627-, 637-, and 692-byte
+of each axial form is an alignment offset and maps to local Z. Apart from the
+class-383/258 form described above, no other frame-length, owner-count, and
+class-pair combination carries an assembly alignment. Joint forms store two
+operand frames. The 627-, 637-, and 692-byte
 forms store marked operand construction references at offsets 28 and 168 and
 row-major rigid 4×4 operand-local-to-model transforms at offsets 40 and 180.
 The 633- and 732-byte forms store the references at offsets 24 and 164 and the
