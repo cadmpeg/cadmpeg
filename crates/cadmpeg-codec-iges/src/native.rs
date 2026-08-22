@@ -2834,7 +2834,7 @@ pub(crate) fn store(
             .iter()
             .filter(|entry| {
                 entry.entity_type == 402
-                    && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
+                    && matches!(entry.form, 2 | 5 | 6 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
             })
             .filter_map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
@@ -2955,7 +2955,7 @@ pub(crate) fn store(
                             children: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
                     }
-                    12 => {
+                    2 | 12 => {
                         let end =
                             record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
                         let count =

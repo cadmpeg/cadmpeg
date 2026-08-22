@@ -387,8 +387,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 6 fixes index 1 to one, puts the visible-entity count `N1` at
 /// index 2, and lists the view plus `N1` entities, so its groups start at
 /// token `4 + N1`.
-/// Type 402 Form 12 puts the positive entry count `N` at index 1 and stores a
-/// name/pointer pair per entry, so its groups start at token `2 + 2*N`.
+/// Type 402 Forms 2 and 12 put the positive entry count `N` at index 1 and
+/// store a name/pointer pair per entry, so their groups start at token
+/// `2 + 2*N`.
 /// Type 406 Form 1 puts positive `NP` at index 1 and stores `NP` level numbers,
 /// so its groups start at token `2 + NP`.
 /// Type 406 Form 2 fixes `NP=3` at index 1 and stores the three restriction
@@ -607,7 +608,7 @@ pub(crate) fn entity_primary_end(
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
-        (402, 12) => Some(external_reference_index_primary_end(record)),
+        (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 19) => Some(segmented_visibility_primary_end(record)),

@@ -366,6 +366,13 @@ pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec
                 status: "00000200",
                 parameters: "402,1,2,0,9,11;".into(),
             },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 2,
+                label: "EXTLOGIC".into(),
+                status: "00000200",
+                parameters: "402,1,4HNAME,9;".into(),
+            },
         ],
         global,
     )

@@ -1450,17 +1450,19 @@ fn decode_overdeclared_copious_data_charges_the_loss_and_reads_no_tuple() {
 
 #[test]
 fn decode_overdeclared_external_reference_index_charges_the_loss_and_reads_no_entry() {
-    overdeclared_site(
-        &[
-            point("TARGET"),
-            entity(402, 12, "INDEX", "402,3,1HA,1,1HB,1;"),
-        ],
-        3,
-        "associativities",
-        "declared_count",
-        3,
-        "entries",
-    );
+    for form in [2, 12] {
+        overdeclared_site(
+            &[
+                point("TARGET"),
+                entity(402, form, "INDEX", "402,3,1HA,1,1HB,1;"),
+            ],
+            3,
+            "associativities",
+            "declared_count",
+            3,
+            "entries",
+        );
+    }
 }
 
 #[test]
@@ -1696,20 +1698,22 @@ fn decode_units_data_reads_a_final_unit_present_in_part() {
 
 #[test]
 fn decode_external_reference_index_reads_a_final_pair_present_in_part() {
-    let bytes = owned_test_file(&[
-        point("TARGET"),
-        entity(402, 12, "INDEX", "402,2,1HA,1,1HB;"),
-    ]);
-    let result = salvage(&bytes);
-    let native = result.ir().native.namespace("iges").unwrap();
-    let associativity = &native.arenas["associativities"][0];
-    let fields = associativity.fields();
-    let entries = fields["entries"].as_array().unwrap();
+    for form in [2, 12] {
+        let bytes = owned_test_file(&[
+            point("TARGET"),
+            entity(402, form, "INDEX", "402,2,1HA,1,1HB;"),
+        ]);
+        let result = salvage(&bytes);
+        let native = result.ir().native.namespace("iges").unwrap();
+        let associativity = &native.arenas["associativities"][0];
+        let fields = associativity.fields();
+        let entries = fields["entries"].as_array().unwrap();
 
-    assert_eq!(fields["declared_count"], 2);
-    assert_eq!(entries.len(), 2);
-    assert!(entries[1]["entity"].is_null());
-    assert_no_count_loss(&result);
+        assert_eq!(fields["declared_count"], 2);
+        assert_eq!(entries.len(), 2);
+        assert!(entries[1]["entity"].is_null());
+        assert_no_count_loss(&result);
+    }
 }
 
 #[test]

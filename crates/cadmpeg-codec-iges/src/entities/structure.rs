@@ -717,7 +717,7 @@ fn predefined_associativity_valid(
                     })
                 })
         }
-        12 => {
+        2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
             count.is_some_and(|count| {
                 end == 2 + count * 2
@@ -1647,7 +1647,7 @@ pub(super) fn project(
     }
 
     for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 402 && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 21)
+        entry.entity_type == 402 && matches!(entry.form, 2 | 5 | 6 | 9 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));

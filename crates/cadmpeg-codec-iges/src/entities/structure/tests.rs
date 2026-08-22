@@ -914,7 +914,7 @@ fn decode_types_bounded_predefined_associativity_roles() {
         )
         .unwrap();
     let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
-    assert_eq!(associativities.len(), 5);
+    assert_eq!(associativities.len(), 6);
     let parent = associativities
         .iter()
         .find(|value| value.fields()["kind"] == "single_parent")
@@ -949,11 +949,62 @@ fn decode_types_bounded_predefined_associativity_roles() {
     assert!(planar.fields()["plane_transform"].is_null());
     assert_eq!(planar.fields()["declared_entity_count"], 2);
     assert_eq!(planar.fields()["entities"].as_array().unwrap().len(), 2);
+    let external_index = associativities
+        .iter()
+        .find(|value| value.fields()["kind"] == "external_reference_index")
+        .unwrap();
+    assert_eq!(external_index.fields()["declared_count"], 1);
+    assert_eq!(
+        external_index.fields()["entries"][0]["symbolic_name"],
+        serde_json::json!([78, 65, 77, 69])
+    );
+    assert_eq!(
+        external_index.fields()["entries"][0]["entity"],
+        "iges:entity:directory#9"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_preserves_external_logical_reference_index_in_v4_and_v5_profiles() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(bounded_associativity_forms_file_with_global(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let external_index = result.ir().native.namespace("iges").unwrap().arenas
+            ["associativities"]
+            .iter()
+            .find(|value| value.fields()["kind"] == "external_reference_index")
+            .unwrap_or_else(|| panic!("missing Type 402 Form 2 in IGES {version}"));
+        assert_eq!(
+            external_index.fields()["declared_count"],
+            1,
+            "IGES {version}"
+        );
+        assert_eq!(
+            external_index.fields()["entries"][0]["entity"],
+            "iges:entity:directory#9",
+            "IGES {version}"
+        );
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| { !loss.message.contains("IGES entity type 402 form 2") }),
+            "IGES {version}: {:#?}",
+            result.report().losses
+        );
+    }
 }
 
 #[test]
