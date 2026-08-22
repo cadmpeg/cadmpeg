@@ -367,6 +367,8 @@ An executed `Fillet` or `Chamfer` edge group may use one nonempty transition cha
 
 A legacy executed `Fillet` or `Chamfer` group may use the union of deleted predecessor-boundary edges when at least one member carries such edges, the union cardinality equals the member count, every member has a complete recipe-reference context, and the contextual changed-reference candidates have exactly one perfect one-to-one assignment to that union. Each deleted edge must occur in both the preceding and changed boundary sets. The admitted union is ordered by increasing stable edge slot.
 
+A legacy single-member `Fillet` or `Chamfer` group with a zero-payload two-side recipe may use a result-boundary edge when no operand boundary delta exists, that edge is named by at least two changed-reference contexts, it is the sole changed-reference edge in the result boundary, and it is absent from the preceding candidate boundary.
+
 Standalone persistent-reference properties named `pt_tag`, `crv_primary_id`, and `crv_secondary_id` store the u32 pair `(2, 14)`, a 14-byte property slot, LP-ASCII `IntrinsicMetaTypeuint64`, and the referenced u64. The compact properties embedded in sketch point and curve records omit the `(2, 14)` pair and property slot.
 
 A generic face or edge tag group may carry a zero Design-reference count. Its selector and token remain native attribute data, but the group has no Design join and does not supply a recipe candidate. The group is retained and can be written with an empty reference run.

@@ -739,6 +739,11 @@ fn resolved_edge_group_with_transition_chain(
             })
             .or_else(|| {
                 allow_edge_treatment_transition_chain
+                    .then(|| result_boundary_reference_edge_group_candidates(&matched_operands))
+                    .flatten()
+            })
+            .or_else(|| {
+                allow_edge_treatment_transition_chain
                     .then(|| deleted_boundary_edge_group_candidates(&matched_operands))
                     .flatten()
             })
@@ -1645,6 +1650,62 @@ pub(crate) fn contextual_deleted_edge_group_candidates(
     let mut assignment = unique_bipartite_assignment(&candidate_sets)?;
     assignment.sort_unstable();
     Some(assignment)
+}
+
+/// Resolve a legacy single-member treatment whose selected edge persists in
+/// the result boundary instead of appearing in the operand boundary delta.
+///
+/// The zero-payload two-side recipe supplies support references but no direct
+/// edge entry. A result-boundary edge named by at least two changed-reference
+/// contexts is admitted only when it is the sole such edge and is absent from
+/// the operand's preceding candidate boundary. This leaves deleted-edge and
+/// ambiguous reference sets native.
+pub(crate) fn result_boundary_reference_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+) -> Option<Vec<i64>> {
+    let [operand] = operands else {
+        return None;
+    };
+    let structure = operand.recipe_structure.as_ref()?;
+    if structure.root != 2
+        || structure.sides.len() != 2
+        || structure.sides.iter().any(|side| {
+            side.field_count.get() != 3
+                || side.scalars.len() != 2
+                || side.payload_prefix != [0]
+                || side.payload_entry_count != 0
+                || !side.entries.is_empty()
+        })
+        || operand.recipe_references.is_empty()
+        || operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+        || operand.recipe_reference_contexts.is_empty()
+        || !operand.changed_boundary_edge_slots.is_empty()
+        || !operand.deleted_boundary_edge_slots.is_empty()
+    {
+        return None;
+    }
+    let mut candidates = operand
+        .recipe_reference_contexts
+        .iter()
+        .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
+        .filter(|edge| operand.result_boundary_edge_slots.contains(edge))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    if operand.preceding_boundary_edge_slots.contains(candidate)
+        || operand
+            .recipe_reference_contexts
+            .iter()
+            .filter(|context| context.changed_reference_edge_slots.contains(candidate))
+            .count()
+            < 2
+    {
+        return None;
+    }
+    Some(vec![*candidate])
 }
 
 pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(

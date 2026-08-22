@@ -1374,6 +1374,61 @@ fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
 }
 
 #[test]
+fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
+    let context = |changed_reference_edge_slots: &[i64]| {
+        serde_json::from_value(serde_json::json!({
+            "reference_ordinal": 0,
+            "result_faces": [],
+            "result_shared_edge_slots": [],
+            "preceding_faces": [],
+            "shared_edge_slots": [],
+            "changed_shared_edge_slots": [],
+            "changed_reference_edge_slots": changed_reference_edge_slots,
+        }))
+        .expect("edge recipe reference context")
+    };
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+        root: 2,
+        sides: (0..2)
+            .map(|_| crate::records::DesignTopologyRecipeSide {
+                field_count: std::num::NonZeroU32::new(3).expect("field count"),
+                header_value: 2,
+                scalars: vec![1, 0],
+                payload_prefix: vec![0],
+                payload_entry_count: 0,
+                entries: Vec::new(),
+            })
+            .collect(),
+    });
+    operand.recipe_references = vec![
+        recipe_reference(&[]),
+        recipe_reference(&[]),
+        recipe_reference(&[]),
+    ];
+    operand.recipe_reference_contexts = vec![context(&[19, 21]), context(&[19]), context(&[22])];
+    operand.preceding_boundary_edge_slots = vec![17, 18];
+    operand.result_boundary_edge_slots = vec![19, 20];
+    assert_eq!(
+        result_boundary_reference_edge_group_candidates(&[&operand]),
+        Some(vec![19])
+    );
+
+    operand.recipe_reference_contexts[1] = context(&[20]);
+    assert_eq!(
+        result_boundary_reference_edge_group_candidates(&[&operand]),
+        None
+    );
+
+    operand.recipe_reference_contexts[1] = context(&[19]);
+    operand.preceding_boundary_edge_slots.push(19);
+    assert_eq!(
+        result_boundary_reference_edge_group_candidates(&[&operand]),
+        None
+    );
+}
+
+#[test]
 fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::design::edge_resolve::context_only_edge_group_candidates([
