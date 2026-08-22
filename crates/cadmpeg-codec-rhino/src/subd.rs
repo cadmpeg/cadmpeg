@@ -996,6 +996,7 @@ fn materialize(
                 ],
                 sharpness: edge.sharpness,
                 tag,
+                knot_interval: None,
                 sector_coefficients: edge.sector_coefficients,
             })
         })

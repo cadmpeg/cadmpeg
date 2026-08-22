@@ -128,6 +128,9 @@ pub struct SubdEdge {
     pub sharpness: [f64; 2],
     /// Subdivision edge tag.
     pub tag: SubdEdgeTag,
+    /// Parametric knot interval, when the source cage exposes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knot_interval: Option<f64>,
     /// Sector coefficients at the two endpoints.
     pub sector_coefficients: [f64; 2],
 }

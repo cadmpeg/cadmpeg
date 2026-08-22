@@ -141,6 +141,9 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if edge.vertices[0] == edge.vertices[1]
                 || edge.vertices.iter().any(|v| *v as usize >= vertex_count)
                 || edge.sharpness.iter().any(|v| !v.is_finite() || *v < 0.0)
+                || edge
+                    .knot_interval
+                    .is_some_and(|interval| !interval.is_finite() || interval <= 0.0)
                 || edge.sector_coefficients.iter().any(|v| !v.is_finite())
             {
                 bounds_err(

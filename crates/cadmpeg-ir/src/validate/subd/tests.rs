@@ -59,6 +59,7 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
             vertices: [0, 1],
             sharpness: [-0.1, 0.0],
             tag: SubdEdgeTag::Smooth,
+            knot_interval: None,
             sector_coefficients: [0.0, 0.0],
         }],
         faces: vec![SubdFace {
@@ -119,6 +120,7 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
             vertices: [0, 1],
             sharpness: [0.0, 0.0],
             tag: SubdEdgeTag::Smooth,
+            knot_interval: None,
             sector_coefficients: [0.0, 0.0],
         }],
         faces: Vec::new(),

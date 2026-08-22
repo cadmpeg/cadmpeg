@@ -288,16 +288,6 @@ Two sibling predicates in the same file drop the `T` term. `parallel_line_separa
 
 ## 4. T-splines
 
-### TS-03. `e`-record scalar
-
-**Question.** What geometric or topological quantity does the scalar after an `e` record's half-edge root hold?
-
-**Known.** `f3d.md` §1.1.1 "Topology uses zero-based indices in record order." gives the field position and its finite-value invariant. The scalar is present on smooth and creased edges. It is usually near one, but it also takes exact binary fractions and other positive values. Crease membership is stored independently by the `ec` records, so the scalar is not the edge's crease flag. The decoder retains the complete `.tsm` entry but does not transfer this scalar to the neutral subdivision cage.
-
-**Note.** The decision to withhold the scalar is correct, but its result is not recorded. `tsm.rs` emits every `SubdEdge` with `sharpness` `[0.0, 0.0]` and `sector_coefficients` `[0.0, 0.0]` while setting `tag` to `Crease` from the `ec` records. A creased edge therefore carries a tag that says crease and a numeric sharpness that says smooth, and the only loss the reader emits for this family is the unknown-record count. A consumer that reads the numeric field renders every crease smooth.
-
-**Need.** We must know the quantity and its endpoint convention before the decoder can assign it to `SubdEdge.sharpness`, `sector_coefficients`, or a new neutral field. Assigning it to sharpness without that distinction would mark smooth edges as sharp.
-
 ### TS-04. `105plane` coefficient model
 
 **Question.** What geometric values do the twelve f64 operands of a `105plane` record encode, and which operands use the cage coordinate scale?

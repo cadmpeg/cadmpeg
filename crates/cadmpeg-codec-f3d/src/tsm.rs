@@ -17,6 +17,7 @@ use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
+const FULL_CREASE_SHARPNESS: f64 = 1.0;
 
 #[derive(Clone, Copy)]
 struct HalfEdge {
@@ -609,6 +610,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     // through validation and compacted only when the IR cage is built.
     let mut face_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
+    let mut edge_knot_intervals: Vec<Option<f64>> = Vec::new();
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
@@ -665,12 +667,17 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("e") => match fields.next() {
-                None => edge_roots.push(None),
+                None => {
+                    edge_roots.push(None);
+                    edge_knot_intervals.push(None);
+                }
                 root => {
                     edge_roots.push(Some(parse_usize(name, root, "edge root")?));
-                    // TS-03: the scalar's target quantity is not established;
-                    // `ec` records independently define crease membership.
-                    parse_f64(name, fields.next(), "edge scalar")?;
+                    let knot_interval = parse_f64(name, fields.next(), "edge knot interval")?;
+                    if knot_interval <= 0.0 {
+                        return Err(malformed(name, "edge knot interval is not positive"));
+                    }
+                    edge_knot_intervals.push(Some(knot_interval));
                     require_end(name, fields, "edge")?;
                 }
             },
@@ -1037,6 +1044,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let vertex_ir = compact(vertex_live.iter().copied());
     let edge_ir = compact(edge_roots.iter().map(Option::is_some));
     let face_ir = compact(face_roots.iter().map(Option::is_some));
+    let edge_knot_intervals_ir = edge_knot_intervals
+        .iter()
+        .copied()
+        .flatten()
+        .collect::<Vec<_>>();
     let vertex_of = |slot: usize| {
         vertex_ir
             .get(slot)
@@ -1095,6 +1107,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .any(|(half, edge)| half.is_some() && edge.is_none())
     {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
+    }
+    if edge_knot_intervals_ir.len() != edge_vertices.len() {
+        return Err(malformed(name, "edge knot interval map is incomplete"));
     }
 
     let secondary_layouts = build_secondary_layouts(
@@ -1173,14 +1188,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .enumerate()
         .map(|(index, vertices)| {
             let crease = creased_edges.contains(&(index as u32));
+            let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
             SubdEdge {
                 vertices,
-                sharpness: [0.0, 0.0],
+                sharpness: [sharpness; 2],
                 tag: if crease {
                     SubdEdgeTag::Crease
                 } else {
                     SubdEdgeTag::Smooth
                 },
+                knot_interval: Some(edge_knot_intervals_ir[index]),
                 sector_coefficients: [0.0, 0.0],
             }
         })
@@ -1214,6 +1231,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    const EPS_KNOT_INTERVAL: f64 = 1e-12;
 
     const QUAD_TOPOLOGY: &str = "degree 3\n\
 cap-type G1CAPS\n\
@@ -1348,6 +1367,32 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             super::direction_offset(cadmpeg_ir::SubdGripDirection::West),
             3
         );
+    }
+
+    #[test]
+    fn transfers_knot_intervals_and_absolute_crease_sharpness() {
+        let source = QUAD_TOPOLOGY
+            .replace("e 0 1\n", "e 0 0.5\n")
+            .replace("e 2 1\n", "e 2 0.25\n")
+            .replace("e 4 1\n", "e 4 0.125\n")
+            .replace("e 6 1\n", "e 6 0.0625\n");
+        let cage = parse_cage(
+            format!(
+                "#TS0200\n{source}\
+                 0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+            )
+            .as_bytes(),
+        )
+        .expect("knot intervals");
+        let expected = [0.5, 0.25, 0.125, 0.0625];
+        for (edge, expected) in cage.surface.edges.iter().zip(expected) {
+            let actual = edge.knot_interval.expect("knot interval");
+            assert!((actual - expected).abs() < EPS_KNOT_INTERVAL);
+            assert!(edge
+                .sharpness
+                .iter()
+                .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
+        }
     }
 
     #[test]

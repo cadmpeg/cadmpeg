@@ -247,10 +247,11 @@
                 0
               ],
               "sharpness": [
-                0.0,
-                0.0
+                1.0,
+                1.0
               ],
               "tag": "crease",
+              "knot_interval": 1.0,
               "sector_coefficients": [
                 0.0,
                 0.0
@@ -262,10 +263,11 @@
                 1
               ],
               "sharpness": [
-                0.0,
-                0.0
+                1.0,
+                1.0
               ],
               "tag": "crease",
+              "knot_interval": 1.0,
               "sector_coefficients": [
                 0.0,
                 0.0
@@ -277,10 +279,11 @@
                 2
               ],
               "sharpness": [
-                0.0,
-                0.0
+                1.0,
+                1.0
               ],
               "tag": "crease",
+              "knot_interval": 1.0,
               "sector_coefficients": [
                 0.0,
                 0.0
@@ -292,10 +295,11 @@
                 3
               ],
               "sharpness": [
-                0.0,
-                0.0
+                1.0,
+                1.0
               ],
               "tag": "crease",
+              "knot_interval": 1.0,
               "sector_coefficients": [
                 0.0,
                 0.0
