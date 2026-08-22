@@ -119,6 +119,66 @@ pub(crate) fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload:
     bytes.extend_from_slice(payload);
 }
 
+pub(crate) fn e5_d8_rolling_ball_stream() -> Vec<u8> {
+    let mut payload = vec![0x80];
+    payload.extend_from_slice(&2_u32.to_le_bytes());
+    payload.extend_from_slice(&5_u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&2_u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 4]);
+    for knot in [2.0_f64, 5.0] {
+        payload.extend_from_slice(&knot.to_le_bytes());
+    }
+    for multiplicity in [6_u32, 6] {
+        payload.extend_from_slice(&multiplicity.to_le_bytes());
+    }
+    for row in [
+        [
+            2.0_f64,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+        [
+            3.0_f64,
+            0.0,
+            0.0,
+            1.0,
+            2.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ],
+    ] {
+        for value in row {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for _ in 0..4 {
+        payload.extend_from_slice(&[0; 80]);
+    }
+    payload.extend_from_slice(&2.0_f64.to_le_bytes());
+    payload.extend_from_slice(&5.0_f64.to_le_bytes());
+    payload.extend_from_slice(&0.0_f64.to_le_bytes());
+    payload.extend_from_slice(&2.0_f64.to_le_bytes());
+    payload.extend_from_slice(&2.0_f64.to_le_bytes());
+    payload.extend_from_slice(&(-1_i32).to_le_bytes());
+    payload.extend_from_slice(&0.0_f64.to_le_bytes());
+    payload.extend_from_slice(&2.0_f64.to_le_bytes());
+    payload.extend_from_slice(&[1, 0, 0]);
+    let mut stream = Vec::new();
+    append_e5_record(&mut stream, 0xd8, 42, &payload);
+    stream
+}
+
 pub(crate) fn e5_uv_line_payload(surface: u16, offset: f64) -> Vec<u8> {
     let mut payload = vec![0x81, 0x18];
     payload.extend_from_slice(&surface.to_le_bytes());

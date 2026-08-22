@@ -942,9 +942,24 @@ The pole coordinates use the carrier's native parameter units. Neutral IR conver
 
 Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride `payload_size + 13`, from the preamble or the strongest FINJPL walk. Reference tokens: hi-bit byte `b`→`b−0x80`; `08 <lo>`→lo; `10 <hi>`→hi<<8; `18 <lo><hi>`→u16le.
 
-Classes: `0x01` body, `0x00` advanced face, `0x08` datum/template face, `0x09` edge loop, `0x0d` reference bundle, `0x0e` parameter-bound, `0x96`/`0x97` UV line/circle pcurve, `0xa0` complex/spline pcurve, `0xaa` NURBS pcurve, `0xc0`/`0xc1` boundary/intersection curve support, `0xc8`/`0xc9`/`0xca`/`0xcc` plane/cylinder/cone/torus carrier, `0xe7` tensor-product NURBS carrier, `0xf1` surface wrapper, `0xfe` vertex, `0xff` trimmed edge-use.
+Classes: `0x01` body, `0x00` advanced face, `0x08` datum/template face, `0x09` edge loop, `0x0d` reference bundle, `0x0e` parameter-bound, `0x96`/`0x97` UV line/circle pcurve, `0xa0` complex/spline pcurve, `0xaa` NURBS pcurve, `0xc0`/`0xc1` boundary/intersection curve support, `0xc8`/`0xc9`/`0xca`/`0xcc` plane/cylinder/cone/torus carrier, `0xd8` rolling-ball jet carrier, `0xe7` tensor-product NURBS carrier, `0xf1` surface wrapper, `0xfe` vertex, `0xff` trimmed edge-use.
 
 A class-`0xf1` surface wrapper has payload size `44`. Its payload is `85 <reference_token>{5} <tail>`, where the five tokens use the restricted E5 reference dialect and the tail fills the remaining payload bytes. When a class-`0x00` face names a valid `0xf1` wrapper, the wrapper's first reference names the underlying surface carrier; the other four references and the tail remain structural until their roles are admitted. A standard freeform face tag that equals the class-`0x00` face id therefore has an exact carrier join when that first reference names an admitted E5 surface class. An unsupported underlying class does not acquire analytic geometry through this wrapper.
+
+An E5 class-`0xd8` record is a rolling-ball jet carrier. Its payload size is `88 + 252*K` bytes, where `K≥2`. The payload is:
+
+```text
+80
+K:u32le degree:u32le 0:u32le 0:u32le K:u32le 0:u32le
+knot:f64le{K}
+multiplicity:u32le{K}
+channel:f64le{30*K}
+tail[63]
+```
+
+`degree` is `5`. The two K fields agree. The knot values are finite and strictly increasing. The multiplicities are `[6, 3, …, 3, 6]`, with no interior `3` when `K=2`. The channel lane is structure-of-arrays: `K` ten-f64 rows of position values, followed by `K` ten-f64 rows of first derivatives and `K` ten-f64 rows of second derivatives. A position row is `(first_limit[3], second_limit[3], center[3], angle)`. The derivative rows contain the parameter derivatives of the same ten channels.
+
+The tail is `parameter_min:f64le parameter_max:f64le 0:f64le radius:f64le radius:f64le sense:i32le 0:f64le radius:f64le 01 00 00`. The parameter limits equal the first and last knots. The three zero fields are binary zero, the three radius fields are finite and positive and agree within storage tolerance, and `sense` is `+1` or `−1`. Each position row has equal positive distances from its centre to both limiting points, its angle equals the angle between those radius vectors, and its radius agrees with the tail radius. The decoder retains the tail sense as native carrier data. The neutral carrier is `RollingBallJet` with the stored angle channel; the face wrapper and face orientation remain the identity relation for the owning face.
 
 E5 `05 08 01` coordinate rows occupy an unframed contiguous run outside the declared extents of `e5 0d 03` records. The governing run is the unique run whose row count equals the distinct endpoint-vertex population referenced by the transferred edge uses. A matching byte sequence inside a framed record payload is payload data, and multiple matching runs leave the coordinate binding unresolved.
 

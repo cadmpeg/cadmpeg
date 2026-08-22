@@ -1140,6 +1140,8 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
                     degree: 5,
                     ..
                 },
+                source:
+                    crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
         )
     ));
@@ -1225,6 +1227,8 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 110,
                 definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+                source:
+                    crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
         )
     ));

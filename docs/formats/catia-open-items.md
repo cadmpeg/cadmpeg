@@ -640,18 +640,6 @@ extent `15`; the allocation scope is absent. No face-domain assignment is
 derived from those values. Verdict: repeated edge-face slot assignment
 remains open.
 
-### SN-38. Standard freeform to external NURBS identity
-
-**Question.** Which admitted identity binds a standard freeform face tag to one external typed carrier when the alias walk does not resolve that carrier, including the remaining class-`0xd8` carrier family?
-
-**Known.** The standard freeform cores retain face bounds and tags. A class-`0xf1` frame has payload size `44`, begins with a five-reference lane, and is used by class-`0x00` faces as a surface wrapper. In one standard-nested record walk, the freeform cores at reconstructed offsets `1235511`, `1235631`, `1235678`, `1235798`, `1236235`, `1236355`, `1236402`, `1236872`, `1237236`, `1237502`, `1237622`, `1237669`, `1238627`, and `1238674` have tags `44419`, `45097`, `45370`, `45394`, `46227`, `47267`, `47273`, `47586`, `47967`, `48426`, `49374`, `49380`, `49835`, and `49842`. The corresponding class-`0x00` E5 face records begin at source offsets `368800`, `380032`, `392920`, `393318`, `425653`, `426063`, `426262`, `434847`, `443329`, `468466`, `468864`, `469063`, `474963`, and `475466`. Their wrapper first references resolve to supported class-`0xcc` carriers at source offsets `364981`, `376228`, `389804`, `417185`, `431816`, `440789`, `458507`, `370269`, and `394732` for nine tags. The remaining five first references are class-`0xd8` records at source offsets `381487`, `401105`, `412471`, `445879`, and `451115`; their geometry grammar is not admitted. The geometry rule in `catia.md` §5.6 transfers an external NURBS carrier only for a unique multi-vertex witness association and marks that geometry inferred; tied or weak associations remain unknown.
-
-**Need.** A byte identity is required to transfer every aliased carrier as byte-exact geometry and to resolve duplicate external carriers without relying on geometric coincidence.
-
-**Conflict.** None.
-
-**Note.** The exact E5 face → `0xf1` wrapper → first-carrier join transfers nine of fourteen freeform surface geometries as byte-exact analytic carriers. Five class-`0xd8` carriers retain their face tags, bounds, and orientation without geometry. The remaining source relation is open; class-`0xd8` payload semantics and its binding to the standard freeform carrier remain to be established.
-
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
@@ -915,6 +903,18 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 **Known.** `catia.md` §9 defines the complete NURBS knot, multiplicity, control-point, degree, mode, and weight productions. Class `0xaa` retains a fixed 37-byte trailing lane. Class `0xe7` retains a fixed 148-byte trailing lane. The lanes are required for record admission but are not assigned to topology, geometry, or parameter semantics.
 
 **Need.** We must identify the fields in both lanes before decoding or writing their internal values.
+
+### E5-12. Class-`0xd8` sense flag
+
+**Question.** How does the class-`0xd8` tail `sense:i32le` orient the swept-arc carrier relative to its owning face?
+
+**Known.** `catia.md` §9 defines the class-`0xd8` payload, its constant-radius arc rows, its quintic position and derivative lanes, and its tail `sense` value of `+1` or `−1`. The face → class-`0xf1` wrapper → first-reference join binds the carrier to one standard freeform face. The face record retains its own orientation flag. The decoder transfers the stored angle and retains `sense` on the native carrier record without equating it to the face flag.
+
+**Need.** We must establish the signed surface orientation relation before applying `sense` to the neutral `RollingBallJet` angle or face binding.
+
+**Conflict.** None.
+
+**Note.** The class-`0xd8` value and derivative lanes are admitted independently of this orientation relation. A carrier can transfer as an exact procedural surface while its native sense remains retained-only.
 
 ## 7. FBB-only and float-packed variants
 

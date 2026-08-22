@@ -993,17 +993,7 @@ fn control_bounds_overlap_face(
     })
 }
 
-/// Join a standard freeform face to a directly decoded E5 analytic carrier
-/// through the serialized face and class-`0xf1` wrapper identities.
-///
-/// This path is exact: a geometric candidate is accepted only when the
-/// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
-/// and the wrapper's first reference names one supported E5 surface carrier.
-/// It does not infer the unresolved class-`0xd8` carrier family.
-pub(crate) fn associate_standard_freeform_e5_surfaces(
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
-    data: &[u8],
-) -> HashMap<u32, SurfaceGeometry> {
+fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
     let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
     for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
         match face_surfaces.entry(face).or_insert(Some(surface)) {
@@ -1031,6 +1021,24 @@ pub(crate) fn associate_standard_freeform_e5_surfaces(
         .filter_map(|(wrapper, surface)| surface.map(|surface| (wrapper, surface)))
         .collect::<HashMap<_, _>>();
 
+    face_surfaces
+        .into_iter()
+        .filter_map(|(face, wrapper)| Some((face, *wrappers.get(&wrapper)?)))
+        .collect()
+}
+
+/// Join a standard freeform face to a directly decoded E5 analytic carrier
+/// through the serialized face and class-`0xf1` wrapper identities.
+///
+/// This path is exact: a geometric candidate is accepted only when the
+/// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
+/// and the wrapper's first reference names one supported E5 surface carrier.
+pub(crate) fn associate_standard_freeform_e5_surfaces(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    data: &[u8],
+) -> HashMap<u32, SurfaceGeometry> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(data);
+
     let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
     for surface in crate::families::e5::records::e5_surfaces(data) {
         match surfaces
@@ -1054,9 +1062,53 @@ pub(crate) fn associate_standard_freeform_e5_surfaces(
             else {
                 return None;
             };
-            let face_surface = *face_surfaces.get(tag)?;
-            let underlying_surface = *wrappers.get(&face_surface)?;
+            let underlying_surface = *carrier_ids.get(tag)?;
             Some((*tag, surfaces.get(&underlying_surface)?.clone()))
+        })
+        .collect()
+}
+
+/// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
+/// The face and wrapper identities are the same strict join used by analytic
+/// E5 carriers; only the underlying carrier decoder differs.
+pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    data: &[u8],
+) -> HashMap<u32, StandardSurfaceProcedure> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(data);
+    let mut jets = HashMap::<u32, Option<crate::families::e5::records::E5RollingBallJet>>::new();
+    for jet in crate::families::e5::records::e5_rolling_ball_jets(data) {
+        match jets
+            .entry(jet.record_id)
+            .or_insert_with(|| Some(jet.clone()))
+        {
+            stored @ Some(_) if *stored != Some(jet) => *stored = None,
+            _ => {}
+        }
+    }
+    let jets = jets
+        .into_iter()
+        .filter_map(|(carrier, jet)| jet.map(|jet| (carrier, jet)))
+        .collect::<HashMap<_, _>>();
+
+    records
+        .iter()
+        .filter_map(|record| {
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
+                record
+            else {
+                return None;
+            };
+            let carrier = *carrier_ids.get(tag)?;
+            let jet = jets.get(&carrier)?;
+            Some((
+                *tag,
+                StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id: jet.record_id,
+                    definition: jet.definition(),
+                    source: StandardRollingBallSource::E5D8,
+                },
+            ))
         })
         .collect()
 }
@@ -1259,19 +1311,33 @@ pub(crate) fn try_decode_standard(
         freeform_geometries.insert(tag, geometry);
         e5_freeform_tags.insert(tag);
     }
+    let mut freeform_procedural_surfaces = object_evidence.procedural_surfaces.clone();
+    let e5_freeform_procedural_surfaces =
+        associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data);
+    for (tag, procedure) in e5_freeform_procedural_surfaces {
+        match freeform_procedural_surfaces.get(&tag) {
+            Some(existing) if existing != &procedure => {
+                freeform_procedural_surfaces.remove(&tag);
+            }
+            Some(_) => {}
+            None => {
+                freeform_procedural_surfaces.insert(tag, procedure);
+            }
+        }
+    }
     let freeform_carriers =
         crate::families::a5a8::records::a5_surfaces_from_records(&scan.data, &consolidated_records);
     let inferred_freeform_geometries =
         associate_standard_freeform_surfaces(&records, &points, &freeform_carriers);
     let mut inferred_freeform_tags = HashSet::new();
     for (tag, geometry) in inferred_freeform_geometries {
-        if freeform_geometries.contains_key(&tag) {
+        if freeform_geometries.contains_key(&tag) || freeform_procedural_surfaces.contains_key(&tag)
+        {
             continue;
         }
         freeform_geometries.insert(tag, geometry);
         inferred_freeform_tags.insert(tag);
     }
-    let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
         .iter()
         .filter(|record| {
@@ -1441,8 +1507,12 @@ pub(crate) fn try_decode_standard(
             StandardSurfaceProcedure::RollingBall {
                 carrier_object_id,
                 definition,
+                source: procedure_source,
             } => (
-                "object_stream_a8_03_32",
+                match procedure_source {
+                    StandardRollingBallSource::ObjectStreamA8 => "object_stream_a8_03_32",
+                    StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
+                },
                 carrier_object_id,
                 definition,
                 Exactness::ByteExact,
@@ -2104,6 +2174,7 @@ pub(crate) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
         definition: ProceduralSurfaceDefinition,
+        source: StandardRollingBallSource,
     },
     Offset {
         carrier_object_id: u32,
@@ -2114,6 +2185,12 @@ pub(crate) enum StandardSurfaceProcedure {
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
     Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StandardRollingBallSource {
+    ObjectStreamA8,
+    E5D8,
 }
 
 #[derive(Clone, PartialEq)]
@@ -2301,6 +2378,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                                 StandardSurfaceProcedure::RollingBall {
                                     carrier_object_id,
                                     definition: *definition,
+                                    source: StandardRollingBallSource::ObjectStreamA8,
                                 },
                             ),
                         })
@@ -2528,6 +2606,7 @@ fn standard_surface_evidence(
                     |(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
                         carrier_object_id,
                         definition,
+                        source: StandardRollingBallSource::ObjectStreamA8,
                     },
                 )
         })
