@@ -48,6 +48,8 @@ Every encoder returns an `ExportReport` with its format id, entity census, loss 
 
 `write_path` names which of an encoder's write paths produced the bytes: `verbatim_replay` copies retained source bytes out unchanged, `patched` runs the writer over retained source content, and `synthesized` runs the writer over neutral IR content alone. The encoder sets it at the branch it takes. The distinction is not recoverable from the output, because a patch that changes nothing observable reproduces its input byte for byte. F3D takes all three paths, SLDPRT takes all three, FreeCAD is always `patched`, and CADIR, STEP, and Rhino are always `synthesized`.
 
+Export-side refusal has two owners, and the `Encoder` trait is neither. The conversion layer owns `--reject-lossy`: the application transcoder refuses to plan when the decode report carries any loss and refuses to write when the planned `ExportReport` carries any loss. Both are policy stops distinct from a planning failure, and neither consults per-loss strict floors — any loss note refuses. Separately, a writer may own an unsupported policy of its own: the STEP writer's `StepUnsupportedPolicy` either emits the representable subset with loss notes (the default) or rejects the document before any output byte when its report holds a loss, and the atomic-rejection encoders above refuse unsupported input the same way. A format specification's "strict export rejects" sentence names the owning writer policy where one exists and the conversion stop otherwise.
+
 ## Crate map
 
 | Crate                    | Responsibility                                                                                                                         |
