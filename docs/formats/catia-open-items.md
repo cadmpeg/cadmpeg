@@ -406,6 +406,20 @@ per-packet maximum-coordinate residuals range from `0.745981` to `3.389341`.
 The packet bounds are grouped owner extents, not direct face boxes; the
 coordinate axes and roles remain open.
 
+The fixed-nine grammar has a distinct all-compact subtype. In four
+topology-bearing standard spines, all-compact packets at offsets
+`1511860`, `1512333`, `1518588`, `1518685`, `1519121`, `1524406`,
+`1526188`, `1527699`, `1529296`, `1530897`, `1532391`, `1533984`,
+`1535487`, and `1537104`; `933885`, `935186`, `936469`, and `937778`;
+the 58-packet population from `1267952` through `1434751`; and the
+20-packet population from `538468` through `586831` each have three
+binary32 bound pairs that contain exactly one serialized face-boundary AABB
+within `2e-3` in each coordinate. Width-coded fixed-nine packets at
+`1520445`, `1522425`, `1553427`, `1556160`, and `1558192` each admit two
+face-boundary AABBs. The one-face enclosing-box rule is therefore limited to
+the all-compact subtype; grouped width-coded extents and the binary64 box
+axes remain open.
+
 ### SN-18. Class-`0x62` owner-to-face binding
 
 **Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
@@ -420,6 +434,19 @@ with class-`0x62` targets `2749`, `1126`, `1130`, `4904`, `1574`, and `759`.
 None selects one of the 84 standard face ordinals, and the packet extents have
 no unique one-face correspondence. The allocation relation remains distinct
 from standard face incidence.
+
+The all-compact subtype provides a stronger geometric candidate but not a
+source identity. Fourteen adjacent `5f,62` relations occur at owner offsets
+`1511860`, `1512333`, `1518588`, `1518685`, `1519121`, `1524406`,
+`1526188`, `1527699`, `1529296`, `1530897`, `1532391`, `1533984`,
+`1535487`, and `1537104`; their node targets are `278`, `592`, `219`,
+`253`, `597`, `114`, and `179` for the final eight, and each final owner
+reference equals the checked target successor. Their numeric bounds select
+face ordinals `56`, `58`, `63`, `64`, `67`, `76`, `77`, `79`, `82`, `85`,
+`87`, `90`, `92`, and `95` by the one-face AABB witness. The node targets
+remain allocation identities, not those face ordinals. Other all-compact
+packets have no adjacent node, so the geometric witness does not define the
+general owner-to-face binding.
 
 ### SN-19. Cone `pre_range_scalar`
 
@@ -564,6 +591,15 @@ from standard face incidence.
 **Conflict.** None.
 
 **Note.** No concrete assignment is inferred from allocation order or from a topology that is only internally consistent. Verdict: remains open; controls with 304, 270, and 264 FBB face rows at inner offsets 1137656, 1699598, and 1410531 have no complete joint topology solution or exhaust the bounded search, while the three controls that emit topology do not establish the source rule for alternate face slots.
+
+The all-compact owner-box witness does not close the repeated-slot question.
+In the 187-face topology, its unique face candidates are `56`, `58`, `63`,
+`64`, `67`, `76`, `77`, `79`, `82`, `85`, `87`, `90`, `92`, and `95`; the
+residual seam components use face pairs `[37,36]`, `[39,38]`, and `[41,40]`.
+No all-compact packet or adjacent face-node relation names those six faces,
+and the owner reference lanes do not name a standard edge-row ordinal. The
+boxes can corroborate a face candidate when a separate edge relation exists,
+but they do not select a second face for these repeated rows.
 
 ### SN-38. Standard freeform to external NURBS identity
 
