@@ -292,11 +292,7 @@ fn decode_with_occurrence_limits(
                 ctx,
             )?
         }
-        None => entities::geometry::Projection {
-            decoded: BTreeSet::default(),
-            consumed: BTreeSet::default(),
-            losses: Vec::new(),
-        },
+        None => entities::geometry::Projection::default(),
     };
     let semantic_structure_admitted = (!options.container_only).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
