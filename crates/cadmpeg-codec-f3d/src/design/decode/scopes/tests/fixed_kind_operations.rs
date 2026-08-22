@@ -1122,14 +1122,7 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(3, 0x7_0000_0000),
     ];
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &mixed,
-            &[],
-            &[],
-            &[],
-            &[],
-        ),
+        crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[],),
         None
     );
     assert!(!crate::validate::loft_operand_roles_are_valid(

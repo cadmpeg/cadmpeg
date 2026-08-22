@@ -377,8 +377,18 @@ fn project_all_dimension_constraints(
                 return Some(definition);
             }
             if point_line_separation(entities[0], entities[1], evaluated_mm, linear_tolerance)
-                || parallel_line_separation(entities[0], entities[1], evaluated_mm)
-                || concentric_circle_separation(entities[0], entities[1], evaluated_mm)
+                || parallel_line_separation(
+                    entities[0],
+                    entities[1],
+                    evaluated_mm,
+                    linear_tolerance,
+                )
+                || concentric_circle_separation(
+                    entities[0],
+                    entities[1],
+                    evaluated_mm,
+                    linear_tolerance,
+                )
             {
                 return Some(Definition::Distance {
                     entities: entities.iter().map(|entity| entity.id.clone()).collect(),
@@ -986,6 +996,7 @@ fn project_all_dimension_constraints(
                     &sketch,
                     parameter.evaluated_value * 10.0,
                     &parameter_id,
+                    linear_tolerance,
                 )
             } else {
                 Vec::default()
@@ -999,8 +1010,13 @@ fn project_all_dimension_constraints(
                 &parameter_id,
                 linear_tolerance,
             );
-            let concentric =
-                concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id);
+            let concentric = concentric_circle_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            );
             let definition = radial.unwrap_or_else(|| {
                 match (
                     linear_candidates.as_slice(),
@@ -1129,7 +1145,13 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            unique_parallel_line_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            unique_parallel_line_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
         })
         .or_else(|| {
             owner_scoped_parallel_line_set_dimension_definition(
@@ -1159,7 +1181,13 @@ fn project_all_dimension_constraints(
             )
         })
         .or_else(|| {
-            concentric_circle_dimension_definition(entities, &sketch, parameter, &parameter_id)
+            concentric_circle_dimension_definition(
+                entities,
+                &sketch,
+                parameter,
+                &parameter_id,
+                linear_tolerance,
+            )
         });
         let presentation_definition =
             presentation_for_owner(scope, owner.record_index).and_then(|frame| {
@@ -1429,8 +1457,8 @@ fn explicit_linear_dimension_definition(
         return Some(definition);
     }
     if point_line_separation(first, second, expected, linear_tolerance)
-        || parallel_line_separation(first, second, expected)
-        || concentric_circle_separation(first, second, expected)
+        || parallel_line_separation(first, second, expected, linear_tolerance)
+        || concentric_circle_separation(first, second, expected, linear_tolerance)
     {
         return Some(Definition::Distance {
             entities: vec![first.id.clone(), second.id.clone()],
@@ -1633,6 +1661,7 @@ pub(crate) fn concentric_circle_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition as Definition, SketchDistanceMeasurement as Measurement,
@@ -1656,7 +1685,12 @@ pub(crate) fn concentric_circle_dimension_definition(
     let mut paired_entities = HashSet::new();
     for first in 0..circles.len() {
         for second in first + 1..circles.len() {
-            if !concentric_circle_separation(circles[first], circles[second], evaluated_mm) {
+            if !concentric_circle_separation(
+                circles[first],
+                circles[second],
+                evaluated_mm,
+                linear_tolerance,
+            ) {
                 continue;
             }
             if !paired_entities.insert(circles[first].id.clone())
@@ -1741,6 +1775,7 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
@@ -1760,7 +1795,8 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     let mut matched = None;
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
-            if parallel_line_separation(lines[first], lines[second], evaluated_mm) {
+            if parallel_line_separation(lines[first], lines[second], evaluated_mm, linear_tolerance)
+            {
                 if matched.is_some() {
                     return None;
                 }
@@ -4227,6 +4263,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
     sketch: &cadmpeg_ir::sketches::SketchId,
     evaluated_mm: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
 
@@ -4257,7 +4294,8 @@ pub(crate) fn recipe_linear_dimension_candidates(
     let mut line_pairs = Vec::new();
     for first in 0..lines.len() {
         for second in first + 1..lines.len() {
-            if parallel_line_separation(lines[first], lines[second], evaluated_mm) {
+            if parallel_line_separation(lines[first], lines[second], evaluated_mm, linear_tolerance)
+            {
                 line_pairs.push((lines[first], lines[second]));
             }
         }
@@ -4450,12 +4488,12 @@ pub(crate) fn parallel_line_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
+    linear_tolerance: f64,
 ) -> bool {
     let Some(separation) = parallel_line_distance(first, second) else {
         return false;
     };
-    let expected = evaluated_mm.abs();
-    (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+    linear_measurement_matches(separation, evaluated_mm, linear_tolerance)
 }
 
 /// Resolve the symmetric line-width form of a paired linear dimension.
@@ -4567,6 +4605,7 @@ pub(crate) fn concentric_circle_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
+    linear_tolerance: f64,
 ) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry;
 
@@ -4599,8 +4638,7 @@ pub(crate) fn concentric_circle_separation(
         return false;
     }
     let measured = (first_radius.0 - second_radius.0).abs();
-    let expected = evaluated_mm.abs();
-    measured > 0.0 && (measured - expected).abs() <= 1.0e-9 * (1.0 + measured.max(expected))
+    measured > 0.0 && linear_measurement_matches(measured, evaluated_mm, linear_tolerance)
 }
 
 pub(crate) fn point_line_separation(

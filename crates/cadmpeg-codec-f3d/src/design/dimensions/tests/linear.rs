@@ -119,6 +119,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &horizontal,
         &diagonal,
         2.0,
+        0.0,
     ));
     assert!(!crate::design::dimensions::line_angle_matches(
         &horizontal.geometry,
@@ -180,11 +181,13 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &inner_circle,
         &outer_circle,
         0.25,
+        0.0,
     ));
     assert!(!crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
         &outer_circle,
         0.5,
+        0.0,
     ));
     let displaced_circle = entity(
         "generated:circle#displaced",
@@ -197,6 +200,47 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &inner_circle,
         &displaced_circle,
         0.25,
+        0.0,
+    ));
+
+    const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
+    let tolerant_parallel = entity(
+        "generated:line#tolerant-parallel",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 2.000_000_5),
+            end: Point2::new(10.0, 2.000_000_5),
+        },
+    );
+    assert!(crate::design::dimensions::parallel_line_separation(
+        &horizontal,
+        &tolerant_parallel,
+        2.0,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::parallel_line_separation(
+        &horizontal,
+        &tolerant_parallel,
+        2.0,
+        0.0,
+    ));
+    let tolerant_outer_circle = entity(
+        "generated:circle#tolerant-outer",
+        SketchGeometry::Circle {
+            center: Point2::new(3.0, -2.0),
+            radius: cadmpeg_ir::features::Length(4.250_000_5),
+        },
+    );
+    assert!(crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_outer_circle,
+        0.25,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_outer_circle,
+        0.25,
+        0.0,
     ));
 }
 
