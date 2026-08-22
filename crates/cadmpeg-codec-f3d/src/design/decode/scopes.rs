@@ -88,6 +88,7 @@ use crate::layout::fixed_pipe_operation_prefix as fixed_pipe;
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe;
 use crate::layout::marker_one_revolve_prologue as revolve;
@@ -8670,6 +8671,17 @@ fn exact_extrude_prologue(
         )
     })
     .or_else(|| {
+        exact_class_338_two_sided_distance_extrude_prologue(
+            bytes,
+            start,
+            paired_at,
+            class_tag,
+            paired_class_tag,
+            reference_count_at,
+            reference_members,
+        )
+    })
+    .or_else(|| {
         exact_legacy_shifted_extrude_prologue(bytes, start, reference_count_at, reference_members)
     })
     .or_else(|| exact_compact_shifted_extrude_prologue(bytes, start, reference_count_at))
@@ -10428,6 +10440,161 @@ fn exact_legacy_shifted_extrude_prologue(
         solid_operation_offset: solid_operation_offset as u64,
         start,
         start_offset: start_offset as u64,
+    })
+}
+
+fn exact_class_338_two_sided_distance_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    class_tag: &str,
+    paired_class_tag: &str,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+
+    if class_tag != "338"
+        || paired_class_tag != "262"
+        || paired_at.checked_sub(start)? != class_338_legacy::LEN
+        || reference_count_at.checked_sub(start)? != class_338_legacy::REFERENCE_COUNT
+        || reference_members.len() != 10
+        || bytes.get(paired_at.checked_add(4)?..paired_at.checked_add(7)?)? != b"262"
+        || View::u32_le_at(bytes, start.checked_add(class_338_legacy::PREFIX_CONSTANT)?)?
+            != class_338_legacy::PREFIX_CONSTANT_VALUE
+        || bytes.get(start.checked_add(24)?..start.checked_add(class_338_legacy::OPERATION)?)?
+            != [0; 3]
+        || bytes
+            .get(start.checked_add(42)?..start.checked_add(class_338_legacy::PROFILE_NORMAL)?)?
+            != [0; 3]
+        || bytes.get(
+            start.checked_add(class_338_legacy::NULL_SCOPE_SCALAR_LANE)?
+                ..start.checked_add(class_338_legacy::NULL_SCOPE_SCALAR_LANE + 10)?,
+        )? != [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        || View::u32_le_at(bytes, reference_count_at)? != class_338_legacy::REFERENCE_COUNT_VALUE
+    {
+        return None;
+    }
+    let operation_offset = start.checked_add(class_338_legacy::OPERATION)?;
+    let operation = match View::u32_le_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let direction_face_extend_offsets = [
+        start.checked_add(class_338_legacy::DIRECTION)?,
+        start.checked_add(class_338_legacy::FACE_EXTEND)?,
+    ];
+    let direction_face_extend_values = [
+        View::u32_le_at(bytes, direction_face_extend_offsets[0])?,
+        View::u32_le_at(bytes, direction_face_extend_offsets[1])?,
+    ];
+    if direction_face_extend_values
+        != [
+            class_338_legacy::DIRECTION_VALUE,
+            class_338_legacy::FACE_EXTEND_VALUE,
+        ]
+    {
+        return None;
+    }
+    let direction_reversed_offset = start.checked_add(class_338_legacy::DIRECTION_REVERSED)?;
+    let direction_reversed = match bytes.get(direction_reversed_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let solid_operation_offset = start.checked_add(class_338_legacy::GEOMETRY_KIND)?;
+    let solid_operation = match bytes.get(solid_operation_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let start_offset = start.checked_add(class_338_legacy::START_SUPPORT)?;
+    let start_support = match bytes.get(start_offset)? {
+        0 => DesignExtrudeStart::ProfilePlane,
+        1 => DesignExtrudeStart::OffsetProfilePlane,
+        2 => DesignExtrudeStart::FromFace,
+        _ => return None,
+    };
+    let profile_normal = f64s_at(
+        bytes,
+        start.checked_add(class_338_legacy::PROFILE_NORMAL)?,
+        3,
+    )?;
+    let profile_normal_squared = profile_normal
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if profile_normal
+        .iter()
+        .any(|component| !component.is_finite())
+        || (profile_normal_squared - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS
+    {
+        return None;
+    }
+    for offset in [
+        class_338_legacy::FIRST_SIDE_PARAMETER_REFERENCE,
+        class_338_legacy::PROFILE_GROUP_REFERENCE,
+        class_338_legacy::BODY_GROUP_REFERENCE,
+    ] {
+        let record_index = marked_record_reference(bytes, start.checked_add(offset)?)?;
+        if !reference_members.contains(&record_index) {
+            return None;
+        }
+    }
+    if bytes
+        .get(start.checked_add(160)?..start.checked_add(class_338_legacy::FIRST_SIDE_EXTENT)?)?
+        != [0; 5]
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(class_338_legacy::FIRST_SIDE_EXTENT)?,
+        )? != class_338_legacy::FIRST_SIDE_EXTENT_VALUE
+        || bytes.get(
+            start.checked_add(180)?..start.checked_add(class_338_legacy::SECOND_SIDE_EXTENT)?,
+        )? != [0; 8]
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(class_338_legacy::SECOND_SIDE_EXTENT)?,
+        )? != class_338_legacy::SECOND_SIDE_EXTENT_VALUE
+    {
+        return None;
+    }
+    let (guid, guid_end) =
+        lp_utf16_bounded(bytes, start.checked_add(class_338_legacy::GUID)?, 36..=36)?;
+    let expected_guid_end = start.checked_add(279)?;
+    if !is_guid_relaxed(&guid)
+        || guid_end != expected_guid_end
+        || bytes.get(guid_end..reference_count_at)? != [0; 3]
+    {
+        return None;
+    }
+    Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation,
+        operation_offset: u64::try_from(operation_offset).ok()?,
+        direction_face_extend_values,
+        side_extent_discriminators: [
+            class_338_legacy::FIRST_SIDE_EXTENT_VALUE,
+            class_338_legacy::SECOND_SIDE_EXTENT_VALUE,
+        ],
+        side_extent_discriminator_offsets: [
+            u64::try_from(start.checked_add(class_338_legacy::FIRST_SIDE_EXTENT)?).ok()?,
+            u64::try_from(start.checked_add(class_338_legacy::SECOND_SIDE_EXTENT)?).ok()?,
+        ],
+        extent: Some(DesignExtrudeExtent::TwoSidedDistance),
+        direction_face_extend_offsets: [
+            u64::try_from(direction_face_extend_offsets[0]).ok()?,
+            u64::try_from(direction_face_extend_offsets[1]).ok()?,
+        ],
+        direction_reversed,
+        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        solid_operation,
+        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        start: start_support,
+        start_offset: u64::try_from(start_offset).ok()?,
     })
 }
 
