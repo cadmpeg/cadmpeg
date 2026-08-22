@@ -3275,6 +3275,9 @@ fn attach_feature_operations(
                         point_groups: sketch_point_groups,
                         points: sketch_points,
                         payload_scalars: sketch_payload_scalars,
+                        fixed_points: sketch_fixed_points_by_operation
+                            .get(label.id.as_str())
+                            .map_or([].as_slice(), Vec::as_slice),
                         coordinate_pairs: sketch_coordinate_pairs_by_operation
                             .get(label.id.as_str())
                             .map_or([].as_slice(), Vec::as_slice),
@@ -3531,6 +3534,12 @@ fn attach_sketch_graph(
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
     let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
+    let operation_fixed_points = sources
+        .fixed_points
+        .iter()
+        .copied()
+        .filter(|point| point.operation_label == label.id)
+        .collect::<Vec<_>>();
     if operation_groups.is_empty() {
         let coordinate_pairs = sources
             .coordinate_pairs
@@ -3538,10 +3547,11 @@ fn attach_sketch_graph(
             .filter(|pair| pair.operation_label == label.id)
             .copied()
             .collect::<Vec<_>>();
-        if coordinate_pairs.is_empty() {
+        if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
             return None;
         }
-        let mut entities = Vec::with_capacity(coordinate_pairs.len());
+        let mut entities =
+            Vec::with_capacity(coordinate_pairs.len() + operation_fixed_points.len());
         let mut pair_ids = BTreeSet::new();
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
@@ -3579,15 +3589,29 @@ fn attach_sketch_graph(
                 },
             ));
         }
+        entities.extend(native_fixed_point_entities(
+            label,
+            &sketch_id,
+            &operation_fixed_points,
+        )?);
         entities.sort_by(|(first_offset, first), (second_offset, second)| {
             first_offset
                 .cmp(second_offset)
                 .then_with(|| first.id.0.cmp(&second.id.0))
         });
         for (source_offset, entity) in &entities {
+            let tag = match &entity.geometry {
+                SketchGeometry::Native { native_kind } if native_kind == "nx-coordinate-pair" => {
+                    "SKETCH_NATIVE_COORDINATE_PAIR"
+                }
+                SketchGeometry::Native { native_kind } if native_kind == "nx-fixed-point" => {
+                    "SKETCH_NATIVE_FIXED_POINT"
+                }
+                _ => "SKETCH_NATIVE",
+            };
             annotations
                 .note(&entity.id.0, stream, *source_offset)
-                .tag("SKETCH_NATIVE_COORDINATE_PAIR");
+                .tag(tag);
             annotations.exactness(&entity.id.0, Exactness::ByteExact);
         }
         annotations
@@ -3731,6 +3755,11 @@ fn attach_sketch_graph(
             },
         ));
     }
+    entities.extend(native_fixed_point_entities(
+        label,
+        &sketch_id,
+        &operation_fixed_points,
+    )?);
     entities.sort_by(|(first_offset, first), (second_offset, second)| {
         first_offset
             .cmp(second_offset)
@@ -3740,10 +3769,26 @@ fn attach_sketch_graph(
         return None;
     }
     for (source_offset, entity) in &entities {
-        annotations
-            .note(&entity.id.0, stream, *source_offset)
-            .tag("SKETCH_POINT");
-        annotations.exactness(&entity.id.0, Exactness::Derived);
+        match &entity.geometry {
+            SketchGeometry::Point { .. } => {
+                annotations
+                    .note(&entity.id.0, stream, *source_offset)
+                    .tag("SKETCH_POINT");
+                annotations.exactness(&entity.id.0, Exactness::Derived);
+            }
+            SketchGeometry::Native { native_kind } => {
+                let tag = if native_kind == "nx-fixed-point" {
+                    "SKETCH_NATIVE_FIXED_POINT"
+                } else {
+                    "SKETCH_NATIVE"
+                };
+                annotations
+                    .note(&entity.id.0, stream, *source_offset)
+                    .tag(tag);
+                annotations.exactness(&entity.id.0, Exactness::ByteExact);
+            }
+            _ => return None,
+        }
     }
     annotations
         .note(&sketch_id.0, stream, label.source_offset)
@@ -3769,7 +3814,53 @@ struct SketchSources<'a> {
     point_groups: &'a [crate::native::features::FeatureSketchPointGroup],
     points: &'a [crate::native::features::FeatureSketchPoint],
     payload_scalars: &'a [crate::native::features::FeatureSketchPayloadScalar],
+    fixed_points: &'a [&'a crate::native::features::FeatureSketchFixedPoint],
     coordinate_pairs: &'a [&'a crate::native::features::FeatureSketchPayloadCoordinatePair],
+}
+
+fn native_fixed_point_entities(
+    label: &crate::native::features::FeatureOperationLabel,
+    sketch_id: &SketchId,
+    points: &[&crate::native::features::FeatureSketchFixedPoint],
+) -> Option<Vec<(u64, SketchEntity)>> {
+    let mut point_ids = BTreeSet::new();
+    let mut entity_keys = BTreeSet::new();
+    let mut entities = Vec::with_capacity(points.len());
+    for point in points {
+        if point.operation_label != label.id
+            || !point.values.iter().all(|value| value.is_finite())
+            || !point_ids.insert(point.id.as_str())
+        {
+            return None;
+        }
+        let point_key = point
+            .id
+            .rsplit_once('#')
+            .map_or(point.id.as_str(), |(_, key)| key);
+        if point_key.is_empty()
+            || point_key.chars().any(char::is_whitespace)
+            || !entity_keys.insert(point_key)
+        {
+            return None;
+        }
+        entities.push((
+            point.source_offset,
+            SketchEntity {
+                id: SketchEntityId(format!(
+                    "nx:feature-history:sketch-entity#fixed-point-{point_key}"
+                )),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: Some(point.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "nx-fixed-point".into(),
+                },
+            },
+        ));
+    }
+    Some(entities)
 }
 
 fn records_by_operation<'a, T>(

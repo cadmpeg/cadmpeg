@@ -695,6 +695,16 @@
           {
             "construction": false,
             "geometry": {
+              "kind": "native",
+              "native_kind": "nx-fixed-point"
+            },
+            "id": "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001",
+            "native_ref": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
+            "sketch": "nx:feature-history:sketch#0000000000-0000000001"
+          },
+          {
+            "construction": false,
+            "geometry": {
               "kind": "point",
               "position": {
                 "u": 57.149999999999686,
@@ -6555,6 +6565,11 @@
             "offset": 1662,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
+          },
+          "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001": {
+            "offset": 1594,
+            "stream": 0,
+            "tag": "SKETCH_NATIVE_FIXED_POINT"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "offset": 321,
