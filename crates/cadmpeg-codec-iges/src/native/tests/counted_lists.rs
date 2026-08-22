@@ -1870,6 +1870,33 @@ fn decode_drawing_with_a_negative_declared_view_count_locates_no_annotation_coun
 }
 
 #[test]
+fn decode_general_symbol_retains_both_declared_counts_when_the_leader_list_overruns() {
+    let bytes = owned_test_file(&[
+        entity(
+            212,
+            0,
+            "NOTE",
+            "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HS;",
+        ),
+        entity(100, 0, "GEOMETRY", "100,0,0,0,1,0,1,0;"),
+        entity(228, 0, "SYMBOL", "228,1,1,3,2,5;"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let symbol = native.arenas["annotations"]
+        .iter()
+        .find(|record| record.fields()["kind"] == "general_symbol")
+        .expect("general symbol");
+    let fields = symbol.fields();
+
+    assert_eq!(fields["declared_geometry_count"], 1);
+    assert_eq!(fields["declared_leader_count"], 2);
+    assert!(fields["geometry"].as_array().unwrap().is_empty());
+    assert!(fields["leaders"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
 fn decode_manifold_solid_reads_its_shell_uses_and_resolves_both_closed_shells() {
     let (bytes, solid, outer, void) = explicit_void_solid_file();
     let result = salvage(&bytes);

@@ -157,7 +157,9 @@ pub(super) enum NativeAnnotation {
         id: String,
         source_entity: String,
         note: Option<String>,
+        declared_geometry_count: Option<i64>,
         geometry: Vec<Option<String>>,
+        declared_leader_count: Option<i64>,
         leaders: Vec<Option<String>>,
         transformation: Option<String>,
     },
@@ -558,6 +560,15 @@ fn general_label(
 fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
     let end = subject.primary_end;
+    let declared_geometry_count = record.and_then(|record| record.integer(2));
+    // The leader count follows the declared geometry span, even when that
+    // span cannot be admitted. This preserves the second declaration without
+    // allowing an invalid count to alias a geometry pointer.
+    let declared_leader_count_index = declared_geometry_count
+        .and_then(|count| usize::try_from(count).ok())
+        .and_then(|count| 3_usize.checked_add(count));
+    let declared_leader_count = declared_leader_count_index
+        .and_then(|index| record.and_then(|record| record.integer(index)));
     // On any checked failure the tuple defaults to (0, 0, 0), so
     // leader_count_index is read only when leader_count > 0 admitted it.
     let (geometry_count, leader_count_index, leader_count) = record
@@ -576,9 +587,11 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
         id: subject.id(),
         source_entity: subject.source_entity(),
         note: subject.note_link(1),
+        declared_geometry_count,
         geometry: (0..geometry_count)
             .map(|offset| subject.geometry_link(3 + offset))
             .collect(),
+        declared_leader_count,
         leaders: (0..leader_count)
             .map(|offset| subject.leader_link(leader_count_index + 1 + offset))
             .collect(),

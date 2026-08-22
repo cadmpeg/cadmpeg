@@ -339,6 +339,8 @@
               "transformation": null
             },
             {
+              "declared_geometry_count": 1,
+              "declared_leader_count": 1,
               "geometry": [
                 "iges:entity:directory#3"
               ],

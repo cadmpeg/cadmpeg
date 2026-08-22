@@ -796,6 +796,8 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
         .find(|annotation| annotation.fields()["kind"] == "general_symbol")
         .unwrap();
     assert_eq!(symbol.fields()["note"], "iges:presentation:annotation#D1");
+    assert_eq!(symbol.fields()["declared_geometry_count"], 1);
+    assert_eq!(symbol.fields()["declared_leader_count"], 1);
     assert_eq!(symbol.fields()["geometry"][0], "iges:entity:directory#3");
     assert_eq!(
         symbol.fields()["leaders"][0],
