@@ -1209,3 +1209,102 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         ["first", "second"]
     );
 }
+
+#[test]
+fn overlapping_endpoint_index_bases_use_the_marker_roster() {
+    let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&0u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&0u32.to_le_bytes());
+    payload[76..80].copy_from_slice(&1u32.to_le_bytes());
+    payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        direct_indexed_curve_endpoint_indices(&payload, 0),
+        Some([1, 2])
+    );
+    assert_eq!(
+        legacy_state_five_curve_endpoint_indices(&payload, 0),
+        Some([2, 3])
+    );
+    let candidates = super::curve_endpoint_index_candidates(&payload, 0);
+    assert!(candidates.contains(&[1, 2]));
+    assert!(candidates.contains(&[2, 3]));
+
+    let marker = |id: &str, object_index, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let first = marker("first", Some(1), Some([0.0, 0.0]));
+    let second = marker("second", Some(2), Some([1.0, 0.0]));
+    let coincident = marker("coincident", Some(3), Some([0.0, 0.0]));
+    let curve = SketchInputEntity {
+        id: "curve".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::LineOrCircle,
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let markers = [&first, &second];
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+
+    let pairs = vec![vec![&first, &second], vec![&second, &coincident]];
+    let (selected, ambiguous) = super::resolve_indexed_marker_candidates(pairs.clone());
+    assert!(!ambiguous);
+    assert_eq!(
+        selected
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(pairs.into_iter().rev());
+    assert!(!ambiguous);
+    assert_eq!(
+        reversed
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    let different = marker("different", Some(3), Some([2.0, 0.0]));
+    let (_, ambiguous) = super::resolve_indexed_marker_candidates([
+        vec![&first, &second],
+        vec![&second, &different],
+    ]);
+    assert!(ambiguous);
+}

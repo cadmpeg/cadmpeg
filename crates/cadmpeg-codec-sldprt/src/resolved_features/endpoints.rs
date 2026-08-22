@@ -46,10 +46,9 @@ use crate::layout::extended_wide_104_profile_curve as wide_104;
 use crate::layout::legacy_wide_104_profile_roster_curve as legacy_wide_104_roster;
 use crate::layout::legacy_wide_112_profile_roster_curve as legacy_wide_112_roster;
 
-// Curve endpoint-index decoders, one per record layout, tried in precedence
-// order. The first layout that accepts the bytes at `offset` yields the pair;
-// order is load-bearing because a record can satisfy more than one layout's
-// guards and the earliest entry must win.
+// Curve endpoint-index decoders, one per record layout. Their guards may
+// overlap, so the caller resolves every accepted pair through the
+// feature-local marker roster before selecting an endpoint pair.
 type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
@@ -91,10 +90,11 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_wide_horizontal_relation_endpoint_indices,
 ];
 
-fn resolved_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+fn curve_endpoint_index_candidates(payload: &[u8], offset: usize) -> Vec<[u32; 2]> {
     CURVE_ENDPOINT_INDEX_DECODERS
         .iter()
-        .find_map(|decode| decode(payload, offset))
+        .filter_map(|decode| decode(payload, offset))
+        .collect()
 }
 
 pub(super) fn extended_direct_object_line_endpoint_ids(
@@ -513,7 +513,8 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
-    if let Some(indices) = resolved_curve_endpoint_indices(payload, offset) {
+    let index_candidates = curve_endpoint_index_candidates(payload, offset);
+    if !index_candidates.is_empty() {
         let resolve_indexed = |indices: [u32; 2]| {
             indices
                 .into_iter()
@@ -561,8 +562,18 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 })
                 .collect::<Vec<_>>()
         };
-        let indexed = resolve_indexed(indices);
-        if point_object_construction && indexed.len() == 1 {
+        let first_indexed = index_candidates
+            .first()
+            .copied()
+            .map(resolve_indexed)
+            .unwrap_or_default();
+        let (indexed, indexed_ambiguous) = resolve_indexed_marker_candidates(
+            index_candidates.iter().copied().map(resolve_indexed),
+        );
+        if indexed_ambiguous {
+            return Vec::new();
+        }
+        if point_object_construction && indexed.is_empty() && first_indexed.len() == 1 {
             return Vec::new();
         }
         if indexed.len() != 2 {
@@ -1242,6 +1253,62 @@ fn distinct_marker_pairs<'a>(
         }
     }
     distinct
+}
+
+/// Resolve all accepted index pairs against the owner-consistent marker
+/// roster. A pair is successful only when both indices select one
+/// coordinate-bearing marker. Multiple successful pairs are equivalent only
+/// when they describe the same endpoint coordinates, in either direction.
+/// The marker IDs provide a stable tie-break for coincident markers.
+fn resolve_indexed_marker_candidates<'a>(
+    candidates: impl IntoIterator<Item = Vec<&'a SketchInputEntity>>,
+) -> (Vec<&'a SketchInputEntity>, bool) {
+    let mut pairs = candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            let [first, second] = candidate.as_slice() else {
+                return None;
+            };
+            (first.id != second.id).then_some([*first, *second])
+        })
+        .collect::<Vec<_>>();
+    let Some(first) = pairs.first().copied() else {
+        return (Vec::new(), false);
+    };
+    if !pairs
+        .iter()
+        .copied()
+        .all(|candidate| marker_pair_coordinates_match(first, candidate))
+    {
+        return (Vec::new(), true);
+    }
+    pairs.sort_unstable_by(|left, right| {
+        left[0]
+            .id
+            .cmp(&right[0].id)
+            .then_with(|| left[1].id.cmp(&right[1].id))
+    });
+    (pairs[0].to_vec(), false)
+}
+
+fn marker_pair_coordinates_match(
+    left: [&SketchInputEntity; 2],
+    right: [&SketchInputEntity; 2],
+) -> bool {
+    let Some(left_first) = left[0].coordinates_m else {
+        return false;
+    };
+    let Some(left_second) = left[1].coordinates_m else {
+        return false;
+    };
+    let Some(right_first) = right[0].coordinates_m else {
+        return false;
+    };
+    let Some(right_second) = right[1].coordinates_m else {
+        return false;
+    };
+    (left_first == right_first && left_second == right_second)
+        || (left_first == right_second && left_second == right_first)
 }
 
 fn compact_complete_marker_roster_pair<'a>(

@@ -602,14 +602,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
 
-### DI-40. Curve endpoint decoder disjointness
-
-**Question.** Do the curve endpoint-index record layouts exclude each other, and if they do not, which stored field selects the layout?
-
-**Known.** `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:50-87` holds 36 endpoint-index decoders in a constant list. `:89-93` keeps the result of the first decoder that accepts the bytes. The decoders read the endpoint pair from different offsets: marker +42, +56, +58, +64, +76, and +82. A comment above the list states that a record can satisfy more than one decoder and that the earliest entry must win, but no test asserts the property and no code detects two accepting decoders. Three cross-offset pairs were compared field by field and each is disjoint through a tested field: the wide and compact indexed curves disagree at marker +64 through +71, the standard and code-five selected axes disagree in native code, and the coordinate-roster and alternate-current selected axes disagree in marker prefix. `sldprt.md` §2 "`ResolvedFeatures` sketch entities begin with" gives the marker fields these decoders read.
-
-**Need.** We must know if two decoders can accept one record. If they cannot, the list order is not a rule and the comment invites an unsafe insertion. If they can, the order is an arbitration rule that the specification does not give, and the endpoints come from the wrong offsets with no recorded loss.
-
 ## 6. Write-path evidence
 
 ### EV-03. Regenerated `SWObjects` record content
