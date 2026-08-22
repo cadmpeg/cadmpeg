@@ -351,6 +351,110 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
 }
 
 #[test]
+fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
+    let sketch = SketchId("sketch".into());
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(-14.0, 7.0),
+        },
+    };
+    let mut stale_line = line_entity(
+        "stale-line",
+        &sketch,
+        Point2::new(-16.0, 0.0),
+        Point2::new(-16.0, 10.0),
+    );
+    stale_line.geometry_ref = Some("feature:solver-line:0".into());
+    let mut intended_line = line_entity(
+        "intended-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 10.0),
+    );
+    intended_line.geometry_ref = Some("feature:solver-line:4".into());
+    let boundary_line = line_entity(
+        "boundary-line",
+        &sketch,
+        Point2::new(-14.0, 7.0),
+        Point2::new(-13.0, 7.0),
+    );
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [8, 0]);
+    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
+    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+    let parameter = length_parameter(14.0);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[
+                point.clone(),
+                stale_line,
+                intended_line.clone(),
+                boundary_line
+            ],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Entity(intended_line.id),
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
+fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
+    let sketch = SketchId("sketch".into());
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(-14.0, 7.0),
+        },
+    };
+    let first_line = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 10.0),
+    );
+    let second_line = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(-28.0, 0.0),
+        Point2::new(-28.0, 10.0),
+    );
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 0]);
+    relation.operands[0].kind = FeatureInputOperandKind::Native(0x8124);
+    relation.operands[1].kind = FeatureInputOperandKind::Native(0x812e);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(14.0)),
+            &sketch,
+            &[point, first_line, second_line],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn solver_point_relation_requires_materialized_positions() {
     let sketch = SketchId("sketch".into());
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [12, 13]);

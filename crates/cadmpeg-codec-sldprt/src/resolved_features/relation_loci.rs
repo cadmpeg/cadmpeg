@@ -421,6 +421,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             markers_by_id,
             loci_by_marker,
         )
+        .or_else(|| {
+            unique_dynamic_roster_point_line_pair(relation, sketch, parameter, sketch_entities)
+        })
     } else {
         None
     };
@@ -1691,6 +1694,78 @@ fn deduplicate_physical_loci(candidates: &mut Vec<SketchLocus>, sketch_entities:
         profile_locus_point(locus, sketch_entities)
             .is_none_or(|point| points.insert(quantize(point, DYNAMIC_POINT_LOCUS_QUANTUM)))
     });
+}
+
+fn unique_dynamic_roster_point_line_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchEntityId)> {
+    // A family-local tag without an explicit reference is not an identity;
+    // let the complete geometry roster arbitrate it instead of trusting a
+    // provisional ordinal or a colliding solver-line alias.
+    if relation
+        .operands
+        .iter()
+        .any(|operand| operand.entity_ref.is_some())
+    {
+        return None;
+    }
+    unique_roster_point_line_pair(relation, sketch, parameter, sketch_entities)
+}
+
+fn unique_roster_point_line_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchEntityId)> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let mut loci = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .flat_map(sketch_entity_loci)
+        .map(|(_, locus)| locus)
+        .collect::<Vec<_>>();
+    deduplicate_physical_loci(&mut loci, sketch_entities);
+    let solver_line_prefix = format!("{}:solver-line:", relation.feature_ref);
+    let lines = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch
+                && entity
+                    .geometry_ref
+                    .as_deref()
+                    .is_some_and(|reference| reference.starts_with(&solver_line_prefix))
+                && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for locus in loci {
+        let Some(point) = profile_locus_point(&locus, sketch_entities) else {
+            continue;
+        };
+        for line in &lines {
+            if point_line_distance_value(point, line)
+                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            {
+                candidates.push((locus.clone(), line.id.clone()));
+            }
+        }
+    }
+    candidates.sort_by(|(left_locus, left_line), (right_locus, right_line)| {
+        locus_key(left_locus)
+            .cmp(&locus_key(right_locus))
+            .then_with(|| left_line.cmp(right_line))
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_dynamic_marker_point_line_pair(
