@@ -2433,6 +2433,16 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         curve_topology_rows(&data, &nonvisible_geometry_sections, &topology_face_ids);
     let mut curve_topology_rows =
         curve_topology_rows(&data, &model_geometry_sections, &topology_face_ids);
+    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
+    let prototype_topology_rows = curve::prototype_topology_rows(
+        &curve_prototypes,
+        &curve_prototype_topology,
+        &curve_topology_rows,
+        &topology_face_ids,
+    );
+    curve_topology_rows.extend(prototype_topology_rows);
+    curve_topology_rows.sort_by_key(|row| row.offset);
+    curve_topology_rows.dedup_by_key(|row| row.offset);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     if layout == Layout::LegacyAscii {
@@ -2448,7 +2458,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
     let prototype_pcurves = prototype_pcurves(&data, &model_geometry_sections);
-    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);

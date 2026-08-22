@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use std::collections::BTreeSet;
 
 fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
     CurveParameterRecord {
@@ -79,12 +80,14 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
                 id: 7,
                 type_byte: 8,
                 feature_id: Some(4),
+                directions: None,
                 offset: 0,
             },
             CurvePrototype {
                 id: 128,
                 type_byte: 1,
                 feature_id: None,
+                directions: None,
                 offset: 33,
             },
         ]
@@ -94,6 +97,57 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
 #[test]
 fn ignores_incomplete_labeled_rows() {
     assert!(prototypes(b"crv_array\0crv_id\0\x07").is_empty());
+}
+
+#[test]
+fn promotes_only_referenced_unique_prototype_topology() {
+    let prototypes = [CurvePrototype {
+        id: 44,
+        type_byte: 0,
+        feature_id: Some(40),
+        directions: Some([0x01, 0xf6]),
+        offset: 100,
+    }];
+    let prototype_topology = [CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [43, 141],
+        next_edges: [271, 142],
+        offset: 100,
+    }];
+    let positional_rows = [CurveTopologyRow {
+        id: 605,
+        type_byte: 0,
+        feature_id: 547,
+        directions: [0x01, 0xf6],
+        faces: [43, 235],
+        next_edges: [44, 597],
+        offset: 200,
+    }];
+    assert_eq!(
+        prototype_topology_rows(
+            &prototypes,
+            &prototype_topology,
+            &positional_rows,
+            &BTreeSet::from([43, 141, 235]),
+        ),
+        vec![CurveTopologyRow {
+            id: 44,
+            type_byte: 0,
+            feature_id: 40,
+            directions: [0x01, 0xf6],
+            faces: [43, 141],
+            next_edges: [271, 142],
+            offset: 100,
+        }]
+    );
+
+    assert!(prototype_topology_rows(
+        &prototypes,
+        &prototype_topology,
+        &positional_rows,
+        &BTreeSet::from([43, 235]),
+    )
+    .is_empty());
 }
 
 #[test]
@@ -304,6 +358,23 @@ fn row_boundary_outweighs_prefix_like_bytes_inside_a_dense_body() {
     assert_eq!(
         parameter_records(&payload)[0].body[0..7],
         [0xfc, 5, 9, 8, 4, 1, 0xf6]
+    );
+}
+
+#[test]
+fn final_curve_row_uses_the_next_array_boundary() {
+    let payload = b"topol_ref_data\0\x07\x08\x04\x01\xf6\xff\x0a\x0b\x07\x07\0\0\xe3\x80\xe0\xe1\xf5\x05\xf6\xe0\0lo_array\0";
+    assert_eq!(
+        topology_rows(payload),
+        vec![CurveTopologyRow {
+            id: 7,
+            type_byte: 8,
+            feature_id: 4,
+            directions: [1, 0xf6],
+            faces: [10, 11],
+            next_edges: [7, 7],
+            offset: 15,
+        }]
     );
 }
 

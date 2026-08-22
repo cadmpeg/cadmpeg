@@ -30,6 +30,9 @@ pub struct CurvePrototype {
     /// The `feat_id` compact integer, when the labeled row has one: the
     /// feature that generated this curve.
     pub feature_id: Option<u32>,
+    /// The two named-prototype `crv_pnt_dir` orientation flags, when the
+    /// prototype carries a complete direction array.
+    pub directions: Option<[u8; 2]>,
     /// Byte offset of this prototype's `crv_array` label in the original
     /// stream.
     pub offset: usize,
@@ -630,14 +633,94 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
             let (value, end) = compact_int(payload, value_start);
             (end != value_start).then_some(value)
         });
+        let directions =
+            find_in(payload, b"crv_pnt_dir\0", id_end, section_end).and_then(|label| {
+                let value_start = label + b"crv_pnt_dir\0".len();
+                (payload.get(value_start) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+                let (count, after_count) = compact_int(payload, value_start + 1);
+                (count == 2).then_some(())?;
+                let directions = [*payload.get(after_count)?, *payload.get(after_count + 1)?];
+                directions
+                    .iter()
+                    .all(|direction| matches!(direction, 0x01 | 0xf6))
+                    .then_some(directions)
+            });
         result.push(CurvePrototype {
             id,
             type_byte,
             feature_id,
+            directions,
             offset: section_start,
         });
     }
     result
+}
+
+/// Promote a uniquely referenced named-prototype topology record to a native
+/// half-edge row when its positional successor references the prototype ID.
+///
+/// A named prototype is a schema record by default. A successor reference is
+/// the byte-backed evidence that the prototype also supplies an edge identity
+/// in the enclosing topology graph. The promotion remains withheld when the
+/// prototype, topology record, or face namespace is ambiguous.
+pub fn prototype_topology_rows(
+    prototypes: &[CurvePrototype],
+    prototype_topology: &[CurvePrototypeTopology],
+    positional_rows: &[CurveTopologyRow],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<CurveTopologyRow> {
+    let mut prototype_counts = BTreeMap::<u32, usize>::new();
+    for prototype in prototypes {
+        *prototype_counts.entry(prototype.id).or_default() += 1;
+    }
+    let mut topology_counts = BTreeMap::<u32, usize>::new();
+    for topology in prototype_topology {
+        *topology_counts.entry(topology.curve_id).or_default() += 1;
+    }
+    let positional_ids = positional_rows
+        .iter()
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let referenced_ids = positional_rows
+        .iter()
+        .flat_map(|row| row.next_edges)
+        .chain(prototype_topology.iter().flat_map(|row| row.next_edges))
+        .filter(|id| *id != 0)
+        .collect::<BTreeSet<_>>();
+    let mut rows = Vec::new();
+    for topology in prototype_topology {
+        if positional_ids.contains(&topology.curve_id)
+            || prototype_counts.get(&topology.curve_id) != Some(&1)
+            || topology_counts.get(&topology.curve_id) != Some(&1)
+            || !referenced_ids.contains(&topology.curve_id)
+            || !topology
+                .faces
+                .iter()
+                .all(|face_id| *face_id == 0 || face_ids.contains(face_id))
+        {
+            continue;
+        }
+        let Some(prototype) = prototypes
+            .iter()
+            .find(|prototype| prototype.id == topology.curve_id)
+        else {
+            continue;
+        };
+        let Some(directions) = prototype.directions else {
+            continue;
+        };
+        rows.push(CurveTopologyRow {
+            id: topology.curve_id,
+            type_byte: prototype.type_byte,
+            feature_id: prototype.feature_id.unwrap_or(0),
+            directions,
+            faces: topology.faces,
+            next_edges: topology.next_edges,
+            offset: topology.offset,
+        });
+    }
+    rows.sort_by_key(|row| row.offset);
+    rows
 }
 
 /// Decode bounded curve-from-equation expression programs.
@@ -5546,6 +5629,21 @@ fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, us
     }
 }
 
+const CURVE_NAMESPACE_BOUNDARIES: [&[u8]; 4] = [
+    b"crv_array\0",
+    b"lo_array\0",
+    b"qlt_array\0",
+    b"srf_array\0",
+];
+
+fn curve_namespace_end(payload: &[u8], start: usize) -> usize {
+    CURVE_NAMESPACE_BOUNDARIES
+        .iter()
+        .filter_map(|label| find(payload, label, start))
+        .min()
+        .unwrap_or(payload.len())
+}
+
 fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -> Vec<FramedRow> {
     let mut result = Vec::new();
     let mut arrays = Vec::new();
@@ -5558,9 +5656,10 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         arrays.push(0);
     }
     for (index, &namespace_start) in arrays.iter().enumerate() {
-        let namespace_end = arrays
-            .get(index + 1)
-            .map_or(payload.len(), |next| next - b"crv_array\0".len());
+        let namespace_end = arrays.get(index + 1).map_or_else(
+            || curve_namespace_end(payload, namespace_start),
+            |next| next - b"crv_array\0".len(),
+        );
         let Some(label) = find_in(payload, b"topol_ref_data\0", namespace_start, namespace_end)
         else {
             continue;
@@ -5572,6 +5671,9 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
             boundary_anchored = true;
+        }
+        if cursor < namespace_end {
+            segments.push((cursor, namespace_end, boundary_anchored));
         }
         let known_face_ids = face_ids.map(|face_ids| {
             let mut known = face_ids.clone();

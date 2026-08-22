@@ -1604,6 +1604,12 @@ body is retained as exact native bytes and has no neutral loop meaning.
 | DEPDB one-sided suffix | `[0, X1, F1, 0]`; `127` terminates `X1`                        |
 | Row terminators        | `e1 e3` or `e1 f5 05 f6 e3`                                    |
 
+The curve namespace ends at the next `crv_array`, `lo_array`, `qlt_array`, or
+`srf_array` label. The final positional row may use that next-array boundary
+when its prefix and complete topology suffix are present but no row terminator
+precedes the boundary. A segment without a complete prefix and suffix is not a
+curve row.
+
 The positional row's `feat_id` is the identifier of the modeling feature that
 generated the curve. Surface-row and curve-row generator identifiers belong to
 the same feature namespace. A nonzero generator identifier establishes that
@@ -1696,6 +1702,14 @@ and occurs once in its labeled prototype. Each of
 `crv_hdr_geom_ptr[0]`, `crv_hdr_geom_ptr[1]`, `next_crv_hdr_ptr[0]`, and
 `next_crv_hdr_ptr[1]` occurs once in the same prototype; repeated endpoint or
 topology fields make the prototype ambiguous.
+
+The named prototype's `crv_pnt_dir` array stores the two half-edge direction
+flags. A unique named prototype topology record supplies a rowless edge when a
+positional or prototype topology suffix references its `crv_id` as `E0` or
+`E1`. The decoder promotes that record to the half-edge graph only when the
+prototype, its topology record, its direction array, and both face references
+are unique in the enclosing model namespace. A named prototype that is not
+referenced as a successor remains schema data.
 
 ### 4.1.1 Legacy ASCII curve topology and endpoints
 
