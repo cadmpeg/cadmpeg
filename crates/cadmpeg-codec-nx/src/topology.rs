@@ -707,10 +707,10 @@ impl Graph {
         // typed candidate. An ownership node that shares bytes with a typed
         // node is ambiguous and is omitted; shells retain the identity even
         // when the optional BODY or REGION record is absent.
-        let ownership = Self::select_non_overlapping_candidates(
+        let ownership = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
             stream,
-            Self::select_unique_candidates(ownership_candidates),
-        )
+            ownership_candidates,
+        ))
         .into_iter()
         .filter(|ownership| {
             selected

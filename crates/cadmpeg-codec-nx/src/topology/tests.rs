@@ -325,6 +325,23 @@ fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
 }
 
 #[test]
+fn topology_resolves_ownership_overlap_before_duplicate_identity() {
+    let mut outer = record(12, 24);
+    put_ref(&mut outer, 2, 7);
+    outer[8..10].copy_from_slice(&[0, 12]);
+    put_ref(&mut outer, 10, 7);
+    let mut successor = record(12, 24);
+    put_ref(&mut successor, 2, 8);
+
+    let mut stream = outer;
+    stream.extend(successor);
+
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.get(12, 7).map(|node| node.pos), Some(0));
+    assert_eq!(graph.get(12, 8).map(|node| node.pos), Some(24));
+}
+
+#[test]
 fn topology_retains_non_overlapping_ownership_records() {
     let graph = Graph::parse(&topology_partition_stream());
 
