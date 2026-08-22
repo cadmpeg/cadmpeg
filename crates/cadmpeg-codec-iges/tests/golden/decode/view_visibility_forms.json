@@ -2637,6 +2637,8 @@
           "units_data": [],
           "view_visibility": [
             {
+              "declared_entity_count": 0,
+              "declared_view_count": 1,
               "displays": [
                 {
                   "color": null,
@@ -2652,6 +2654,8 @@
               "source_entity": "iges:entity:directory#3"
             },
             {
+              "declared_entity_count": 0,
+              "declared_view_count": 1,
               "displays": [
                 {
                   "color": 2,

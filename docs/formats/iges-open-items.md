@@ -690,6 +690,16 @@ Confirmed implementation: `parameter.rs::entity_primary_end` registers `(122, 0)
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
+### NA-01. Type 228 General Symbol retains no declared geometry or leader count
+
+**Question.** Should `NativeAnnotation::GeneralSymbol` retain the file-declared geometry and leader counts the way its sibling `GeneralLabel` retains `declared_leader_count`?
+
+**Known.** IGES 5.3 §4.67 defines Type 228 Form 0 with a geometry count at Parameter index 2 and a leader count at the chained index `3 + N`. `native/annotations.rs::general_symbol` admits both lists jointly through `count_with_stride_before`; on refusal both lists read empty, no loss is charged, and the typed record carries no declared field, so an arena consumer cannot see that the file declared either list. The same silent-swallow class was closed for Type 402 Forms 3 and 4 in `view_visibility` and Type 404 in `drawings`, which retain their declared counts unclamped, with the chained slot derived from the declared first count.
+
+**Need.** An arena reader auditing declared-versus-read content has a witness on every other jointly admitted two-list record; General Symbol is the remaining gap in the class.
+
+**Note.** The retrofit is the same shape as the `drawings` treatment: two `declared_*_count` fields via `record.integer`, the leader slot derived from the declared geometry count, and the symbol decode goldens gain the two fields.
+
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology

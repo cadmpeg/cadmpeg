@@ -1752,6 +1752,124 @@ fn decode_segmented_visibility_retains_a_negative_declared_block_count() {
 }
 
 #[test]
+fn decode_view_visibility_reads_both_lists_and_retains_both_declared_counts() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(402, 3, "VISIBLE", "402,1,1,1,5,0,0;"),
+        point("SHOWN"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["view_visibility"][0].fields();
+    let displays = fields["displays"].as_array().unwrap();
+    let entities = fields["entities"].as_array().unwrap();
+
+    assert_eq!(fields["declared_view_count"], 1);
+    assert_eq!(fields["declared_entity_count"], 1);
+    assert_eq!(displays.len(), 1);
+    assert_eq!(displays[0]["view"], "iges:presentation:view#D1");
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0], "iges:entity:directory#5");
+    assert_no_count_loss(&result);
+}
+
+// A chained two-list layout is refused jointly, so neither count has a
+// defensible `present` figure and no `parameter.count-overdeclared` verdict
+// can be charged for either list. The retained declared counts are the only
+// witnesses, which is why the overrun tests below assert
+// `assert_no_count_loss` instead of going through `overdeclared_site`.
+#[test]
+fn decode_view_visibility_retains_both_declared_counts_when_the_entity_list_overruns() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(402, 3, "VISIBLE", "402,1,2,1,5;"),
+        point("SHOWN"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["view_visibility"][0].fields();
+
+    assert_eq!(fields["declared_view_count"], 1);
+    assert_eq!(fields["declared_entity_count"], 2);
+    assert!(fields["displays"].as_array().unwrap().is_empty());
+    assert!(fields["entities"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_view_visibility_retains_a_negative_declared_view_count() {
+    let bytes = owned_test_file(&[entity(402, 4, "DISPLAY", "402,-1,0,0,0;")]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["view_visibility"][0].fields();
+
+    assert_eq!(fields["declared_view_count"], -1);
+    assert_eq!(fields["declared_entity_count"], 0);
+    assert!(fields["displays"].as_array().unwrap().is_empty());
+    assert!(fields["entities"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_drawing_reads_both_lists_and_retains_both_declared_counts() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(404, 1, "DRAWING", "404,1,1,10,20,0.5,1,5,0,0;"),
+        point("ANNOT"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["drawings"][0].fields();
+    let views = fields["views"].as_array().unwrap();
+    let annotations = fields["annotations"].as_array().unwrap();
+
+    assert_eq!(fields["declared_view_count"], 1);
+    assert_eq!(fields["declared_annotation_count"], 1);
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0]["view"], "iges:presentation:view#D1");
+    assert!((views[0]["rotation"].as_f64().unwrap() - 0.5).abs() < 1e-12);
+    assert_eq!(annotations.len(), 1);
+    assert_eq!(annotations[0], "iges:entity:directory#5");
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_drawing_retains_both_declared_counts_when_the_annotation_list_overruns() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(404, 0, "DRAWING", "404,1,1,10,20,3,5;"),
+        point("ANNOT"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["drawings"][0].fields();
+
+    assert_eq!(fields["declared_view_count"], 1);
+    assert_eq!(fields["declared_annotation_count"], 3);
+    assert!(fields["views"].as_array().unwrap().is_empty());
+    assert!(fields["annotations"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
+fn decode_drawing_with_a_negative_declared_view_count_locates_no_annotation_count() {
+    let bytes = owned_test_file(&[
+        entity(410, 0, "VIEW", "410,1;"),
+        entity(404, 0, "DRAWING", "404,-1,1,10,20,1,5,0,0;"),
+        point("ANNOT"),
+    ]);
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas["drawings"][0].fields();
+
+    assert_eq!(fields["declared_view_count"], -1);
+    assert!(fields["declared_annotation_count"].is_null());
+    assert!(fields["views"].as_array().unwrap().is_empty());
+    assert!(fields["annotations"].as_array().unwrap().is_empty());
+    assert_no_count_loss(&result);
+}
+
+#[test]
 fn decode_manifold_solid_reads_its_shell_uses_and_resolves_both_closed_shells() {
     let (bytes, solid, outer, void) = explicit_void_solid_file();
     let result = salvage(&bytes);

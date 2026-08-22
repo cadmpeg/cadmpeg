@@ -2189,6 +2189,8 @@
               "annotations": [
                 "iges:entity:directory#3"
               ],
+              "declared_annotation_count": 1,
+              "declared_view_count": 1,
               "form": 1,
               "id": "iges:presentation:drawing#D11",
               "name": [

@@ -1000,7 +1000,9 @@ struct NativeViewVisibility {
     id: String,
     source_entity: String,
     form: i64,
+    declared_view_count: Option<i64>,
     displays: Vec<NativeViewDisplay>,
+    declared_entity_count: Option<i64>,
     entities: Vec<Option<String>>,
 }
 
@@ -1034,7 +1036,9 @@ struct NativeDrawing {
     id: String,
     source_entity: String,
     form: i64,
+    declared_view_count: Option<i64>,
     views: Vec<NativeDrawingView>,
+    declared_annotation_count: Option<i64>,
     annotations: Vec<Option<String>>,
     name_property: Option<String>,
     name: Option<Vec<u8>>,
@@ -3976,6 +3980,10 @@ pub(crate) fn store(
                 id: format!("iges:presentation:view-visibility#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
+                // Both counts sit at fixed Parameter indices 1 and 2 for every
+                // form, so retention is unconditional; only the entity list's
+                // start moves with the view count.
+                declared_view_count: record.and_then(|record| record.integer(1)),
                 displays: (0..view_count)
                     .map(|index| {
                         let start = 3 + index * width;
@@ -4031,6 +4039,7 @@ pub(crate) fn store(
                         }
                     })
                     .collect(),
+                declared_entity_count: record.and_then(|record| record.integer(2)),
                 entities: (0..entity_count)
                     .map(|index| {
                         record
@@ -4139,6 +4148,18 @@ pub(crate) fn store(
                 .unwrap_or_default();
             let (view_count, annotation_count) = counts;
             let annotation_count_index = 2 + view_count * width;
+            let declared_view_count = record.and_then(|record| record.integer(1));
+            // The annotation count's slot is fixed by the DECLARED view count
+            // under the Type 404 table, not the admitted `view_count`: on the
+            // refusal path `view_count` is 0 and index 2 holds the first view
+            // pointer, so deriving from the admitted count would retain a view
+            // pointer as a count. When the chain succeeds the two coincide.
+            let declared_annotation_count = declared_view_count
+                .and_then(|count| usize::try_from(count).ok())
+                .and_then(|count| count.checked_mul(width))
+                .and_then(|span| span.checked_add(2))
+                .zip(record)
+                .and_then(|(index, record)| record.integer(index));
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
                 .and_then(|analysis| analysis.groups.as_ref())
@@ -4162,6 +4183,7 @@ pub(crate) fn store(
                 id: format!("iges:presentation:drawing#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
+                declared_view_count,
                 views: (0..view_count)
                     .map(|index| {
                         let start = 2 + index * width;
@@ -4188,6 +4210,7 @@ pub(crate) fn store(
                         }
                     })
                     .collect(),
+                declared_annotation_count,
                 annotations: (0..annotation_count)
                     .map(|index| {
                         record
