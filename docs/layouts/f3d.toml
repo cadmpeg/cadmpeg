@@ -8106,6 +8106,44 @@ size = 148
 note = "The placement carrier tail is retained as a named opaque carrier."
 
 [[record]]
+name = "joint_origin_legacy_class_337_266_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 389-byte class-337 form is paired with class 266"
+size = 389
+note = "Offsets are relative to the class-337 primary indexed placement header paired with class 266. The 212-byte tail is generation-specific."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header occupies the first eleven bytes."
+
+[[record.gap]]
+offset = 11
+size = 34
+note = "Bytes 11 through 44 are zero."
+
+[[record.field]]
+name = "matrix_prefix"
+offset = 45
+type = "bytes[4]"
+source = "spec"
+anchor = "stores 34 zero bytes, `0x01, 0x01, 0x00, 0x00`"
+value = [1, 1, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "the matrix at offset 49"
+
+[[record.gap]]
+offset = 177
+size = 212
+note = "The generation-specific placement tail is retained as a named opaque carrier."
+
+[[record]]
 name = "work_plane_legacy_321_opaque_matrix_frame"
 kind = "byte"
 section = "3.1"

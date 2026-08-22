@@ -3434,6 +3434,24 @@ pub(crate) mod work_plane_legacy_class_337_325_matrix_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `joint_origin_legacy_class_337_266_frame` record.
+///
+/// Spec §3.1. Record length 389 B.
+///
+/// ```text
+/// Offsets are relative to the class-337 primary indexed placement header paired with class 266. The 212-byte tail is generation-specific.
+/// ```
+pub(crate) mod joint_origin_legacy_class_337_266_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 389;
+    /// Offset of `matrix_prefix` (`bytes[4]`). Spec §3.1.
+    pub(crate) const MATRIX_PREFIX: usize = 45;
+    /// Stated value of `matrix_prefix` (`bytes[4]`). Spec §3.1.
+    pub(crate) const MATRIX_PREFIX_VALUE: [u8; 4] = [0x01, 0x01, 0x00, 0x00];
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 49;
+}
+
 /// Byte offsets for the `work_plane_legacy_321_opaque_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 321 B.

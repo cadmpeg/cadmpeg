@@ -96,6 +96,7 @@ use crate::layout::fixed_pipe_operation_prefix as fixed_pipe;
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe;
@@ -7182,6 +7183,30 @@ pub(crate) fn exact_joint_origin_frame(
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
         for (start, paired) in records.frames(*record_index) {
+            if paired.checked_sub(start)? == joint_origin_class_337_266::LEN
+                && bytes.get(start + 4..start + 7) == Some(b"337")
+                && bytes.get(paired + 4..paired + 7) == Some(b"266")
+                && bytes.get(start + 11..start + joint_origin_class_337_266::MATRIX_PREFIX)
+                    == Some(&[0; joint_origin_class_337_266::MATRIX_PREFIX - 11][..])
+                && bytes.get(
+                    start + joint_origin_class_337_266::MATRIX_PREFIX
+                        ..start + joint_origin_class_337_266::MATRIX,
+                ) == Some(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE)
+            {
+                let values = f64s_at(bytes, start + joint_origin_class_337_266::MATRIX, 16)?;
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.into_iter().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
+                }
+                if valid_sketch_transform(&transform) {
+                    candidates.push(ScopePlacementFrame {
+                        transform,
+                        transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
+                        reference: None,
+                    });
+                }
+                continue;
+            }
             if paired.checked_sub(start)? == 385
                 && bytes.get(start + 4..start + 7) == Some(b"364")
                 && bytes.get(paired + 4..paired + 7) == Some(b"264")

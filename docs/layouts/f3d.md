@@ -2486,6 +2486,23 @@ Unstated regions:
 - `11..45` (34 B): Bytes 11 through 44 are zero.
 - `177..325` (148 B): The placement carrier tail is retained as a named opaque carrier.
 
+## `joint_origin_legacy_class_337_266_frame`
+
+Spec §3.1 · layout: byte offsets · size: 389 B
+
+Offsets are relative to the class-337 primary indexed placement header paired with class 266. The 212-byte tail is generation-specific.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 4 | `matrix_prefix` | `bytes[4]` | little | spec | stores 34 zero bytes, `0x01, 0x01, 0x00, 0x00` · value `[1, 1, 0, 0]` |
+| 49 | 128 | `matrix` | `f64[16]` | little | spec | the matrix at offset 49 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header occupies the first eleven bytes.
+- `11..45` (34 B): Bytes 11 through 44 are zero.
+- `177..389` (212 B): The generation-specific placement tail is retained as a named opaque carrier.
+
 ## `work_plane_legacy_321_opaque_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 321 B

@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
@@ -717,6 +718,51 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         (compact_joint_origin_at + 49) as u64
     );
     assert_eq!(decoded.reference, None);
+
+    let legacy_joint_origin_at = bytes.len();
+    let mut legacy_joint_origin = vec![0; joint_origin_class_337_266::LEN];
+    legacy_joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
+    legacy_joint_origin[4..7].copy_from_slice(b"337");
+    legacy_joint_origin[7..11].copy_from_slice(&72u32.to_le_bytes());
+    legacy_joint_origin
+        [joint_origin_class_337_266::MATRIX_PREFIX..joint_origin_class_337_266::MATRIX]
+        .copy_from_slice(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = joint_origin_class_337_266::MATRIX + ordinal * 8;
+        legacy_joint_origin[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    legacy_joint_origin.extend_from_slice(&3u32.to_le_bytes());
+    legacy_joint_origin.extend_from_slice(b"266");
+    legacy_joint_origin.extend_from_slice(&72u32.to_le_bytes());
+    bytes.extend_from_slice(&legacy_joint_origin);
+    let mut legacy_joint_origin_scope = scope.clone();
+    legacy_joint_origin_scope.kind = "JointOrigin".into();
+    legacy_joint_origin_scope.reference_members = vec![72];
+    let decoded = exact_joint_origin_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &legacy_joint_origin_scope,
+    )
+    .expect("exact class-337/266 JointOrigin frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(
+        decoded.transform_offset,
+        (legacy_joint_origin_at + joint_origin_class_337_266::MATRIX) as u64
+    );
+    assert_eq!(decoded.reference, None);
+
+    let mut invalid_legacy_joint_origin = legacy_joint_origin.clone();
+    invalid_legacy_joint_origin[joint_origin_class_337_266::MATRIX_PREFIX] = 0;
+    let mut invalid_bytes = bytes[..legacy_joint_origin_at].to_vec();
+    invalid_bytes.extend_from_slice(&invalid_legacy_joint_origin);
+    assert_eq!(
+        exact_joint_origin_frame(
+            &invalid_bytes,
+            &IndexedRecordOffsets::build(&invalid_bytes),
+            &legacy_joint_origin_scope,
+        ),
+        None
+    );
 
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
