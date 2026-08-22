@@ -420,6 +420,17 @@ face-boundary AABBs. The one-face enclosing-box rule is therefore limited to
 the all-compact subtype; grouped width-coded extents and the binary64 box
 axes remain open.
 
+An additional fixed-nine population has 81 class-`0x62` records. Seventy-two
+tagged records start at offsets `40482` through `50620`; the nine all-compact
+records start at offsets `144640`, `144739`, `144872`, `144971`, `146789`,
+`146888`, `147019`, `147118`, and `153243`. Every record has family `B`, width
+`1`, flag `3`, class `0x62`, and header token `5`. The four edge-reference
+positions in these records contain 324 values and 245 distinct numeric
+references: 183 occur once, 46 twice, 15 three times, and one four times.
+All 81 records fall in consolidated source extent `15`. These counts rule out
+the numeric reference value as one global physical-edge namespace and show
+that the allocation-group boundary is still not identified.
+
 ### SN-18. Class-`0x62` owner-to-face binding
 
 **Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
@@ -427,6 +438,13 @@ axes remain open.
 **Known.** Allocation links bind class-`0x5f` records to class-`0x62` owners.
 
 **Need.** We must know the face binding to assign the owner metadata.
+
+The binding also needs an allocation-group discriminator. Consolidated source
+extent `15` contains all 81 fixed-nine records, so it cannot scope reference
+equality. The four edge-reference positions have the multiplicities recorded
+in SN-17; comparing them across the extent would merge allocation-local
+identities. We need the relation that scopes those references and joins the
+scoped owner to a standard face ordinal.
 
 **Note.** Six adjacent class-`0x5f` to class-`0x62` allocation relations occur
 at owner offsets `40712`, `144640`, `144739`, `153213`, `153243`, and `158166`,
@@ -447,6 +465,13 @@ face ordinals `56`, `58`, `63`, `64`, `67`, `76`, `77`, `79`, `82`, `85`,
 remain allocation identities, not those face ordinals. Other all-compact
 packets have no adjacent node, so the geometric witness does not define the
 general owner-to-face binding.
+
+The same population has no direct one-to-one reference join: 183 reference
+values are singletons, while the remaining values occur two to four times
+across packets in the shared source extent. The all-compact numeric boxes are
+therefore derived face candidates only. Verdict: the fixed-nine grammar and
+the limited enclosing-box witness are admitted; the general owner-to-face
+binding remains open pending the allocation-group relation.
 
 ### SN-19. Cone `pre_range_scalar`
 
@@ -600,6 +625,13 @@ No all-compact packet or adjacent face-node relation names those six faces,
 and the owner reference lanes do not name a standard edge-row ordinal. The
 boxes can corroborate a face candidate when a separate edge relation exists,
 but they do not select a second face for these repeated rows.
+
+The fixed-nine reference lanes do not close this gap. In the inspected
+population, the four reference positions produce 183 singleton values, 46
+double uses, 15 triple uses, and one quadruple use across 81 packets in source
+extent `15`; the allocation scope is absent. No face-domain assignment is
+derived from those values. Verdict: repeated edge-face slot assignment
+remains open.
 
 ### SN-38. Standard freeform to external NURBS identity
 
