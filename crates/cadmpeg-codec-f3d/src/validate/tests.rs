@@ -573,7 +573,9 @@ fn validation_checks_pipe_path_group_roles() {
             })
             .count()
     };
-    assert_eq!(group_native_finding_count(&ir), 1);
+    // The empty group violates both its counted frame and its typed-member
+    // carrier invariant. The validator reports those independent failures.
+    assert_eq!(group_native_finding_count(&ir), 2);
 
     {
         let mut native = f3d_native_mut(&mut ir);
@@ -582,11 +584,13 @@ fn validation_checks_pipe_path_group_roles() {
         group.member_offsets.push(1_026);
     }
     assert!(!has_role_finding(&ir));
-    assert_eq!(group_native_finding_count(&ir), 0);
+    // The synthetic carrier is only a record header. No typed edge operand
+    // exists yet, so the independent carrier finding remains.
+    assert_eq!(group_native_finding_count(&ir), 1);
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
         0x0000_0008_0000_0000;
-    assert_eq!(group_native_finding_count(&ir), 1);
+    assert_eq!(group_native_finding_count(&ir), 2);
 }
 
 #[test]
