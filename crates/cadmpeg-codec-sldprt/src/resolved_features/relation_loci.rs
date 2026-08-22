@@ -411,6 +411,50 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     } else {
         None
     };
+    // A family-scoped native tag is not a locus identity. If marker lookup
+    // finds no resolved center carrier, the complete profile roster is the
+    // defined witness; an ambiguous arc-center carrier must remain unresolved
+    // instead of being bypassed by a coincidental whole-sketch distance.
+    let dynamic_roster_point_pair = if dynamic
+        && matches!(
+            relation.family,
+            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance
+        )
+        && dynamic_point_pair.is_none()
+        && relation
+            .operands
+            .iter()
+            .all(|operand| operand.entity_ref.is_none())
+        && (0..2).all(|index| {
+            relation_operand_marker(relation, index, sketch, markers_by_id)
+                .and_then(|marker| {
+                    dynamic_marker_center_candidates(
+                        marker,
+                        sketch,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
+                })
+                .is_none()
+        }) {
+        match relation.family {
+            PointPointDistance => {
+                unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)
+            }
+            PointPointHorizontalDistance | PointPointVerticalDistance => {
+                unique_profile_axis_distance_pair(
+                    sketch,
+                    parameter,
+                    sketch_entities,
+                    profile_axis == Some(ProfileAxis::U),
+                )
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     let dynamic_point_line_pair = if dynamic && relation.family == PointLineDistance {
         unique_dynamic_marker_point_line_pair(
             relation,
@@ -454,7 +498,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     if dynamic {
         let witnessed = match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
-                dynamic_point_pair.is_some() || (point(0).is_some() && point(1).is_some())
+                dynamic_point_pair.is_some()
+                    || dynamic_roster_point_pair.is_some()
+                    || (point(0).is_some() && point(1).is_some())
             }
             PointLineDistance => {
                 dynamic_point_line_pair.is_some() || (point(0).is_some() && curve(1).is_some())
@@ -474,7 +520,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match dynamic_point_pair {
+            let (mut first, mut second) = match dynamic_point_pair.or(dynamic_roster_point_pair) {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
@@ -591,7 +637,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match dynamic_point_pair {
+            let (mut first, mut second) = match dynamic_point_pair.or(dynamic_roster_point_pair) {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),

@@ -791,6 +791,140 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
 }
 
 #[test]
+fn dynamic_point_distance_uses_unique_complete_roster() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = vec![
+        point("first", Point2::new(0.0, 0.0)),
+        point("second", Point2::new(30.0, 0.0)),
+        point("distractor", Point2::new(7.0, 5.0)),
+    ];
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [7, 9]);
+    let parameter = length_parameter(30.0);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(SketchEntityId("first".into())),
+            second: SketchLocus::Entity(SketchEntityId("second".into())),
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
+fn dynamic_axis_distance_uses_unique_complete_roster() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = vec![
+        point("first", Point2::new(0.0, 0.0)),
+        point("second", Point2::new(30.0, 0.0)),
+        point("distractor", Point2::new(7.0, 5.0)),
+    ];
+    let parameter = length_parameter(30.0);
+
+    let horizontal = dynamic_relation(
+        FeatureInputRelationFamily::PointPointHorizontalDistance,
+        [7, 9],
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &horizontal,
+            Some(&parameter),
+            &sketch,
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Entity(SketchEntityId("first".into())),
+            second: SketchLocus::Entity(SketchEntityId("second".into())),
+            parameter: parameter.id.clone(),
+        })
+    );
+
+    let vertical_entities = vec![
+        point("vertical-first", Point2::new(0.0, 0.0)),
+        point("vertical-second", Point2::new(0.0, 5.0)),
+        point("vertical-distractor", Point2::new(7.0, 13.0)),
+    ];
+    let vertical = dynamic_relation(
+        FeatureInputRelationFamily::PointPointVerticalDistance,
+        [7, 9],
+    );
+    assert_eq!(
+        typed_relation_definition(
+            &vertical,
+            Some(&length_parameter(5.0)),
+            &sketch,
+            &vertical_entities,
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::VerticalDistance {
+            first: SketchLocus::Entity(SketchEntityId("vertical-first".into())),
+            second: SketchLocus::Entity(SketchEntityId("vertical-second".into())),
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
+fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = vec![
+        point("origin", Point2::new(0.0, 0.0)),
+        point("horizontal", Point2::new(10.0, 0.0)),
+        point("vertical", Point2::new(0.0, 10.0)),
+    ];
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [7, 9]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(10.0)),
+            &sketch,
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);
