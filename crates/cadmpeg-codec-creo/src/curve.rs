@@ -5815,7 +5815,12 @@ fn curve_scalar_lane(
             cursor += 1;
             continue;
         }
-        if let Some((value, next)) = scalar::decode_in_row_lane(body, cursor, cache) {
+        let decoded = if matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+            scalar::decode_in_pcurve_lane(body, cursor, cache)
+        } else {
+            scalar::decode_in_row_lane(body, cursor, cache)
+        };
+        if let Some((value, next)) = decoded {
             scalars.push(CurveParameterScalar {
                 value,
                 raw: body[cursor..next].to_vec(),

@@ -232,6 +232,19 @@ pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Op
     decode_in_lane(data, offset, cache)
 }
 
+/// Decode one scalar in a complete positional pcurve parameter lane.
+///
+/// Pcurve rows use the generic row forms first. Their remaining seven-byte
+/// positive DICT forms are selected by the pcurve grammar, so they are tried
+/// only after the generic lane declines the prefix.
+pub fn decode_in_pcurve_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    decode_in_row_lane(data, offset, cache).or_else(|| decode_positive_dict(data, offset))
+}
+
 /// Decode one scalar in a positional surface-row lane.
 pub fn decode_in_surface_row_lane(
     data: &[u8],
@@ -2429,6 +2442,22 @@ mod tests {
         assert_eq!(
             decode_in_lane(&data, 0, &cache).map(|(_, end)| end),
             Some(8)
+        );
+    }
+
+    #[test]
+    fn pcurve_lane_falls_back_to_positive_dict_after_generic_forms() {
+        let cache = ScalarCache::default();
+        let positive_dict = [0x98, 1, 2, 3, 4, 5, 6];
+        assert_eq!(
+            decode_in_pcurve_lane(&positive_dict, 0, &cache),
+            Some((f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6]), 7))
+        );
+
+        let generic = [0x86, 1, 2, 3, 4, 5, 6];
+        assert_eq!(
+            decode_in_pcurve_lane(&generic, 0, &cache),
+            Some((f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 0]), 7))
         );
     }
 

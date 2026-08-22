@@ -248,6 +248,37 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
 }
 
 #[test]
+fn scan_decodes_positive_dict_pcurve_slots() {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
+    payload.extend_from_slice(&[0x0f, 0xe4]);
+    payload.extend_from_slice(&[0x98, 1, 2, 3, 4, 5, 6]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x43, 0]);
+    payload.extend_from_slice(&[0x98, 1, 2, 3, 4, 5, 6]);
+    payload.extend_from_slice(&[0x2f, 0x43, 0]);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let expected = f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6]);
+
+    assert_eq!(scan.curves.parameters.len(), 1);
+    assert_eq!(
+        scan.curves.parameters[0].scalar_values,
+        vec![0.0, 1.0, expected, 0.0, 1.0, 38.0, expected, 38.0]
+    );
+    assert_eq!(scan.curves.parameters[0].opaque_spans, Vec::new());
+    assert_eq!(scan.curves.pcurves.len(), 1);
+    assert_eq!(
+        scan.curves.pcurves[0].face_0_endpoints,
+        [[0.0, 1.0], [1.0, 38.0]]
+    );
+    assert_eq!(
+        scan.curves.pcurves[0].face_1_endpoints,
+        [[expected, 0.0], [expected, 38.0]]
+    );
+}
+
+#[test]
 fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
