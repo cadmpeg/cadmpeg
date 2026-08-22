@@ -885,6 +885,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
@@ -980,6 +981,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 match expression {
                     crate::geometry::LawExpression::Null => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Integer { .. } => true,
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
@@ -1087,6 +1089,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
@@ -1182,6 +1185,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()

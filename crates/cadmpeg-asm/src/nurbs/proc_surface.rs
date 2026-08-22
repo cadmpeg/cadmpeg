@@ -996,6 +996,8 @@ pub struct EmbeddedScaledCompoundLoft {
 pub enum EmbeddedLawExpression {
     /// A null operand.
     Null,
+    /// A serializer-preserved textual law expression.
+    Text(String),
     /// An integer operand.
     Integer(i64),
     /// A double operand.
@@ -2259,6 +2261,17 @@ pub(crate) fn law_expression(cur: &mut Cur<'_>, depth: usize) -> Option<Embedded
     law_expression_resolving(cur, depth, None)
 }
 
+/// Decode a law slot of the sweep layout. Older sweep records use the
+/// recursive law grammar, while revision-gated records may store the whole
+/// expression as one serializer string. The text form is scoped to sweep
+/// law slots so an unknown operator in another law grammar remains a refusal.
+fn sweep_law_expression(cur: &mut Cur<'_>) -> Option<EmbeddedLawExpression> {
+    if matches!(cur.peek(), Some(Token::Str(_))) {
+        return Some(EmbeddedLawExpression::Text(cur.take_str()?.to_string()));
+    }
+    law_expression(cur, 0)
+}
+
 fn law_expression_resolving(
     cur: &mut Cur<'_>,
     depth: usize,
@@ -2822,7 +2835,7 @@ fn sweep_spl_sur(
                 _ => return None,
             }
         } else {
-            let first_law = law_expression(&mut cur, 0)?;
+            let first_law = sweep_law_expression(&mut cur)?;
             let first_mode = cur.take_long()?;
             let first_range = [cur.take_f64()?, cur.take_f64()?];
             let vector = cur.take_vector3()?;
@@ -2834,7 +2847,7 @@ fn sweep_spl_sur(
             let path_range = [cur.take_f64()?, cur.take_f64()?];
             let path_parameter = cur.take_f64()?;
             let second_law_flag = cur.take_bool()?;
-            let second_law = law_expression(&mut cur, 0)?;
+            let second_law = sweep_law_expression(&mut cur)?;
             let formula_mode = cur.take_long()?;
             let formula = law_formula(&mut cur)?;
             let trailing_flag = cur.take_bool()?;
@@ -2886,7 +2899,7 @@ fn sweep_spl_sur(
     })
 }
 
-/// Revision-gated `sweep_sur` explicit-formula layout.
+/// Revision-gated `sweep_sur` layouts.
 fn revision_sweep_sur(
     span: &[Token],
     position: usize,
@@ -2931,22 +2944,96 @@ fn revision_sweep_sur(
         let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
-    (cur.take_long()? == 1).then_some(())?;
-    let trajectory_flag = cur.take_bool()?;
-    let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
-    let path_endpoints = [
-        cur.take_optional_range_value()?,
-        cur.take_optional_range_value()?,
-    ];
-    let path_range = [
-        cur.take_optional_range_value()?? * LEN_TO_MM,
-        cur.take_optional_range_value()?? * LEN_TO_MM,
-    ];
-    let path_parameter = cur.take_f64()?;
-    let formula_flag = cur.take_bool()?;
-    let formula = law_formula_resolving(&mut cur, Some(table))?;
-    let trailing_flag = cur.take_bool()?;
-    let tail_enum = cur.take_enum()?;
+    let (layout, path_endpoints, tail_enum) = if matches!(cur.peek(), Some(Token::Str(_))) {
+        let first_law = sweep_law_expression(&mut cur)?;
+        let first_mode = cur.take_long()?;
+        let first_range = [
+            cur.take_optional_range_value()??,
+            cur.take_optional_range_value()??,
+        ];
+        let law_direction = cur.take_vector3()?;
+        let path_mode = cur.take_long()?;
+        let path_flag = cur.take_bool()?;
+        let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
+        let path_endpoints = [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ];
+        let path_range = [
+            cur.take_optional_range_value()?? * LEN_TO_MM,
+            cur.take_optional_range_value()?? * LEN_TO_MM,
+        ];
+        let path_parameter = cur.take_f64()?;
+        let second_law_flag = cur.take_bool()?;
+        let second_law = sweep_law_expression(&mut cur)?;
+        let formula_mode = cur.take_long()?;
+        let formula = law_formula_resolving(&mut cur, Some(table))?;
+        let trailing_flag = cur.take_bool()?;
+        let tail_enum = cur.take_enum()?;
+        let law_direction = Vector3::new(law_direction[0], law_direction[1], law_direction[2]);
+        (
+            EmbeddedSweepSurfaceLayout::LawDriven {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                first_law,
+                first_mode,
+                first_range,
+                law_direction,
+                path_mode,
+                path_flag,
+                path,
+                path_range,
+                path_parameter,
+                second_law_flag,
+                second_law,
+                formula_mode,
+                formula,
+                trailing_flag,
+            },
+            path_endpoints,
+            tail_enum,
+        )
+    } else {
+        (cur.take_long()? == 1).then_some(())?;
+        let trajectory_flag = cur.take_bool()?;
+        let path = embedded_base_curve_resolving_refs(&mut cur, table)?;
+        let path_endpoints = [
+            cur.take_optional_range_value()?,
+            cur.take_optional_range_value()?,
+        ];
+        let path_range = [
+            cur.take_optional_range_value()?? * LEN_TO_MM,
+            cur.take_optional_range_value()?? * LEN_TO_MM,
+        ];
+        let path_parameter = cur.take_f64()?;
+        let formula_flag = cur.take_bool()?;
+        let formula = law_formula_resolving(&mut cur, Some(table))?;
+        let trailing_flag = cur.take_bool()?;
+        let tail_enum = cur.take_enum()?;
+        (
+            EmbeddedSweepSurfaceLayout::ExplicitFormula {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                trajectory_flag,
+                path,
+                path_range,
+                path_parameter,
+                formula_flag,
+                formula,
+                trailing_flag,
+            },
+            path_endpoints,
+            tail_enum,
+        )
+    };
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
@@ -2969,21 +3056,7 @@ fn revision_sweep_sur(
                 path_endpoints,
                 tail_enum,
             }),
-            layout: EmbeddedSweepSurfaceLayout::ExplicitFormula {
-                profile,
-                mode,
-                profile_range,
-                profile_frame,
-                origin,
-                directions,
-                trajectory_flag,
-                path,
-                path_range,
-                path_parameter,
-                formula_flag,
-                formula,
-                trailing_flag,
-            },
+            layout,
             discontinuities,
             discontinuity_flag,
         })),

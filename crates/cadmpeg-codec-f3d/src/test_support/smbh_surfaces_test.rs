@@ -1082,6 +1082,94 @@ pub(crate) fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
+    synthetic_law_driven_sweep_smbh_with_law_slots(None, None)
+}
+
+pub(crate) fn synthetic_text_law_driven_sweep_smbh() -> Vec<u8> {
+    synthetic_law_driven_sweep_smbh_with_law_slots(
+        Some("0.008726867790758789*X"),
+        Some("VEC(1,1,1)"),
+    )
+}
+
+pub(crate) fn synthetic_revision_text_law_sweep_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_mixed_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "sweep_sur");
+    t_long(&mut surface, 23100);
+    surface.push(0x0a);
+    t_long(&mut surface, 10);
+    surface.extend_from_slice(&generated_curve_block());
+    for value in [0.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, value);
+    }
+    for value in [0.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, value);
+    }
+    surface.push(0x0b);
+    t_pos(&mut surface, [4.0, 5.0, 6.0]);
+    for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+        t_vec(&mut surface, direction);
+    }
+    push_u8_string(&mut surface, "0.008726867790758789*X");
+    t_long(&mut surface, 21);
+    for value in [-1.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, value);
+    }
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_long(&mut surface, 1);
+    surface.push(0x0a);
+    t_ident(&mut surface, "straight");
+    t_pos(&mut surface, [0.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    surface.extend_from_slice(&[0x0b, 0x0b]);
+    for value in [0.0, 0.8] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, value);
+    }
+    t_dbl(&mut surface, 0.0);
+    surface.push(0x0a);
+    push_u8_string(&mut surface, "VEC(1,1,1)");
+    t_long(&mut surface, 0);
+    push_u8_string(&mut surface, "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
+    t_long(&mut surface, 1);
+    push_u8_string(&mut surface, "TRANS");
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0],
+    ] {
+        t_vec(&mut surface, vector);
+    }
+    t_dbl(&mut surface, 1.0);
+    surface.extend_from_slice(&[0x0b, 0x0b, 0x0b]);
+    surface.push(0x0b);
+    append_revision_surface_tail_head(&mut surface, 0, 0.005);
+    append_revision_surface_tail_discontinuities(&mut surface);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
+fn synthetic_law_driven_sweep_smbh_with_law_slots(
+    first_law_text: Option<&str>,
+    second_law_text: Option<&str>,
+) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -1106,7 +1194,11 @@ pub(crate) fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     for direction in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
         t_vec(&mut surface, direction);
     }
-    t_dbl(&mut surface, 2.5);
+    if let Some(value) = first_law_text {
+        push_u8_string(&mut surface, value);
+    } else {
+        t_dbl(&mut surface, 2.5);
+    }
     t_long(&mut surface, 21);
     t_dbl(&mut surface, -1.0);
     t_dbl(&mut surface, 1.0);
@@ -1118,7 +1210,11 @@ pub(crate) fn synthetic_law_driven_sweep_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 3.0);
     t_dbl(&mut surface, 0.75);
     surface.push(0x0b);
-    t_vec(&mut surface, [1.0, 2.0, 3.0]);
+    if let Some(value) = second_law_text {
+        push_u8_string(&mut surface, value);
+    } else {
+        t_vec(&mut surface, [1.0, 2.0, 3.0]);
+    }
     t_long(&mut surface, 23);
     push_u8_string(&mut surface, "null_law");
     surface.push(0x0a);

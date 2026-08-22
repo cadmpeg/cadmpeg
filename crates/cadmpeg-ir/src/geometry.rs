@@ -2388,6 +2388,11 @@ pub enum LawSurfaceTail {
 pub enum LawExpression {
     /// Zero-payload `null_law` sentinel.
     Null,
+    /// Serializer-preserved textual law expression.
+    Text {
+        /// Exact text stored in the native law slot.
+        value: String,
+    },
     /// Tagged integer constant.
     Integer {
         /// Stored integer value.

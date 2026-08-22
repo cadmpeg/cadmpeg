@@ -988,6 +988,9 @@ fn emit_law_surface(
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+            EmbeddedLawExpression::Text(value) => {
+                cadmpeg_ir::geometry::LawExpression::Text { value }
+            }
             EmbeddedLawExpression::Integer(value) => {
                 cadmpeg_ir::geometry::LawExpression::Integer { value }
             }
@@ -1109,6 +1112,9 @@ fn emit_skin_surface(
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+            EmbeddedLawExpression::Text(value) => {
+                cadmpeg_ir::geometry::LawExpression::Text { value }
+            }
             EmbeddedLawExpression::Integer(value) => {
                 cadmpeg_ir::geometry::LawExpression::Integer { value }
             }
@@ -1328,6 +1334,9 @@ fn emit_net_surface(
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+            EmbeddedLawExpression::Text(value) => {
+                cadmpeg_ir::geometry::LawExpression::Text { value }
+            }
             EmbeddedLawExpression::Integer(value) => {
                 cadmpeg_ir::geometry::LawExpression::Integer { value }
             }
@@ -1553,6 +1562,9 @@ fn emit_sweep_surface(
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+            EmbeddedLawExpression::Text(value) => {
+                cadmpeg_ir::geometry::LawExpression::Text { value }
+            }
             EmbeddedLawExpression::Integer(value) => {
                 cadmpeg_ir::geometry::LawExpression::Integer { value }
             }
@@ -3192,6 +3204,9 @@ fn emit_law_curve(
     ) -> cadmpeg_ir::geometry::LawExpression {
         match expression {
             EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+            EmbeddedLawExpression::Text(value) => {
+                cadmpeg_ir::geometry::LawExpression::Text { value }
+            }
             EmbeddedLawExpression::Integer(value) => {
                 cadmpeg_ir::geometry::LawExpression::Integer { value }
             }

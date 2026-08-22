@@ -2198,6 +2198,7 @@ fn native_law_expression(
     }
     match expression {
         LawExpression::Null => native_string(bytes, "null_law")?,
+        LawExpression::Text { value } => native_string(bytes, value)?,
         LawExpression::Integer { value } => native_i64(bytes, *value),
         LawExpression::Double { value } => native_f64(bytes, *value),
         LawExpression::Point { value } => {
@@ -2590,6 +2591,102 @@ fn encode_native_sweep_surface(
         CodecError::Malformed("sweep surface requires a native cache-fit tolerance".into())
     })?;
     if let Some(form) = &construction.revision_form {
+        if let cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            first_law,
+            first_mode,
+            first_range,
+            law_direction,
+            path_mode,
+            path_flag,
+            path_range,
+            path_parameter,
+            second_law_flag,
+            second_law,
+            formula_mode,
+            formula,
+            trailing_flag,
+        } = &construction.layout
+        {
+            if form.revision <= 0 {
+                return Err(CodecError::Malformed(
+                    "revision-gated sweep requires a positive serializer revision".into(),
+                ));
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "sweep_sur")?;
+            native_i64(bytes, form.revision);
+            bytes.push(native_bool(form.primary_flag));
+            native_i64(bytes, *mode);
+            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            native_nurbs_curve(bytes, &profile)?;
+            for value in form.profile_endpoints {
+                native_optional_f64(bytes, value);
+            }
+            for value in profile_range {
+                native_optional_f64(bytes, Some(*value));
+            }
+            bytes.push(native_bool(profile_frame.is_some()));
+            if let Some((point, direction)) = profile_frame {
+                native_point(
+                    bytes,
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ],
+                );
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_point(
+                bytes,
+                [
+                    origin.x / LEN_TO_MM,
+                    origin.y / LEN_TO_MM,
+                    origin.z / LEN_TO_MM,
+                ],
+            );
+            for direction in directions {
+                native_vector(bytes, [direction.x, direction.y, direction.z]);
+            }
+            native_law_expression(bytes, target, first_law, 0)?;
+            native_i64(bytes, *first_mode);
+            for value in first_range {
+                native_optional_f64(bytes, Some(*value));
+            }
+            native_vector(bytes, [law_direction.x, law_direction.y, law_direction.z]);
+            native_i64(bytes, *path_mode);
+            bytes.push(native_bool(*path_flag));
+            let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
+            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            native_nurbs_curve(bytes, &spine)?;
+            for value in form.path_endpoints {
+                native_optional_f64(bytes, value);
+            }
+            for value in path_range {
+                native_optional_f64(bytes, Some(*value / LEN_TO_MM));
+            }
+            native_f64(bytes, *path_parameter);
+            bytes.push(native_bool(*second_law_flag));
+            native_law_expression(bytes, target, second_law, 0)?;
+            native_i64(bytes, *formula_mode);
+            native_law_formula(bytes, target, formula)?;
+            bytes.push(native_bool(*trailing_flag));
+            native_enum(bytes, form.tail_enum);
+            native_nurbs_surface(bytes, solved_cache)?;
+            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            for values in &construction.discontinuities {
+                native_compound_loft_float_array(bytes, values)?;
+            }
+            bytes.push(native_bool(construction.discontinuity_flag));
+            bytes.push(0x10);
+            return Ok(());
+        }
         let SweepSurfaceLayout::ExplicitFormula {
             mode,
             profile_range,
