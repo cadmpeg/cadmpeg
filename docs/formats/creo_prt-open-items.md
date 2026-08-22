@@ -296,14 +296,6 @@ construct their curves and endpoints.
 
 **Need.** We must know the value to preserve the native cone parameters.
 
-### GS-20. Other non-plane surface rows
-
-**Question.** What model-space equation does each non-plane surface row outside the defined analytic and spline families encode?
-
-**Known.** `creo_prt.md` §3.1 "A decoder must not infer the kind of a row without" defines the normalized surface-family mapping. `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" defines the complete legacy ASCII type-40 `splsrf` interpolation carrier. The same section through §3.4 "A standard positional envelope is exactly ten contiguous scalar slots" defines the remaining surface prototypes and recognized positional constructions.
-
-**Need.** We must know the equation to construct the remaining surface carriers.
-
 ### GS-21. Non-prismatic round radii
 
 **Question.** Which fields define the varying radius of a non-prismatic round?

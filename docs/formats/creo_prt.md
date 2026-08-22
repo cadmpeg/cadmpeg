@@ -940,6 +940,86 @@ distances with `15`, repeats the negative radial bound after the inner station,
 and ends with one complete model-reference token followed by `f7 2c`. The
 model-reference token does not contribute a geometric coordinate.
 
+A positional non-plane surface row with an inline carrier stores an axial
+envelope, an outline, a twelve-slot local system, a family suffix, and the
+contour chain in that order. The envelope is `<u> <v0> 12 <v1>` followed by
+two model-space XYZ corners and `e3`; the `12` is the separator between the
+two axial parameters. The local system has three direction triples followed
+by one origin triple and is closed by `e3`. A cylinder suffix is one radius, a
+cone suffix is one half-angle, and a type-26 suffix is `radius1 radius2`.
+The suffix lane uses exact `18` for zero, `0f` for one, and `0e` for one half.
+For type 26, a finite non-negative `radius1` and positive `radius2` define a
+torus; exact `radius1 = 0` selects a sphere whose radius is `radius2`.
+
+A local-system-suffix row may omit the axial envelope. Its body begins with
+the local system and family suffix, or with an earlier row-local block closed
+by `e3` followed by that local system and suffix. The suffix local system ends
+at the next `e3`; its origin is already in model space and no axial extent is
+defined. Bytes before that local-system start do not supply the carrier
+placement. A complete suffix is admitted only when its frame is finite and
+orthonormal and its family suffix consumes the entire bounded body before the
+terminal `e3`.
+
+The local-system direction triples may use the explicit scalar lanes or one of
+the compact axis images below. The images name the axis coordinate and expand
+the nine direction slots; they do not determine model-space signs:
+
+| Image | Axis coordinate |
+| --- | --- |
+| `A 18 e5 B 18 e5 C` | Z |
+| `18 A 18 B 18 e6 C` | Z |
+| `A 18 e6 B 18 C 18` | Y |
+| `18 e4 0f 18 0f 18 10 18 e4` | X |
+| `18 10 18 e5 10 0f 18 e4` | X |
+| `18 0f 18 e5 0f e4 18 e4` | X |
+
+Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
+image dictionary expands the support directions according to its slot lanes;
+the stored origin and the envelope witness below select the model-space signs.
+An explicit frame consumes the first five direction coordinates, then
+`18 e5 0f` fills the remaining direction matrix coordinates with
+`[0, 0, 0, 1]`. The reflected form `18 e5 10` fills them with
+`[0, 0, 0, -1]`. In both forms the final three slots are the model-space
+origin. The standalone `18 e5` image expands to `[0, 1, 0]`. The remaining
+explicit slots use the scalar lanes already defined for tabulated-cylinder
+coordinates and positional surface rows.
+
+The carrier placement is admitted only when the envelope and outline provide a
+unique witness. The outline coordinate whose span equals `abs(v1 - v0)` is the
+axis coordinate. Solve
+`{o + v0 C, o + v1 C} = {lo, hi}` for
+`o in {+abs(s), -abs(s)}` and `C in {+1, -1}`, where `s` is the stored origin
+component on that coordinate. A unique solution supplies the model-space axis
+origin and direction. For each perpendicular coordinate, select the unique
+sign of its stored component for which the outline lies inside
+`[center - R, center + R]`. Use the cylinder radius for `R`; for a cone use
+`max(abs(v0), abs(v1)) * tan(half_angle)`; for a torus or sphere use
+`radius1 + radius2`. A failed or non-unique witness retains the complete row
+as native data and does not create an analytic carrier.
+
+The local-system-suffix form has no envelope witness. Its stored origin,
+normalized first direction, normalized frame axis, and family suffix define
+the carrier directly. If more than one complete frame interpretation is
+geometrically valid, the row remains native.
+
+The resulting equations are: a cylinder has an axis through the resolved
+origin, the witnessed direction, and the suffix radius; a cone has its apex at
+the resolved origin, the witnessed direction, and radius
+`abs(v) * tan(half_angle)` at axial parameter `v`; a torus has center at the
+resolved origin, the witnessed axis, and the two suffix radii; and a sphere
+has center at the resolved origin and radius `radius2`. The stored first
+support direction, projected perpendicular to the witnessed axis, is the
+parameter-space reference direction. The witness must agree with every
+complete inline interpretation of the bounded body.
+
+Family-26 and family-29 rows may omit the inline envelope and local-system
+body. When the header is followed immediately by a contour chain, their
+carriers come from the owning class-913 round replay and generated-entity
+binding. A family-29 row that carries a body instead uses the named
+`fillet_srf` prototype roster (`srf_prim_ptr`, `pnt_spline`, `id`, `type`,
+`gen_info`, `flip`, `tan_cond`, and `i_pnts`); its spline fields are not an
+inline analytic carrier.
+
 The next valid named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. A named-field header has a field type no greater than `24` and a nonempty identifier made from ASCII letters, digits, underscores, or parentheses. An `e0` byte inside a scalar token does not terminate the field. Bytes after the structural close belong to subsequent instance or namespace records.
 A parenthesized `srf_prim_ptr(<family>)` record also ends at the next legacy
 `srf_prim_ptr\0` record. Fields owned by that sibling prototype do not belong

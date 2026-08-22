@@ -502,7 +502,7 @@ pub struct PositionalTorusFrame {
     pub axis: [f64; 3],
     /// Unit parameter-space reference direction.
     pub ref_direction: [f64; 3],
-    /// Positive major radius.
+    /// Non-negative major radius; zero selects the sphere form.
     pub major_radius: f64,
     /// Positive minor radius.
     pub minor_radius: f64,
@@ -517,7 +517,7 @@ impl PositionalTorusFrame {
             .all(f64::is_finite)
             && valid_orthonormal_frame_directions(self.axis, self.ref_direction)
             && self.major_radius.is_finite()
-            && self.major_radius > 0.0
+            && self.major_radius >= 0.0
             && self.minor_radius.is_finite()
             && self.minor_radius > 0.0
     }
@@ -716,6 +716,67 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Whether the bounded body has the inline non-plane envelope delimiter.
+    ///
+    /// The terminal local-system close is excluded from `body`; the single
+    /// remaining compound close therefore identifies the envelope close.
+    pub(crate) fn has_inline_non_plane_envelope(&self) -> bool {
+        let Some(envelope_close) = self
+            .body
+            .iter()
+            .position(|byte| *byte == psb::token::COMPOUND_CLOSE)
+        else {
+            return false;
+        };
+        self.body.iter().fold(0usize, |count, byte| {
+            count + usize::from(*byte == psb::token::COMPOUND_CLOSE)
+        }) == 1
+            && self.body[..envelope_close].contains(&0x12)
+            && self.body.len() > envelope_close + 1
+    }
+
+    /// Whether the bounded body ends with a complete inline non-plane local
+    /// system and its family suffix.
+    pub(crate) fn has_inline_non_plane_local_system_suffix(&self, type_byte: u8) -> bool {
+        let Some(kind) = SurfaceKind::from_byte(type_byte) else {
+            return false;
+        };
+        if !matches!(
+            kind,
+            SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::TorusOrSphere
+        ) {
+            return false;
+        }
+        let cache = scalar::ScalarCache::default();
+        let local_starts =
+            std::iter::once(0).chain(self.body.iter().enumerate().filter_map(|(offset, byte)| {
+                (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
+            }));
+        local_starts
+            .filter_map(|local_start| self.body.get(local_start..))
+            .any(|local| {
+                scalar::decode_inline_non_plane_local_system_prefix(local, &cache)
+                    .into_iter()
+                    .any(|prefix| {
+                        if prefix.compact_axis.is_some() {
+                            scalar::decode_inline_non_plane_origin_prefix(
+                                local,
+                                prefix.cursor,
+                                &cache,
+                            )
+                            .into_iter()
+                            .any(|(_, cursor)| {
+                                decode_inline_surface_suffix_at(kind, local, cursor, &cache)
+                                    .is_some_and(|(_, end)| end == local.len())
+                            })
+                        } else {
+                            decode_inline_surface_suffix_at(kind, local, prefix.cursor, &cache)
+                                .is_some_and(|(_, end)| end == local.len())
+                        }
+                    })
+            })
+    }
+
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
     #[must_use]
     pub fn cone_half_angle_override(&self, type_byte: u8) -> Option<ConeHalfAngleOverride> {
@@ -3161,6 +3222,605 @@ pub fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRe
     parameter_records_for_rows(payload, &cross_section_rows(payload))
 }
 
+#[derive(Debug, Clone, Copy)]
+struct InlineSurfaceEnvelope {
+    /// Axial parameter bounds.
+    axial: [f64; 2],
+    /// Two model-space outline corners.
+    corners: [[f64; 3]; 2],
+    /// Offset of the envelope close relative to the bounded row body.
+    close: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InlineSurfaceCarrier {
+    Cylinder(PositionalCylinderFrame),
+    Cone(PositionalConeFrame),
+    Torus(PositionalTorusFrame),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct InlineSurfaceBody {
+    terminal_close: usize,
+    carrier: Option<InlineSurfaceCarrier>,
+}
+
+const EPS_INLINE_WITNESS: f64 = 1.0e-9;
+const EPS_INLINE_FRAME: f64 = 1.0e-8;
+
+fn inline_surface_body(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceBody> {
+    let Some(envelope) = decode_inline_surface_envelope(kind, body, cache) else {
+        return inline_surface_suffix_body(kind, body, cache);
+    };
+    let local_start = envelope.close.checked_add(1)?;
+    let mut layouts: Vec<InlineSurfaceBody> = Vec::new();
+    for terminal_close in local_start..body.len() {
+        if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
+            continue;
+        }
+        let local = body.get(local_start..terminal_close)?;
+        let mut structurally_complete = false;
+        let mut geometric_interpretation_count = 0;
+        let mut carriers = Vec::new();
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+            if prefix.compact_axis.is_some() {
+                for (origin, cursor) in
+                    scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
+                {
+                    let mut resolved = prefix;
+                    resolved.values[9..12].copy_from_slice(&origin);
+                    resolved.cursor = cursor;
+                    resolved.compact_axis = None;
+                    if inline_surface_suffix(kind, local, resolved.cursor, cache).is_some() {
+                        structurally_complete = true;
+                        if inline_frame_directions(resolved, envelope).is_some() {
+                            geometric_interpretation_count += 1;
+                            if let Some(carrier) =
+                                inline_surface_carrier(kind, envelope, local, resolved, cache)
+                            {
+                                carriers.push(carrier);
+                            }
+                        }
+                    }
+                }
+            } else if inline_surface_suffix(kind, local, prefix.cursor, cache).is_some() {
+                structurally_complete = true;
+                if inline_frame_directions(prefix, envelope).is_some() {
+                    geometric_interpretation_count += 1;
+                    if let Some(carrier) =
+                        inline_surface_carrier(kind, envelope, local, prefix, cache)
+                    {
+                        carriers.push(carrier);
+                    }
+                }
+            }
+        }
+        if !structurally_complete || geometric_interpretation_count == 0 {
+            continue;
+        }
+        let carrier = (geometric_interpretation_count != 0
+            && carriers.len() == geometric_interpretation_count)
+            .then(|| carriers.first().copied())
+            .flatten()
+            .filter(|first| {
+                carriers
+                    .iter()
+                    .all(|candidate| inline_carriers_agree(*candidate, *first))
+            });
+        layouts.push(InlineSurfaceBody {
+            terminal_close,
+            carrier,
+        });
+    }
+    match layouts.as_slice() {
+        [layout] => Some(*layout),
+        [] => inline_surface_suffix_body(kind, body, cache),
+        _ => None,
+    }
+}
+
+/// Decode the local-system suffix form used by positional rows that have no
+/// axial envelope. The terminal close is part of the row grammar, so a frame
+/// is admitted only when its exact suffix ends immediately before that close.
+fn inline_surface_suffix_body(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceBody> {
+    let mut layouts = Vec::new();
+    let local_starts =
+        std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
+            (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
+        }));
+    for local_start in local_starts {
+        let local = body.get(local_start..)?;
+        let mut terminal_closes = Vec::new();
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+            if prefix.compact_axis.is_some() {
+                for (_, cursor) in
+                    scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
+                {
+                    if let Some((_, end)) =
+                        decode_inline_surface_suffix_at(kind, local, cursor, cache)
+                    {
+                        if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
+                            terminal_closes.push(end);
+                        }
+                    }
+                }
+            } else if let Some((_, end)) =
+                decode_inline_surface_suffix_at(kind, local, prefix.cursor, cache)
+            {
+                if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
+                    terminal_closes.push(end);
+                }
+            }
+        }
+        terminal_closes.sort_unstable();
+        terminal_closes.dedup();
+        for relative_close in terminal_closes {
+            let terminal_close = local_start + relative_close;
+            let local = body.get(local_start..terminal_close)?;
+            let mut structurally_complete = false;
+            let mut geometric_interpretation_count = 0;
+            let mut carriers = Vec::new();
+            for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+                if prefix.compact_axis.is_some() {
+                    for (origin, cursor) in
+                        scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
+                    {
+                        let mut resolved = prefix;
+                        resolved.values[9..12].copy_from_slice(&origin);
+                        resolved.cursor = cursor;
+                        if inline_surface_suffix(kind, local, resolved.cursor, cache).is_some() {
+                            structurally_complete = true;
+                            if inline_suffix_frame_directions(resolved).is_some() {
+                                geometric_interpretation_count += 1;
+                                if let Some(carrier) =
+                                    inline_surface_suffix_carrier(kind, local, resolved, cache)
+                                {
+                                    carriers.push(carrier);
+                                }
+                            }
+                        }
+                    }
+                } else if inline_surface_suffix(kind, local, prefix.cursor, cache).is_some() {
+                    structurally_complete = true;
+                    if inline_suffix_frame_directions(prefix).is_some() {
+                        geometric_interpretation_count += 1;
+                        if let Some(carrier) =
+                            inline_surface_suffix_carrier(kind, local, prefix, cache)
+                        {
+                            carriers.push(carrier);
+                        }
+                    }
+                }
+            }
+            if !structurally_complete || geometric_interpretation_count == 0 {
+                continue;
+            }
+            let carrier = (carriers.len() == geometric_interpretation_count)
+                .then(|| carriers.first().copied())
+                .flatten()
+                .filter(|first| {
+                    carriers
+                        .iter()
+                        .all(|candidate| inline_carriers_agree(*candidate, *first))
+                });
+            layouts.push(InlineSurfaceBody {
+                terminal_close,
+                carrier,
+            });
+        }
+    }
+    let [layout] = layouts.as_slice() else {
+        return None;
+    };
+    Some(*layout)
+}
+
+fn decode_inline_surface_envelope(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceEnvelope> {
+    let mut cursor = 0;
+    let mut values = [0.0; 9];
+    for value in &mut values[..2] {
+        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (body.get(cursor) == Some(&0x12)).then_some(())?;
+    cursor += 1;
+    for value in &mut values[2..] {
+        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    Some(InlineSurfaceEnvelope {
+        axial: [values[1], values[2]],
+        corners: [
+            [values[3], values[4], values[5]],
+            [values[6], values[7], values[8]],
+        ],
+        close: cursor,
+    })
+}
+
+fn inline_surface_carrier(
+    kind: SurfaceKind,
+    envelope: InlineSurfaceEnvelope,
+    local: &[u8],
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceCarrier> {
+    debug_assert!(prefix.compact_axis.is_none());
+    let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
+
+    let (axis_index, reference_direction) = inline_frame_directions(prefix, envelope)?;
+    let axis_index = unique_inline_axis_index(envelope, axis_index)?;
+    let stored_origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
+    let (origin_axis, axis_sense) =
+        solve_inline_axis_endpoint(envelope, axis_index, stored_origin[axis_index])?;
+    let mut origin = stored_origin;
+    origin[axis_index] = origin_axis;
+    let mut axis = [0.0; 3];
+    axis[axis_index] = axis_sense;
+
+    match kind {
+        SurfaceKind::Cylinder => {
+            let radius = suffix[0];
+            (radius.is_finite() && radius > 0.0).then_some(())?;
+            for coordinate in 0..3 {
+                if coordinate != axis_index {
+                    origin[coordinate] = unique_inline_center(
+                        envelope,
+                        coordinate,
+                        stored_origin[coordinate],
+                        radius,
+                    )?;
+                }
+            }
+            Some(InlineSurfaceCarrier::Cylinder(PositionalCylinderFrame {
+                origin,
+                axis,
+                ref_direction: reference_direction,
+                radius,
+                length: Some((envelope.axial[1] - envelope.axial[0]).abs()),
+            }))
+        }
+        SurfaceKind::Cone => {
+            let half_angle = suffix[0];
+            valid_half_angle(half_angle).then_some(())?;
+            let radial_extent =
+                envelope.axial.into_iter().map(f64::abs).fold(0.0, f64::max) * half_angle.tan();
+            for coordinate in 0..3 {
+                if coordinate != axis_index {
+                    origin[coordinate] = unique_inline_center(
+                        envelope,
+                        coordinate,
+                        stored_origin[coordinate],
+                        radial_extent,
+                    )?;
+                }
+            }
+            Some(InlineSurfaceCarrier::Cone(PositionalConeFrame {
+                apex: origin,
+                axis,
+                ref_direction: reference_direction,
+                half_angle,
+            }))
+        }
+        SurfaceKind::TorusOrSphere => {
+            let [major_radius, minor_radius] = suffix;
+            (major_radius.is_finite()
+                && major_radius >= 0.0
+                && minor_radius.is_finite()
+                && minor_radius > 0.0)
+                .then_some(())?;
+            let radial_extent = major_radius + minor_radius;
+            for coordinate in 0..3 {
+                if coordinate != axis_index {
+                    origin[coordinate] = unique_inline_center(
+                        envelope,
+                        coordinate,
+                        stored_origin[coordinate],
+                        radial_extent,
+                    )?;
+                }
+            }
+            Some(InlineSurfaceCarrier::Torus(PositionalTorusFrame {
+                center: origin,
+                axis,
+                ref_direction: reference_direction,
+                major_radius,
+                minor_radius,
+            }))
+        }
+        _ => None,
+    }
+    .filter(|carrier| inline_carrier_is_valid(*carrier))
+}
+
+fn inline_surface_suffix(
+    kind: SurfaceKind,
+    local: &[u8],
+    cursor: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<([f64; 2], usize)> {
+    let (values, end) = decode_inline_surface_suffix_at(kind, local, cursor, cache)?;
+    (end == local.len()).then_some((values, end))
+}
+
+fn decode_inline_surface_suffix_at(
+    kind: SurfaceKind,
+    local: &[u8],
+    cursor: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<([f64; 2], usize)> {
+    let (values, end) = match kind {
+        SurfaceKind::Cylinder | SurfaceKind::Cone => {
+            let (value, end) = scalar::decode_inline_surface_suffix_scalar(local, cursor, cache)?;
+            ([value, 0.0], end)
+        }
+        SurfaceKind::TorusOrSphere => {
+            let (major, next) = scalar::decode_inline_surface_suffix_scalar(local, cursor, cache)?;
+            let (minor, end) = scalar::decode_inline_surface_suffix_scalar(local, next, cache)?;
+            ([major, minor], end)
+        }
+        _ => return None,
+    };
+    Some((values, end))
+}
+
+fn inline_surface_suffix_carrier(
+    kind: SurfaceKind,
+    local: &[u8],
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceCarrier> {
+    let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
+    let (axis, ref_direction) = inline_suffix_frame_directions(prefix)?;
+    let origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
+    origin.into_iter().all(f64::is_finite).then_some(())?;
+    match kind {
+        SurfaceKind::Cylinder => {
+            let radius = suffix[0];
+            (radius.is_finite() && radius > 0.0).then_some(())?;
+            Some(InlineSurfaceCarrier::Cylinder(PositionalCylinderFrame {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+                length: None,
+            }))
+        }
+        SurfaceKind::Cone => {
+            let half_angle = suffix[0];
+            valid_half_angle(half_angle).then_some(())?;
+            Some(InlineSurfaceCarrier::Cone(PositionalConeFrame {
+                apex: origin,
+                axis,
+                ref_direction,
+                half_angle,
+            }))
+        }
+        SurfaceKind::TorusOrSphere => {
+            let [major_radius, minor_radius] = suffix;
+            (major_radius.is_finite()
+                && major_radius >= 0.0
+                && minor_radius.is_finite()
+                && minor_radius > 0.0)
+                .then_some(())?;
+            Some(InlineSurfaceCarrier::Torus(PositionalTorusFrame {
+                center: origin,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            }))
+        }
+        _ => None,
+    }
+    .filter(|carrier| inline_carrier_is_valid(*carrier))
+}
+
+fn inline_suffix_frame_directions(
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+) -> Option<([f64; 3], [f64; 3])> {
+    let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
+    let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
+    let stored_axis: [f64; 3] = prefix.values[6..9].try_into().ok()?;
+    let norm = |vector: [f64; 3]| {
+        vector
+            .into_iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt()
+    };
+    let first_norm = norm(first);
+    let second_norm = norm(second);
+    let axis_norm = norm(stored_axis);
+    let direction_scale = first_norm.max(second_norm).max(axis_norm).max(1.0);
+    let close_unit = |value: f64| (value - 1.0).abs() <= EPS_INLINE_FRAME;
+    (close_unit(first_norm) && close_unit(second_norm) && close_unit(axis_norm)).then_some(())?;
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter()
+            .zip(right)
+            .map(|(left, right)| left * right)
+            .sum::<f64>()
+    };
+    (dot(first, second).abs() <= EPS_INLINE_FRAME * direction_scale
+        && dot(first, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale
+        && dot(second, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale)
+        .then_some(())?;
+    let reference_direction = first.map(|value| value / first_norm);
+    let axis = stored_axis.map(|value| value / axis_norm);
+    Some((axis, reference_direction))
+}
+
+fn inline_frame_directions(
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    envelope: InlineSurfaceEnvelope,
+) -> Option<(usize, [f64; 3])> {
+    let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
+    let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
+    let stored_axis: [f64; 3] = prefix.values[6..9].try_into().ok()?;
+    let norm = |vector: [f64; 3]| {
+        vector
+            .into_iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt()
+    };
+    let first_norm = norm(first);
+    let second_norm = norm(second);
+    let axis_norm = norm(stored_axis);
+    let direction_scale = first_norm.max(second_norm).max(axis_norm).max(1.0);
+    let close_unit = |value: f64| (value - 1.0).abs() <= EPS_INLINE_FRAME;
+    (close_unit(first_norm) && close_unit(second_norm) && close_unit(axis_norm)).then_some(())?;
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter()
+            .zip(right)
+            .map(|(left, right)| left * right)
+            .sum::<f64>()
+    };
+    (dot(first, second).abs() <= EPS_INLINE_FRAME * direction_scale
+        && dot(first, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale
+        && dot(second, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale)
+        .then_some(())?;
+    let axis_index = prefix.compact_axis.or_else(|| {
+        let mut indices = (0..3).filter(|index| {
+            stored_axis[*index].abs() >= 1.0 - EPS_INLINE_FRAME
+                && (0..3)
+                    .filter(|other| *other != *index)
+                    .all(|other| stored_axis[other].abs() <= EPS_INLINE_FRAME)
+        });
+        let index = indices.next()?;
+        indices.next().is_none().then_some(index)
+    })?;
+    let mut reference_direction = first.map(|value| value / first_norm);
+    if reference_direction[axis_index].abs() > EPS_INLINE_FRAME {
+        return None;
+    }
+    if prefix.compact_axis.is_some() {
+        let span = envelope.corners[1][axis_index] - envelope.corners[0][axis_index];
+        if span.abs() <= EPS_INLINE_WITNESS {
+            return None;
+        }
+    }
+    reference_direction[axis_index] = 0.0;
+    let reference_norm = norm(reference_direction);
+    (reference_norm.is_finite() && reference_norm > EPS_INLINE_WITNESS).then_some(())?;
+    reference_direction = reference_direction.map(|value| value / reference_norm);
+    Some((axis_index, reference_direction))
+}
+
+fn unique_inline_axis_index(envelope: InlineSurfaceEnvelope, hinted_axis: usize) -> Option<usize> {
+    let axial_span = (envelope.axial[1] - envelope.axial[0]).abs();
+    (axial_span.is_finite() && axial_span > EPS_INLINE_WITNESS).then_some(())?;
+    let mut axes = (0..3).filter(|index| {
+        let span = (envelope.corners[1][*index] - envelope.corners[0][*index]).abs();
+        inline_close(span, axial_span)
+    });
+    let axis = axes.next()?;
+    axes.next().is_none().then_some(())?;
+    (axis == hinted_axis).then_some(axis)
+}
+
+fn solve_inline_axis_endpoint(
+    envelope: InlineSurfaceEnvelope,
+    axis_index: usize,
+    stored_axis_origin: f64,
+) -> Option<(f64, f64)> {
+    let stored_magnitude = stored_axis_origin.abs();
+    let lower = envelope.corners[0][axis_index].min(envelope.corners[1][axis_index]);
+    let upper = envelope.corners[0][axis_index].max(envelope.corners[1][axis_index]);
+    let mut candidates: Vec<(f64, f64)> = Vec::new();
+    for origin_sign in [-1.0, 1.0] {
+        for direction in [-1.0, 1.0] {
+            let origin = origin_sign * stored_magnitude;
+            let first = origin + envelope.axial[0] * direction;
+            let second = origin + envelope.axial[1] * direction;
+            if (inline_close(first, lower) && inline_close(second, upper))
+                || (inline_close(first, upper) && inline_close(second, lower))
+            {
+                let candidate = (origin, direction);
+                if !candidates.iter().any(|existing| {
+                    inline_close(existing.0, candidate.0) && inline_close(existing.1, candidate.1)
+                }) {
+                    candidates.push(candidate);
+                }
+            }
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+fn unique_inline_center(
+    envelope: InlineSurfaceEnvelope,
+    coordinate: usize,
+    stored_center: f64,
+    radius: f64,
+) -> Option<f64> {
+    let lower = envelope.corners[0][coordinate].min(envelope.corners[1][coordinate]);
+    let upper = envelope.corners[0][coordinate].max(envelope.corners[1][coordinate]);
+    let magnitude = stored_center.abs();
+    let mut candidates = Vec::new();
+    for center in [-magnitude, magnitude] {
+        if lower >= center - radius - EPS_INLINE_WITNESS * inline_scale(center, radius)
+            && upper <= center + radius + EPS_INLINE_WITNESS * inline_scale(center, radius)
+            && !candidates.iter().any(|known| inline_close(*known, center))
+        {
+            candidates.push(center);
+        }
+    }
+    let [center] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*center)
+}
+
+fn inline_scale(first: f64, second: f64) -> f64 {
+    first.abs().max(second.abs()).max(1.0)
+}
+
+fn inline_close(first: f64, second: f64) -> bool {
+    (first - second).abs() <= EPS_INLINE_WITNESS * inline_scale(first, second)
+}
+
+fn inline_carrier_is_valid(carrier: InlineSurfaceCarrier) -> bool {
+    match carrier {
+        InlineSurfaceCarrier::Cylinder(frame) => frame.is_valid(),
+        InlineSurfaceCarrier::Cone(frame) => frame.is_valid(),
+        InlineSurfaceCarrier::Torus(frame) => frame.is_valid(),
+    }
+}
+
+fn inline_carriers_agree(first: InlineSurfaceCarrier, second: InlineSurfaceCarrier) -> bool {
+    match (first, second) {
+        (InlineSurfaceCarrier::Cylinder(first), InlineSurfaceCarrier::Cylinder(second)) => {
+            first == second
+        }
+        (InlineSurfaceCarrier::Cone(first), InlineSurfaceCarrier::Cone(second)) => first == second,
+        (InlineSurfaceCarrier::Torus(first), InlineSurfaceCarrier::Torus(second)) => {
+            first == second
+        }
+        _ => false,
+    }
+}
+
 fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
@@ -3187,17 +3847,23 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        if let Some(relative) =
-            surface_body_compound_close(row.kind, &payload[*body_start..body_end], &cache)
-        {
-            body_end = body_start + relative;
+        let inline = inline_surface_body(row.kind, &payload[*body_start..body_end], &cache);
+        if let Some(layout) = inline {
+            body_end = body_start + layout.terminal_close;
             boundary = SurfaceBodyBoundary::CompoundClose;
-        }
-        if let Some(relative) =
-            named_record_boundary(row.kind, &payload[*body_start..body_end], &cache)
-        {
-            body_end = body_start + relative;
-            boundary = SurfaceBodyBoundary::NamedRecord;
+        } else {
+            if let Some(relative) =
+                surface_body_compound_close(row.kind, &payload[*body_start..body_end], &cache)
+            {
+                body_end = body_start + relative;
+                boundary = SurfaceBodyBoundary::CompoundClose;
+            }
+            if let Some(relative) =
+                named_record_boundary(row.kind, &payload[*body_start..body_end], &cache)
+            {
+                body_end = body_start + relative;
+                boundary = SurfaceBodyBoundary::NamedRecord;
+            }
         }
         let body = payload[*body_start..body_end].to_vec();
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
@@ -3208,18 +3874,29 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
             .then(|| decode_tabulated_cylinder_frame(&body, &cache))
             .flatten()
             .map(|(frame, _)| frame);
-        let positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
+        let mut positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
             .then(|| decode_positional_cylinder_frame(&body, &cache))
             .flatten();
         let split_cylinder_outline_bounds = (row.kind == SurfaceKind::Cylinder)
             .then(|| split_cylinder_outline_bounds(&body, &scalar_tokens))
             .flatten();
-        let positional_cone_frame = (row.kind == SurfaceKind::Cone)
+        let mut positional_cone_frame = (row.kind == SurfaceKind::Cone)
             .then(|| decode_positional_cone_frame(&body, &cache))
             .flatten();
-        let positional_torus_frame = (row.kind == SurfaceKind::TorusOrSphere)
+        let mut positional_torus_frame = (row.kind == SurfaceKind::TorusOrSphere)
             .then(|| decode_positional_torus_frame(&body, &cache))
             .flatten();
+        if let Some(layout) = inline {
+            if let Some(carrier) = layout.carrier {
+                match carrier {
+                    InlineSurfaceCarrier::Cylinder(frame) => {
+                        positional_cylinder_frame = Some(frame);
+                    }
+                    InlineSurfaceCarrier::Cone(frame) => positional_cone_frame = Some(frame),
+                    InlineSurfaceCarrier::Torus(frame) => positional_torus_frame = Some(frame),
+                }
+            }
+        }
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -3280,21 +3957,35 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
         if body_start >= row_end {
             continue;
         }
-        let Some(envelope_close) =
-            surface_body_compound_close(row.kind, &payload[body_start..row_end], &cache)
-                .map(|relative| body_start + relative)
-        else {
-            continue;
-        };
-        let Some(local_system_start) = envelope_close.checked_add(1) else {
-            continue;
-        };
-        let Some(local_system_close) = first_compound_close(payload, local_system_start, row_end)
-        else {
-            continue;
-        };
-        let Some(contour_start) = local_system_close.checked_add(1) else {
-            continue;
+        let contour_start = if let Some(layout) =
+            inline_surface_body(row.kind, &payload[body_start..row_end], &cache)
+        {
+            let Some(contour_start) = body_start
+                .checked_add(layout.terminal_close)
+                .and_then(|close| close.checked_add(1))
+            else {
+                continue;
+            };
+            contour_start
+        } else {
+            let Some(envelope_close) =
+                surface_body_compound_close(row.kind, &payload[body_start..row_end], &cache)
+                    .map(|relative| body_start + relative)
+            else {
+                continue;
+            };
+            let Some(local_system_start) = envelope_close.checked_add(1) else {
+                continue;
+            };
+            let Some(local_system_close) =
+                first_compound_close(payload, local_system_start, row_end)
+            else {
+                continue;
+            };
+            let Some(contour_start) = local_system_close.checked_add(1) else {
+                continue;
+            };
+            contour_start
         };
         let Some(chain) = parse_surface_contour_chain(payload, contour_start, row_end, row, &cache)
         else {

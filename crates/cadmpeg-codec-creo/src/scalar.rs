@@ -623,6 +623,251 @@ pub fn decode_positional_torus_local_system_prefix(
     Some((finite_local_system_slots(prefix.values)?, prefix.cursor))
 }
 
+/// A local system in an inline non-plane surface row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InlineNonPlaneLocalSystemPrefix {
+    /// Expanded twelve-slot local-system values.
+    pub(crate) values: [f64; 12],
+    /// First byte after the local-system image.
+    pub(crate) cursor: usize,
+    /// Axis coordinate named by a compact image, when the image is compact.
+    pub(crate) compact_axis: Option<usize>,
+}
+
+/// Decode the bounded local-system prefix used by inline non-plane rows.
+///
+/// This lane is separate from the older positional-cylinder grammars. Compact
+/// images name only an axis coordinate; explicit frames use the three
+/// component lanes and the four-slot `18 e5 0f` fill.
+pub(crate) fn decode_inline_non_plane_local_system_prefix(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Vec<InlineNonPlaneLocalSystemPrefix> {
+    let mut prefixes = Vec::new();
+    if let Some((axis, reference_sign, cursor)) = decode_inline_compact_image(body) {
+        prefixes.push(InlineNonPlaneLocalSystemPrefix {
+            values: compact_inline_frame(axis, reference_sign),
+            cursor,
+            compact_axis: Some(axis),
+        });
+    }
+
+    let mut explicit = Vec::new();
+    let mut values = [0.0; 12];
+    walk_inline_explicit_local_system(body, cache, 0, 0, &mut values, &mut explicit);
+    prefixes.extend(
+        explicit
+            .into_iter()
+            .map(|(values, cursor)| InlineNonPlaneLocalSystemPrefix {
+                values,
+                cursor,
+                compact_axis: None,
+            }),
+    );
+    prefixes
+}
+
+/// Decode the three origin slots that follow a compact inline local-system
+/// image.
+pub(crate) fn decode_inline_non_plane_origin_prefix(
+    body: &[u8],
+    cursor: usize,
+    cache: &ScalarCache,
+) -> Vec<([f64; 3], usize)> {
+    let mut values = [0.0; 3];
+    let mut results = Vec::new();
+    walk_inline_origin(body, cache, 0, cursor, &mut values, &mut results);
+    results
+}
+
+/// Decode one inline family suffix scalar. The suffix has its own compact
+/// unit and half-unit tokens; `0x0f` is one here, not the row-lane zero token.
+pub(crate) fn decode_inline_surface_suffix_scalar(
+    body: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    match body.get(offset)? {
+        0x0e => Some((0.5, offset + 1)),
+        0x0f => Some((1.0, offset + 1)),
+        0x18 => Some((0.0, offset + 1)),
+        _ => decode_positive_dict(body, offset)
+            .or_else(|| decode_in_surface_row_lane(body, offset, cache)),
+    }
+}
+
+fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, f64, usize)> {
+    const X_IMAGES: [&[u8]; 3] = [
+        &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
+        &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4],
+        &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4],
+    ];
+    let sign = |byte| match byte {
+        0x0f => Some(1.0),
+        0x10 => Some(-1.0),
+        _ => None,
+    };
+    if body.len() >= 7 {
+        if body[1] == 0x18 && body[2] == 0xe5 && body[4] == 0x18 && body[5] == 0xe5 {
+            let reference_sign = sign(body[0])?;
+            sign(body[3])?;
+            sign(body[6])?;
+            return Some((2, reference_sign, 7));
+        }
+        if body[0] == 0x18 && body[2] == 0x18 && body[4] == 0x18 && body[5] == 0xe6 {
+            let reference_sign = sign(body[1])?;
+            sign(body[3])?;
+            sign(body[6])?;
+            return Some((2, reference_sign, 7));
+        }
+        if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
+            let reference_sign = sign(body[0])?;
+            sign(body[3])?;
+            sign(body[5])?;
+            return Some((1, reference_sign, 7));
+        }
+    }
+
+    X_IMAGES
+        .into_iter()
+        .find(|image| body.starts_with(image))
+        .map(|image| (0, 1.0, image.len()))
+}
+
+fn compact_inline_frame(axis: usize, reference_sign: f64) -> [f64; 12] {
+    let reference_coordinate = match axis {
+        0 => 1,
+        1 | 2 => 0,
+        _ => unreachable!("compact axis is a model coordinate"),
+    };
+    let transverse_coordinate = match axis {
+        0 | 1 => 2,
+        2 => 1,
+        _ => unreachable!("compact axis is a model coordinate"),
+    };
+    let transverse_sign = match axis {
+        1 => -reference_sign,
+        0 | 2 => reference_sign,
+        _ => unreachable!("compact axis is a model coordinate"),
+    };
+    let mut values = [0.0; 12];
+    values[reference_coordinate] = reference_sign;
+    values[3 + transverse_coordinate] = transverse_sign;
+    values[6 + axis] = 1.0;
+    values
+}
+
+fn walk_inline_explicit_local_system(
+    body: &[u8],
+    cache: &ScalarCache,
+    slot: usize,
+    cursor: usize,
+    values: &mut [f64; 12],
+    results: &mut Vec<([f64; 12], usize)>,
+) {
+    if results.len() >= 16 {
+        return;
+    }
+    if slot == 12 {
+        if let Some(values) = finite_local_system_slots(*values) {
+            results.push((values, cursor));
+        }
+        return;
+    }
+
+    if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f]) {
+        values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, 1.0]);
+        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+    }
+    if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x10]) {
+        values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, -1.0]);
+        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+    }
+    if slot <= 9 && body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+        values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
+        walk_inline_explicit_local_system(body, cache, slot + 3, cursor + 2, values, results);
+    }
+
+    for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot, cache) {
+        values[slot] = value;
+        walk_inline_explicit_local_system(body, cache, slot + 1, next, values, results);
+    }
+}
+
+fn walk_inline_origin(
+    body: &[u8],
+    cache: &ScalarCache,
+    slot: usize,
+    cursor: usize,
+    values: &mut [f64; 3],
+    results: &mut Vec<([f64; 3], usize)>,
+) {
+    if results.len() >= 8 {
+        return;
+    }
+    if slot == 3 {
+        results.push((*values, cursor));
+        return;
+    }
+    for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
+        values[slot] = value;
+        walk_inline_origin(body, cache, slot + 1, next, values, results);
+    }
+}
+
+fn decode_inline_local_system_coordinates(
+    body: &[u8],
+    cursor: usize,
+    slot: usize,
+    cache: &ScalarCache,
+) -> Vec<(f64, usize)> {
+    let mut candidates: Vec<(f64, usize)> = Vec::new();
+    // The inline local-system lane assigns the signed IEEE form to `0x28`.
+    // The same byte is positive in the generic directrix lanes, so this
+    // interpretation must be selected before those lane decoders run.
+    if body.get(cursor) == Some(&0x28) {
+        if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
+            candidates.push((value, next));
+        }
+    }
+    // Named local-system records use the reflected sign for this third-frame
+    // coordinate. Keep the same slot-specific rule for positional frames.
+    if slot == 6 && body.get(cursor) == Some(&0x41) {
+        if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
+            candidates.push((value, next));
+        }
+    }
+    if matches!(body.get(cursor), Some(0x0f | 0x10 | 0xe6)) {
+        candidates.push((0.0, cursor + 1));
+    }
+    if body.get(cursor) == Some(&0x18) {
+        candidates.push((0.0, cursor + 1));
+    }
+    let decoded = match slot % 3 {
+        0 => decode_tabulated_cylinder_first_coordinate(body, cursor, cache),
+        1 => decode_tabulated_cylinder_second_coordinate(body, cursor, cache),
+        _ => decode_in_surface_row_lane(body, cursor, cache),
+    }
+    .into_iter()
+    .chain(decode_in_row_lane(body, cursor, cache))
+    .chain(decode_tabulated_cylinder_first_coordinate(
+        body, cursor, cache,
+    ))
+    .chain(decode_tabulated_cylinder_second_coordinate(
+        body, cursor, cache,
+    ));
+    for candidate in decoded {
+        if candidate.0.is_finite()
+            && !candidates.iter().any(|existing| {
+                existing.1 == candidate.1 && existing.0.to_bits() == candidate.0.to_bits()
+            })
+        {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
 /// Storage layout of a complete positional plane support frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlaneSupportFrameLayout {
@@ -1216,19 +1461,14 @@ pub fn decode_tabulated_cylinder_first_frame_coordinate(
 /// The enclosing record grammar must establish this lane. Several prefix
 /// bytes have different meanings in positional row and generic scalar lanes.
 pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> {
-    let (byte_0, byte_1) = match *data.get(offset)? {
-        0x71 => (0x3f, 0xe6),
-        0x74 => (0x3f, 0xe9),
-        0x76 => (0x3f, 0xeb),
-        0x81 => (0x3f, 0xf6),
-        0x8b => (0x40, 0x00),
-        0x90 => (0x40, 0x05),
-        0x91 => (0x40, 0x06),
-        0xa1 => (0x40, 0x16),
-        0xa2 => (0x40, 0x17),
-        0xa3 => (0x40, 0x18),
-        0xb7 => (0x3f, 0xe4),
-        _ => return None,
+    let prefix = *data.get(offset)?;
+    let (byte_0, byte_1) = if prefix == 0xb7 {
+        (0x3f, 0xe4)
+    } else if (0x5b..=0xa3).contains(&prefix) {
+        let byte_1 = prefix.wrapping_add(0x75);
+        (if byte_1 >= 0x80 { 0x3f } else { 0x40 }, byte_1)
+    } else {
+        return None;
     };
     let tail = data.get(offset + 1..offset + 7)?;
     let mut raw = [0; 8];
@@ -1391,6 +1631,117 @@ mod tests {
             decode_plane_support_local_system_slots(&body, &cache),
             Some(expected)
         );
+    }
+
+    #[test]
+    fn inline_non_plane_compact_images_name_the_axis_coordinate() {
+        let cases = [
+            (
+                vec![0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f],
+                2,
+                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            ),
+            (
+                vec![0x18, 0x10, 0x18, 0x10, 0x18, 0xe6, 0x10],
+                2,
+                [-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            ),
+            (
+                vec![0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18],
+                1,
+                [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            (
+                vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
+                0,
+                [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+        ];
+        let cache = ScalarCache::default();
+        for (body, axis, expected) in cases {
+            let prefix = decode_inline_non_plane_local_system_prefix(&body, &cache)
+                .into_iter()
+                .find(|prefix| prefix.compact_axis == Some(axis))
+                .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
+            assert_eq!(prefix.cursor, body.len());
+            assert_eq!(prefix.values, expected);
+        }
+    }
+
+    #[test]
+    fn inline_non_plane_explicit_frames_expand_the_four_slot_fill() {
+        let body = [
+            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
+            0x2f, 0x10, 0x00,
+        ];
+        let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
+        let cache = ScalarCache::default();
+
+        assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
+            .into_iter()
+            .any(|prefix| prefix.compact_axis.is_none()
+                && prefix.cursor == body.len()
+                && prefix.values == expected));
+    }
+
+    #[test]
+    fn inline_non_plane_explicit_frames_accept_the_reflected_four_slot_fill() {
+        let body = [
+            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x10, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
+            0x2f, 0x10, 0x00,
+        ];
+        let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
+        let cache = ScalarCache::default();
+
+        assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
+            .into_iter()
+            .any(|prefix| prefix.compact_axis.is_none()
+                && prefix.cursor == body.len()
+                && prefix.values == expected));
+    }
+
+    #[test]
+    fn inline_surface_suffix_uses_exact_zero_and_unit_tokens() {
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_inline_surface_suffix_scalar(&[0x0e], 0, &cache),
+            Some((0.5, 1))
+        );
+        assert_eq!(
+            decode_inline_surface_suffix_scalar(&[0x0f], 0, &cache),
+            Some((1.0, 1))
+        );
+        assert_eq!(
+            decode_inline_surface_suffix_scalar(&[0x18], 0, &cache),
+            Some((0.0, 1))
+        );
+    }
+
+    #[test]
+    fn positive_dict_arithmetic_covers_unlisted_inline_prefixes() {
+        for prefix in [0x78_u8, 0x7a_u8] {
+            let bytes = [prefix, 0, 0, 0, 0, 0, 0];
+            let byte_1 = prefix.wrapping_add(0x75);
+            assert_eq!(
+                decode_positive_dict(&bytes, 0),
+                Some((f64::from_be_bytes([0x3f, byte_1, 0, 0, 0, 0, 0, 0]), 7))
+            );
+        }
+    }
+
+    #[test]
+    fn inline_non_plane_negative_lanes_follow_their_prefix_arithmetic() {
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&[0xd5, 0, 0, 0, 0, 0, 0], 0, &cache),
+            Some((f64::from_be_bytes([0xc0, 0x03, 0, 0, 0, 0, 0, 0]), 7))
+        );
+        for (prefix, byte_1) in [(0xc0, 0xed), (0xc1, 0xee), (0xc2, 0xef)] {
+            assert_eq!(
+                decode_tabulated_cylinder_first_coordinate(&[prefix, 0, 0, 0, 0, 0, 0], 0, &cache,),
+                Some((f64::from_be_bytes([0xbf, byte_1, 0, 0, 0, 0, 0, 0]), 7))
+            );
+        }
     }
 
     #[test]

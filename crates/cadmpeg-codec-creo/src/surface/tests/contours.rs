@@ -26,6 +26,26 @@ fn contour_payload() -> Vec<u8> {
     payload
 }
 
+fn inline_non_plane_contour_payload() -> Vec<u8> {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x0f, 0x2f, 0x00, 0x00, 0x12, 0x2f, 0x10, 0x00, 0x0f, 0x0f, 0x2f, 0x18, 0x00, 0xe4, 0xe4,
+        0x2f, 0x20, 0x00, 0xe3,
+    ]);
+    payload.extend_from_slice(&[
+        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x2f, 0x10,
+        0x00, 0x2f, 0x00, 0x00, 0xe3,
+    ]);
+    payload.extend_from_slice(&[0x82, 0x10, 0x01]);
+    payload.extend_from_slice(&[0xe4, 0xe4, 0xe4, 0x34, 0xb8, 0x00]);
+    payload.extend_from_slice(&[0xe3, 0xf7, 0x0f]);
+    payload.extend_from_slice(&[0x82, 0x11, 0x02]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4]);
+    payload.push(0xe1);
+    payload
+}
+
 #[test]
 fn retains_complete_contour_chain_entries() {
     let payload = contour_payload();
@@ -54,6 +74,17 @@ fn retains_complete_contour_chain_entries() {
     );
     assert_eq!(records[1].separator_reference, None);
     assert_eq!(records[1].body.last(), Some(&0xe1));
+}
+
+#[test]
+fn starts_an_inline_non_plane_contour_after_the_local_system_close() {
+    let records = contour_records(&inline_non_plane_contour_payload());
+
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].surface_id, 7);
+    assert_eq!(records[0].chain_index, 0);
+    assert_eq!(records[1].chain_index, 1);
+    assert_eq!(records[1].curve_header_id, 0x211);
 }
 
 #[test]

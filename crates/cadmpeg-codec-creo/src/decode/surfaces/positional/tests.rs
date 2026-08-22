@@ -80,6 +80,41 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
 }
 
 #[test]
+fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut scan =
+        crate::container::scan_bytes(build_prt("inline-sphere", &[("ND:0:VisibGeom:0", payload)]));
+    assert_eq!(scan.surfaces.rows.len(), 1);
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    scan.surfaces.parameters[0].positional_torus_frame =
+        Some(crate::surface::PositionalTorusFrame {
+            center: [2.0, 2.0, 4.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [-1.0, 0.0, 0.0],
+            major_radius: 0.0,
+            minor_radius: 2.0,
+        });
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+
+    assert_eq!(
+        super::transfer_positional_tori(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        ),
+        1
+    );
+    let cadmpeg_ir::geometry::SurfaceGeometry::Sphere { radius, .. } =
+        &ir.model.surfaces[0].geometry
+    else {
+        panic!("zero-major positional frame must transfer as a sphere");
+    };
+    assert_eq!(*radius, 2.0);
+}
+
+#[test]
 fn paired_envelope_spheres_do_not_join_rows_from_neighboring_surface_frames() {
     let lower = [
         0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff, 0xff,

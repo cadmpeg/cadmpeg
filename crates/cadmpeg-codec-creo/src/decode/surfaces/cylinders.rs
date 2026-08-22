@@ -473,6 +473,8 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         };
         let feature_class = feature_schema_class(scan, row.feature_id);
+        let inline_non_plane = record.has_inline_non_plane_envelope()
+            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
         let round_support_frame = (feature_class == Some(913))
             .then(|| record.type24_scalar_frame_round_envelope(row.type_byte))
             .flatten()
@@ -487,6 +489,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         // when its complete generated set proves one constant radius or this
         // row has an independent cap/support-envelope cylinder proof.
         if row.type_byte == 0x24
+            && !inline_non_plane
             && (matches!(feature_class, Some(916))
                 || matches!(feature_class, Some(913))
                     && !constant_round_feature_ids.contains(&row.feature_id)
@@ -526,17 +529,24 @@ pub(in super::super) fn transfer_positional_cylinders(
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
-        let (frame, mechanism) = match round_support_frame {
-            Some(frame) => (frame, "round_support_envelope_cylinder"),
-            None => match record.positional_cylinder_frame {
-                Some(frame) => (frame, "positional_cylinder_frame"),
-                None => {
-                    let Some(frame) = reference_bound_frame() else {
-                        continue;
-                    };
-                    frame
-                }
-            },
+        let (frame, mechanism) = if inline_non_plane {
+            let Some(frame) = record.positional_cylinder_frame else {
+                continue;
+            };
+            (frame, "inline_positional_surface_row")
+        } else {
+            match round_support_frame {
+                Some(frame) => (frame, "round_support_envelope_cylinder"),
+                None => match record.positional_cylinder_frame {
+                    Some(frame) => (frame, "positional_cylinder_frame"),
+                    None => {
+                        let Some(frame) = reference_bound_frame() else {
+                            continue;
+                        };
+                        frame
+                    }
+                },
+            }
         };
         if feature_class == Some(911)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {

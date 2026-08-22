@@ -165,9 +165,12 @@ pub(in super::super) fn transfer_positional_tori(
         // Class-913 type-26 rows can be rolling-radius samples from the same
         // generated round family. A positional torus frame is a neutral
         // carrier only after the complete family proves one constant radius.
+        let inline_non_plane = record.has_inline_non_plane_envelope()
+            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
         if row.type_byte == 0x26
             && feature_schema_class(scan, row.feature_id) == Some(913)
             && !constant_round_feature_ids.contains(&row.feature_id)
+            && !inline_non_plane
         {
             continue;
         }
@@ -192,9 +195,19 @@ pub(in super::super) fn transfer_positional_tori(
             "positional_torus_frame",
             Exactness::Derived,
         );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Torus {
+        let geometry = if frame.major_radius == 0.0 {
+            SurfaceGeometry::Sphere {
+                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: frame.minor_radius,
+            }
+        } else {
+            SurfaceGeometry::Torus {
                 center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
                 axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
                 ref_direction: Vector3::new(
@@ -204,7 +217,11 @@ pub(in super::super) fn transfer_positional_tori(
                 ),
                 major_radius: frame.major_radius,
                 minor_radius: frame.minor_radius,
-            },
+            }
+        };
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("{}:{}", section.name, row.id),

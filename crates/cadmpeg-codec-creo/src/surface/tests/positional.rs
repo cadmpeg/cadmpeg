@@ -112,7 +112,7 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
 }
 
 #[test]
-fn positional_torus_frame_rejects_nonfinite_or_nonpositive_components() {
+fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
     let valid = PositionalTorusFrame {
         center: [0.0, 1.0, 2.0],
         axis: [0.0, 0.0, 1.0],
@@ -126,9 +126,13 @@ fn positional_torus_frame_rejects_nonfinite_or_nonpositive_components() {
     nonfinite_center.center[1] = f64::INFINITY;
     assert!(!nonfinite_center.is_valid());
 
-    let mut nonpositive_major = valid;
-    nonpositive_major.major_radius = 0.0;
-    assert!(!nonpositive_major.is_valid());
+    let mut zero_major = valid;
+    zero_major.major_radius = 0.0;
+    assert!(zero_major.is_valid());
+
+    let mut negative_major = valid;
+    negative_major.major_radius = -0.1;
+    assert!(!negative_major.is_valid());
 
     let mut non_unit_axis = valid;
     non_unit_axis.axis = [0.0, 0.0, 2.0];
