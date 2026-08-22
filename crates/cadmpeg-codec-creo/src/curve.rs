@@ -465,6 +465,23 @@ pub struct PcurveEndpoints {
     pub offset: usize,
 }
 
+/// One-sided endpoint path from the complete short fc 02 curve body.
+///
+/// The body carries one path in the first topology face's parameter chart;
+/// the second face remains a carrier-only join. The retained terminal operand
+/// is deliberately not interpreted by this record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fc02ShortPcurveEndpoints {
+    /// Owning curve identifier.
+    pub curve_id: u32,
+    /// Adjacent surface identifiers from the topology row.
+    pub faces: [u32; 2],
+    /// Endpoint A then B in the first face's parameter frame.
+    pub face_0_endpoints: [[f64; 2]; 2],
+    /// Byte offset of the source positional curve row.
+    pub offset: usize,
+}
+
 /// Ordered world-coordinate lane from an `fc <subtype>` dense curve body.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FcCurveCoordinates {
@@ -5948,6 +5965,79 @@ pub fn pcurve_endpoints(
                 faces: topology.faces,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
                 face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
+                offset: record.offset,
+            })
+        })
+        .collect::<Vec<_>>();
+    result.sort_by_key(|record| record.offset);
+    result
+}
+
+fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[f64; 2]; 2]> {
+    const ZERO_MARKER: &[u8] = &[0x18];
+    const ONE_MARKER: &[u8] = &[0xe4];
+    const TWO_MARKER: &[u8] = &[0x29, 0xff, 0xff];
+
+    (record.body.get(..2) == Some(&[0xfc, 0x02])).then_some(())?;
+    record.references.is_empty().then_some(())?;
+    (record.scalar_values.len() == 7 && record.scalar_tokens.len() == 7).then_some(())?;
+    let [prefix, terminal] = record.opaque_spans.as_slice() else {
+        return None;
+    };
+    (prefix.offset == 0
+        && prefix.raw == [0xfc, 0x02]
+        && terminal.raw.first() == Some(&0x34)
+        && terminal.length == 3)
+        .then_some(())?;
+    let mut cursor = prefix.length;
+    for token in &record.scalar_tokens {
+        (token.offset == cursor
+            && token.length != 0
+            && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+        .then_some(())?;
+        cursor += token.length;
+    }
+    (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
+        .then_some(())?;
+    let values: [f64; 7] = record
+        .scalar_tokens
+        .iter()
+        .map(|token| token.value)
+        .collect::<Vec<_>>()
+        .try_into()
+        .ok()?;
+    (record.scalar_values.as_slice() == values.as_slice()).then_some(())?;
+    (values.iter().all(|value| value.is_finite())
+        && values[2] == 0.0
+        && values[3] == 1.0
+        && record.scalar_tokens[2].raw.as_slice() == ZERO_MARKER
+        && record.scalar_tokens[3].raw.as_slice() == ONE_MARKER
+        && record.scalar_tokens[6].raw.as_slice() == TWO_MARKER)
+        .then_some(())?;
+    Some([[values[0], values[1]], [values[4], values[5]]])
+}
+
+/// Decode complete one-sided endpoint paths from the short fc 02 body.
+///
+/// A path is admitted only when the body has one unique topology row, a
+/// complete seven-scalar lane, and the bounded terminal operand. Other fc 02
+/// bodies remain native parameter records until their grammar is settled.
+pub fn fc02_short_pcurve_endpoints(
+    parameters: &[CurveParameterRecord],
+    topology: &[CurveTopologyRow],
+) -> Vec<Fc02ShortPcurveEndpoints> {
+    let mut result = uniquely_bounded_parameter_records(parameters)
+        .into_iter()
+        .filter_map(|record| {
+            let face_0_endpoints = complete_fc02_short_pcurve_values(record)?;
+            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+            let topology = matching.next()?;
+            matching.next().is_none().then_some(())?;
+            (topology.type_byte == record.type_byte).then_some(())?;
+            Some(Fc02ShortPcurveEndpoints {
+                curve_id: record.curve_id,
+                faces: topology.faces,
+                face_0_endpoints,
                 offset: record.offset,
             })
         })

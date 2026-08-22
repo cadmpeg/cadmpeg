@@ -200,9 +200,13 @@ length unit.
 
 **Question.** What role does each slot in an `fc 02` body have outside the defined short pcurve form?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 02` as a short pcurve-style endpoint family.
+**Known.** `creo_prt.md` §4.2 defines the complete short `fc 02` body as a
+seven-scalar one-sided path in the first topology face's chart with a bounded
+three-byte terminal operand. Other `fc 02` bodies do not satisfy that
+production.
 
-**Need.** We must know the roles to construct its curve and endpoints.
+**Need.** We must know the roles of the other `fc 02` body variants to
+construct their curves and endpoints.
 
 ### GS-09. Other `fc 05` variants
 

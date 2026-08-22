@@ -70,6 +70,83 @@ fn pcurve_endpoint_slots_must_be_finite() {
 }
 
 #[test]
+fn decodes_only_complete_fc02_short_pcurve_endpoints() {
+    let token_specs = [
+        (-14.5, vec![0x48, 0x45, 0x00]),
+        (0.75, vec![0x2a, 0xe8, 0x00]),
+        (0.0, vec![0x18]),
+        (1.0, vec![0xe4]),
+        (-12.5, vec![0x48, 0x41, 0x00]),
+        (0.75, vec![0x2a, 0xe8, 0x00]),
+        (2.0, vec![0x29, 0xff, 0xff]),
+    ];
+    let mut body = vec![0xfc, 0x02];
+    let mut scalar_tokens = Vec::new();
+    for (value, raw) in token_specs {
+        let offset = body.len();
+        body.extend_from_slice(&raw);
+        scalar_tokens.push(CurveParameterScalar {
+            value,
+            raw,
+            offset,
+            length: body.len() - offset,
+        });
+    }
+    body.extend_from_slice(&[0x34, 0xb0, 0x00]);
+    let record = CurveParameterRecord {
+        curve_id: 846,
+        type_byte: 0,
+        scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
+        opaque_spans: vec![
+            CurveParameterOpaqueSpan {
+                raw: vec![0xfc, 0x02],
+                offset: 0,
+                length: 2,
+            },
+            CurveParameterOpaqueSpan {
+                raw: vec![0x34, 0xb0, 0x00],
+                offset: body.len() - 3,
+                length: 3,
+            },
+        ],
+        body,
+        scalar_tokens,
+        ..parameter_record(846, CurveSuffixStatus::Unique)
+    };
+    let topology = CurveTopologyRow {
+        id: 846,
+        type_byte: 0,
+        feature_id: 57,
+        directions: [0x01, 0xf6],
+        faces: [43, 163],
+        next_edges: [841, 164],
+        offset: 100,
+    };
+
+    assert_eq!(
+        fc02_short_pcurve_endpoints(
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&topology),
+        ),
+        vec![Fc02ShortPcurveEndpoints {
+            curve_id: 846,
+            faces: [43, 163],
+            face_0_endpoints: [[-14.5, 0.75], [-12.5, 0.75]],
+            offset: 846,
+        }]
+    );
+
+    let mut malformed = record.clone();
+    malformed.scalar_values[3] = 2.0;
+    malformed.scalar_tokens[3].value = 2.0;
+    assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
+
+    let mut malformed = record;
+    malformed.scalar_tokens[6].raw[2] = 0xfe;
+    assert!(fc02_short_pcurve_endpoints(&[malformed], &[topology]).is_empty());
+}
+
+#[test]
 fn finds_labeled_prototypes_in_concatenated_namespaces() {
     let payload = b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04\
                    crv_array\0crv_id\0\x80\x80type\0\x01";

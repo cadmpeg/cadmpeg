@@ -194,6 +194,8 @@ struct MappedPcurvePath {
     endpoints: [[f64; 3]; 2],
 }
 
+type IndexedPcurvePath = (usize, (u32, [[f64; 2]; 2]));
+
 struct MappedPcurvePaths {
     mapped: Vec<MappedPcurvePath>,
     paths: usize,
@@ -410,47 +412,7 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
     let carriers = placed_carriers(scan, ir);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
-    for (curve_id, faces, first, second, prototype) in scan
-        .curves
-        .pcurves
-        .iter()
-        .map(|pcurve| {
-            let [first, second] = canonicalized_pcurve_endpoints(
-                scan,
-                pcurve.faces,
-                pcurve.face_0_endpoints,
-                pcurve.face_1_endpoints,
-            );
-            (pcurve.curve_id, pcurve.faces, first, second, false)
-        })
-        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-            let [first, second] = canonicalized_pcurve_endpoints(
-                scan,
-                pcurve.faces,
-                pcurve.face_0_endpoints,
-                pcurve.face_1_endpoints,
-            );
-            (pcurve.curve_id, pcurve.faces, first, second, true)
-        }))
-    {
-        diagnostics.records += 1;
-        if let Some(active) = path_activity.selected_paths(curve_id, faces, prototype) {
-            let active_count = active.into_iter().filter(|is_active| *is_active).count();
-            diagnostics.inactive_paths += 2 - active_count;
-            match active_count {
-                0 => diagnostics.inactive_records += 1,
-                1 => diagnostics.partial_records += 1,
-                _ => {}
-            }
-        } else {
-            diagnostics.topology_mismatch_records += 1;
-        }
-        let paths = faces
-            .into_iter()
-            .zip([first, second])
-            .enumerate()
-            .filter(|(_, (face_id, _))| !ignored_surface_ids.contains(face_id))
-            .collect::<Vec<_>>();
+    let mut process_paths = |curve_id: u32, faces: [u32; 2], paths: Vec<IndexedPcurvePath>| {
         let mut mapped_paths = Vec::new();
         let mut carrier_mapped_paths = Vec::new();
         let mut carrier_proof_available = false;
@@ -519,6 +481,72 @@ pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
                 }
             }
         }
+    };
+    for (curve_id, faces, first, second, prototype) in scan
+        .curves
+        .pcurves
+        .iter()
+        .map(|pcurve| {
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            (pcurve.curve_id, pcurve.faces, first, second, false)
+        })
+        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
+            let [first, second] = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            (pcurve.curve_id, pcurve.faces, first, second, true)
+        }))
+    {
+        diagnostics.records += 1;
+        if let Some(active) = path_activity.selected_paths(curve_id, faces, prototype) {
+            let active_count = active.into_iter().filter(|is_active| *is_active).count();
+            diagnostics.inactive_paths += 2 - active_count;
+            match active_count {
+                0 => diagnostics.inactive_records += 1,
+                1 => diagnostics.partial_records += 1,
+                _ => {}
+            }
+        } else {
+            diagnostics.topology_mismatch_records += 1;
+        }
+        let paths = faces
+            .into_iter()
+            .zip([first, second])
+            .enumerate()
+            .filter(|(_, (face_id, _))| !ignored_surface_ids.contains(face_id))
+            .collect::<Vec<_>>();
+        process_paths(curve_id, faces, paths);
+    }
+    let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
+        &scan.curves.parameters,
+        &scan.curves.topology_rows,
+    );
+    for pcurve in short_pcurves {
+        diagnostics.records += 1;
+        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, pcurve.faces, false) {
+            diagnostics.inactive_paths += usize::from(!active[0]);
+            diagnostics.inactive_records += usize::from(!active[0]);
+        } else {
+            diagnostics.topology_mismatch_records += 1;
+        }
+        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+            scan,
+            pcurve.faces,
+            pcurve.face_0_endpoints,
+            pcurve.face_0_endpoints,
+        );
+        let paths = (!ignored_surface_ids.contains(&pcurve.faces[0]))
+            .then_some(vec![(0, (pcurve.faces[0], face_0_endpoints))])
+            .unwrap_or_default();
+        process_paths(pcurve.curve_id, pcurve.faces, paths);
     }
     let mut evidence = BTreeMap::new();
     for (curve_id, candidates) in candidates {
@@ -792,47 +820,65 @@ pub fn transfer_analytic_pcurve_carriers(
         topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
-    for (curve_id, faces, endpoint_sets, offset) in scan
-        .curves
-        .pcurves
-        .iter()
-        .map(|pcurve| {
-            let endpoint_sets = canonicalized_pcurve_endpoints(
-                scan,
-                pcurve.faces,
-                pcurve.face_0_endpoints,
-                pcurve.face_1_endpoints,
-            );
-            (pcurve.curve_id, pcurve.faces, endpoint_sets, pcurve.offset)
-        })
-        .chain(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-            let endpoint_sets = canonicalized_pcurve_endpoints(
-                scan,
-                pcurve.faces,
-                pcurve.face_0_endpoints,
-                pcurve.face_1_endpoints,
-            );
-            (pcurve.curve_id, pcurve.faces, endpoint_sets, pcurve.offset)
-        }))
     {
-        for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets) {
-            if ignored_surface_ids.contains(&face_id) {
-                continue;
-            }
-            let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
-                continue;
+        let mut retain_path =
+            |curve_id: u32, face_id: u32, endpoints: [[f64; 2]; 2], offset: usize| {
+                if ignored_surface_ids.contains(&face_id) {
+                    return;
+                }
+                let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+                    return;
+                };
+                if endpoints.iter().all(|uv| {
+                    cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
+                }) {
+                    *evaluable_path_counts.entry(curve_id).or_default() += 1;
+                }
+                if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
+                    candidates
+                        .entry(curve_id)
+                        .or_default()
+                        .push((carrier, offset));
+                }
             };
-            if endpoints.iter().all(|uv| {
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
-            }) {
-                *evaluable_path_counts.entry(curve_id).or_default() += 1;
+        for pcurve in &scan.curves.pcurves {
+            let endpoint_sets = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
             }
-            if let Some(carrier) = linear_pcurve_carrier(&surface.geometry, endpoints) {
-                candidates
-                    .entry(curve_id)
-                    .or_default()
-                    .push((carrier, offset));
+        }
+        for pcurve in &scan.curves.bound_prototype_pcurves {
+            let endpoint_sets = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            );
+            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
             }
+        }
+        for pcurve in crate::curve::fc02_short_pcurve_endpoints(
+            &scan.curves.parameters,
+            &scan.curves.topology_rows,
+        ) {
+            let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_0_endpoints,
+            );
+            retain_path(
+                pcurve.curve_id,
+                pcurve.faces[0],
+                face_0_endpoints,
+                pcurve.offset,
+            );
         }
     }
     let mut transferred = BTreeSet::new();
@@ -1444,6 +1490,108 @@ mod tests {
         assert_eq!(diagnostics.topology_mismatch_records, 0);
         assert_eq!(diagnostics.accepted_records, 1);
         assert_eq!(diagnostics.complete_records, 1);
+    }
+
+    #[test]
+    fn short_fc02_path_supplies_one_sided_endpoint_evidence() {
+        let token_specs = [
+            (-14.5, vec![0x48, 0x45, 0x00]),
+            (0.75, vec![0x2a, 0xe8, 0x00]),
+            (0.0, vec![0x18]),
+            (1.0, vec![0xe4]),
+            (-12.5, vec![0x48, 0x41, 0x00]),
+            (0.75, vec![0x2a, 0xe8, 0x00]),
+            (
+                f64::from_bits(0x3fff_ffff_ffff_ffff),
+                vec![0x29, 0xff, 0xff],
+            ),
+        ];
+        let mut body = vec![0xfc, 0x02];
+        let mut scalar_tokens = Vec::new();
+        for (value, raw) in token_specs {
+            let offset = body.len();
+            body.extend_from_slice(&raw);
+            scalar_tokens.push(crate::curve::CurveParameterScalar {
+                value,
+                raw,
+                offset,
+                length: body.len() - offset,
+            });
+        }
+        body.extend_from_slice(&[0x34, 0xb0, 0x00]);
+        let record = crate::curve::CurveParameterRecord {
+            curve_id: 846,
+            type_byte: 0,
+            scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
+            scalar_tokens,
+            opaque_spans: vec![
+                crate::curve::CurveParameterOpaqueSpan {
+                    raw: vec![0xfc, 0x02],
+                    offset: 0,
+                    length: 2,
+                },
+                crate::curve::CurveParameterOpaqueSpan {
+                    raw: vec![0x34, 0xb0, 0x00],
+                    offset: body.len() - 3,
+                    length: 3,
+                },
+            ],
+            body,
+            skipped_references: Vec::new(),
+            references: Vec::new(),
+            suffix: crate::curve::CurveSuffixStatus::Unique,
+            offset: 100,
+            body_offset: 100,
+            suffix_offset: 122,
+        };
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.curves.parameters.push(record);
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 846,
+                type_byte: 0,
+                feature_id: 57,
+                directions: [0x01, 0xf6],
+                faces: [43, 163],
+                next_edges: [841, 164],
+                offset: 100,
+            });
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId("creo:visibgeom:surface#43".to_string()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        assert_eq!(
+            evidence
+                .get(&846)
+                .map(|value| (value.points, value.complete)),
+            Some(([[-14.5, 0.0, -0.75], [-12.5, 0.0, -0.75]], false,))
+        );
+        assert_eq!(diagnostics.records, 1);
+        assert_eq!(diagnostics.paths, 1);
+        assert_eq!(diagnostics.mapped_paths, 1);
+        assert_eq!(diagnostics.accepted_records, 1);
+        assert_eq!(diagnostics.evidence, 1);
+        assert_eq!(diagnostics.complete_records, 0);
+
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations);
+        assert_eq!(
+            transferred,
+            BTreeSet::from([CurveId("creo:visibgeom:curve#846".to_string())])
+        );
+        assert!(ir.model.curves.iter().any(|curve| {
+            curve.id == CurveId("creo:visibgeom:curve#846".to_string())
+                && matches!(curve.geometry, CurveGeometry::Line { .. })
+        }));
     }
 
     #[test]
