@@ -6,13 +6,15 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::directory::{DirectoryEntry, Status};
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{
-    depth_clipping_valid, display_flag_valid, has_in_plane_component, standard_color_valid,
-    standard_line_font_valid,
+    clipping_plane_valid, depth_clipping_valid, display_flag_valid, has_in_plane_component,
+    standard_color_valid, standard_line_font_valid,
 };
 
 #[test]
@@ -56,6 +58,39 @@ fn drawing_enumerations_match_the_iges_tables() {
     }
     assert!(!standard_color_valid(-1));
     assert!(!standard_color_valid(9));
+}
+
+#[test]
+fn clipping_plane_use_flag_follows_the_declared_dialect() {
+    let mut target = DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type: 108,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+    assert!(clipping_plane_valid(&target, Dialect::V4_0));
+    assert!(!clipping_plane_valid(&target, Dialect::V5_0));
+    target.status.use_flag = 1;
+    assert!(clipping_plane_valid(&target, Dialect::V5_0));
 }
 
 #[test]

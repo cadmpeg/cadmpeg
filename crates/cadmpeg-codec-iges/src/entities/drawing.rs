@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
@@ -52,6 +52,10 @@ fn standard_line_font_valid(value: i64) -> bool {
 
 fn standard_color_valid(value: i64) -> bool {
     matches!(value, 0..=8)
+}
+
+fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 108 && (matches!(dialect, Dialect::V4_0) || entry.status.use_flag == 1)
 }
 
 #[derive(Debug, PartialEq)]
@@ -275,9 +279,9 @@ pub(super) fn project(
                 record.integer_or(index, 0).is_some_and(|value| {
                     value == 0
                         || u32::try_from(value).ok().is_some_and(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .is_some_and(|target| target.entity_type == 108)
+                            entries.get(&sequence).is_some_and(|target| {
+                                clipping_plane_valid(target, global.dialect())
+                            })
                         })
                 })
             });

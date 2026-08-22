@@ -5,6 +5,12 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
 
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -18,7 +24,8 @@ use crate::global::Dialect;
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
     general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
-    new_general_note_charset_valid, new_general_note_font_valid, vertical_text_flag_valid,
+    new_general_note_charset_valid, new_general_note_font_valid, sectioned_area_curves_coplanar,
+    sectioned_area_valid, vertical_text_flag_valid,
 };
 
 #[test]
@@ -405,6 +412,129 @@ fn sectioned_area_fill_patterns_follow_the_declared_dialect() {
     assert!(fill_pattern_valid_for_dialect(20, Dialect::V5_0));
     assert!(fill_pattern_valid_for_dialect(268, Dialect::V5_3));
     assert!(!fill_pattern_valid_for_dialect(269, Dialect::V5_3));
+}
+
+#[test]
+fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
+    let mut ir = CadIr::empty(Units::default());
+    for (sequence, z) in [(1, 0.0), (3, 0.0)] {
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, z),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        });
+    }
+    let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+    assert!(sectioned_area_curves_coplanar(
+        &ir,
+        &[1, 3],
+        pattern_plane,
+        0.001
+    ));
+    if let CurveGeometry::Circle { center, .. } = &mut ir.model.curves[1].geometry {
+        center.z = 0.01;
+    }
+    assert!(!sectioned_area_curves_coplanar(
+        &ir,
+        &[1, 3],
+        pattern_plane,
+        0.001
+    ));
+
+    let entry = |sequence, entity_type| DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+    let boundary = entry(1, 100);
+    let island = entry(3, 100);
+    let entries = BTreeMap::from([(1, &boundary), (3, &island)]);
+    let record_values = [
+        TokenValue::Integer(230),
+        TokenValue::Integer(1),
+        TokenValue::Integer(2),
+        TokenValue::Real(0.0),
+        TokenValue::Real(0.0),
+        TokenValue::Real(0.0),
+        TokenValue::Real(std::f64::consts::FRAC_PI_4),
+        TokenValue::Real(0.0),
+        TokenValue::Integer(1),
+        TokenValue::Integer(3),
+    ];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        parameter_end: record_values.len(),
+        tokens: record_values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        comment: Vec::new(),
+    };
+    assert!(sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        Dialect::V4_0,
+        Transform::identity(),
+        1.0,
+        0.001
+    ));
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        Dialect::V5_0,
+        Transform::identity(),
+        1.0,
+        0.001
+    ));
+    if let CurveGeometry::Circle { center, .. } = &mut ir.model.curves[0].geometry {
+        center.z = 0.01;
+    }
+    let translated_pattern_plane = Transform {
+        rows: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.01],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    assert!(sectioned_area_valid(
+        &ir,
+        &record,
+        &entries,
+        Dialect::V5_0,
+        translated_pattern_plane,
+        1.0,
+        0.001
+    ));
 }
 
 #[test]

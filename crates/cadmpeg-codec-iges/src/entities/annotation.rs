@@ -10,6 +10,11 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,6 +40,169 @@ pub(crate) enum AnnotationKind {
     RadiusDimension,
     GeneralSymbol,
     SectionedArea,
+}
+
+const SECTION_COPLANAR_NORMAL_EPSILON: f64 = 1.0e-10;
+
+fn finite_point(point: Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn finite_vector(vector: Vector3) -> bool {
+    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+}
+
+fn normalized(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (finite_vector(vector) && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+}
+
+fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
+    let distance = point.vector_from(plane.0).dot(plane.1).abs();
+    distance.is_finite() && distance <= resolution
+}
+
+fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
+    normalized(normal)
+        .is_some_and(|normal| normal.cross(plane_normal).norm() <= SECTION_COPLANAR_NORMAL_EPSILON)
+}
+
+fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {
+    normalized(direction)
+        .zip(normalized(plane_normal))
+        .is_some_and(|(direction, plane_normal)| {
+            direction.dot(plane_normal).abs() <= SECTION_COPLANAR_NORMAL_EPSILON
+        })
+}
+
+fn curve_geometry_coplanar(
+    geometry: &CurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> bool {
+    let point_valid =
+        |point: Point3| point_on_plane(transform.apply_point(point), plane, resolution);
+    let normal_valid = |normal: Vector3| {
+        transform
+            .apply_normal(normal)
+            .is_some_and(|normal| normal_matches_plane(normal, plane.1))
+    };
+    let direction_valid =
+        |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            point_valid(*origin) && direction_valid(*direction)
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Degenerate { point } => point_valid(*point),
+        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
+        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
+        CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
+            let Some(curve) = index.curves(&segment.curve.0) else {
+                return false;
+            };
+            if !active.insert(segment.curve.clone()) {
+                return false;
+            }
+            let valid = curve_geometry_coplanar(
+                &curve.geometry,
+                index,
+                transform,
+                plane,
+                resolution,
+                active,
+            );
+            active.remove(&segment.curve);
+            valid
+        }),
+        CurveGeometry::Transformed {
+            basis,
+            transform: map,
+        } => curve_geometry_coplanar(
+            basis,
+            index,
+            transform.compose(*map),
+            plane,
+            resolution,
+            active,
+        ),
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+    }
+}
+
+fn sectioned_area_pattern_plane(
+    record: &ParameterRecord,
+    transform: Transform,
+    length_factor: f64,
+) -> Option<(Point3, Vector3)> {
+    let z = record.number_or(5, 0.0)? * length_factor;
+    if !z.is_finite() || !length_factor.is_finite() {
+        return None;
+    }
+    let point = transform.apply_point(Point3::new(0.0, 0.0, z));
+    let normal = transform
+        .apply_normal(Vector3::new(0.0, 0.0, 1.0))
+        .and_then(normalized)?;
+    finite_point(point).then_some((point, normal))
+}
+
+fn sectioned_area_curves_coplanar(
+    ir: &CadIr,
+    sequences: &[u32],
+    pattern_plane: (Point3, Vector3),
+    resolution: f64,
+) -> bool {
+    if !resolution.is_finite() || resolution < 0.0 {
+        return false;
+    }
+    let index = ModelIndex::new(ir);
+    let identity = Transform::identity();
+    let mut active = BTreeSet::new();
+    sequences.iter().all(|sequence| {
+        let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+        let Some(curve) = index.curves(&curve_id.0) else {
+            return false;
+        };
+        if !active.insert(curve_id.clone()) {
+            return false;
+        }
+        let valid = curve_geometry_coplanar(
+            &curve.geometry,
+            &index,
+            identity,
+            pattern_plane,
+            resolution,
+            &mut active,
+        );
+        active.remove(&curve_id);
+        valid
+    })
 }
 
 /// Maps a directory entry's type and form to its annotation kind, or `None`
@@ -730,13 +898,41 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
 }
 
 fn sectioned_area_valid(
+    ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     dialect: Dialect,
+    transform: Transform,
+    length_factor: f64,
+    resolution: f64,
 ) -> bool {
-    let boundary_valid = pointer(record, 1, entries)
+    let boundary_sequence = pointer(record, 1, entries);
+    let boundary_valid = boundary_sequence
         .and_then(|sequence| entries.get(&sequence).copied())
         .is_some_and(section_boundary_type);
+    let Some(island_count) = record.count(8) else {
+        return false;
+    };
+    let island_sequences = (0..island_count)
+        .map(|offset| pointer(record, 9 + offset, entries))
+        .collect::<Option<Vec<_>>>();
+    let islands_valid = island_sequences.as_ref().is_some_and(|islands| {
+        islands.iter().all(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|entry| section_boundary_type(entry))
+        })
+    });
+    let definition_sequences = boundary_sequence
+        .into_iter()
+        .chain(island_sequences.iter().flatten().copied())
+        .collect::<Vec<_>>();
+    let coplanarity_valid = matches!(dialect, Dialect::V4_0)
+        || sectioned_area_pattern_plane(record, transform, length_factor).is_some_and(
+            |pattern_plane| {
+                sectioned_area_curves_coplanar(ir, &definition_sequences, pattern_plane, resolution)
+            },
+        );
     let pattern = record
         .integer(2)
         .filter(|value| fill_pattern_valid_for_dialect(*value, dialect));
@@ -753,22 +949,15 @@ fn sectioned_area_valid(
                 && finite_or_omitted(record, 7)
         }
     });
-    let Some(island_count) = record.count(8) else {
-        return false;
-    };
-    let islands_valid = (0..island_count).all(|offset| {
-        pointer(record, 9 + offset, entries)
-            .and_then(|sequence| entries.get(&sequence).copied())
-            .is_some_and(section_boundary_type)
-    });
     boundary_valid
         && pattern_parameters_valid
         && islands_valid
+        && coplanarity_valid
         && exact_parameter_count(record, 9 + island_count)
 }
 
 pub(super) fn project(
-    _ir: &mut CadIr,
+    ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
@@ -790,7 +979,7 @@ pub(super) fn project(
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
         let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let transform_valid = resolve_transform(
+            let resolved_transform = resolve_transform(
                 entry.transform,
                 &entries,
                 &records,
@@ -799,7 +988,8 @@ pub(super) fn project(
                 &mut BTreeSet::new(),
                 ctx,
             )
-            .is_ok();
+            .ok();
+            let transform_valid = resolved_transform.is_some();
             entry.status.use_flag == 1
                 && transform_valid
                 && match kind {
@@ -825,9 +1015,17 @@ pub(super) fn project(
                     AnnotationKind::GeneralSymbol => {
                         general_symbol_valid(record, &entries, &records, global.dialect())
                     }
-                    AnnotationKind::SectionedArea => {
-                        sectioned_area_valid(record, &entries, global.dialect())
-                    }
+                    AnnotationKind::SectionedArea => resolved_transform.is_some_and(|transform| {
+                        sectioned_area_valid(
+                            ir,
+                            record,
+                            &entries,
+                            global.dialect(),
+                            transform.body_transform(),
+                            global.length_factor_mm(),
+                            global.minimum_resolution_mm(),
+                        )
+                    }),
                 }
         });
         if valid {
