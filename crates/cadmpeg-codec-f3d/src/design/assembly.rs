@@ -33,6 +33,7 @@ pub(crate) enum AssemblyOperandFrameVariant {
     Standard,
     Compact,
     Axial,
+    LegacyClass388,
 }
 
 /// Select the exact operand-frame grammar admitted for an `Assemble` scope.
@@ -48,6 +49,13 @@ pub(crate) fn operand_frame_variant(
     paired_class_tag: &str,
 ) -> Option<AssemblyOperandFrameVariant> {
     match frame_length {
+        length
+            if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64
+                && class_tag == "388"
+                && paired_class_tag == "266" =>
+        {
+            Some(AssemblyOperandFrameVariant::LegacyClass388)
+        }
         length
             if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
                 && class_tag == "383"
@@ -184,6 +192,9 @@ pub(crate) const fn alignment_lane_bounds(
     owner_count: usize,
 ) -> Option<(usize, usize)> {
     match (frame_length, owner_count) {
+        (length, 28) if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => {
+            Some((4, 8))
+        }
         (length, 20) if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => {
             Some((8, 12))
         }
@@ -632,6 +643,11 @@ mod tests {
     fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
         for (frame_length, owner_count, expected) in [
             (
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                28,
+                (4, 8),
+            ),
+            (
                 crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
                 20,
                 (8, 12),
@@ -683,6 +699,22 @@ mod tests {
 
     #[test]
     fn operand_frames_are_scoped_by_class_pair() {
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                "388",
+                "266"
+            ),
+            Some(super::AssemblyOperandFrameVariant::LegacyClass388)
+        );
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                "388",
+                "258"
+            ),
+            None
+        );
         assert_eq!(
             super::operand_frame_variant(
                 crate::layout::assembly_class_383_258_scope_1011::LEN as u64,

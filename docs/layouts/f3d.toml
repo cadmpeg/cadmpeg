@@ -3179,6 +3179,170 @@ size = 699
 note = "The remainder of the standard scope frame before the paired header is outside this table."
 
 [[record]]
+name = "assembly_class_388_266_scope_968"
+parsed_by = [
+    "crates/cadmpeg-codec-f3d/src/design/assembly.rs",
+    "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs",
+]
+kind = "byte"
+section = "Assembly operands"
+anchor = "The class-388/266 `Assemble` scope is a 968-byte legacy form."
+size = 968
+note = "Offsets are relative to the primary indexed header. The paired class-266 header starts at offset 968. The 35-entry reference table is interleaved with six nested construction records and the final four alignment owners."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-388/266 `Assemble` scope is a 968-byte legacy form."
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "Bytes 11 through 19 are zero."
+
+[[record.field]]
+name = "scope_flags"
+offset = 20
+type = "bytes[6]"
+source = "spec"
+anchor = "The class-388 form stores `01 00 00 00 00 01` at offsets 20 through 25."
+value = [1, 0, 0, 0, 0, 1]
+
+[[record.gap]]
+offset = 26
+size = 2
+note = "Bytes 26 and 27 are zero."
+
+[[record.field]]
+name = "first_operand_reference"
+offset = 28
+type = "bytes[11]"
+source = "spec"
+anchor = "The two marked operand references are at offsets 28 and 168."
+
+[[record.gap]]
+offset = 39
+size = 1
+note = "One zero byte separates the first operand reference from its transform."
+
+[[record.field]]
+name = "first_operand_transform"
+offset = 40
+type = "f64[16]"
+source = "spec"
+anchor = "The two row-major rigid operand transforms start at offsets 40 and 180."
+
+[[record.field]]
+name = "second_operand_reference"
+offset = 168
+type = "bytes[11]"
+source = "spec"
+anchor = "The two marked operand references are at offsets 28 and 168."
+
+[[record.gap]]
+offset = 179
+size = 1
+note = "One zero byte separates the second operand reference from its transform."
+
+[[record.field]]
+name = "second_operand_transform"
+offset = 180
+type = "f64[16]"
+source = "spec"
+anchor = "The two row-major rigid operand transforms start at offsets 40 and 180."
+
+[[record.gap]]
+offset = 308
+size = 54
+note = "The fixed construction tail before the typed external-reference run is outside this table."
+
+[[record.field]]
+name = "typed_external_reference_count"
+offset = 362
+type = "u32"
+source = "spec"
+anchor = "The class-388 form stores two typed external-entity references at offset 362."
+value = 2
+
+[[record.field]]
+name = "typed_external_references"
+offset = 366
+type = "bytes[22]"
+source = "spec"
+anchor = "The two marked typed external-entity references occupy offsets 366 and 377."
+
+[[record.field]]
+name = "external_component_reference"
+offset = 388
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked external component reference follows the typed external-entity run."
+
+[[record.field]]
+name = "component_identity"
+offset = 399
+type = "bytes[76]"
+source = "spec"
+anchor = "The class-388 form stores a 36-code-unit LP-UTF16 component identity at offset 399."
+
+[[record.gap]]
+offset = 475
+size = 3
+note = "Three zero bytes precede the ordered scope reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 478
+type = "u32"
+source = "spec"
+anchor = "The class-388 form stores u32 value 35 at offset 478."
+value = 35
+
+[[record.field]]
+name = "reference_entries"
+offset = 482
+type = "bytes[385]"
+source = "spec"
+anchor = "Thirty-five marked same-segment reference entries occupy offsets 482 through 866."
+
+[[record.field]]
+name = "reference_trailer"
+offset = 867
+type = "bytes[4]"
+source = "spec"
+anchor = "The fixed scope trailer stores four `ff` bytes at offset 867."
+value = [255, 255, 255, 255]
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 871
+type = "u32"
+source = "spec"
+anchor = "The UTF-16LE kind length is 8 at offset 871."
+value = 8
+
+[[record.field]]
+name = "kind"
+offset = 875
+type = "bytes[16]"
+source = "spec"
+anchor = "The kind payload is `Assemble`."
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 891
+type = "u32"
+source = "spec"
+anchor = "The feature ordinal follows the kind payload at offset 891."
+
+[[record.gap]]
+offset = 895
+size = 73
+note = "The fixed class-388 tail before the paired class-266 header is outside this table."
+
+[[record]]
 name = "assembly_class_383_258_frame_387_leading"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

@@ -984,6 +984,45 @@ Unstated regions:
 - `179..180` (1 B): One zero byte separates the second operand reference from its transform.
 - `312..1011` (699 B): The remainder of the standard scope frame before the paired header is outside this table.
 
+## `assembly_class_388_266_scope_968`
+
+Spec §Assembly operands · layout: byte offsets · size: 968 B
+
+Offsets are relative to the primary indexed header. The paired class-266 header starts at offset 968. The 35-entry reference table is interleaved with six nested construction records and the final four alignment owners.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-388/266 `Assemble` scope is a 968-byte legacy form. |
+| 20 | 6 | `scope_flags` | `bytes[6]` | little | spec | The class-388 form stores `01 00 00 00 00 01` at offsets 20 through 25. · value `[1, 0, 0, 0, 0, 1]` |
+| 28 | 11 | `first_operand_reference` | `bytes[11]` | little | spec | The two marked operand references are at offsets 28 and 168. |
+| 40 | 128 | `first_operand_transform` | `f64[16]` | little | spec | The two row-major rigid operand transforms start at offsets 40 and 180. |
+| 168 | 11 | `second_operand_reference` | `bytes[11]` | little | spec | The two marked operand references are at offsets 28 and 168. |
+| 180 | 128 | `second_operand_transform` | `f64[16]` | little | spec | The two row-major rigid operand transforms start at offsets 40 and 180. |
+| 362 | 4 | `typed_external_reference_count` | `u32` | little | spec | The class-388 form stores two typed external-entity references at offset 362. · value `2` |
+| 366 | 22 | `typed_external_references` | `bytes[22]` | little | spec | The two marked typed external-entity references occupy offsets 366 and 377. |
+| 388 | 11 | `external_component_reference` | `bytes[11]` | little | spec | The marked external component reference follows the typed external-entity run. |
+| 399 | 76 | `component_identity` | `bytes[76]` | little | spec | The class-388 form stores a 36-code-unit LP-UTF16 component identity at offset 399. |
+| 478 | 4 | `reference_count` | `u32` | little | spec | The class-388 form stores u32 value 35 at offset 478. · value `35` |
+| 482 | 385 | `reference_entries` | `bytes[385]` | little | spec | Thirty-five marked same-segment reference entries occupy offsets 482 through 866. |
+| 867 | 4 | `reference_trailer` | `bytes[4]` | little | spec | The fixed scope trailer stores four `ff` bytes at offset 867. · value `[255, 255, 255, 255]` |
+| 871 | 4 | `kind_code_unit_count` | `u32` | little | spec | The UTF-16LE kind length is 8 at offset 871. · value `8` |
+| 875 | 16 | `kind` | `bytes[16]` | little | spec | The kind payload is `Assemble`. |
+| 891 | 4 | `feature_ordinal` | `u32` | little | spec | The feature ordinal follows the kind payload at offset 891. |
+
+Unstated regions:
+
+- `11..20` (9 B): Bytes 11 through 19 are zero.
+- `26..28` (2 B): Bytes 26 and 27 are zero.
+- `39..40` (1 B): One zero byte separates the first operand reference from its transform.
+- `179..180` (1 B): One zero byte separates the second operand reference from its transform.
+- `308..362` (54 B): The fixed construction tail before the typed external-reference run is outside this table.
+- `475..478` (3 B): Three zero bytes precede the ordered scope reference table.
+- `895..968` (73 B): The fixed class-388 tail before the paired class-266 header is outside this table.
+
 ## `assembly_class_383_258_frame_387_leading`
 
 Spec §Assembly operands · layout: byte offsets · size: 188 B

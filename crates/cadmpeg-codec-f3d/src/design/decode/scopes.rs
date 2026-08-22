@@ -25,6 +25,7 @@ use crate::layout::assembly_class_383_258_frame_387_child as class_383_child;
 use crate::layout::assembly_class_383_258_frame_387_leading as class_383_leading;
 use crate::layout::assembly_class_383_258_frame_394 as class_383_face;
 use crate::layout::assembly_class_383_258_scope_1011 as class_383_scope;
+use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
@@ -1450,6 +1451,17 @@ pub(crate) fn exact_assembly_alignment(
         &scope.class_tag,
         &scope.paired_class_tag,
     );
+    let legacy_class_388 = matches!(
+        crate::design::assembly::operand_frame_variant(
+            scope.frame_length,
+            &scope.class_tag,
+            &scope.paired_class_tag,
+        ),
+        Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
+    );
+    if legacy_class_388 {
+        exact_legacy_class_388_scope(bytes, scope)?;
+    }
     let (angle, offset, owner_record_indices, value_offsets, limits) = if as_built_421 {
         let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
         (
@@ -1505,7 +1517,22 @@ pub(crate) fn exact_assembly_alignment(
             ),
             _ => return None,
         };
-        if legacy_class_383 {
+        if legacy_class_388 {
+            let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
+                .into_iter()
+                .zip(lanes.iter())
+                .all(|(scope_ordinal, owner)| {
+                    scope.reference_members.get(scope_ordinal) == Some(&owner.record_index)
+                });
+            if lanes
+                .iter()
+                .any(|owner| owner.class_tag != "282" || owner.frame_length != 103)
+                || !owner_reference_order_matches
+                || scope.reference_members.get(4..8) != Some(owner_record_indices.as_slice())
+            {
+                return None;
+            }
+        } else if legacy_class_383 {
             let owner_reference_order_matches = CLASS_383_OWNER_REFERENCE_ORDINALS
                 .into_iter()
                 .zip(lanes.iter())
@@ -2456,32 +2483,36 @@ fn exact_assembly_operand_frames(
         &scope.class_tag,
         &scope.paired_class_tag,
     )?;
-    let frame_offsets = if scope.frame_length == class_383_scope::LEN as u64
-        && scope.class_tag == "383"
-        && scope.paired_class_tag == "258"
-    {
-        (
-            class_383_scope::FIRST_OPERAND_REFERENCE,
-            class_383_scope::FIRST_OPERAND_TRANSFORM,
-            class_383_scope::SECOND_OPERAND_REFERENCE,
-            class_383_scope::SECOND_OPERAND_TRANSFORM,
-        )
-    } else if scope.frame_length == class_406_assemble::LEN as u64
-        && scope.class_tag == "406"
-        && scope.paired_class_tag == "261"
-    {
-        (
-            class_406_assemble::FIRST_OPERAND_REFERENCE,
-            class_406_assemble::FIRST_OPERAND_TRANSFORM,
-            class_406_assemble::SECOND_OPERAND_REFERENCE,
-            class_406_assemble::SECOND_OPERAND_TRANSFORM,
-        )
-    } else {
-        match frame_variant {
-            crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
-            crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
-            crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
+    let frame_offsets = match frame_variant {
+        crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
+            class_388_assemble::FIRST_OPERAND_REFERENCE,
+            class_388_assemble::FIRST_OPERAND_TRANSFORM,
+            class_388_assemble::SECOND_OPERAND_REFERENCE,
+            class_388_assemble::SECOND_OPERAND_TRANSFORM,
+        ),
+        crate::design::assembly::AssemblyOperandFrameVariant::Standard
+            if scope.class_tag == "383" && scope.paired_class_tag == "258" =>
+        {
+            (
+                class_383_scope::FIRST_OPERAND_REFERENCE,
+                class_383_scope::FIRST_OPERAND_TRANSFORM,
+                class_383_scope::SECOND_OPERAND_REFERENCE,
+                class_383_scope::SECOND_OPERAND_TRANSFORM,
+            )
         }
+        crate::design::assembly::AssemblyOperandFrameVariant::Standard
+            if scope.class_tag == "406" && scope.paired_class_tag == "261" =>
+        {
+            (
+                class_406_assemble::FIRST_OPERAND_REFERENCE,
+                class_406_assemble::FIRST_OPERAND_TRANSFORM,
+                class_406_assemble::SECOND_OPERAND_REFERENCE,
+                class_406_assemble::SECOND_OPERAND_TRANSFORM,
+            )
+        }
+        crate::design::assembly::AssemblyOperandFrameVariant::Standard => (28, 40, 168, 180),
+        crate::design::assembly::AssemblyOperandFrameVariant::Compact => (24, 36, 164, 176),
+        crate::design::assembly::AssemblyOperandFrameVariant::Axial => (28, 39, 167, 178),
     };
     if usize::try_from(scope.paired_byte_offset).ok()?
         != start.checked_add(usize::try_from(scope.frame_length).ok()?)?
@@ -2490,6 +2521,24 @@ fn exact_assembly_operand_frames(
         return None;
     }
     if matches!(
+        frame_variant,
+        crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388
+    ) {
+        exact_legacy_class_388_scope(bytes, scope)?;
+        if bytes.get(start + 11..start + class_388_assemble::SCOPE_FLAGS)?
+            != [0; class_388_assemble::SCOPE_FLAGS - 11]
+            || bytes.get(
+                start + class_388_assemble::SCOPE_FLAGS
+                    ..start + class_388_assemble::SCOPE_FLAGS + 6,
+            )? != class_388_assemble::SCOPE_FLAGS_VALUE
+            || bytes.get(start + 26..start + class_388_assemble::FIRST_OPERAND_REFERENCE)? != [0; 2]
+            || bytes.get(start + 39) != Some(&0)
+            || bytes.get(start + 168 + 11..start + class_388_assemble::SECOND_OPERAND_TRANSFORM)?
+                != [0; 1]
+        {
+            return None;
+        }
+    } else if matches!(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
@@ -2555,7 +2604,119 @@ fn exact_assembly_operand_frames(
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
-const CLASS_383_MARKED_REFERENCE_LEN: usize = 11;
+fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> Option<()> {
+    if scope.class_tag != "388"
+        || scope.paired_class_tag != "266"
+        || scope.frame_length != class_388_assemble::LEN as u64
+        || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset).ok()?;
+    let zero_prefix = bytes.get(start + 11..start + class_388_assemble::SCOPE_FLAGS)?;
+    let scope_flags = bytes.get(
+        start + class_388_assemble::SCOPE_FLAGS..start + class_388_assemble::SCOPE_FLAGS + 6,
+    )?;
+    let zero_operand_prefix =
+        bytes.get(start + 26..start + class_388_assemble::FIRST_OPERAND_REFERENCE)?;
+    let first_separator = bytes.get(start + 39);
+    let second_separator = bytes.get(start + 179);
+    let typed_reference_count = View::u32_le_at(
+        bytes,
+        start + class_388_assemble::TYPED_EXTERNAL_REFERENCE_COUNT,
+    )?;
+    let reference_trailer = bytes.get(
+        start + class_388_assemble::REFERENCE_TRAILER
+            ..start + class_388_assemble::REFERENCE_TRAILER + 4,
+    )?;
+    let kind_code_unit_count =
+        View::u32_le_at(bytes, start + class_388_assemble::KIND_CODE_UNIT_COUNT)?;
+    if paired != start.checked_add(class_388_assemble::LEN)? {
+        return None;
+    }
+    if zero_prefix != [0; class_388_assemble::SCOPE_FLAGS - 11] {
+        return None;
+    }
+    if scope_flags != class_388_assemble::SCOPE_FLAGS_VALUE {
+        return None;
+    }
+    if zero_operand_prefix != [0; 2] {
+        return None;
+    }
+    if first_separator != Some(&0) {
+        return None;
+    }
+    if second_separator != Some(&0) {
+        return None;
+    }
+    if typed_reference_count != class_388_assemble::TYPED_EXTERNAL_REFERENCE_COUNT_VALUE {
+        return None;
+    }
+    if reference_trailer != class_388_assemble::REFERENCE_TRAILER_VALUE {
+        return None;
+    }
+    if kind_code_unit_count != class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE {
+        return None;
+    }
+    let typed_references = [
+        start + class_388_assemble::TYPED_EXTERNAL_REFERENCES,
+        start + class_388_assemble::TYPED_EXTERNAL_REFERENCES + 11,
+    ];
+    let [Some(first_typed), Some(second_typed)] =
+        typed_references.map(|at| marked_record_reference(bytes, at))
+    else {
+        return None;
+    };
+    if first_typed == 0 || second_typed == 0 || first_typed == second_typed {
+        return None;
+    }
+    let external_component = marked_record_reference(
+        bytes,
+        start + class_388_assemble::EXTERNAL_COMPONENT_REFERENCE,
+    )?;
+    if external_component == 0 {
+        return None;
+    }
+    let (component_identity, identity_end) = lp_utf16_bounded(
+        bytes,
+        start + class_388_assemble::COMPONENT_IDENTITY,
+        36..=36,
+    )?;
+    if !is_guid_relaxed(&component_identity)
+        || identity_end != start + class_388_assemble::COMPONENT_IDENTITY + 76
+    {
+        return None;
+    }
+    let (kind, kind_end) = lp_utf16_bounded(
+        bytes,
+        start + class_388_assemble::KIND_CODE_UNIT_COUNT,
+        class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE as usize
+            ..=class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE as usize,
+    )?;
+    if kind != "Assemble"
+        || kind_end != start + class_388_assemble::FEATURE_ORDINAL
+        || View::u32_le_at(bytes, start + class_388_assemble::FEATURE_ORDINAL)?
+            != scope.feature_ordinal
+    {
+        return None;
+    }
+    for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
+        let at = start
+            .checked_add(class_388_assemble::REFERENCE_ENTRIES)?
+            .checked_add(ordinal.checked_mul(ASSEMBLY_MARKED_REFERENCE_LEN)?)?;
+        if marked_record_reference(bytes, at) != Some(*record_index) {
+            return None;
+        }
+    }
+    Some(())
+}
+
+const ASSEMBLY_MARKED_REFERENCE_LEN: usize = 11;
+const CLASS_388_OWNER_REFERENCE_ORDINALS: [usize; 28] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 30, 31,
+    32, 33,
+];
 const CLASS_383_OWNER_REFERENCE_ORDINALS: [usize; 20] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 21, 22, 23, 33, 34, 35, 36,
 ];
@@ -2807,7 +2968,7 @@ fn exact_legacy_class_383_operand_path(
             bytes,
             carrier_at.checked_add(
                 class_383_carrier::PLACEMENT_OWNER_REFERENCES
-                    .checked_add(ordinal * CLASS_383_MARKED_REFERENCE_LEN)?,
+                    .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
             )?,
         ) != Some(record_index)
         {

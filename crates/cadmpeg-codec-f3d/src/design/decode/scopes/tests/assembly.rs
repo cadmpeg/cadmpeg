@@ -533,6 +533,135 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
 }
 
 #[test]
+fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
+    let scope_record_index = 700_u32;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#700",
+        "Assemble",
+        scope_record_index,
+    );
+    scope.class_tag = "388".into();
+    scope.paired_class_tag = "266".into();
+    scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+    scope.paired_byte_offset = scope.frame_length;
+    scope.feature_ordinal = 4;
+    scope.reference_members = (0..24)
+        .map(|ordinal| 1_000 + ordinal)
+        .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
+        .chain((24..28).map(|ordinal| 1_000 + ordinal))
+        .chain([1_034])
+        .collect();
+    let owners = (0..28)
+        .map(|ordinal| DesignParameterOwner {
+            id: format!(
+                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                1_000 + ordinal
+            ),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "282".into(),
+            record_index: 1_000 + ordinal,
+            scope_record_index,
+            local_ordinal: ordinal,
+            evaluated_value: match ordinal {
+                4 => 0.25,
+                5 => 1.0,
+                6 => 2.0,
+                7 => 3.0,
+                _ => 0.0,
+            },
+            evaluated_value_offset: 2_000 + u64::from(ordinal),
+            parameter_record_index: 3_000 + ordinal,
+            owned_ordinal: ordinal,
+            variant: None,
+            companion_record_index: 4_000 + ordinal,
+        })
+        .collect::<Vec<_>>();
+
+    let mut bytes = vec![0; crate::layout::assembly_class_388_266_scope_968::LEN + 11];
+    bytes[20..26]
+        .copy_from_slice(&crate::layout::assembly_class_388_266_scope_968::SCOPE_FLAGS_VALUE);
+    let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    write_reference(&mut bytes, 28, 1_034);
+    write_reference(&mut bytes, 168, 2_034);
+    bytes[362..366].copy_from_slice(&2_u32.to_le_bytes());
+    write_reference(&mut bytes, 366, 5_001);
+    write_reference(&mut bytes, 377, 5_002);
+    write_reference(&mut bytes, 388, 5_003);
+    let first_transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 1.25],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let second_transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, -2.5],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (at, transform) in [(40, first_transform), (180, second_transform)] {
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            bytes[at + ordinal * 8..at + ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[399..403].copy_from_slice(&36_u32.to_le_bytes());
+    for (ordinal, code_unit) in "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        .encode_utf16()
+        .enumerate()
+    {
+        bytes[403 + ordinal * 2..405 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    bytes[478..482].copy_from_slice(&35_u32.to_le_bytes());
+    for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        write_reference(&mut bytes, 482 + ordinal * 11, record_index);
+    }
+    bytes[867..871].copy_from_slice(&[0xff; 4]);
+    bytes[871..875].copy_from_slice(&8_u32.to_le_bytes());
+    for (ordinal, code_unit) in "Assemble".encode_utf16().enumerate() {
+        bytes[875 + ordinal * 2..877 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    bytes[891..895].copy_from_slice(&scope.feature_ordinal.to_le_bytes());
+
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .expect("legacy class-388 alignment");
+    assert_eq!(alignment.angle, 0.25);
+    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.owner_record_indices, [1_004, 1_005, 1_006, 1_007]);
+    assert_eq!(alignment.value_offsets, [2_004, 2_005, 2_006, 2_007]);
+    let frames = alignment
+        .operand_frames
+        .expect("legacy class-388 operand frames");
+    assert_eq!(
+        frames
+            .each_ref()
+            .map(|frame| (frame.reference_record_index, frame.transform[0][3])),
+        [(1_034, 1.25), (2_034, -2.5)]
+    );
+    assert_eq!(alignment.operand_paths, None);
+
+    let mut malformed = bytes;
+    malformed[25] = 0;
+    assert!(
+        exact_assembly_alignment(
+            &malformed,
+            &IndexedRecordOffsets::build(&malformed),
+            &scope,
+            &owners,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(

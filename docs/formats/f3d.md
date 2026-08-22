@@ -1409,6 +1409,24 @@ starts at offset 671. Each locator uses the fixed 190-byte envelope and the
 37-byte wrapper; the path record is class-307 and uses the fixed four-identity
 path form.
 
+The class-388/266 `Assemble` scope is a 968-byte legacy form. It has 28 owners.
+The class-388 form stores `01 00 00 00 00 01` at offsets 20 through 25.
+The two marked operand references are at offsets 28 and 168.
+The two row-major rigid operand transforms start at offsets 40 and 180.
+The four alignment lanes are owner-local ordinals 4 through 7.
+The class-388 form stores u32 value 35 at offset 478.
+Thirty-five marked same-segment reference entries occupy offsets 482 through 866.
+The first 24 alignment-scope owner references are at scope reference positions 0 through 23; the final four owner references are at positions 30 through 33.
+The paired class-266 header starts at offset 968.
+The class-388 form stores two typed external-entity references at offset 362.
+The two marked typed external-entity references occupy offsets 366 and 377.
+The marked external component reference follows the typed external-entity run.
+The class-388 form stores a 36-code-unit LP-UTF16 component identity at offset 399.
+The fixed scope trailer stores four `ff` bytes at offset 867.
+The UTF-16LE kind length is 8 at offset 871.
+The kind payload is `Assemble`.
+The feature ordinal follows the kind payload at offset 891.
+
 The class-383/258 `Assemble` scope is a 1011-byte standard form. Its 20
 parameter owners all use the class-284, 103-byte owner frame. Owner ordinals
 0 through 7 and 12 through 19 are placement lanes. Owner ordinals 8 through

@@ -1320,6 +1320,60 @@ pub(crate) mod assembly_class_383_258_scope_1011 {
     pub(crate) const STANDARD_TAIL_MARKER: usize = 308;
 }
 
+/// Byte offsets for the `assembly_class_388_266_scope_968` record.
+///
+/// Spec §Assembly operands. Record length 968 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The paired class-266 header starts at offset 968. The 35-entry reference table is interleaved with six nested construction records and the final four alignment owners.
+/// ```
+pub(crate) mod assembly_class_388_266_scope_968 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 968;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `scope_flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_FLAGS: usize = 20;
+    /// Stated value of `scope_flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_FLAGS_VALUE: [u8; 6] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x01];
+    /// Offset of `first_operand_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_OPERAND_REFERENCE: usize = 28;
+    /// Offset of `first_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_OPERAND_TRANSFORM: usize = 40;
+    /// Offset of `second_operand_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_OPERAND_REFERENCE: usize = 168;
+    /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 180;
+    /// Offset of `typed_external_reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const TYPED_EXTERNAL_REFERENCE_COUNT: usize = 362;
+    /// Stated value of `typed_external_reference_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const TYPED_EXTERNAL_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `typed_external_references` (`bytes[22]`). Spec §Assembly operands.
+    pub(crate) const TYPED_EXTERNAL_REFERENCES: usize = 366;
+    /// Offset of `external_component_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const EXTERNAL_COMPONENT_REFERENCE: usize = 388;
+    /// Offset of `component_identity` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY: usize = 399;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 478;
+    /// Stated value of `reference_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0023;
+    /// Offset of `reference_entries` (`bytes[385]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_ENTRIES: usize = 482;
+    /// Offset of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER: usize = 867;
+    /// Stated value of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER_VALUE: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 871;
+    /// Stated value of `kind_code_unit_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const KIND_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_0008;
+    /// Offset of `kind` (`bytes[16]`). Spec §Assembly operands.
+    pub(crate) const KIND: usize = 875;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FEATURE_ORDINAL: usize = 891;
+}
+
 /// Byte offsets for the `assembly_class_383_258_frame_387_leading` record.
 ///
 /// Spec §Assembly operands. Record length 188 B.
