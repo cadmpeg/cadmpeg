@@ -805,6 +805,33 @@ fn freeform_surface_association_requires_a_unique_witnessed_carrier() {
 }
 
 #[test]
+fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
+    let mut stream = e5_torus_stream();
+    let mut wrapper = vec![0x85, 0x80, 0x81, 0x82, 0x83, 0x84];
+    wrapper.extend_from_slice(&[0; 38]);
+    append_e5_record(&mut stream, 0xf1, 8, &wrapper);
+    append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
+
+    let records = [StandardSurfaceRecord::Freeform {
+        pos: 0,
+        tag: 7,
+        bounds: StandardFaceBounds {
+            aabb_center: [0.0, 0.0, 0.0],
+            aabb_half_extents: [1.0, 1.0, 1.0],
+            sphere_center: [0.0, 0.0, 0.0],
+            sphere_radius: 1.0,
+        },
+        forward: true,
+    }];
+
+    let associated = associate_standard_freeform_e5_surfaces(&records, &stream);
+    assert!(matches!(
+        associated.get(&7),
+        Some(SurfaceGeometry::Torus { .. })
+    ));
+}
+
+#[test]
 fn cached_face_point_membership_matches_the_source_predicate() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.extend([

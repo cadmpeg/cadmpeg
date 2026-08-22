@@ -50,6 +50,30 @@ pub struct E5Surface {
     pub uv_scale: [f64; 2],
 }
 
+/// A class-`0xf1` surface wrapper.
+///
+/// The wrapper keeps the five serialized references. Its first reference is
+/// the underlying surface carrier when the wrapper is used by an E5 face;
+/// the remaining references and tail are retained structurally by the frame
+/// but are not assigned a separate meaning here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct E5SurfaceWrapper {
+    /// Offset of the framed record.
+    pub pos: usize,
+    /// Persistent E5 record id.
+    pub record_id: u32,
+    /// Five references in serialized order.
+    pub references: [u32; 5],
+}
+
+impl E5SurfaceWrapper {
+    /// The first reference, which names the wrapped geometric carrier.
+    #[must_use]
+    pub fn underlying_surface(&self) -> u32 {
+        self.references[0]
+    }
+}
+
 #[derive(Clone, Copy)]
 struct E5Record {
     pos: usize,
@@ -291,6 +315,40 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     out
 }
 
+/// Decode fixed-size class-`0xf1` surface wrappers.
+///
+/// The admitted grammar is a five-reference lane (`85` plus five restricted
+/// reference tokens) followed by the wrapper tail, with the complete payload
+/// fixed at 44 bytes. Reference tokens retain their encoded widths; the tail
+/// remains opaque. Only the exact frame and reference lane are needed to join
+/// a face wrapper to a directly decoded geometric carrier.
+#[must_use]
+pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
+    let mut out = Vec::new();
+    for record in e5_records(data) {
+        if record.class != 0xf1 || record.size != 44 {
+            continue;
+        }
+        let Some((references, next)) =
+            crate::wire::counted_refs(&data[record.pos + 13..record.end], false)
+        else {
+            continue;
+        };
+        let Ok(references) = <[u32; 5]>::try_from(references) else {
+            continue;
+        };
+        if next >= 44 {
+            continue;
+        }
+        out.push(E5SurfaceWrapper {
+            pos: record.pos,
+            record_id: View::u32_le_at(data, record.pos + 9).unwrap_or(0),
+            references,
+        });
+    }
+    out
+}
+
 fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
     let mut view = View::over_retained(data).child(record.pos + 13, record.end)?;
     if view.u8()? != 0x80 {
@@ -443,7 +501,7 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{e5_ref, e5_surfaces};
+    use super::{e5_ref, e5_surface_wrappers, e5_surfaces};
 
     fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
@@ -522,5 +580,42 @@ mod tests {
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
         assert!(e5_surfaces(&bytes).is_empty());
+    }
+
+    #[test]
+    fn f1_surface_wrapper_reads_its_five_reference_lane() {
+        let mut payload = vec![0x85];
+        for reference in [0x0102_0304, 0x0506, 0x0708, 0x090a, 0x0b0c] {
+            if reference > 0xff {
+                payload.push(0x18);
+                payload.extend_from_slice(&(reference as u16).to_le_bytes());
+            } else {
+                payload.push(0x80 + reference as u8);
+            }
+        }
+        payload.extend_from_slice(&[0; 28]);
+        let mut bytes = Vec::new();
+        append_e5_record(&mut bytes, 0xf1, 0x0102_0305, &payload);
+
+        let wrappers = e5_surface_wrappers(&bytes);
+        assert_eq!(wrappers.len(), 1);
+        assert_eq!(wrappers[0].record_id, 0x0102_0305);
+        assert_eq!(
+            wrappers[0].references,
+            [0x0304, 0x0506, 0x0708, 0x090a, 0x0b0c]
+        );
+        assert_eq!(wrappers[0].underlying_surface(), 0x0304);
+    }
+
+    #[test]
+    fn f1_surface_wrapper_rejects_wrong_reference_count_or_tail_size() {
+        let mut bytes = Vec::new();
+        let mut wrong_count = vec![0x84, 0x81, 0x82, 0x83, 0x84];
+        wrong_count.extend_from_slice(&[0; 39]);
+        append_e5_record(&mut bytes, 0xf1, 1, &wrong_count);
+        let mut wrong_tail = vec![0x85, 0x81, 0x82, 0x83, 0x84, 0x85];
+        wrong_tail.extend_from_slice(&[0; 27]);
+        append_e5_record(&mut bytes, 0xf1, 2, &wrong_tail);
+        assert!(e5_surface_wrappers(&bytes).is_empty());
     }
 }

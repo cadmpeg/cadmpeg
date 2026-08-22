@@ -993,6 +993,74 @@ fn control_bounds_overlap_face(
     })
 }
 
+/// Join a standard freeform face to a directly decoded E5 analytic carrier
+/// through the serialized face and class-`0xf1` wrapper identities.
+///
+/// This path is exact: a geometric candidate is accepted only when the
+/// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
+/// and the wrapper's first reference names one supported E5 surface carrier.
+/// It does not infer the unresolved class-`0xd8` carrier family.
+pub(crate) fn associate_standard_freeform_e5_surfaces(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    data: &[u8],
+) -> HashMap<u32, SurfaceGeometry> {
+    let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
+    for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
+        match face_surfaces.entry(face).or_insert(Some(surface)) {
+            stored @ Some(_) if *stored != Some(surface) => *stored = None,
+            _ => {}
+        }
+    }
+    let face_surfaces = face_surfaces
+        .into_iter()
+        .filter_map(|(face, surface)| surface.map(|surface| (face, surface)))
+        .collect::<HashMap<_, _>>();
+
+    let mut wrappers = HashMap::<u32, Option<u32>>::new();
+    for wrapper in crate::families::e5::records::e5_surface_wrappers(data) {
+        match wrappers
+            .entry(wrapper.record_id)
+            .or_insert(Some(wrapper.underlying_surface()))
+        {
+            stored @ Some(_) if *stored != Some(wrapper.underlying_surface()) => *stored = None,
+            _ => {}
+        }
+    }
+    let wrappers = wrappers
+        .into_iter()
+        .filter_map(|(wrapper, surface)| surface.map(|surface| (wrapper, surface)))
+        .collect::<HashMap<_, _>>();
+
+    let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    for surface in crate::families::e5::records::e5_surfaces(data) {
+        match surfaces
+            .entry(surface.record_id)
+            .or_insert(Some(surface.geometry.clone()))
+        {
+            stored @ Some(_) if *stored != Some(surface.geometry.clone()) => *stored = None,
+            _ => {}
+        }
+    }
+    let surfaces = surfaces
+        .into_iter()
+        .filter_map(|(surface, geometry)| geometry.map(|geometry| (surface, geometry)))
+        .collect::<HashMap<_, _>>();
+
+    records
+        .iter()
+        .filter_map(|record| {
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
+                record
+            else {
+                return None;
+            };
+            let face_surface = *face_surfaces.get(tag)?;
+            let underlying_surface = *wrappers.get(&face_surface)?;
+            Some((*tag, surfaces.get(&underlying_surface)?.clone()))
+        })
+        .collect()
+}
+
 fn associate_standard_freeform_surfaces(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     points: &[Point3],
@@ -1185,14 +1253,16 @@ pub(crate) fn try_decode_standard(
         .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
         .collect::<Vec<_>>();
     let mut freeform_geometries = object_evidence.surface_geometries.clone();
-    let inferred_freeform_geometries = associate_standard_freeform_surfaces(
-        &records,
-        &points,
-        &crate::families::a5a8::records::a5_surfaces_from_records(
-            &scan.data,
-            &consolidated_records,
-        ),
-    );
+    let e5_freeform_geometries = associate_standard_freeform_e5_surfaces(&records, &scan.data);
+    let mut e5_freeform_tags = HashSet::new();
+    for (tag, geometry) in e5_freeform_geometries {
+        freeform_geometries.insert(tag, geometry);
+        e5_freeform_tags.insert(tag);
+    }
+    let freeform_carriers =
+        crate::families::a5a8::records::a5_surfaces_from_records(&scan.data, &consolidated_records);
+    let inferred_freeform_geometries =
+        associate_standard_freeform_surfaces(&records, &points, &freeform_carriers);
     let mut inferred_freeform_tags = HashSet::new();
     for (tag, geometry) in inferred_freeform_geometries {
         if freeform_geometries.contains_key(&tag) {
@@ -1243,7 +1313,8 @@ pub(crate) fn try_decode_standard(
                 "MainDataStream+SurfacicReps",
                 *pos,
                 "surfacic_reps_freeform_alias".to_string(),
-                if freeform_procedural_surfaces.contains_key(tag) {
+                if freeform_procedural_surfaces.contains_key(tag) || e5_freeform_tags.contains(tag)
+                {
                     Exactness::ByteExact
                 } else if inferred_freeform_tags.contains(tag) {
                     Exactness::Inferred

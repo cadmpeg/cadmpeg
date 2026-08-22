@@ -502,6 +502,19 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     })
 }
 
+/// Return the serialized surface reference for each valid class-`0x00` face.
+///
+/// This is the narrow face-to-carrier relation used by standard freeform
+/// aliases. It does not claim that the complete E5 topology graph is closed.
+#[must_use]
+pub fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+    records(bytes)
+        .into_iter()
+        .filter(|record| record.class == 0x00)
+        .filter_map(|record| parse_face(&record).map(|face| (face.id, face.surface)))
+        .collect()
+}
+
 fn is_surface_carrier_class(class: u8) -> bool {
     matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc | 0xe7)
 }

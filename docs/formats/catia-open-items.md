@@ -642,15 +642,15 @@ remains open.
 
 ### SN-38. Standard freeform to external NURBS identity
 
-**Question.** Which admitted identity binds a standard freeform face tag to one external typed NURBS carrier when the alias walk does not resolve that carrier?
+**Question.** Which admitted identity binds a standard freeform face tag to one external typed carrier when the alias walk does not resolve that carrier, including the remaining class-`0xd8` carrier family?
 
-**Known.** The standard freeform cores at offsets `2645546`, `2645593`, `2645640`, `2645687`, `2649118`, and `2649263` retain face bounds and tags. External A5 NURBS frames begin at offsets `50739`, `52715`, and `54691` and continue as a source-ordered carrier run. The geometry rule in `catia.md` §5.6 transfers a carrier only for a unique multi-vertex witness association and marks that geometry inferred; tied or weak associations remain unknown.
+**Known.** The standard freeform cores retain face bounds and tags. A class-`0xf1` frame has payload size `44`, begins with a five-reference lane, and is used by class-`0x00` faces as a surface wrapper. In one standard-nested record walk, the freeform cores at reconstructed offsets `1235511`, `1235631`, `1235678`, `1235798`, `1236235`, `1236355`, `1236402`, `1236872`, `1237236`, `1237502`, `1237622`, `1237669`, `1238627`, and `1238674` have tags `44419`, `45097`, `45370`, `45394`, `46227`, `47267`, `47273`, `47586`, `47967`, `48426`, `49374`, `49380`, `49835`, and `49842`. The corresponding class-`0x00` E5 face records begin at source offsets `368800`, `380032`, `392920`, `393318`, `425653`, `426063`, `426262`, `434847`, `443329`, `468466`, `468864`, `469063`, `474963`, and `475466`. Their wrapper first references resolve to supported class-`0xcc` carriers at source offsets `364981`, `376228`, `389804`, `417185`, `431816`, `440789`, `458507`, `370269`, and `394732` for nine tags. The remaining five first references are class-`0xd8` records at source offsets `381487`, `401105`, `412471`, `445879`, and `451115`; their geometry grammar is not admitted. The geometry rule in `catia.md` §5.6 transfers an external NURBS carrier only for a unique multi-vertex witness association and marks that geometry inferred; tied or weak associations remain unknown.
 
 **Need.** A byte identity is required to transfer every aliased carrier as byte-exact geometry and to resolve duplicate external carriers without relying on geometric coincidence.
 
 **Conflict.** None.
 
-**Note.** The current control decode transfers 78 of 84 face-local freeform carriers and retains 2 surface carriers unresolved; the remaining source relation is open. The observed core and carrier offsets establish the two byte populations but do not establish their pairing.
+**Note.** The exact E5 face → `0xf1` wrapper → first-carrier join transfers nine of fourteen freeform surface geometries as byte-exact analytic carriers. Five class-`0xd8` carriers retain their face tags, bounds, and orientation without geometry. The remaining source relation is open; class-`0xd8` payload semantics and its binding to the standard freeform carrier remain to be established.
 
 ## 4. Object stream
 
