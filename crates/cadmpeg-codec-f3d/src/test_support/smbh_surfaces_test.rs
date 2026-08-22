@@ -1093,6 +1093,14 @@ pub(crate) fn synthetic_text_law_driven_sweep_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_revision_text_law_sweep_smbh() -> Vec<u8> {
+    synthetic_revision_text_law_sweep_with_tail_smbh(0)
+}
+
+pub(crate) fn synthetic_cacheless_revision_text_law_sweep_smbh() -> Vec<u8> {
+    synthetic_revision_text_law_sweep_with_tail_smbh(2)
+}
+
+fn synthetic_revision_text_law_sweep_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -1158,7 +1166,7 @@ pub(crate) fn synthetic_revision_text_law_sweep_smbh() -> Vec<u8> {
     t_dbl(&mut surface, 1.0);
     surface.extend_from_slice(&[0x0b, 0x0b, 0x0b]);
     surface.push(0x0b);
-    append_revision_surface_tail_head(&mut surface, 0, 0.005);
+    append_revision_surface_tail_head(&mut surface, tail_form, 0.005);
     append_revision_surface_tail_discontinuities(&mut surface);
     surface.push(0x10);
     t_end(&mut surface);

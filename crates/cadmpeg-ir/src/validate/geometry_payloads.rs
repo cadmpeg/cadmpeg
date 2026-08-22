@@ -1838,8 +1838,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             // Tail enum `0` stores a solved cache and its fit tolerance; `2`
             // stores the parameterization instead. No other value is defined.
             let form_matches = match enumeration {
-                0 => parameterization.is_none(),
-                2 => parameterization.is_some(),
+                0 => parameterization.is_none() && procedural.cache_fit_tolerance.is_some(),
+                2 => parameterization.is_some() && procedural.cache_fit_tolerance.is_none(),
                 _ => false,
             };
             if !form_matches {
@@ -3002,6 +3002,13 @@ fn revision_tail_form(
                 construction.tail_enum,
                 construction.tail_parameterization.as_ref(),
             ))
+        }
+        ProceduralSurfaceDefinition::Sweep {
+            native: Some(construction),
+            ..
+        } => {
+            let form = construction.revision_form.as_ref()?;
+            return Some((form.tail_enum, form.tail_parameterization.as_ref()));
         }
         _ => None,
     }?;

@@ -994,6 +994,86 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
 }
 
 #[test]
+fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_cacheless_revision_text_law_sweep_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cacheless revision text-law sweep decode");
+    let procedural = &decoded.ir().model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected cacheless native revision sweep")
+    };
+    let form = native.revision_form.as_ref().expect("revision form");
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization.as_ref(),
+        Some(&expected_revision_surface_tail_parameterization())
+    );
+    let SweepSurfaceLayout::LawDriven {
+        first_law,
+        second_law,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected cacheless law-driven sweep")
+    };
+    assert!(matches!(
+        first_law.as_ref(),
+        LawExpression::Text { value } if value == "0.008726867790758789*X"
+    ));
+    assert!(matches!(
+        second_law.as_ref(),
+        LawExpression::Text { value } if value == "VEC(1,1,1)"
+    ));
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("cacheless revision text-law sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cacheless revision text-law sweep round trip");
+    let procedural = &round_trip.ir().model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected round-tripped cacheless native revision sweep")
+    };
+    assert_eq!(native.revision_form.as_ref().unwrap().tail_enum, 2);
+    assert_eq!(
+        native
+            .revision_form
+            .as_ref()
+            .unwrap()
+            .tail_parameterization
+            .as_ref(),
+        Some(&expected_revision_surface_tail_parameterization())
+    );
+}
+
+#[test]
 fn generated_legacy_surface_names_select_modern_layouts() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 

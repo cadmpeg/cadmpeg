@@ -2944,7 +2944,7 @@ fn revision_sweep_sur(
         let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
-    let (layout, path_endpoints, tail_enum) = if matches!(cur.peek(), Some(Token::Str(_))) {
+    let (layout, path_endpoints) = if matches!(cur.peek(), Some(Token::Str(_))) {
         let first_law = sweep_law_expression(&mut cur)?;
         let first_mode = cur.take_long()?;
         let first_range = [
@@ -2969,7 +2969,6 @@ fn revision_sweep_sur(
         let formula_mode = cur.take_long()?;
         let formula = law_formula_resolving(&mut cur, Some(table))?;
         let trailing_flag = cur.take_bool()?;
-        let tail_enum = cur.take_enum()?;
         let law_direction = Vector3::new(law_direction[0], law_direction[1], law_direction[2]);
         (
             EmbeddedSweepSurfaceLayout::LawDriven {
@@ -2995,7 +2994,6 @@ fn revision_sweep_sur(
                 trailing_flag,
             },
             path_endpoints,
-            tail_enum,
         )
     } else {
         (cur.take_long()? == 1).then_some(())?;
@@ -3013,7 +3011,6 @@ fn revision_sweep_sur(
         let formula_flag = cur.take_bool()?;
         let formula = law_formula_resolving(&mut cur, Some(table))?;
         let trailing_flag = cur.take_bool()?;
-        let tail_enum = cur.take_enum()?;
         (
             EmbeddedSweepSurfaceLayout::ExplicitFormula {
                 profile,
@@ -3031,21 +3028,15 @@ fn revision_sweep_sur(
                 trailing_flag,
             },
             path_endpoints,
-            tail_enum,
         )
     };
-    let (_, cache_end) = surface_block(span, cur.pos())?;
-    cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-    ];
-    let discontinuity_flag = cur.take_bool()?;
+    let RevisionSurfaceTail {
+        enumeration: tail_enum,
+        fit_tolerance: cache_fit_tolerance,
+        parameterization: tail_parameterization,
+        discontinuities,
+        tail_flag: discontinuity_flag,
+    } = revision_surface_tail(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind: 0,
@@ -3055,6 +3046,7 @@ fn revision_sweep_sur(
                 profile_endpoints,
                 path_endpoints,
                 tail_enum,
+                tail_parameterization,
             }),
             layout,
             discontinuities,

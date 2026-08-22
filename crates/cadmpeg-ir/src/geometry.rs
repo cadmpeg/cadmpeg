@@ -2714,6 +2714,10 @@ pub struct SweepRevisionForm {
     pub path_endpoints: [Option<f64>; 2],
     /// Enum opening the shared revision-gated surface tail.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
 }
 
 /// Complete native `sweep_spl_sur` construction graph.

@@ -578,6 +578,10 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         | DecodedProceduralSurfaceDefinition::Sum { .. }
         | DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
+        DecodedProceduralSurfaceDefinition::Sweep(construction) => construction
+            .revision_form
+            .as_ref()
+            .is_some_and(|form| form.tail_enum == 2),
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
