@@ -1713,7 +1713,7 @@ pub enum OperationStateTaggedValueForm {
     Two,
     /// `c0..df` followed by three bytes.
     Three,
-    /// `e0..ef` or `ff` followed by four bytes.
+    /// `e0` or `ff` followed by four bytes.
     Four,
 }
 
@@ -1763,6 +1763,181 @@ pub struct OperationStateCounterMap<'a> {
     pub rows: Vec<OperationStateCounter<'a>>,
     /// Exact bytes after the counter rows within the bounded record area.
     pub trailing_bytes: &'a [u8],
+}
+
+/// One diagnostic/message record in the operation-state block.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateMessage<'a> {
+    /// Absolute byte offset of the opening `03` marker.
+    pub offset: usize,
+    /// Declared length from the `03` length byte through the text terminator.
+    pub declared_length: u8,
+    /// Exact ASCII Part Navigator text.
+    pub text: &'a str,
+    /// Tagged value following the four zero bytes.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Big-endian count or severity word following the tagged value.
+    pub count_or_severity: u16,
+    /// Exclusive absolute end offset after the count/severity word.
+    pub end_offset: usize,
+}
+
+/// Payload form of one per-object operation-state status row.
+#[allow(dead_code)] // Retained until status-to-operation identity is proven.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateStatusPayload<'a> {
+    /// Normal built/healthy object state, encoded as `3f`.
+    Plain,
+    /// Status with a link-code and one linked object index.
+    Linked {
+        /// Serialized link discriminator.
+        link_code: u8,
+        /// Linked object index between the two `ff` sentinels.
+        object_index: OperationStateIndex<'a>,
+    },
+    /// Status carrying the exact inline diagnostic record.
+    Diagnostic {
+        /// Inline diagnostic record beginning at the payload's `03` marker.
+        message: OperationStateMessage<'a>,
+    },
+    /// A typed status code whose payload lane has no settled subgrammar.
+    Opaque {
+        /// Exact bytes from the first payload byte through its lane terminator.
+        raw: &'a [u8],
+    },
+}
+
+/// One per-object status row in the operation-state block.
+#[allow(dead_code)] // Retained until status-to-operation identity is proven.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateStatus<'a> {
+    /// Absolute byte offset of the status-code token.
+    pub offset: usize,
+    /// Exact status-code token and decoded value.
+    pub status_code: OperationStateIndex<'a>,
+    /// Object carrying this status.
+    pub object_index: OperationStateIndex<'a>,
+    /// Status payload, retained without naming suppression codes.
+    pub payload: OperationStateStatusPayload<'a>,
+    /// Exclusive absolute end offset after the payload.
+    pub end_offset: usize,
+}
+
+/// A bounded sequence of operation-state status rows.
+#[allow(dead_code)] // Direct bounded parser result retained for focused tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateStatusTable<'a> {
+    /// Absolute byte offset of the first status row.
+    pub offset: usize,
+    /// Absolute byte offset after the final complete status row.
+    pub end_offset: usize,
+    /// Rows in serialized order.
+    pub rows: Vec<OperationStateStatus<'a>>,
+    /// Standalone feature-record slot lanes following the status rows.
+    pub slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    /// Exact bounded bytes after the last complete status row.
+    pub trailing_bytes: &'a [u8],
+}
+
+/// One standalone feature-record slot lane in the operation-state block.
+#[allow(dead_code)] // Retained until the slots receive a proven feature join.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateSlotLane<'a> {
+    /// Absolute byte offset of the `02 01 11` lane prefix.
+    pub offset: usize,
+    /// Null or object-index slots in serialized order.
+    pub slots: Vec<OperationStateIndex<'a>>,
+    /// Exclusive absolute end offset after the `02 11` terminator.
+    pub end_offset: usize,
+}
+
+/// One row in an `m_rollForwardStates` group table.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateGroupRow<'a> {
+    /// `4a object_index position ff` list member. The common position is a
+    /// direct byte; one generation uses the same compact token family as an
+    /// object index for positions above the direct range.
+    List {
+        /// Ordered feature-record member.
+        object_index: OperationStateIndex<'a>,
+        /// Serialized list-position token.
+        position: OperationStateIndex<'a>,
+    },
+    /// `tag object_index object_index ff ff` relation member.
+    Pair {
+        /// Schema-generation relation tag (`4f` or `48`).
+        tag: u8,
+        /// First relation endpoint.
+        first: OperationStateIndex<'a>,
+        /// Second relation endpoint.
+        second: OperationStateIndex<'a>,
+    },
+}
+
+/// One counted `m_rollForwardStates` group.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateGroup<'a> {
+    /// Absolute byte offset of the two-byte group opener.
+    pub offset: usize,
+    /// Exact group opener, normally `01 01`.
+    pub opener: [u8; 2],
+    /// Whether the count used the nonempty `01 count` form.
+    pub count_prefix: Option<u8>,
+    /// Serialized member count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered list or pair rows.
+    pub rows: Vec<OperationStateGroupRow<'a>>,
+    /// Exclusive absolute end offset after the final group row.
+    pub end_offset: usize,
+}
+
+/// A bounded sequence of `m_rollForwardStates` groups.
+#[allow(dead_code)] // Direct bounded parser result retained for focused tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateGroupTable<'a> {
+    /// Absolute byte offset of the first group.
+    pub offset: usize,
+    /// Absolute byte offset after the final group.
+    pub end_offset: usize,
+    /// Groups in serialized order.
+    pub groups: Vec<OperationStateGroup<'a>>,
+    /// Exact table-boundary bytes after the final complete group.
+    pub trailing_bytes: &'a [u8],
+}
+
+/// One state-journal row preceding feature operation records.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateJournalRow<'a> {
+    /// Absolute byte offset of the row's `e0` timestamp marker.
+    pub offset: usize,
+    /// Big-endian Unix timestamp.
+    pub timestamp: u32,
+    /// Tagged schema value stored by the journal.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Schema identifier varint.
+    pub schema_id: OperationStateIndex<'a>,
+    /// Monotone state ordinal varint.
+    pub ordinal: OperationStateIndex<'a>,
+    /// Exclusive absolute end offset after the `13` terminator.
+    pub end_offset: usize,
+}
+
+/// One state-journal group.
+#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateJournalGroup<'a> {
+    /// Absolute byte offset of the `04` group opener.
+    pub offset: usize,
+    /// Two opener selector bytes.
+    pub selector: [u8; 2],
+    /// Journal rows in serialized order.
+    pub rows: Vec<OperationStateJournalRow<'a>>,
+    /// Exclusive absolute end offset after the final row.
+    pub end_offset: usize,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
@@ -6550,6 +6725,426 @@ pub fn operation_state_counter_map(
         rows,
         trailing_bytes: bytes.get(end..)?,
     })
+}
+
+fn operation_state_message_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateMessage<'_>> {
+    if bytes.get(at) != Some(&0x03) {
+        return None;
+    }
+    let declared_length = *bytes.get(at + 1)?;
+    if declared_length < 3 {
+        return None;
+    }
+    let text_end = at.checked_add(usize::from(declared_length))?;
+    let text = bytes.get(at + 2..text_end)?;
+    if !text
+        .iter()
+        .all(|byte| *byte == b' ' || byte.is_ascii_graphic())
+    {
+        return None;
+    }
+    let text = std::str::from_utf8(text).ok()?;
+    let terminator = text_end;
+    (bytes.get(terminator) == Some(&0)).then_some(())?;
+    let zeros_start = terminator.checked_add(1)?;
+    let zeros_end = zeros_start.checked_add(4)?;
+    (bytes.get(zeros_start..zeros_end) == Some(&[0, 0, 0, 0])).then_some(())?;
+    let value = operation_state_tagged_value_at(bytes, zeros_end, base_offset)?;
+    let count_at = zeros_end.checked_add(value.raw.len())?;
+    let count_or_severity = View::u16_be_at(bytes, count_at)?;
+    let end = count_at.checked_add(2)?;
+    Some(OperationStateMessage {
+        offset: base_offset.checked_add(at)?,
+        declared_length,
+        text,
+        value,
+        count_or_severity,
+        end_offset: base_offset.checked_add(end)?,
+    })
+}
+
+/// Decode complete message records in one already bounded state region.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_messages(
+    bytes: &[u8],
+    base_offset: usize,
+) -> Vec<OperationStateMessage<'_>> {
+    let mut messages = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let Some(message) = operation_state_message_at(bytes, at, base_offset) else {
+            at += 1;
+            continue;
+        };
+        at = message
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("message offset is based on the same bounded region");
+        messages.push(message);
+    }
+    messages
+}
+
+fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
+    let first = *bytes.get(at)?;
+    if !matches!(first, 0x02 | 0x1e | 0xff) {
+        return None;
+    }
+    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+        return Some(at + 3);
+    }
+    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
+    for cursor in at..search_end.saturating_sub(1) {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            return Some(cursor + 2);
+        }
+    }
+    None
+}
+
+fn operation_state_link_payload(
+    bytes: &[u8],
+    payload_at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<(OperationStateStatusPayload<'_>, usize)> {
+    let link_code = *bytes.get(payload_at)?;
+    if matches!(link_code, 0x02 | 0x03 | 0x1e | 0x3f | 0xff)
+        || bytes.get(payload_at + 1) != Some(&0xff)
+    {
+        return None;
+    }
+    let linked_at = payload_at.checked_add(2)?;
+    let linked = operation_state_index_at(bytes, linked_at, base_offset)?;
+    linked.value?;
+    let sentinel_at = linked_at.checked_add(linked.raw.len())?;
+    if bytes.get(sentinel_at) != Some(&0xff) {
+        return None;
+    }
+    let payload_end = sentinel_at.checked_add(1)?;
+    (payload_end <= end).then_some((
+        OperationStateStatusPayload::Linked {
+            link_code,
+            object_index: linked,
+        },
+        payload_end,
+    ))
+}
+
+fn operation_state_slot_lane_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateSlotLane<'_>> {
+    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
+        return None;
+    }
+    let mut slots = Vec::new();
+    let mut cursor = at + 3;
+    while cursor < end {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            let lane_end = cursor + 2;
+            return Some(OperationStateSlotLane {
+                offset: base_offset.checked_add(at)?,
+                slots,
+                end_offset: base_offset.checked_add(lane_end)?,
+            });
+        }
+        let slot = operation_state_index_at(bytes, cursor, base_offset)?;
+        cursor = cursor.checked_add(slot.raw.len())?;
+        slots.push(slot);
+    }
+    None
+}
+
+fn operation_state_status_row_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateStatus<'_>> {
+    let status_code = operation_state_index_at(bytes, at, base_offset)?;
+    let object_at = at.checked_add(status_code.raw.len())?;
+    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+    object_index.value?;
+    let payload_at = object_at.checked_add(object_index.raw.len())?;
+    if payload_at >= end {
+        return None;
+    }
+    let (payload, payload_end) = match bytes[payload_at] {
+        0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
+        0x03 => {
+            let message = operation_state_message_at(bytes, payload_at, base_offset)?;
+            let payload_end = message
+                .end_offset
+                .checked_sub(base_offset)
+                .expect("message offset is based on the same bounded region");
+            (
+                OperationStateStatusPayload::Diagnostic { message },
+                payload_end,
+            )
+        }
+        0x02 | 0x1e | 0xff => {
+            let payload_end = operation_state_opaque_payload_end(bytes, payload_at, end)?;
+            (
+                OperationStateStatusPayload::Opaque {
+                    raw: bytes.get(payload_at..payload_end)?,
+                },
+                payload_end,
+            )
+        }
+        _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
+    };
+    (payload_end <= end).then_some(OperationStateStatus {
+        offset: base_offset.checked_add(at)?,
+        status_code,
+        object_index,
+        payload,
+        end_offset: base_offset.checked_add(payload_end)?,
+    })
+}
+
+/// Decode a bounded sequence of per-object operation-state status rows.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_status_table(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateStatusTable<'_>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut rows = Vec::new();
+    let mut slot_lanes = Vec::new();
+    let mut at = start;
+    while at < end {
+        if operation_state_message_at(bytes, at, base_offset).is_some() {
+            break;
+        }
+        if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+            let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
+            at = lane
+                .end_offset
+                .checked_sub(base_offset)
+                .expect("slot-lane offset is based on the same bounded region");
+            slot_lanes.push(lane);
+            continue;
+        }
+        let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset) else {
+            break;
+        };
+        at = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("status offset is based on the same bounded region");
+        rows.push(row);
+    }
+    (!rows.is_empty()).then_some(OperationStateStatusTable {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(at)?,
+        rows,
+        slot_lanes,
+        trailing_bytes: bytes.get(at..end)?,
+    })
+}
+
+fn operation_state_group_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroup<'_>> {
+    let opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+    if !matches!(opener, [0x01, 0x00 | 0x01]) {
+        return None;
+    }
+    let count_at = at.checked_add(2)?;
+    let (count_prefix, declared_count, mut cursor) = match bytes.get(count_at) {
+        Some(0) => (None, 0, count_at + 1),
+        Some(1) => (Some(1), *bytes.get(count_at + 1)?, count_at + 2),
+        _ => return None,
+    };
+    let member_count = usize::from(declared_count.saturating_sub(1));
+    let mut rows = Vec::with_capacity(member_count);
+    for _ in 0..member_count {
+        let tag = *bytes.get(cursor)?;
+        match tag {
+            0x4a => {
+                let object_at = cursor.checked_add(1)?;
+                let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+                object_index.value?;
+                let position_at = object_at.checked_add(object_index.raw.len())?;
+                let position = operation_state_index_at(bytes, position_at, base_offset)?;
+                position.value?;
+                let sentinel_at = position_at.checked_add(position.raw.len())?;
+                let row_end = sentinel_at.checked_add(1)?;
+                (bytes.get(sentinel_at) == Some(&0xff)).then_some(())?;
+                rows.push(OperationStateGroupRow::List {
+                    object_index,
+                    position,
+                });
+                cursor = row_end;
+            }
+            0x4f | 0x48 => {
+                let first_at = cursor.checked_add(1)?;
+                let first = operation_state_index_at(bytes, first_at, base_offset)?;
+                first.value?;
+                let second_at = first_at.checked_add(first.raw.len())?;
+                let second = operation_state_index_at(bytes, second_at, base_offset)?;
+                second.value?;
+                let sentinels_at = second_at.checked_add(second.raw.len())?;
+                let row_end = sentinels_at.checked_add(2)?;
+                (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some(())?;
+                rows.push(OperationStateGroupRow::Pair { tag, first, second });
+                cursor = row_end;
+            }
+            _ => return None,
+        }
+    }
+    (cursor <= end).then_some(OperationStateGroup {
+        offset: base_offset.checked_add(at)?,
+        opener,
+        count_prefix,
+        declared_count,
+        rows,
+        end_offset: base_offset.checked_add(cursor)?,
+    })
+}
+
+/// Decode a complete bounded `m_rollForwardStates` group table.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_group_table(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroupTable<'_>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    let mut trailing_start = end;
+    while at < end {
+        let Some(group) = operation_state_group_at(bytes, at, end, base_offset) else {
+            if bytes.get(at..end) == Some(&[0x01, 0x01]) {
+                trailing_start = at;
+                at = end;
+                break;
+            }
+            return None;
+        };
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("group offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty() && at == end).then_some(OperationStateGroupTable {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(end)?,
+        groups,
+        trailing_bytes: bytes.get(trailing_start..end)?,
+    })
+}
+
+fn operation_state_journal_row_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateJournalRow<'_>> {
+    if bytes.get(at) != Some(&0xe0) {
+        return None;
+    }
+    let timestamp = View::u32_be_at(bytes, at + 1)?;
+    let value = operation_state_tagged_value_at(bytes, at + 5, base_offset)?;
+    let schema_at = at.checked_add(5 + value.raw.len())?;
+    let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
+    schema_id.value?;
+    let ordinal_at = schema_at.checked_add(schema_id.raw.len())?;
+    let ordinal = operation_state_index_at(bytes, ordinal_at, base_offset)?;
+    ordinal.value?;
+    let terminator_at = ordinal_at.checked_add(ordinal.raw.len())?;
+    if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
+        return None;
+    }
+    let row_end = terminator_at + 1;
+    Some(OperationStateJournalRow {
+        offset: base_offset.checked_add(at)?,
+        timestamp,
+        value,
+        schema_id,
+        ordinal,
+        end_offset: base_offset.checked_add(row_end)?,
+    })
+}
+
+fn operation_state_journal_group_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateJournalGroup<'_>> {
+    if bytes.get(at) != Some(&0x04) {
+        return None;
+    }
+    let selector = [*bytes.get(at + 1)?, *bytes.get(at + 2)?];
+    if bytes.get(at + 3) != Some(&0) {
+        return None;
+    }
+    let mut cursor = at + 4;
+    if bytes.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+    let mut rows = Vec::new();
+    while cursor < end {
+        let Some(row) = operation_state_journal_row_at(bytes, cursor, end, base_offset) else {
+            break;
+        };
+        cursor = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        rows.push(row);
+    }
+    (!rows.is_empty()).then_some(OperationStateJournalGroup {
+        offset: base_offset.checked_add(at)?,
+        selector,
+        rows,
+        end_offset: base_offset.checked_add(cursor)?,
+    })
+}
+
+/// Decode a complete bounded state journal.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_journal(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    while at < end {
+        let group = operation_state_journal_group_at(bytes, at, end, base_offset)?;
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty() && at == end).then_some(groups)
 }
 
 fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
