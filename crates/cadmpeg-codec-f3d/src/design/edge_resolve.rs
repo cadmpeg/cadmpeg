@@ -591,6 +591,14 @@ fn resolved_edge_group_with_transition_chain(
             .collect::<Vec<_>>();
         matches.len() == 1
     });
+    let has_standard_recipe_operands = group.members.iter().any(|member| {
+        operands.iter().any(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *member
+                && operand.recipe_structure.is_some()
+        })
+    });
     let has_concrete_recipe_evidence = group.members.iter().any(|member| {
         let matches = operands
             .iter()
@@ -687,6 +695,7 @@ fn resolved_edge_group_with_transition_chain(
         !group.members.is_empty() && group.lost_edge_references.len() == group.members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         has_complete_identity_selection
+            && !has_standard_recipe_operands
             && (!has_recipe_operands
                 || !has_concrete_recipe_evidence
                 || identity_transition_is_supported
@@ -900,11 +909,17 @@ fn resolved_edge_group_with_transition_chain(
             })
             .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
     };
-    let resolved_slots =
-        exact_slots.or_else(|| transition_state_id.and_then(|_| transition_slots()));
+    let resolved_slots = exact_slots.or_else(|| {
+        (!has_standard_recipe_operands)
+            .then(|| transition_state_id.and_then(|_| transition_slots()))
+            .flatten()
+    });
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
+        }
+        if has_standard_recipe_operands {
+            return EdgeSelection::Native(group.id.clone());
         }
         let combined_edges = matched_operands
             .iter()
@@ -1877,6 +1892,11 @@ pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
 }
 
 pub(crate) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
+    if operand.recipe_structure.is_some() {
+        return operand
+            .resolved_edge_slot
+            .or_else(|| primary_terminal_reference_shared_edge(operand));
+    }
     operand
         .resolved_edge_slot
         .or_else(|| resolve_edge_operand_candidates(operand))

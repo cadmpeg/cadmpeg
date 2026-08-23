@@ -2056,7 +2056,30 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
     ];
 
     assert_eq!(
-        side_one_recipe_edge(Some(&structure), &contexts, &[40, 41, 42]),
+        side_one_recipe_edge(Some(&structure), &contexts, &[], &[40, 41, 42]),
+        Some(41)
+    );
+
+    let ambiguous_contexts = vec![
+        context(0, vec![40, 41]),
+        context(1, vec![40, 41]),
+        context(2, vec![99]),
+    ];
+    let selector = crate::records::DesignEdgeRecipeSelectorContext {
+        selector: 0,
+        clause_entries: vec![None, None],
+        clause_triplet_edge_slots: vec![None, None],
+        incidence_matching_edge_slots: vec![41],
+        unique_incidence_edge_slot: Some(41),
+        boundary_count_matching_edge_slots: Vec::new(),
+    };
+    assert_eq!(
+        side_one_recipe_edge(
+            Some(&structure),
+            &ambiguous_contexts,
+            &[selector],
+            &[40, 41, 42],
+        ),
         Some(41)
     );
 }

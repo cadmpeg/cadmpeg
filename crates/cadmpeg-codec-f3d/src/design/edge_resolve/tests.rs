@@ -275,6 +275,55 @@ fn recipe_edge_operand(
 }
 
 #[test]
+fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context() {
+    let selection_group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.recipe_state_id = Some(7);
+    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+        root: 1,
+        sides: vec![crate::records::DesignTopologyRecipeSide {
+            field_count: std::num::NonZeroU32::new(1).expect("one recipe field"),
+            header_value: 1,
+            scalars: Vec::new(),
+            payload_prefix: Vec::new(),
+            payload_entry_count: 0,
+            entries: Vec::new(),
+        }],
+    });
+    let mut persistent_identity = identity(10, &[]);
+    persistent_identity.resolved_edge_slot = Some(19);
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&operand),
+            std::slice::from_ref(&persistent_identity),
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+
+    operand.changed_boundary_edge_slots = vec![17];
+    operand.deleted_boundary_edge_slots = vec![17];
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &[operand],
+            &[],
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+}
+
+#[test]
 fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repeats() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
