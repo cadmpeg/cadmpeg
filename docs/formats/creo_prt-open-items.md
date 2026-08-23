@@ -791,6 +791,14 @@ antipodal pcurve endpoints.
 
 **Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
+**Conflict.** `operations` in `src/feature/operations.rs` projects the first
+same-ID candidate when none has a stored display name. When multiple candidates
+have stored display names, it uses the last candidate as the projection base,
+takes offsets from the first, and retains only selected fields on which the
+candidates agree. Stored order and display-name presence are not a decoded
+current-state selector, so neither projection establishes the current native
+state.
+
 ### TP-19. `lo_array` roster semantics
 
 **Question.** Which fields in a positional `lo_array` row bind its native
