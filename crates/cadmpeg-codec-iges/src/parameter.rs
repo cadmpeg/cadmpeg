@@ -535,6 +535,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// token six.
 /// Type 308 Form 0 puts the member count at index 3 and stores one pointer per
 /// member, so its groups start at token `4 + N`.
+/// Type 302 Forms 5001 through 9999 put the class count at index 1 and repeat
+/// `BP`, `OR`, `N`, and `N` item-type fields per class, so their groups start at
+/// token `2 + sum(3 + N)`.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
 /// groups start at token ten.
 /// Type 312 Forms 0 and 1 store ten fixed primary fields, so their groups
@@ -840,6 +843,7 @@ pub(crate) fn entity_primary_end(
         (100, 0) => Some(fixed_primary_end(record, 8)),
         (140, 0) => Some(fixed_primary_end(record, 6)),
         (308, 0) => Some(subfigure_definition_primary_end(record)),
+        (302, 5001..=9999) => Some(associativity_definition_primary_end(record)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
         (212, 0..=8 | 100..=102 | 105) => Some(general_note_primary_end(record)),
@@ -1383,6 +1387,41 @@ fn subfigure_definition_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|member_count| member_count.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn associativity_definition_primary_end(record: &ParameterRecord) -> usize {
+    let Some(class_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+
+    let mut cursor = 2_usize;
+    for _ in 0..class_count {
+        let Some(item_count_index) = cursor.checked_add(2) else {
+            return record.tokens.len();
+        };
+        let Some(item_count) = record
+            .integer(item_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = item_count_index
+            .checked_add(1)
+            .and_then(|start| start.checked_add(item_count))
+        else {
+            return record.tokens.len();
+        };
+        if next > record.tokens.len() {
+            return record.tokens.len();
+        }
+        cursor = next;
+    }
+    cursor
 }
 
 fn network_instance_primary_end(record: &ParameterRecord) -> usize {
