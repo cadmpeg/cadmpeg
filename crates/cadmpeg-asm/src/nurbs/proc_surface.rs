@@ -4237,6 +4237,63 @@ fn procedural_resolving_refs(
 }
 
 #[cfg(test)]
+mod sweep_law_tests {
+    use super::*;
+
+    #[test]
+    fn sweep_text_law_consumes_one_serializer_token() {
+        let tokens = [Token::Str("0.008726867790758789*X".into()), Token::Long(21)];
+        let mut cur = Cur::at(&tokens, 0);
+
+        let law = sweep_law_expression(&mut cur).expect("text law");
+
+        let EmbeddedLawExpression::Text(value) = law else {
+            panic!("expected text law");
+        };
+        assert_eq!(value, "0.008726867790758789*X");
+        assert_eq!(cur.take_long(), Some(21));
+        assert_eq!(cur.pos(), tokens.len());
+    }
+
+    #[test]
+    fn rail_formula_decodes_counted_vector_transform_binding() {
+        let vectors = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [2.0, 3.0, 4.0],
+        ];
+        let mut tokens = vec![
+            Token::Str("ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)".into()),
+            Token::Long(1),
+            Token::Str("TRANS".into()),
+        ];
+        tokens.extend(vectors.into_iter().map(Token::Vector3));
+        tokens.extend([Token::Double(1.5), Token::True, Token::False, Token::True]);
+        let mut cur = Cur::at(&tokens, 0);
+
+        let formula = law_formula_resolving(&mut cur, None).expect("rail formula");
+
+        assert_eq!(formula.name, "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
+        let [EmbeddedLawExpression::TransformVec {
+            vectors: actual_vectors,
+            scale,
+            flags,
+        }] = formula.variables.as_slice()
+        else {
+            panic!("expected one vector transform binding");
+        };
+        assert_eq!(
+            *actual_vectors,
+            vectors.map(|value| Vector3::new(value[0], value[1], value[2]))
+        );
+        assert_eq!(*scale, 1.5);
+        assert_eq!(*flags, [true, false, true]);
+        assert_eq!(cur.pos(), tokens.len());
+    }
+}
+
+#[cfg(test)]
 mod tail_selector_tests {
     use super::*;
 
