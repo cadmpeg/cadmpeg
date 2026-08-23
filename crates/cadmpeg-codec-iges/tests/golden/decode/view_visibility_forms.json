@@ -2754,7 +2754,7 @@
   "report": {
     "container_only": false,
     "format": "iges",
-    "geometry_transferred": false,
+    "geometry_transferred": true,
     "losses": [
       {
         "code": {
@@ -2785,36 +2785,6 @@
           "tag": "directory_entry:D5"
         },
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges"
-        },
-        "message": "IGES entity type 402 form 3 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
-        "provenance": {
-          "format": "iges",
-          "offset": 405,
-          "stream": "iges",
-          "tag": "directory_entry:D3"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges"
-        },
-        "message": "IGES entity type 402 form 4 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
-        "provenance": {
-          "format": "iges",
-          "offset": 729,
-          "stream": "iges",
-          "tag": "directory_entry:D7"
-        },
-        "severity": "warning"
       }
     ],
     "notes": [
@@ -2837,7 +2807,7 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; semantic projection emitted",
           "source": "D3",
           "target": "iges:entity:directory#3"
         },
@@ -2849,7 +2819,7 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; semantic projection emitted",
           "source": "D7",
           "target": "iges:entity:directory#7"
         }

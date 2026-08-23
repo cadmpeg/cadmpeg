@@ -77,7 +77,7 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     assert!(view_directory_valid(&view));
     view.status.subordinate = 0;
     view.status.use_flag = 2;
-    assert!(!view_directory_valid(&view));
+    assert!(view_directory_valid(&view));
     view.status.use_flag = 1;
     view.status.blank = 1;
     view.status.hierarchy = 3;
@@ -90,8 +90,12 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(!view_directory_valid(&candidate));
+        assert!(view_directory_valid(&candidate));
     }
+    view.level = 2;
+    view.view = 3;
+    view.label_display = 5;
+    assert!(view_directory_valid(&view));
 
     for form in [3, 4, 19] {
         let mut visible = directory_entry(402, form);
@@ -99,8 +103,10 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         visible.status.subordinate = 1;
         assert!(!views_visible_directory_valid(&visible));
         visible.status.subordinate = 0;
+        visible.status.use_flag = 0;
+        assert!(views_visible_directory_valid(&visible));
         visible.status.use_flag = 2;
-        assert!(!views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible));
         visible.status.use_flag = 1;
         visible.status.blank = 1;
         visible.status.hierarchy = 3;
@@ -113,8 +119,13 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
                 2 => candidate.line_weight = 1,
                 _ => candidate.color = 1,
             }
-            assert!(!views_visible_directory_valid(&candidate));
+            assert!(views_visible_directory_valid(&candidate));
         }
+        visible.level = 2;
+        visible.view = 3;
+        visible.transform = 5;
+        visible.label_display = 7;
+        assert!(views_visible_directory_valid(&visible));
     }
 }
 
@@ -157,7 +168,7 @@ fn decode_quarantines_presentation_entities_with_invalid_directory_contracts() {
                     entity_type: 402,
                     form: 19,
                     label: "SEGMENTS".into(),
-                    status: "00000000",
+                    status: "00010000",
                     parameters: "402,1,1,0.5,0,,,1;".into(),
                 },
             ],
@@ -177,7 +188,7 @@ fn decode_quarantines_presentation_entities_with_invalid_directory_contracts() {
                     entity_type: 402,
                     form: 3,
                     label: "VISIBLE".into(),
-                    status: "00000000",
+                    status: "00010000",
                     parameters: "402,1,0,1;".into(),
                 },
             ],

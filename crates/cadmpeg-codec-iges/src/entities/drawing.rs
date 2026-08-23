@@ -66,24 +66,11 @@ fn drawing_directory_valid(entry: &DirectoryEntry) -> bool {
 }
 
 fn view_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.entity_type == 410
-        && matches!(entry.form, 0 | 1)
-        && entry.status.use_flag == 1
-        && entry.structure == 0
-        && entry.line_font == 0
-        && entry.line_weight == 0
-        && entry.color == 0
+    entry.entity_type == 410 && matches!(entry.form, 0 | 1) && entry.status.use_flag != 0
 }
 
 fn views_visible_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.entity_type == 402
-        && matches!(entry.form, 3 | 4 | 19)
-        && entry.status.subordinate == 0
-        && entry.status.use_flag == 1
-        && entry.structure == 0
-        && entry.line_font == 0
-        && entry.line_weight == 0
-        && entry.color == 0
+    entry.entity_type == 402 && matches!(entry.form, 3 | 4 | 19) && entry.status.subordinate == 0
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
