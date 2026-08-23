@@ -6865,6 +6865,69 @@ pub(crate) fn standard_shared_nurbs_boundary_pair_options(
     )
 }
 
+fn standard_shared_boundary_group_domains(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    original: &[Vec<[usize; 2]>],
+    filtered: &mut [Vec<[usize; 2]>],
+    edge_identity_evidence: &[bool],
+    boundary_witnesses: &[bool],
+) {
+    if supports.len() != original.len()
+        || supports.len() != filtered.len()
+        || supports.len() != edge_identity_evidence.len()
+        || supports.len() != boundary_witnesses.len()
+    {
+        return;
+    }
+    // A shared carrier boundary is positive endpoint evidence, not a row
+    // identity. Repeated rows can include trimmed boundaries in the carrier
+    // interior. If any row lacks a non-empty witness relation, or if the
+    // retained witness pairs cannot cover the complete repeated-row group,
+    // preserve every original domain and defer the row assignment to the
+    // admitted port and trim relations.
+    let mut groups = HashMap::<[usize; 2], Vec<usize>>::new();
+    for (edge, support) in supports.iter().enumerate() {
+        if edge_identity_evidence[edge]
+            || !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+            || support.faces[0] == support.faces[1]
+            || original[edge].is_empty()
+        {
+            continue;
+        }
+        let mut faces = support.faces;
+        faces.sort_unstable();
+        groups.entry(faces).or_default().push(edge);
+    }
+    for edges in groups.into_values() {
+        if edges.len() < 2 {
+            continue;
+        }
+        if edges.iter().any(|edge| !boundary_witnesses[*edge]) {
+            for edge in edges {
+                filtered[edge].clone_from(&original[edge]);
+            }
+            continue;
+        }
+        let filtered_pairs = edges
+            .iter()
+            .flat_map(|edge| filtered[*edge].iter().copied())
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<HashSet<_>>();
+        if filtered_pairs.len() >= edges.len() {
+            continue;
+        }
+        for edge in edges {
+            filtered[edge].clone_from(&original[edge]);
+        }
+    }
+}
+
 fn standard_endpoint_options_for_selected_faces(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -6874,12 +6937,12 @@ fn standard_endpoint_options_for_selected_faces(
     options: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
 ) -> Vec<Vec<[usize; 2]>> {
-    supports
+    let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) = supports
         .iter()
         .enumerate()
         .map(|(edge, support)| {
             let Some(pairs) = options.get(edge) else {
-                return Vec::new();
+                return (Vec::new(), false);
             };
             if edge_identity_evidence.get(edge).copied().unwrap_or(false)
                 || !matches!(
@@ -6888,13 +6951,13 @@ fn standard_endpoint_options_for_selected_faces(
                 )
                 || support.faces[0] == support.faces[1]
             {
-                return pairs.clone();
+                return (pairs.clone(), false);
             }
             let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
-                return pairs.clone();
+                return (pairs.clone(), false);
             };
             let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
-                return pairs.clone();
+                return (pairs.clone(), false);
             };
             let filtered = standard_shared_nurbs_boundary_pair_options(
                 &left.geometry,
@@ -6902,11 +6965,20 @@ fn standard_endpoint_options_for_selected_faces(
                 points,
                 pairs,
             );
-            filtered
-                .filter(|filtered| !filtered.is_empty())
-                .unwrap_or_else(|| pairs.clone())
+            match filtered {
+                Some(filtered) if !filtered.is_empty() => (filtered, true),
+                _ => (pairs.clone(), false),
+            }
         })
-        .collect()
+        .unzip();
+    standard_shared_boundary_group_domains(
+        supports,
+        options,
+        &mut filtered_options,
+        edge_identity_evidence,
+        &boundary_witnesses,
+    );
+    filtered_options
 }
 
 fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {

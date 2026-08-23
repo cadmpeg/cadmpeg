@@ -622,6 +622,8 @@ The owner extractor also retains positive face-to-loop-to-edge membership from s
 
 For a concrete candidate pair of distinct NURBS carriers, `catia.md` §5.6 supplies a positive shared-boundary witness for an identity-free Bspline row and narrows its endpoint-pair domain when both endpoints lie on that boundary. The rule is candidate-specific and does not select the candidate face pair.
 
+The shared-boundary narrowing is now group-guarded for repeated identity-free Bspline rows with the same unordered face pair. Every row must have a non-empty witness relation, and the union of retained witness pairs must be at least as large as the row group; otherwise the decoder preserves every original endpoint domain. This keeps carrier-boundary evidence from selecting a trimmed row occurrence.
+
 **Need.** A native owner or other admitted relation that selects one concrete second face when the joint topology constraints admit more than one assignment.
 
 **Conflict.** None.

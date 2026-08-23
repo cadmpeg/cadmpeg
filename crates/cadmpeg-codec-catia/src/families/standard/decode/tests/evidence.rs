@@ -428,6 +428,90 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
 }
 
 #[test]
+fn repeated_shared_boundary_rows_keep_domains_when_one_witness_cannot_cover_them() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], vec![[2, 8]]];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, true],
+    );
+
+    assert_eq!(filtered, original);
+}
+
+#[test]
+fn repeated_shared_boundary_rows_keep_positive_narrowing_when_witnesses_cover_rows() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], vec![[3, 9]]];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, true],
+    );
+
+    assert_eq!(filtered, vec![vec![[2, 8]], vec![[3, 9]]]);
+}
+
+#[test]
+fn repeated_shared_boundary_rows_keep_domains_when_a_witness_is_unavailable() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], original[1].clone()];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, false],
+    );
+
+    assert_eq!(filtered, original);
+}
+
+#[test]
 fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
