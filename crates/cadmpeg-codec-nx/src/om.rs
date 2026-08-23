@@ -6947,7 +6947,12 @@ fn operation_state_status_end_at(
     opaque_ends: Option<(&[usize], usize)>,
 ) -> Option<usize> {
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-        operation_state_slot_lane_end_at(bytes, at, end)
+        let precomputed_end = opaque_ends.and_then(|(ends, origin)| {
+            at.checked_sub(origin)
+                .and_then(|relative| ends.get(relative).copied())
+                .filter(|lane_end| *lane_end <= end)
+        });
+        precomputed_end.or_else(|| operation_state_slot_lane_end_at(bytes, at, end))
     } else {
         operation_state_status_row_at(bytes, at, end, base_offset, opaque_ends)
             .and_then(|row| row.end_offset.checked_sub(base_offset))
