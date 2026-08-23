@@ -264,6 +264,28 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         ),
                     );
                 }
+                if let Some(face) = wedge
+                    .sector_face
+                    .and_then(|face| subd.faces.get(face as usize))
+                {
+                    let incident = match u32::try_from(index) {
+                        Ok(owner) => face.edges.iter().any(|use_| {
+                            subd.edges
+                                .get(use_.edge as usize)
+                                .is_some_and(|edge| edge.vertices.contains(&owner))
+                        }),
+                        Err(_) => false,
+                    };
+                    if !incident {
+                        bounds_err(
+                            findings,
+                            &subd.id.0,
+                            &format!(
+                                "SubD vertex {index} wedge {wedge_index} sector face is not incident to its owner"
+                            ),
+                        );
+                    }
+                }
                 for grip in wedge.spokes.iter().chain(&wedge.sectors).flatten() {
                     if !finite_point(&grip.point)
                         || !grip.weight.is_finite()

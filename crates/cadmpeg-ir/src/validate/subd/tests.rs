@@ -186,6 +186,64 @@ fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
 }
 
 #[test]
+fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
+    let edge = |vertices| SubdEdge {
+        vertices,
+        sharpness: [0.0, 0.0],
+        tag: SubdEdgeTag::Smooth,
+        knot_interval: Some(1.0),
+        sector_coefficients: [0.0, 0.0],
+    };
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grip-sector-incidence".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
+        vertices: (0..4)
+            .map(|index| SubdVertex {
+                point: Point3::new(f64::from(index), 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: (index == 0).then_some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: Some(0),
+                        phantom: false,
+                        spokes: Vec::new(),
+                        sectors: Vec::new(),
+                    }],
+                }),
+            })
+            .collect(),
+        edges: vec![edge([0, 1]), edge([1, 2]), edge([2, 3]), edge([3, 1])],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 3,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("sector face is not incident to its owner")));
+}
+
+#[test]
 fn subd_rejects_invalid_symmetry_carriers() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.subds.push(SubdSurface {
