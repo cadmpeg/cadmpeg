@@ -19,6 +19,7 @@ fn unique_candidate_stops_after_second_hit() {
 mod index_and_lanes;
 mod instances_and_stores;
 mod operation_data_block_references;
+mod operation_records;
 mod pattern_lanes;
 mod sketch_payload;
 mod state_block;

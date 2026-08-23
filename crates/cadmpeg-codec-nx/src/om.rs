@@ -3207,10 +3207,25 @@ impl<'a> Section<'a> {
 
 /// Decode complete feature-operation headers and their label frames.
 pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
+    validated_operation_headers(bytes, base_offset)
+        .into_iter()
+        .filter_map(|header| operation_label_at(bytes, base_offset, header))
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OperationHeaderLayout {
+    offset: usize,
+    fields_end: usize,
+    object_indices: [Option<u32>; 4],
+    object_index_offsets: [usize; 4],
+}
+
+fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeaderLayout> {
     const HEADER: &[u8] = &[
         0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
     ];
-    let mut labels = Vec::new();
+    let mut headers = Vec::new();
     for marker in bytes
         .windows(HEADER.len())
         .enumerate()
@@ -3232,42 +3247,53 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
             *slot = value;
             at = next;
         }
-        if !valid || bytes.get(at) != Some(&0x03) {
+        if !valid {
             continue;
         }
-        let Some(length) = bytes.get(at + 1).copied().map(usize::from) else {
-            continue;
-        };
-        if length < 3 {
-            continue;
-        }
-        let Some(end) = at.checked_add(length) else {
-            continue;
-        };
-        if bytes.get(end) != Some(&0) {
-            continue;
-        }
-        let Some(name) = bytes.get(at + 2..end) else {
-            continue;
-        };
-        if !name
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        {
-            continue;
-        }
-        let Ok(value) = std::str::from_utf8(name) else {
-            continue;
-        };
-        labels.push(OperationLabel {
-            header_offset: base_offset + marker,
-            offset: base_offset + at,
-            value,
+        headers.push(OperationHeaderLayout {
+            offset: base_offset + marker,
+            fields_end: at,
             object_indices,
             object_index_offsets,
         });
     }
-    labels
+    headers
+}
+
+fn operation_label_at(
+    bytes: &[u8],
+    base_offset: usize,
+    header: OperationHeaderLayout,
+) -> Option<OperationLabel<'_>> {
+    let at = header.fields_end;
+    if bytes.get(at) != Some(&0x03) {
+        return None;
+    }
+    let length = bytes.get(at + 1).copied().map(usize::from)?;
+    if length < 3 {
+        return None;
+    }
+    let end = at.checked_add(length)?;
+    if bytes.get(end) != Some(&0) {
+        return None;
+    }
+    let name = bytes.get(at + 2..end)?;
+    if !name
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return None;
+    }
+    let Ok(value) = std::str::from_utf8(name) else {
+        return None;
+    };
+    Some(OperationLabel {
+        header_offset: header.offset,
+        offset: base_offset + at,
+        value,
+        object_indices: header.object_indices,
+        object_index_offsets: header.object_index_offsets,
+    })
 }
 
 /// Bound every validated operation header through its successor or area end.
@@ -3293,14 +3319,18 @@ fn operation_records_with_labels_and_ordinals<'a>(
     base_offset: usize,
     labels: &[OperationLabel<'a>],
 ) -> Vec<(usize, OperationRecord<'a>)> {
-    labels
+    let headers = validated_operation_headers(bytes, base_offset);
+    headers
         .iter()
         .enumerate()
-        .filter_map(|(ordinal, label)| {
+        .filter_map(|(ordinal, header)| {
+            let label = labels
+                .iter()
+                .find(|label| label.header_offset == header.offset)?;
             let start = label.header_offset.checked_sub(base_offset)?;
-            let end = labels
+            let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.header_offset - base_offset);
+                .map_or(bytes.len(), |next| next.offset - base_offset);
             let label_at = label.offset.checked_sub(base_offset)?;
             let payload_start = label_at
                 .checked_add(usize::from(*bytes.get(label_at + 1)?))?

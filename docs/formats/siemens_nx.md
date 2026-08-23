@@ -228,7 +228,10 @@ they do not create multiple operation-expression relations.
 
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
-the feature-history record-area boundary.
+the feature-history record-area boundary. The four object-index slots are part
+of the header. A complete `03` label frame after those slots labels the record.
+A validated header without that frame is an unlabeled operation record and
+still bounds both adjacent records.
 
 An operation-payload text frame is `marker:u8, length:u8,
 text[length - 2], 00`. The length is `text_byte_count + 2`, and the trailing
