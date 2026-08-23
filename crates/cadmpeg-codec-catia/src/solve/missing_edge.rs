@@ -116,7 +116,8 @@ pub(crate) fn visualization_endpoint_pairs(
     let count = usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?;
     let indexed_count = usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?;
     let mode = *source.get(marker.checked_add(18)?)?;
-    if source.get(marker.checked_add(15)?..marker.checked_add(18)?)? != [0, 0, 0]
+    if source.get(marker.checked_add(10)?)? != &0xff
+        || source.get(marker.checked_add(15)?..marker.checked_add(18)?)? != [0, 0, 0]
         || indexed_count > count
     {
         return None;

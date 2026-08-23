@@ -103,6 +103,13 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
         ),
         None
     );
+
+    let mut missing_secondary_lead = raw_visualization_table(1, &points);
+    missing_secondary_lead[10] = 0;
+    assert_eq!(
+        visualization_endpoint_pairs(&missing_secondary_lead, &rows, &points),
+        None
+    );
 }
 
 #[test]
