@@ -352,6 +352,16 @@ impl ContainerNoted for FeatureOperationRecord {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for FeatureUnlabeledOperationRecord {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureUnlabeledOperationBodyWrite {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureOperationBodyWrite {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1923,6 +1933,30 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_operation_records, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_operation_records, r, ns),
         len: |m| m.features.feature_operation_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_unlabeled_operation_records",
+        tag: Some("FEATURE_UNLABELED_OPERATION_RECORD"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_unlabeled_operation_records, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_records, r, ns),
+        len: |m| m.features.feature_unlabeled_operation_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_unlabeled_operation_body_writes",
+        tag: Some("FEATURE_UNLABELED_OPERATION_BODY_WRITE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_unlabeled_operation_body_writes, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_body_writes, r, ns),
+        len: |m| m.features.feature_unlabeled_operation_body_writes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

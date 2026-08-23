@@ -1621,6 +1621,23 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// One unlabeled operation record bounded by validated operation headers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnlabeledOperationRecord<'a> {
+    /// Absolute offset of the fixed operation-header marker.
+    pub offset: usize,
+    /// Complete record bytes through the next operation header or section end.
+    pub bytes: &'a [u8],
+    /// Absolute offset of the first byte after the four header slots.
+    pub payload_offset: usize,
+    /// Serialized payload after the four header slots.
+    pub payload: &'a [u8],
+    /// Four object-index slots in header order; `None` is the `ff` sentinel.
+    pub object_indices: [Option<u32>; 4],
+    /// Absolute byte offset of each object-index token in header order.
+    pub object_index_offsets: [usize; 4],
+}
+
 /// Exactly framed common record in one bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationCommonFrame {
@@ -3068,6 +3085,19 @@ impl<'a> Section<'a> {
         )
     }
 
+    /// Bound validated operation headers that have no complete label frame.
+    pub fn unlabeled_operation_records_with_ordinals(
+        &self,
+    ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+        let Some(bytes) = self.record_area else {
+            return Vec::new();
+        };
+        let Some(base_offset) = self.record_area_offset else {
+            return Vec::new();
+        };
+        unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
+    }
+
     /// Decode the bounded state-counter map of a feature-history record area.
     ///
     /// The section-role check is intentional. The same byte patterns occur in
@@ -3344,6 +3374,41 @@ fn operation_records_with_labels_and_ordinals<'a>(
                     payload_offset: base_offset + payload_start,
                     payload: bytes.get(payload_start..end)?,
                     label: *label,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn unlabeled_operation_records_with_ordinals<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+    let headers = validated_operation_headers(bytes, base_offset);
+    headers
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, header)| {
+            if labels
+                .iter()
+                .any(|label| label.header_offset == header.offset)
+            {
+                return None;
+            }
+            let start = header.offset.checked_sub(base_offset)?;
+            let end = headers
+                .get(ordinal + 1)
+                .map_or(bytes.len(), |next| next.offset - base_offset);
+            Some((
+                ordinal,
+                UnlabeledOperationRecord {
+                    offset: header.offset,
+                    bytes: bytes.get(start..end)?,
+                    payload_offset: base_offset + header.fields_end,
+                    payload: bytes.get(header.fields_end..end)?,
+                    object_indices: header.object_indices,
+                    object_index_offsets: header.object_index_offsets,
                 },
             ))
         })
@@ -6857,7 +6922,9 @@ fn operation_body_reference_candidates(
         cursor += 1;
         let body_write = payload_start
             .and_then(|payload_start| marker.checked_sub(payload_start))
-            .and_then(|payload_marker| operation_body_write_frame_at(record, payload_marker));
+            .and_then(|payload_marker| {
+                operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
+            });
         if let Some(body_write) = body_write {
             if let Some(end) = body_write.end_offset.checked_sub(record.offset) {
                 cursor = cursor.max(end);
@@ -6891,14 +6958,24 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
 /// Both indices are non-null and canonical. The endpoint tag is the fixed
 /// direct body-reference tag `10`.
 pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<OperationBodyWriteFrame> {
+    body_write_frames(record.payload, record.payload_offset)
+}
+
+/// Decode body-write frames from one independently bounded unlabeled record.
+pub fn unlabeled_operation_body_write_frames(
+    record: UnlabeledOperationRecord<'_>,
+) -> Vec<OperationBodyWriteFrame> {
+    body_write_frames(record.payload, record.payload_offset)
+}
+
+fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<OperationBodyWriteFrame> {
     let mut relations = Vec::new();
-    for marker in record
-        .payload
+    for marker in payload
         .windows(2)
         .enumerate()
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
-        if let Some(write) = operation_body_write_frame_at(record, marker) {
+        if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
             relations.push(write);
         }
     }
@@ -6906,48 +6983,49 @@ pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<Operation
 }
 
 fn operation_body_write_frame_at(
-    record: OperationRecord<'_>,
+    payload: &[u8],
+    payload_offset: usize,
     marker: usize,
 ) -> Option<OperationBodyWriteFrame> {
-    let body_identity = *record.payload.get(marker + 2)?;
+    let body_identity = *payload.get(marker + 2)?;
     let first_token = marker + 3;
     let (Some(first_object_index), first_end) =
-        operation_relation_object_index(record.payload, first_token)?
+        operation_relation_object_index(payload, first_token)?
     else {
         return None;
     };
-    let raw_first_object_index = record.payload.get(first_token..first_end)?;
+    let raw_first_object_index = payload.get(first_token..first_end)?;
     if !canonical_operation_relation_object_index(Some(first_object_index), raw_first_object_index)
-        || record.payload.get(first_end..first_end + 4) != Some(&[0x97, 0x75, 0x01, 0x02])
+        || payload.get(first_end..first_end + 4) != Some(&[0x97, 0x75, 0x01, 0x02])
     {
         return None;
     }
-    let endpoint_tag = *record.payload.get(first_end + 4)?;
+    let endpoint_tag = *payload.get(first_end + 4)?;
     (endpoint_tag == 0x10).then_some(())?;
     let second_token = first_end + 5;
     let (Some(second_object_index), second_end) =
-        operation_relation_object_index(record.payload, second_token)?
+        operation_relation_object_index(payload, second_token)?
     else {
         return None;
     };
-    let raw_second_object_index = record.payload.get(second_token..second_end)?;
+    let raw_second_object_index = payload.get(second_token..second_end)?;
     if !canonical_operation_relation_object_index(
         Some(second_object_index),
         raw_second_object_index,
-    ) || record.payload.get(second_end) != Some(&0xff)
+    ) || payload.get(second_end) != Some(&0xff)
     {
         return None;
     }
     Some(OperationBodyWriteFrame {
-        offset: record.payload_offset + marker,
+        offset: payload_offset + marker,
         body_identity,
         group_node: first_object_index,
         raw_group_node: raw_first_object_index.to_vec(),
-        group_node_offset: record.payload_offset + first_token,
+        group_node_offset: payload_offset + first_token,
         body_image_object_index: second_object_index,
         raw_body_image_object_index: raw_second_object_index.to_vec(),
-        body_image_object_index_offset: record.payload_offset + second_token,
-        end_offset: record.payload_offset + second_end + 1,
+        body_image_object_index_offset: payload_offset + second_token,
+        end_offset: payload_offset + second_end + 1,
     })
 }
 

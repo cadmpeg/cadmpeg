@@ -129,6 +129,8 @@ pub(crate) struct ToggleRecords {
 pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
+    pub(crate) feature_unlabeled_operation_records: Vec<FeatureUnlabeledOperationRecord>,
+    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureUnlabeledOperationBodyWrite>,
     pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
     pub(crate) feature_operation_body_partition_uses: Vec<FeatureOperationBodyPartitionUse>,
@@ -531,6 +533,9 @@ impl NativeModel {
         let operation_state_statuses = operation_state_statuses(container);
         let operation_state_slot_lanes = operation_state_slot_lanes(container);
         let feature_operation_records = feature_operation_records(container);
+        let feature_unlabeled_operation_records = feature_unlabeled_operation_records(container);
+        let feature_unlabeled_operation_body_writes =
+            feature_unlabeled_operation_body_writes(container);
         let feature_operation_body_writes = feature_operation_body_writes(container);
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
             &feature_operation_body_writes,
@@ -1124,6 +1129,8 @@ impl NativeModel {
             features: FeatureRecords {
                 feature_operation_labels,
                 feature_operation_records,
+                feature_unlabeled_operation_records,
+                feature_unlabeled_operation_body_writes,
                 feature_operation_body_writes,
                 feature_operation_body_image_segment_uses,
                 feature_operation_body_partition_uses,

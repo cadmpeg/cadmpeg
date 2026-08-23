@@ -24,6 +24,22 @@ fn unlabeled_operation_header_still_bounds_adjacent_records() {
     assert_eq!(records[1].0, 2);
     assert_eq!(records[1].1.label.value, "SKETCH");
     assert_eq!(records[1].1.payload, b"tail");
+
+    let unlabeled = unlabeled_operation_records_with_ordinals(&bytes, 100, &labels);
+    let [(ordinal, record)] = unlabeled.as_slice() else {
+        panic!("one unlabeled operation record");
+    };
+    assert_eq!(*ordinal, 1);
+    assert_eq!(record.offset, 100 + 32);
+    assert_eq!(record.payload_offset, 100 + 51);
+    assert_eq!(record.object_indices, [None; 4]);
+    let writes = unlabeled_operation_body_write_frames(*record);
+    let [write] = writes.as_slice() else {
+        panic!("one independently bounded unlabeled body write");
+    };
+    assert_eq!(write.body_identity, 0x0b);
+    assert_eq!(write.group_node, 0x21);
+    assert_eq!(write.body_image_object_index, 0x22);
 }
 
 #[test]

@@ -97,6 +97,63 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Exactly bounded feature-history operation record without a label frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureUnlabeledOperationRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based order among all operation headers in the section.
+    pub ordinal: u32,
+    /// Four object-index slots in header order.
+    pub object_indices: [Option<u32>; 4],
+    /// Absolute source offsets of the four object-index tokens.
+    pub object_index_source_offsets: [u64; 4],
+    /// Exact record byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the complete operation record.
+    pub sha256: String,
+    /// Exact serialized post-header payload length.
+    pub payload_byte_len: u64,
+    /// SHA-256 of the post-header serialized operation payload.
+    pub payload_sha256: String,
+    /// Absolute file offset of the first post-header payload byte.
+    pub payload_source_offset: u64,
+    /// Absolute file offset of the fixed operation-header marker.
+    pub source_offset: u64,
+}
+
+/// Exact body-write frame retained from one unlabeled operation record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureUnlabeledOperationBodyWrite {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning bounded unlabeled operation-record identity.
+    pub operation_record: String,
+    /// Zero-based body-write order within the operation payload.
+    pub ordinal: u32,
+    /// Persistent identity of the body written by this operation.
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node owned by this operation.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_source_offset: u64,
+    /// Offset-store object containing the body's serialized image.
+    pub body_image_object_index: u32,
+    /// Unambiguous offset-store block selected by the body-image object index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_image_data_block: Option<String>,
+    /// Exact serialized body-image object token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object token.
+    pub body_image_object_index_source_offset: u64,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
 /// Exact body-write frame retained from one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationBodyWrite {
@@ -3113,6 +3170,42 @@ fn visit_feature_history_operation_records(
     }
 }
 
+fn visit_feature_history_unlabeled_operation_records(
+    container: &Container,
+    mut visit: impl FnMut(
+        &crate::om::Section<'_>,
+        &str,
+        u64,
+        usize,
+        crate::om::UnlabeledOperationRecord<'_>,
+    ),
+) {
+    let sections = container.om_sections();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.unlabeled_operation_records_with_ordinals() {
+            visit(
+                section,
+                &section_key,
+                entry_offset,
+                operation_ordinal,
+                record,
+            );
+        }
+    }
+}
+
 pub(crate) fn canonical_feature_history_links(
     links: impl IntoIterator<Item = SegmentOmLink>,
 ) -> Vec<SegmentOmLink> {
@@ -3349,6 +3442,78 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
             record
         })
         .collect()
+}
+
+/// Retain operation records whose validated headers have no complete label.
+pub fn feature_unlabeled_operation_records(
+    container: &Container,
+) -> Vec<FeatureUnlabeledOperationRecord> {
+    let mut records = Vec::new();
+    visit_feature_history_unlabeled_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            records.push(FeatureUnlabeledOperationRecord {
+                id: format!(
+                    "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
+                ),
+                ordinal: operation_ordinal as u32,
+                object_indices: record.object_indices,
+                object_index_source_offsets: record
+                    .object_index_offsets
+                    .map(|offset| entry_offset + offset as u64),
+                byte_len: record.bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                payload_byte_len: record.payload.len() as u64,
+                payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                payload_source_offset: entry_offset + record.payload_offset as u64,
+                source_offset: entry_offset + record.offset as u64,
+            });
+        },
+    );
+    records
+}
+
+/// Decode body-write frames owned by independently bounded unlabeled records.
+pub fn feature_unlabeled_operation_body_writes(
+    container: &Container,
+) -> Vec<FeatureUnlabeledOperationBodyWrite> {
+    let indexed = container.indexed_om_sections();
+    let mut writes = Vec::new();
+    visit_feature_history_unlabeled_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let operation_record = format!(
+                "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, write) in crate::om::unlabeled_operation_body_write_frames(record)
+                .into_iter()
+                .enumerate()
+            {
+                writes.push(FeatureUnlabeledOperationBodyWrite {
+                    id: format!(
+                        "nx:feature-history:unlabeled-operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    body_identity: write.body_identity,
+                    group_node: write.group_node,
+                    raw_group_node: write.raw_group_node,
+                    group_node_source_offset: entry_offset + write.group_node_offset as u64,
+                    body_image_object_index: write.body_image_object_index,
+                    body_image_data_block: unique_offset_data_block(
+                        &indexed,
+                        write.body_image_object_index,
+                    ),
+                    raw_body_image_object_index: write.raw_body_image_object_index,
+                    body_image_object_index_source_offset: entry_offset
+                        + write.body_image_object_index_offset as u64,
+                    byte_len: (write.end_offset - write.offset) as u64,
+                    source_offset: entry_offset + write.offset as u64,
+                });
+            }
+        },
+    );
+    writes
 }
 
 /// Decode exact body-write frames from bounded feature operations.

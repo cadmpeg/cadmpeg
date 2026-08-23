@@ -232,7 +232,12 @@ before the next validated operation marker; the final record extends through
 the feature-history record-area boundary. The four object-index slots are part
 of the header. A complete `03` label frame after those slots labels the record.
 A validated header without that frame is an unlabeled operation record and
-still bounds both adjacent records.
+still bounds both adjacent records. Its payload begins after the fourth header
+slot and extends through its record boundary. The record retains the four
+header slots, their token offsets, complete record and payload bounds and
+digests, and source offsets. Body-write frames in this payload belong to the
+unlabeled record and use the same body-identity, GROUP-node, and body-image
+grammar as labeled operation writes; they do not attach to an adjacent label.
 
 An operation-payload text frame is `marker:u8, length:u8,
 text[length - 2], 00`. The length is `text_byte_count + 2`, and the trailing
@@ -1481,7 +1486,7 @@ A zero-prefixed offset-store control block begins with an ordered class-selectio
 
 A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
 
-A feature-history operation record begins at the fixed operation-header marker and ends at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
+A labeled feature-history operation record begins at the fixed operation-header marker and ends at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
 
 Within one feature-history record area, operation records are stored in reverse
 construction order. Exact native records and labels retain source order.
