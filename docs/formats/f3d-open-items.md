@@ -18,6 +18,18 @@ A reference to the specification gives the section number and the start of the p
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
+## 0. Geometry evaluation
+
+### GS-01. Law-sweep straight-path origin
+
+**Question.** Does the point of a straight path contribute an absolute translation to a cache-less law-driven sweep, or does the sweep use only path displacement from the serialized parameter?
+
+**Known.** `asm.md` §6.3 "**`sweep_spl_sur` law-driven layout**" and `cadmpeg-ir/src/eval.rs` currently evaluate the path term as `spine(v)`. The serialized construction already stores the profile curve and profile frame in model space. A straight path stores an independent point and direction.
+
+**Conflict.** The construction equation translates the profile by `v * d`, where `d` is the unit straight-path direction. Adding `spine(v)` instead also adds the path's stored point and changes every surface point when that point is nonzero. The existing evaluator test uses a zero path point and cannot distinguish these rules.
+
+**Need.** A synthesized law-driven sweep with a nonzero straight-path point must check evaluated points and partial derivatives against the construction equation. The result determines whether the path point is a carrier anchor or an added translation.
+
 ## 1. Container, header, and design records
 
 ### DR-09A. Sheet-metal `Hem` fixed-section semantics
