@@ -527,6 +527,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 222 Form 0 stores four fixed primary fields, so its groups start at
 /// token five. Form 1 stores one additional fixed leader pointer, so its
 /// groups start at token six.
+/// Type 100 Form 0 stores seven fixed primary fields, so its groups start at
+/// token eight.
 /// Type 104 Forms 0 through 3 store eleven fixed primary fields, so their
 /// groups start at token twelve.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
@@ -831,6 +833,7 @@ pub(crate) fn entity_primary_end(
         (180, 0 | 1) => Some(boolean_tree_primary_end(record)),
         (141, 0) => Some(boundary_primary_end(record)),
         (142, 0) => Some(fixed_primary_end(record, 6)),
+        (100, 0) => Some(fixed_primary_end(record, 8)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
         (212, 0..=8 | 100..=102 | 105) => Some(general_note_primary_end(record)),
