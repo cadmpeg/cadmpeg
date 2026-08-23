@@ -647,6 +647,18 @@ fn analyze_trailing_pointer_groups_from_end(
 /// 5.
 /// Type 186 Form 0 puts the void-shell count at index 3 and stores one
 /// `(VOID, VOF)` pair per void shell, so its groups start at token `4 + 2*N`.
+/// Type 502 Form 1 puts the positive vertex count at index 1 and stores three
+/// coordinates per vertex, so its groups start at token `2 + 3*N`.
+/// Type 504 Form 1 puts the positive edge count at index 1 and stores five
+/// fields per edge, so its groups start at token `2 + 5*N`.
+/// Type 508 Form 1 puts the positive edge-use count at index 1. Each use has
+/// five fixed fields followed by `2*K` parameter-curve fields, so its groups
+/// start after the complete nested use sequence.
+/// Type 510 Form 1 puts the positive loop count at index 2 after the surface
+/// pointer and stores one loop pointer per count, so its groups start at token
+/// `4 + N`.
+/// Type 514 Forms 1 and 2 put the positive face-use count at index 1 and store
+/// two fields per face use, so their groups start at token `2 + 2*N`.
 /// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
 /// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
@@ -829,6 +841,11 @@ pub(crate) fn entity_primary_end(
         (122, 0) => Some(fixed_primary_end(record, 5)),
         (182, 0) => Some(fixed_primary_end(record, 5)),
         (186, 0) => Some(manifold_solid_primary_end(record)),
+        (502, 1) => Some(vertex_list_primary_end(record)),
+        (504, 1) => Some(edge_list_primary_end(record)),
+        (508, 1) => Some(loop_primary_end(record)),
+        (510, 1) => Some(face_primary_end(record)),
+        (514, 1 | 2) => Some(shell_primary_end(record)),
         (312, 0..=1) => Some(fixed_primary_end(record, 11)),
         (314, 0) => Some(fixed_primary_end(record, 5)),
         (304, 1) => Some(fixed_primary_end(record, 5)),
@@ -1714,6 +1731,75 @@ fn manifold_solid_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|span| span.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn positive_counted_primary_end(
+    record: &ParameterRecord,
+    count_index: usize,
+    primary_start: usize,
+    item_stride: usize,
+) -> usize {
+    let Some(count) = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    count
+        .checked_mul(item_stride)
+        .and_then(|span| primary_start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn vertex_list_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 3)
+}
+
+fn edge_list_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 5)
+}
+
+fn loop_primary_end(record: &ParameterRecord) -> usize {
+    let Some(use_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let mut index: usize = 2;
+    for _ in 0..use_count {
+        let Some(parameter_curve_count_index) = index.checked_add(4) else {
+            return record.tokens.len();
+        };
+        let Some(parameter_curve_count) = record
+            .integer(parameter_curve_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next_index) = index
+            .checked_add(5)
+            .and_then(|start| parameter_curve_count.checked_mul(2)?.checked_add(start))
+        else {
+            return record.tokens.len();
+        };
+        if next_index > record.tokens.len() {
+            return record.tokens.len();
+        }
+        index = next_index;
+    }
+    index
+}
+
+fn face_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 2, 4, 1)
+}
+
+fn shell_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 2)
 }
 
 fn rectangular_array_primary_end(record: &ParameterRecord) -> usize {

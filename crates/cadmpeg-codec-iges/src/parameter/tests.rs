@@ -4157,6 +4157,413 @@ fn type186_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type_brep_entity_table_boundaries_follow_counted_and_nested_lists() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (entity_type, form, values, expected_start) in [
+        (
+            502_i64,
+            1_i64,
+            vec![
+                502.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            5_usize,
+        ),
+        (
+            504,
+            1,
+            vec![
+                504.into(),
+                1.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                7.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            7,
+        ),
+        (
+            508,
+            1,
+            vec![
+                508.into(),
+                1.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            7,
+        ),
+        (
+            508,
+            1,
+            vec![
+                508.into(),
+                1.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+                7.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            9,
+        ),
+        (
+            508,
+            1,
+            vec![
+                508.into(),
+                2.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+                7.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            14,
+        ),
+        (
+            510,
+            1,
+            vec![
+                510.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            5,
+        ),
+        (
+            514,
+            1,
+            vec![
+                514.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            4,
+        ),
+        (
+            514,
+            2,
+            vec![
+                514.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            4,
+        ),
+    ] {
+        let mut source = directory_target(9, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (9, &source)]);
+        let record = token_parameter_record(9, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        let groups = analysis.groups.expect("B-rep entity table boundary");
+        assert_eq!(
+            groups.token_start, expected_start,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            groups.associations,
+            vec![1],
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(groups.properties, vec![3], "Type {entity_type} Form {form}");
+    }
+}
+
+#[test]
+fn type_brep_table_boundaries_precede_valid_generic_alternatives() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    for (entity_type, form, values, expected_start) in [
+        (
+            502_i64,
+            1_i64,
+            vec![
+                502.into(),
+                1.into(),
+                0.into(),
+                0.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            5_usize,
+        ),
+        (
+            504,
+            1,
+            vec![
+                504.into(),
+                1.into(),
+                1.into(),
+                5.into(),
+                1.into(),
+                7.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            7,
+        ),
+        (
+            508,
+            1,
+            vec![
+                508.into(),
+                1.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                0.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            9,
+        ),
+        (
+            510,
+            1,
+            vec![
+                510.into(),
+                5.into(),
+                1.into(),
+                2.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            5,
+        ),
+        (
+            514,
+            1,
+            vec![
+                514.into(),
+                1.into(),
+                5.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+            4,
+        ),
+    ] {
+        let mut source = directory_target(9, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (9, &source)]);
+        let record = token_parameter_record(9, values);
+        let generic_starts = structural_pointer_group_candidates(&record)
+            .into_iter()
+            .filter(|candidate| {
+                groups_for_candidate(&record, &directory, *candidate)
+                    .is_some_and(|groups| groups.fully_valid)
+            })
+            .map(|candidate| candidate.token_start)
+            .collect::<Vec<_>>();
+        assert!(
+            generic_starts.contains(&(expected_start - 1)),
+            "Type {entity_type} Form {form}: generic starts {generic_starts:?}"
+        );
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(
+            analysis.candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.groups.expect("B-rep table boundary").token_start,
+            expected_start,
+            "Type {entity_type} Form {form}"
+        );
+    }
+}
+
+#[test]
+fn type_brep_malformed_count_or_nested_span_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let cases = [
+        (
+            502_i64,
+            1_i64,
+            vec![
+                502.into(),
+                0.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            504,
+            1,
+            vec![
+                504.into(),
+                (-1_i64).into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            508,
+            1,
+            vec![
+                508.into(),
+                1.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                i64::MAX.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            510,
+            1,
+            vec![
+                510.into(),
+                5.into(),
+                TokenValue::String(b"bad".to_vec()),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+        (
+            514,
+            2,
+            vec![
+                514.into(),
+                0.into(),
+                5.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ],
+        ),
+    ];
+    for (entity_type, form, values) in cases {
+        let mut source = directory_target(9, entity_type);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (3, &property), (9, &source)]);
+        let record = token_parameter_record(9, values);
+        assert_eq!(
+            entity_primary_end(&record, &directory),
+            Some(record.tokens.len()),
+            "Type {entity_type} Form {form}"
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(
+            analysis.candidate_count, 0,
+            "Type {entity_type} Form {form}"
+        );
+        assert_eq!(
+            analysis.valid_candidate_count, 0,
+            "Type {entity_type} Form {form}"
+        );
+        assert!(analysis.groups.is_none(), "Type {entity_type} Form {form}");
+    }
+}
+
+#[test]
 fn analytic_surface_forms_follow_fixed_primary_boundaries() {
     let association = directory_target(1, 212);
     let property = directory_target(3, 406);
