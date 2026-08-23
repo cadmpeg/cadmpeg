@@ -483,6 +483,17 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     } else {
         None
     };
+    // Dynamic line operands carry a family tag, not a stable line identity.
+    // When marker and solver-line joins do not produce a pair, the complete
+    // owner sketch is the remaining semantic scope. Accept it only when the
+    // stored operands contain no explicit identity and exactly one pair meets
+    // the native distance.
+    let dynamic_roster_line_distance_pair =
+        if dynamic && relation.family == LineLineDistance && dynamic_line_distance_pair.is_none() {
+            unique_dynamic_roster_line_distance_pair(relation, sketch, parameter, sketch_entities)
+        } else {
+            None
+        };
     let dynamic_angle_pair = if dynamic && relation.family == Angle {
         unique_dynamic_marker_line_angle_pair(
             relation,
@@ -506,7 +517,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 dynamic_point_line_pair.is_some() || (point(0).is_some() && curve(1).is_some())
             }
             LineLineDistance => {
-                dynamic_line_distance_pair.is_some() || (curve(0).is_some() && curve(1).is_some())
+                dynamic_line_distance_pair.is_some()
+                    || dynamic_roster_line_distance_pair.is_some()
+                    || (curve(0).is_some() && curve(1).is_some())
             }
             Angle => dynamic_angle_pair.is_some() || (curve(0).is_some() && curve(1).is_some()),
             CircleDiameter => true,
@@ -799,7 +812,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             });
             let authoritative =
                 matches!((&first, &second), (Some(first), Some(second)) if first != second);
-            let (mut first, mut second) = match dynamic_line_distance_pair {
+            let (mut first, mut second) = match dynamic_line_distance_pair
+                .or(dynamic_roster_line_distance_pair)
+            {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
@@ -1927,6 +1942,22 @@ fn unique_dynamic_marker_line_distance_pair(
         }
     }
     sole_sorted(pairs)
+}
+
+fn unique_dynamic_roster_line_distance_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    if relation
+        .operands
+        .iter()
+        .any(|operand| operand.entity_ref.is_some())
+    {
+        return None;
+    }
+    unique_profile_line_distance_pair(sketch, parameter, sketch_entities)
 }
 
 fn dynamic_line_operand_candidates(

@@ -1321,6 +1321,112 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
 }
 
 #[test]
+fn dynamic_line_distance_uses_unique_complete_roster() {
+    let sketch = SketchId("sketch".into());
+    let first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 2.0),
+        Point2::new(10.0, 2.0),
+    );
+    let unrelated = line_entity(
+        "unrelated-line",
+        &sketch,
+        Point2::new(0.0, 1.0),
+        Point2::new(10.0, 2.0),
+    );
+    let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &[first.clone(), second.clone(), unrelated],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Distance {
+            entities: vec![first.id, second.id],
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
+fn dynamic_line_distance_with_ambiguous_complete_roster_stays_native() {
+    let sketch = SketchId("sketch".into());
+    let first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 2.0),
+        Point2::new(10.0, 2.0),
+    );
+    let alternate = line_entity(
+        "alternate-line",
+        &sketch,
+        Point2::new(0.0, -2.0),
+        Point2::new(10.0, -2.0),
+    );
+    let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &[first, second, alternate],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
+fn dynamic_line_distance_does_not_bypass_explicit_operands() {
+    let sketch = SketchId("sketch".into());
+    let first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 2.0),
+        Point2::new(10.0, 2.0),
+    );
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
+    relation.operands[0].entity_ref = Some("explicit-line".into());
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &[first, second],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::LineOrCircle, None);
