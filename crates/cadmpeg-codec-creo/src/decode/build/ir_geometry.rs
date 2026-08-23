@@ -75,7 +75,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_resolved_extrusion_vertex_orbit_curves(scan, ir, annotations);
     let active_datum_cylinder_count = transfer_active_datum_cylinders(scan, ir, annotations);
     let circular_sweep_cylinder_count = transfer_circular_sweep_cylinders(scan, ir, annotations);
-    let positional_cylinder_count = transfer_positional_cylinders(scan, ir, annotations);
+    let positional_cylinders = transfer_positional_cylinders(scan, ir, annotations);
     let positional_cone_count = transfer_positional_cones(scan, ir, annotations);
     let split_outline_cylinder_count = transfer_split_outline_cylinders(scan, ir, annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, ir, annotations);
@@ -403,7 +403,27 @@ pub(super) fn transfer_and_record_scanned_geometry(
         );
         coverage.insert(
             "transferred_positional_cylinder_count".to_string(),
-            positional_cylinder_count,
+            positional_cylinders.transferred,
+        );
+        coverage.insert(
+            "round_edge_complete_envelope_count".to_string(),
+            positional_cylinders.round_edge_complete_envelopes,
+        );
+        coverage.insert(
+            "round_edge_missing_support_plane_count".to_string(),
+            positional_cylinders.round_edge_missing_support_planes,
+        );
+        coverage.insert(
+            "round_edge_unsolved_carrier_count".to_string(),
+            positional_cylinders.round_edge_unsolved_carriers,
+        );
+        coverage.insert(
+            "round_edge_solved_carrier_count".to_string(),
+            positional_cylinders.round_edge_solved_carriers,
+        );
+        coverage.insert(
+            "transferred_round_edge_carrier_count".to_string(),
+            positional_cylinders.round_edge_transferred_carriers,
         );
         coverage.insert(
             "decoded_type24_round_edge_envelope_count".to_string(),

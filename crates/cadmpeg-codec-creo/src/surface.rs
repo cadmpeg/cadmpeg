@@ -4728,7 +4728,7 @@ fn unique_positional_cylinder_frame(
         .then_some(first)
 }
 
-fn positional_cylinder_frames_agree(
+pub(crate) fn positional_cylinder_frames_agree(
     first: PositionalCylinderFrame,
     second: PositionalCylinderFrame,
 ) -> bool {

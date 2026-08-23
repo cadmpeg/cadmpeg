@@ -34,6 +34,16 @@ use super::super::uniqueness::exactly_one;
 const EPS_ROUND_EDGE_RELATIVE: f64 = 1e-9;
 const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = 1e-8;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(in super::super) struct PositionalCylinderTransferSummary {
+    pub transferred: usize,
+    pub round_edge_complete_envelopes: usize,
+    pub round_edge_missing_support_planes: usize,
+    pub round_edge_unsolved_carriers: usize,
+    pub round_edge_solved_carriers: usize,
+    pub round_edge_transferred_carriers: usize,
+}
+
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::FeatureEntityTable],
@@ -577,11 +587,75 @@ fn round_edge_cylinder_frame(
     Some(*frame)
 }
 
+fn perpendicular_round_edge_cylinder_frame(
+    envelope: crate::surface::Type24RoundEdgeEnvelope,
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [first, second] = envelope.vertices;
+    let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
+    let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
+        let scale = point
+            .into_iter()
+            .chain(plane.origin)
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
+            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+    };
+    let mut radii = Vec::new();
+    for (first_index, first_support) in support_planes.iter().copied().enumerate() {
+        let Some(first_normal) = normalized(first_support.normal) else {
+            continue;
+        };
+        let first_support = PlaneEquation {
+            origin: first_support.origin,
+            normal: first_normal,
+        };
+        for second_support in support_planes.iter().copied().skip(first_index + 1) {
+            let Some(second_normal) = normalized(second_support.normal) else {
+                continue;
+            };
+            if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+                continue;
+            }
+            let second_support = PlaneEquation {
+                origin: second_support.origin,
+                normal: second_normal,
+            };
+            for (first_plane, first_plane_normal, second_plane, second_plane_normal) in [
+                (first_support, first_normal, second_support, second_normal),
+                (second_support, second_normal, first_support, first_normal),
+            ] {
+                if !plane_contains(first, first_plane) || !plane_contains(second, second_plane) {
+                    continue;
+                }
+                let first_radius = dot(delta, first_plane_normal).abs();
+                let second_radius = dot(delta, second_plane_normal).abs();
+                let scale = first_radius.max(second_radius).max(1.0);
+                if first_radius <= EPS_ROUND_EDGE_RELATIVE * scale
+                    || (first_radius - second_radius).abs() > EPS_ROUND_EDGE_RELATIVE * scale
+                {
+                    continue;
+                }
+                if !radii.iter().any(|radius: &f64| {
+                    (*radius - first_radius).abs() <= EPS_ROUND_EDGE_RELATIVE * scale
+                }) {
+                    radii.push(first_radius);
+                }
+            }
+        }
+    }
+    let [radius] = radii.as_slice() else {
+        return None;
+    };
+    round_edge_cylinder_frame(envelope, *radius, support_planes)
+}
+
 pub(in super::super) fn transfer_positional_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+) -> PositionalCylinderTransferSummary {
     let constant_round_radii = scan
         .surfaces
         .rows
@@ -630,7 +704,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut transferred = 0;
+    let mut summary = PositionalCylinderTransferSummary::default();
     for record in &scan.surfaces.parameters {
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
             != Some(record)
@@ -643,6 +717,12 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         };
         let feature_class = feature_schema_class(scan, row.feature_id);
+        let round_edge_envelope = (feature_class == Some(913))
+            .then(|| record.type24_round_edge_envelope(row.type_byte))
+            .flatten();
+        if round_edge_envelope.is_some() {
+            summary.round_edge_complete_envelopes += 1;
+        }
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(row.type_byte);
         let round_support_frame = (feature_class == Some(913))
@@ -651,18 +731,38 @@ pub(in super::super) fn transfer_positional_cylinders(
             .and_then(|envelope| {
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
             });
-        let round_edge_frame =
-            constant_round_radii
-                .get(&row.feature_id)
-                .copied()
-                .and_then(|radius| {
-                    let support_planes = round_edge_support_planes.get(&row.id)?;
-                    record
-                        .type24_round_edge_envelope(row.type_byte)
-                        .and_then(|envelope| {
-                            round_edge_cylinder_frame(envelope, radius, support_planes)
-                        })
-                });
+        let support_planes = round_edge_support_planes.get(&row.id);
+        let round_edge_frame = support_planes.and_then(|support_planes| {
+            round_edge_envelope.and_then(|envelope| {
+                let replay = constant_round_radii
+                    .get(&row.feature_id)
+                    .copied()
+                    .and_then(|radius| round_edge_cylinder_frame(envelope, radius, support_planes));
+                let perpendicular =
+                    perpendicular_round_edge_cylinder_frame(envelope, support_planes);
+                match (replay, perpendicular) {
+                    (Some(replay), Some(perpendicular))
+                        if crate::surface::positional_cylinder_frames_agree(
+                            replay,
+                            perpendicular,
+                        ) =>
+                    {
+                        Some(replay)
+                    }
+                    (Some(frame), None) | (None, Some(frame)) => Some(frame),
+                    _ => None,
+                }
+            })
+        });
+        if round_edge_envelope.is_some() {
+            if support_planes.is_none_or(|planes| planes.len() < 2) {
+                summary.round_edge_missing_support_planes += 1;
+            } else if round_edge_frame.is_some() {
+                summary.round_edge_solved_carriers += 1;
+            } else {
+                summary.round_edge_unsolved_carriers += 1;
+            }
+        }
         // Section-cut rows can use the same type-24 selector and scalar-frame
         // shape as a repeated-diameter round. The row body alone does not
         // establish a cylinder carrier in that feature context; section
@@ -675,7 +775,8 @@ pub(in super::super) fn transfer_positional_cylinders(
             && (matches!(feature_class, Some(916))
                 || matches!(feature_class, Some(913))
                     && !constant_round_radii.contains_key(&row.feature_id)
-                    && round_support_frame.is_none())
+                    && round_support_frame.is_none()
+                    && round_edge_frame.is_none())
         {
             continue;
         }
@@ -774,9 +875,11 @@ pub(in super::super) fn transfer_positional_cylinders(
                 instance_path: Vec::new(),
             }),
         });
-        transferred += 1;
+        summary.transferred += 1;
+        summary.round_edge_transferred_carriers +=
+            usize::from(mechanism == "round_edge_endpoint_cylinder");
     }
-    transferred
+    summary
 }
 
 pub(in super::super) fn reference_circle_pair_cylinder_frame(
