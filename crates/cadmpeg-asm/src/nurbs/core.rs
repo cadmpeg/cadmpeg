@@ -558,29 +558,24 @@ pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
     })
 }
 
-/// Decode the face-surface cache of a spline surface record: the LAST valid
-/// surface block in the record (the final `setSurfaceShape` cache; earlier
-/// blocks are support surfaces or 2D pcurves). Returns `None` when no surface
-/// block is present or parseable.
+/// Decode the unique well-formed surface cache across both integer widths.
+///
+/// This generic entry point has no stream-width, owning-scope, or family-role
+/// witness. It therefore withholds when more than one `(width, marker)`
+/// candidate decodes.
 pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_surface_cache_at(record_bytes, int_width))
-}
-
-fn decode_surface_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsSurface> {
-    let caches = marker_positions(record_bytes)
-        .into_iter()
-        .filter_map(|pos| decode_surface_block(record_bytes, pos, int_width))
-        .map(|decoded| decoded.surface);
-    if record_bytes
-        .windows(b"comp_spl_sur".len())
-        .any(|window| window == b"comp_spl_sur")
-    {
-        caches.into_iter().next()
-    } else {
-        caches.into_iter().next_back()
+    let mut decoded = None;
+    for int_width in INT_WIDTHS {
+        for position in marker_positions(record_bytes) {
+            if let Some(candidate) = decode_surface_block(record_bytes, position, int_width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate.surface);
+            }
+        }
     }
+    decoded
 }
 
 /// Decode the surface cache a subtype scope itself owns: the first surface

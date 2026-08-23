@@ -1267,6 +1267,11 @@ mod width_tests {
             assert!(super::final_pcurve_patch_layout(&block, int_width).is_some());
             let other_width = if int_width == 4 { 8 } else { 4 };
             assert!(super::final_pcurve_patch_layout(&block, other_width).is_none());
+
+            let mut surfaces = b"comp_spl_sur".to_vec();
+            surfaces.extend_from_slice(&surface_block(int_width));
+            surfaces.extend_from_slice(&surface_block(int_width));
+            assert!(decode_surface_cache(&surfaces).is_none());
         }
     }
 
