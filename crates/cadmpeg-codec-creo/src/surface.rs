@@ -5897,12 +5897,13 @@ fn decode_precise_center_edge_cylinder_frame(
     let second: [f64; 3] = values[4..7].try_into().ok()?;
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
     let candidates = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
         .into_iter()
         .filter_map(|(first_radial, second_radial, axis_index)| {
             (close(spans[first_radial], spans[second_radial])
-                && spans[first_radial] > 1e-12 * scale
+                && spans[first_radial] > EPS_CYLINDER_GEOMETRY_MIN * scale
                 && spans[axis_index] > spans[first_radial])
                 .then_some((first_radial, second_radial, axis_index))
         })
@@ -5914,9 +5915,8 @@ fn decode_precise_center_edge_cylinder_frame(
     let origin_axial = second[*axis_index] + signed_length;
     let lower = origin_axial.min(second[*axis_index]);
     let upper = origin_axial.max(second[*axis_index]);
-    (first[*axis_index] >= lower - 1e-9 * scale
-        && first[*axis_index] <= upper + 1e-9 * scale
-        && (first[*axis_index] - origin_axial).abs() <= radius + 1e-9 * scale)
+    (first[*axis_index] >= lower - EPS_CYLINDER_GEOMETRY_RELATIVE * scale
+        && first[*axis_index] <= upper + EPS_CYLINDER_GEOMETRY_RELATIVE * scale)
         .then_some(())?;
 
     let mut origin = first;

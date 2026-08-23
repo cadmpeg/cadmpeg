@@ -788,8 +788,8 @@ the radius. The remaining span is axial and is greater than the radius. The
 first sample supplies both radial center coordinates. Adding the signed extent
 to the second sample's axial coordinate gives the precise origin coordinate;
 the first sample's coarse axial coordinate lies between that origin and the
-second sample and differs from the precise origin by at most one radius. The
-axis points from the precise origin toward the second sample. Of the two radial
+second sample. The axis points from the precise origin toward the second
+sample. Of the two radial
 model axes, the later XYZ coordinate is the parameter-space reference axis and
 points from the first sample toward the second.
 

@@ -722,13 +722,15 @@ fn positional_cylinder_frame_decodes_precise_center_edge_envelope() {
     )
     .is_none());
 
-    let mut inconsistent_precise_origin = body;
-    inconsistent_precise_origin[20..23].copy_from_slice(&[47, 52, 0]);
-    assert!(decode_positional_cylinder_frame(
-        &inconsistent_precise_origin,
-        &scalar::ScalarCache::default()
-    )
-    .is_none());
+    let mut distant_coarse_axial_sample = body;
+    distant_coarse_axial_sample[20..23].copy_from_slice(&[47, 52, 0]);
+    assert_eq!(
+        decode_positional_cylinder_frame(
+            &distant_coarse_axial_sample,
+            &scalar::ScalarCache::default()
+        ),
+        Some(frame)
+    );
 }
 
 #[test]
