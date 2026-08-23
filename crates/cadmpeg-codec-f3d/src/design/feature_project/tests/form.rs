@@ -83,6 +83,29 @@ fn reads_owned_cage_objects() {
 }
 
 #[test]
+fn reads_single_cage_list_with_opaque_tail() {
+    let mut list = indexed_frame(b"415", 2196, 99);
+    list[21] = 1;
+    list[22..30].copy_from_slice(&2190u64.to_le_bytes());
+    list[32..36].copy_from_slice(&1u32.to_le_bytes());
+    list[36] = 1;
+    list[37..45].copy_from_slice(&8300u64.to_le_bytes());
+    list[47..99].fill(0xa5);
+    let paired = indexed_frame(b"258", 2196, 15);
+    let bytes = [list, paired].concat();
+
+    assert_eq!(
+        super::form_cage_objects(
+            &bytes,
+            &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+            2196,
+            2190,
+        ),
+        Some(vec![8300])
+    );
+}
+
+#[test]
 fn resolves_cage_surface_through_owned_object_chain() {
     let mut object = indexed_frame(b"301", 8300, 200);
     object[189] = 1;
