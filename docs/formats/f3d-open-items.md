@@ -62,19 +62,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** The neutral model still needs one edge identity per operand for standard recipes whose reference, incidence, cardinality, transition, or complete compact-group proof does not resolve the candidate. Other alternate recipe tails still require their identity rules.
 
-### DR-17. Extrude selection unknowns
-
-**Question.** We must find four answers:
-
-- what an identity that is absent from history denotes
-- which field separates two profile loops that meet at the same ordered persistent Sketch points
-- what the context UUID names
-- what the optional slot of the fixed member tail holds
-
-**Known.** `f3d.md` §3.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §3.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §3.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present. A class-`338` profile member with a class-`361` identity uses the fixed 49-byte identity layout in `f3d.md` and resolves to ordered neutral Sketch entities when its owner and curve identities are unique. A face-profile root whose later one-member children use paired selector prefixes resolves from the exact deleted-face transition when the transition deletes one uniquely surfaced preceding face per child; broader persistent candidate lanes do not override this paired-aggregate proof. A native `ToFace` target resolves only when its termination group supplies exactly one qualifying referenced face: a planar face parallel to that side's oriented sweep direction with its plane origin beyond the profile plane in that direction. More than one qualifying candidate, or no candidate with all three properties, retains the native selection.
-
-**Need.** The remaining unknowns make some Extrude selections fall back to native retention. The neutral model then has no selection for those selections.
-
 ### DR-19. Construction-group fields
 
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?
