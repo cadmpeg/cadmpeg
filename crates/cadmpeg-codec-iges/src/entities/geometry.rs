@@ -1042,6 +1042,91 @@ pub(crate) fn project_geometry(
     }
     for entry in directory
         .iter()
+        .filter(|entry| entry.entity_type == 125 && (0..=4).contains(&entry.form))
+    {
+        let factor = global.length_factor_mm();
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let coordinates = [record.number(1), record.number(2)];
+        let [Some(x), Some(y)] = coordinates else {
+            losses.push(entity_loss(
+                entry,
+                "X or Y reference coordinate is not numeric",
+            ));
+            continue;
+        };
+        if !x.is_finite() || !y.is_finite() {
+            losses.push(entity_loss(
+                entry,
+                "X or Y reference coordinate is not finite",
+            ));
+            continue;
+        }
+        let required_real = |index| record.number(index).is_some_and(f64::is_finite);
+        let optional_real = |index| record.number_or(index, 0.0).is_some_and(f64::is_finite);
+        let shape_parameters_valid = match entry.form {
+            0 => true,
+            1 => required_real(3) && optional_real(4) && optional_real(5),
+            2 => required_real(3) && required_real(4) && required_real(5),
+            3 => required_real(3) && required_real(4) && optional_real(5),
+            4 => required_real(3) && required_real(4) && required_real(5),
+            _ => false,
+        };
+        if !shape_parameters_valid {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 125 flash shape parameters are incomplete or non-finite")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
+        if entry.form == 0 && record.integer_or(6, 0).is_none_or(|pointer| pointer == 0) {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 125 Form 0 has no defining entity pointer")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            global.real_precision(),
+            &mut BTreeSet::new(),
+            ctx,
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let position = transform.point(Point3::new(x * factor, y * factor, 0.0));
+        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+            losses.push(entity_loss(entry, "scaled reference point is not finite"));
+            continue;
+        }
+        let point = PointId(format!("iges:model:point#D{}", entry.sequence));
+        ir.model.points.push(Point {
+            source_object: None,
+            id: point.clone(),
+            position,
+        });
+        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+            ir.model.vertices.push(Vertex {
+                id: vertex.clone(),
+                point,
+                tolerance: None,
+            });
+            free_vertices.push(vertex);
+        }
+        decoded.insert(entry.sequence);
+    }
+    for entry in directory
+        .iter()
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
         let factor = global.length_factor_mm();

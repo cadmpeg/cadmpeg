@@ -2540,6 +2540,7 @@
             }
           ],
           "external_references": [],
+          "flashes": [],
           "groups": [
             {
               "back_pointers_required": true,
@@ -2597,7 +2598,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 4
+        "version": 5
       }
     },
     "source": {

@@ -2588,6 +2588,7 @@
             }
           ],
           "external_references": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [
             {
@@ -2667,7 +2668,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 4
+        "version": 5
       }
     },
     "source": {

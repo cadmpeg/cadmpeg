@@ -176,7 +176,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
             && appearance.name.as_deref() == Some("custom")));
     assert_eq!(result.ir().model.appearance_bindings.len(), 2);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 4);
+    assert_eq!(native.version, 5);
     assert_eq!(native.arenas["colors"].len(), 1);
     assert_eq!(
         native.arenas["colors"][0].id(),

@@ -6,9 +6,11 @@ specification_version = "5.3"
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
 # list is closed and admits only those forms. Obsolete, finite-element,
 # electrical/artwork/schematic, and macro/extension branches are adjacent
-# envelopes and are not part of this mechanical/document envelope. Types 132,
-# 320, and 420 remain admitted as product-network identity and occurrence
-# records; electrical signal, node, and artwork semantics remain excluded.
+# envelopes and are not part of this mechanical/document envelope. Type 125
+# is admitted as a geometry location carrier; its artwork shape is retained
+# in the typed native arena. Types 132, 320, and 420 remain admitted as
+# product-network identity and occurrence records; other electrical signal,
+# node, and artwork semantics remain excluded.
 
 [[entity]]
 type = 0
@@ -159,6 +161,16 @@ decoder = "entities::geometry::project_geometry"
 destination = "native.iges.transforms"
 fixture_classes = ["transforms"]
 assertions = ["composition", "reflection", "scale", "byte-coverage"]
+
+[[entity]]
+type = 125
+name = "flash"
+forms = [0, 1, 2, 3, 4]
+domain = "geometry-artwork"
+decoder = "entities::geometry::project_geometry"
+destination = "model.points,native.iges.flashes"
+fixture_classes = ["flash-forms", "placed-points"]
+assertions = ["reference-point", "shape-parameters", "defining-reference", "byte-coverage"]
 
 [[entity]]
 type = 126

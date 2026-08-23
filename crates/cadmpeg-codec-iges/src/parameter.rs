@@ -843,6 +843,7 @@ pub(crate) fn entity_primary_end(
         (118, 0 | 1) => Some(fixed_primary_end(record, 5)),
         (120, 0) => Some(fixed_primary_end(record, 5)),
         (122, 0) => Some(fixed_primary_end(record, 5)),
+        (125, 0..=4) => Some(fixed_primary_end(record, 7)),
         (182, 0) => Some(fixed_primary_end(record, 5)),
         (186, 0) => Some(manifold_solid_primary_end(record)),
         (502, 1) => Some(vertex_list_primary_end(record)),

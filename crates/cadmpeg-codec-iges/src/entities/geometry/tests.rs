@@ -167,6 +167,170 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
 }
 
 #[test]
+fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 125,
+                    form: 0,
+                    label: "FLASH0".into(),
+                    status: "00000000",
+                    parameters: "125,1,2,0,0,0,11;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 125,
+                    form: 1,
+                    label: "FLASH1".into(),
+                    status: "00000000",
+                    parameters: "125,3,4,10,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 125,
+                    form: 2,
+                    label: "FLASH2".into(),
+                    status: "00000000",
+                    parameters: "125,5,6,10,20,0.5,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 125,
+                    form: 3,
+                    label: "FLASH3".into(),
+                    status: "00000000",
+                    parameters: "125,7,8,30,10,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 125,
+                    form: 4,
+                    label: "FLASH4".into(),
+                    status: "00000000",
+                    parameters: "125,9,10,40,20,0.75,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 100,
+                    form: 0,
+                    label: "DEFINER".into(),
+                    status: "00000000",
+                    parameters: "100,0,0,0,1,0,0,1;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .points
+            .iter()
+            .filter(|point| {
+                matches!(
+                    point.id.0.as_str(),
+                    "iges:model:point#D1"
+                        | "iges:model:point#D3"
+                        | "iges:model:point#D5"
+                        | "iges:model:point#D7"
+                        | "iges:model:point#D9"
+                )
+            })
+            .count(),
+        5
+    );
+    for (sequence, x, y) in [
+        (1, 1.0, 2.0),
+        (3, 3.0, 4.0),
+        (5, 5.0, 6.0),
+        (7, 7.0, 8.0),
+        (9, 9.0, 10.0),
+    ] {
+        let point = result
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|point| point.id.0 == format!("iges:model:point#D{sequence}"))
+            .unwrap();
+        assert_eq!(point.position, cadmpeg_ir::math::Point3::new(x, y, 0.0));
+    }
+    let flashes = &result.ir().native.namespace("iges").unwrap().arenas["flashes"];
+    assert_eq!(flashes.len(), 5);
+    assert_eq!(flashes[0].fields()["form"], 0);
+    assert_eq!(
+        flashes[0].fields()["reference_entity"],
+        "iges:entity:directory#11"
+    );
+    assert_eq!(flashes[2].fields()["dimension_1"], 10.0);
+    assert_eq!(flashes[2].fields()["dimension_2"], 20.0);
+    assert_eq!(flashes[2].fields()["rotation"], 0.5);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn type125_flash_is_admitted_in_v4_and_v5() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for global in [global_v4.as_slice(), global_v5.as_slice()] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 125,
+                        form: 2,
+                        label: "FLASH".into(),
+                        status: "00000000",
+                        parameters: "125,3,4,10,20,0.5,0;".into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(
+            result.ir().native.namespace("iges").unwrap().arenas["flashes"].len(),
+            1
+        );
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
+                || loss.code == IgesLossCode::EntityNotProjected.kind()
+        }));
+    }
+}
+
+#[test]
+fn type125_form0_without_defining_entity_reports_display_loss() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 125,
+                form: 0,
+                label: "FLASH".into(),
+                status: "00000000",
+                parameters: "125,1,2,0,0,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss
+                .message
+                .contains("Type 125 Form 0 has no defining entity pointer")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
     fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
         crate::directory::DirectoryEntry {

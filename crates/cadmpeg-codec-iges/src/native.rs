@@ -85,6 +85,18 @@ struct NativeDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeFlash {
+    id: String,
+    source_entity: String,
+    form: i64,
+    reference_point: [Option<f64>; 2],
+    dimension_1: Option<f64>,
+    dimension_2: Option<f64>,
+    rotation: Option<f64>,
+    reference_entity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeTransformation {
     id: String,
     source_entity: String,
@@ -1702,6 +1714,30 @@ pub(crate) fn store(
                     .collect(),
                 physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
+            }
+        })
+        .collect::<Vec<_>>();
+    let flashes = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 125 && matches!(entry.form, 0..=4))
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            let reference_entity = parameters
+                .and_then(|record| record.integer_or(6, 0))
+                .and_then(|sequence| parameter_resolver.resolve_any(entry.sequence, 6, sequence))
+                .map(|sequence| format!("iges:entity:directory#{sequence}"));
+            NativeFlash {
+                id: format!("iges:native:flash#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                reference_point: [
+                    parameters.and_then(|record| record.number(1)),
+                    parameters.and_then(|record| record.number(2)),
+                ],
+                dimension_1: parameters.and_then(|record| record.number_or(3, 0.0)),
+                dimension_2: parameters.and_then(|record| record.number_or(4, 0.0)),
+                rotation: parameters.and_then(|record| record.number_or(5, 0.0)),
+                reference_entity,
             }
         })
         .collect::<Vec<_>>();
@@ -4692,6 +4728,7 @@ pub(crate) fn store(
     }
     let native_entity_count = [
         directions.len(),
+        flashes.len(),
         transforms.len(),
         copious_data.len(),
         colors.len(),
@@ -4738,10 +4775,11 @@ pub(crate) fn store(
         ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     }
     let namespace = ir.native.namespace_mut("iges");
-    namespace.version = 4;
+    namespace.version = 5;
     namespace.set_arena_from("cards", cards)?;
     namespace.set_arena_from("entities", entities)?;
     namespace.set_arena_from("directions", directions)?;
+    namespace.set_arena_from("flashes", flashes)?;
     namespace.set_arena_from("transformations", transforms)?;
     namespace.set_arena_from("copious_data", copious_data)?;
     namespace.set_arena_from("colors", colors)?;

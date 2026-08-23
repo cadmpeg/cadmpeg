@@ -4475,6 +4475,7 @@
             }
           ],
           "external_references": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
           "manifold_solids": [],
@@ -4511,7 +4512,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 4
+        "version": 5
       }
     },
     "source": {

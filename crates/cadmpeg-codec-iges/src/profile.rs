@@ -18,6 +18,7 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
         118 | 162 | 180 | 184 | 190 | 192 | 194 | 196 | 198 | 312 | 404 | 410 | 422 | 430 => {
             matches!(form, 0..=1)
         }
+        125 => matches!(form, 0..=4),
         304 => matches!(form, 1..=2),
         124 => matches!(form, 0..=1 | 10..=12),
         126 => matches!(form, 0..=5),

@@ -279,6 +279,8 @@ Type 120 Form 0 now uses its four-field table boundary before generic recovery; 
 
 Type 122 Form 0 now uses its four-field table boundary before generic recovery; the remaining supported layouts still use the generic fallback until their table rules are proven.
 
+Type 125 Forms 0 through 4 are settled. The Flash Entity stores `X`, `Y`, `DIM1`, `DIM2`, `ROT`, and `DE` at Parameter indexes 1 through 6 under [IGES 4.0 §3.15](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) and [IGES 5.3 §4.22](https://paulbourke.net/dataformats/iges/IGES.pdf), so trailing pointer groups begin at token index 7. The decoder applies that fixed boundary for every form. The owner test is `type125_forms_follow_six_primary_fields`.
+
 Type 182 Form 0 now uses its four-field table boundary before generic recovery; Type 186 Form 0 now uses its count-driven shell-use boundary; the remaining supported layouts still use the generic fallback until their table rules are proven.
 
 Type 214 Forms 1 through 12, Type 218 Forms 0 and 1, and Type 406 Form 6 now use their registered boundaries before generic recovery; the remaining supported layouts still use the generic fallback until their table rules are proven.

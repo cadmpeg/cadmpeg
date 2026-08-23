@@ -3638,6 +3638,26 @@ fn type124_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type125_forms_follow_six_primary_fields() {
+    for form in 0..=4 {
+        let association = directory_target(5, 212);
+        let property = directory_target(9, 406);
+        let mut source = directory_target(11, 125);
+        source.form = form;
+        let directory = BTreeMap::from([(5, &association), (9, &property), (11, &source)]);
+        let record = integer_parameter_record(11, &[125, 10, 20, 3, 4, 0, 0, 1, 5, 1, 9]);
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Form {form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "Form {form}");
+        let groups = analysis.groups.expect("Type 125 table boundary");
+        assert_eq!(groups.token_start, 7, "Form {form}");
+        assert_eq!(groups.associations, vec![5], "Form {form}");
+        assert_eq!(groups.properties, vec![9], "Form {form}");
+    }
+}
+
+#[test]
 fn type118_forms_follow_four_primary_fields() {
     for form in [0_i64, 1] {
         let association = directory_target(5, 212);
