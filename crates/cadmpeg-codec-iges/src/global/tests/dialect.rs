@@ -343,6 +343,42 @@ fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
 }
 
 #[test]
+fn the_5_0_global_defaults_resolve_receiver_units_and_coordinate_metadata() {
+    let mut fields = valid_global_fields();
+    fields[11].clear();
+    fields[14].clear();
+    fields[19].clear();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.receiver_product().as_deref(), Some("product"));
+    assert_eq!(parsed.units_name().as_deref(), Some("MM"));
+    assert_eq!(parsed.maximum_coordinate_mm(), None);
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
+fn the_4_0_global_defaults_do_not_inherit_5_0_metadata_defaults() {
+    let mut fields = valid_global_fields();
+    fields[11].clear();
+    fields[14].clear();
+    fields[19].clear();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "6".into();
+    fields.truncate(24);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.receiver_product(), None);
+    assert_eq!(parsed.units_name(), None);
+    assert_eq!(parsed.maximum_coordinate_mm(), Some(0.0));
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+#[test]
 fn the_5_0_line_weight_fields_support_optional_and_relative_modes() {
     let mut fields = valid_global_fields();
     fields[15].clear();

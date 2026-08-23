@@ -104,6 +104,14 @@ impl Dialect {
     const fn has_application_protocol(self) -> bool {
         matches!(self, Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3)
     }
+
+    const fn defaults_receiver_product_to_sender(self) -> bool {
+        matches!(self, Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3)
+    }
+
+    const fn defaults_units_name(self) -> bool {
+        matches!(self, Self::V5_0 | Self::V5_1 | Self::V5_2 | Self::V5_3)
+    }
 }
 
 /// Global field values, fallbacks, and absences after one resolution pass.
@@ -112,6 +120,7 @@ pub(crate) struct ResolvedGlobal {
     pub(crate) parameter_delimiter: u8,
     pub(crate) record_delimiter: u8,
     sender_product: Option<String>,
+    receiver_product: Option<String>,
     native_file_name: Option<String>,
     units_name: Option<String>,
     #[cfg(test)]
@@ -714,6 +723,22 @@ const fn enumerated_unit_factor_mm(flag: i64) -> Option<f64> {
     }
 }
 
+const fn enumerated_unit_name(flag: i64) -> Option<&'static str> {
+    match flag {
+        1 => Some("IN"),
+        2 => Some("MM"),
+        4 => Some("FT"),
+        5 => Some("MI"),
+        6 => Some("M"),
+        7 => Some("KM"),
+        8 => Some("MIL"),
+        9 => Some("UM"),
+        10 => Some("CM"),
+        11 => Some("UIN"),
+        _ => None,
+    }
+}
+
 struct Resolution {
     values: Vec<Value>,
     losses: Vec<LossNote>,
@@ -835,8 +860,9 @@ impl Resolution {
         }
     }
 
-    fn maximum_coordinate(&mut self) -> Option<f64> {
+    fn maximum_coordinate(&mut self, dialect: Dialect) -> Option<f64> {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
+            Supplied::Absent if dialect == Dialect::V5_0 => None,
             Supplied::Absent => Some(0.0),
             Supplied::Value(value) if value >= 0.0 => Some(value),
             Supplied::Value(_) | Supplied::Malformed => {
@@ -957,7 +983,22 @@ impl Resolution {
                 Supplied::Malformed => (None, None, Some(Defect::Malformed)),
             }
         } else {
-            let name = self.metadata_string(FIELD_UNITS_NAME);
+            let name = match self.supplied_string(FIELD_UNITS_NAME) {
+                Supplied::Absent if dialect.defaults_units_name() => {
+                    units_flag.and_then(enumerated_unit_name).map(str::to_owned)
+                }
+                Supplied::Absent => None,
+                Supplied::Value(name) => Some(name),
+                Supplied::Malformed => {
+                    self.charge(
+                        IgesLossCode::GlobalMetadataFieldUnusable,
+                        FIELD_UNITS_NAME,
+                        Defect::Malformed,
+                        METADATA_CONSEQUENCE,
+                    );
+                    None
+                }
+            };
             (name, units_flag.and_then(enumerated_unit_factor_mm), None)
         };
         let length_factor_mm = match (unit_mm, scale) {
@@ -1036,7 +1077,20 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE, dialect);
     resolution.metadata_integer(FIELD_DOUBLE_MAGNITUDE, |_| true);
     let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, dialect);
-    resolution.metadata_string(FIELD_RECEIVER_PRODUCT);
+    let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
+        Supplied::Absent if dialect.defaults_receiver_product_to_sender() => sender_product.clone(),
+        Supplied::Absent => None,
+        Supplied::Value(value) => Some(value),
+        Supplied::Malformed => {
+            resolution.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                FIELD_RECEIVER_PRODUCT,
+                Defect::Malformed,
+                METADATA_CONSEQUENCE,
+            );
+            None
+        }
+    };
     let (units_flag, units_name, length_factor_mm) = resolution.length_unit(dialect);
     #[cfg(not(test))]
     let _ = units_flag;
@@ -1044,9 +1098,9 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     resolution.metadata_date(FIELD_GENERATION_DATE, dialect);
     let minimum_resolution = resolution.minimum_resolution(dialect);
     #[cfg(test)]
-    let maximum_coordinate = resolution.maximum_coordinate();
+    let maximum_coordinate = resolution.maximum_coordinate(dialect);
     #[cfg(not(test))]
-    let _ = resolution.maximum_coordinate();
+    let _ = resolution.maximum_coordinate(dialect);
     resolution.metadata_string(FIELD_AUTHOR);
     resolution.metadata_string(FIELD_ORGANIZATION);
     resolution.metadata_integer(FIELD_DRAFTING_STANDARD, |value| (0..=7).contains(&value));
@@ -1061,6 +1115,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         parameter_delimiter,
         record_delimiter,
         sender_product,
+        receiver_product,
         native_file_name,
         units_name,
         #[cfg(test)]
@@ -1105,6 +1160,10 @@ impl ResolvedGlobal {
 
     pub(crate) fn sender_product(&self) -> Option<String> {
         self.sender_product.clone()
+    }
+
+    pub(crate) fn receiver_product(&self) -> Option<String> {
+        self.receiver_product.clone()
     }
 
     pub(crate) fn native_file_name(&self) -> Option<String> {
@@ -1192,6 +1251,11 @@ impl ResolvedGlobal {
         ];
         if let Some(product) = self.sender_product() {
             notes.push(format!("sender_product={product}"));
+        }
+        if self.dialect == Dialect::V5_0 {
+            if let Some(product) = self.receiver_product() {
+                notes.push(format!("receiver_product={product}"));
+            }
         }
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
