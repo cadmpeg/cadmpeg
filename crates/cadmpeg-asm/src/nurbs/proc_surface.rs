@@ -571,6 +571,19 @@ fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeTok
     }
 }
 
+#[allow(
+    clippy::option_option,
+    reason = "outer None rejects malformed trailing fields; inner None is a valid absent tolerance"
+)]
+fn optional_trailing_cache_tolerance(cur: &mut Cur<'_>) -> Option<Option<f64>> {
+    if cur.at_scope_end() {
+        Some(None)
+    } else {
+        let tolerance = cur.take_f64()? * LEN_TO_MM;
+        cur.at_scope_end().then_some(Some(tolerance))
+    }
+}
+
 fn g2_blend_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
@@ -1877,8 +1890,7 @@ fn loft_spl_sur(
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    cur.at_scope_end().then_some(())?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -3149,7 +3161,11 @@ fn taper_spl_sur(
     let parameter = cur.take_f64()?;
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+    let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
+        Some(cur.take_f64()? * LEN_TO_MM)
+    } else {
+        None
+    };
     let take_draft = |cur: &mut Cur<'_>| {
         let draft = cur.take_vector3()?;
         Some(Vector3::new(draft[0], draft[1], draft[2]))
@@ -3200,7 +3216,11 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let mut cur = Cur::at(span, 2);
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+    let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
+        Some(cur.take_f64()? * LEN_TO_MM)
+    } else {
+        None
+    };
     let parameters = cur.take_float_array()?;
     let mut components = Vec::with_capacity(parameters.len());
     for _ in 0..parameters.len() {
@@ -3370,8 +3390,7 @@ fn off_spl_sur(
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    cur.at_scope_end().then_some(())?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Offset {
             support,
@@ -3463,8 +3482,7 @@ fn rot_spl_sur(
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots.first()?, *cache.v_knots.last()?];
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    cur.at_scope_end().then_some(())?;
+    let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
             directrix: CurveGeometry::Nurbs(directrix),
@@ -3549,10 +3567,13 @@ fn sum_spl_sur(
         origin[1] * LEN_TO_MM,
         origin[2] * LEN_TO_MM,
     );
-    let (_, cache_end) = surface_block(span, cur.pos())?;
-    cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    cur.at_scope_end().then_some(())?;
+    let cache_fit_tolerance = if cur.at_scope_end() {
+        None
+    } else {
+        let (_, cache_end) = surface_block(span, cur.pos())?;
+        cur.set_pos(cache_end);
+        optional_trailing_cache_tolerance(&mut cur)?
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
             first: CurveGeometry::Nurbs(first),
@@ -3573,10 +3594,13 @@ fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     cur.set_pos(first_end);
     let (second, second_end) = curve_block(span, cur.pos())?;
     cur.set_pos(second_end);
-    let (_, cache_end) = surface_block(span, cur.pos())?;
-    cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    cur.at_scope_end().then_some(())?;
+    let cache_fit_tolerance = if cur.at_scope_end() {
+        None
+    } else {
+        let (_, cache_end) = surface_block(span, cur.pos())?;
+        cur.set_pos(cache_end);
+        optional_trailing_cache_tolerance(&mut cur)?
+    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
         cache_fit_tolerance,

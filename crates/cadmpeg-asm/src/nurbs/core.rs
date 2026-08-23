@@ -8,8 +8,9 @@
 //! by nature.
 
 use crate::nurbs::reader::{
-    is_periodic, marker_at, marker_positions, owned_marker_positions, read_control_points,
-    read_knots, take_tagged_int, KnotLayout, INT_WIDTHS, LEN_TO_MM,
+    construction_marker_positions, is_periodic, marker_at, marker_positions,
+    owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
+    INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
@@ -153,7 +154,7 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
 /// earlier blocks are support surfaces or 2D pcurves), except in a
 /// `comp_spl_sur` compound, whose own cache comes first.
 pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
-    let scope = toks::owned_construction_scope(toks).unwrap_or(toks);
+    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
     let mut caches = toks::owned_marker_positions(scope)
         .into_iter()
         .filter_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface));
@@ -179,7 +180,7 @@ pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
 /// tokens: the FIRST valid curve block (surface and 2D pcurve blocks do not
 /// parse as a 3D curve block).
 pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
-    let scope = toks::owned_construction_scope(toks).unwrap_or(toks);
+    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
     toks::owned_marker_positions(scope)
         .into_iter()
         .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
@@ -402,7 +403,7 @@ impl From<KnotLayout> for KnotPatchLayout {
 /// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
 /// integer width.
 pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<SurfacePatchLayout> {
-    let decoded = owned_marker_positions(record, int_width)
+    let decoded = construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
         .next_back()?;
@@ -427,7 +428,7 @@ pub fn surface_patch_layout_at(
     ordinal: usize,
     int_width: usize,
 ) -> Option<SurfacePatchLayout> {
-    let decoded = owned_marker_positions(record, int_width)
+    let decoded = construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
         .nth(ordinal)?;
@@ -525,7 +526,7 @@ pub struct CurvePatchLayout {
 
 /// Locate the first valid 3D curve cache at the stream's known integer width.
 pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
-    let decoded = owned_marker_positions(record, int_width)
+    let decoded = construction_marker_positions(record, int_width)
         .into_iter()
         .find_map(|position| decode_curve_block(record, position, int_width))?;
     Some(CurvePatchLayout {
@@ -542,7 +543,7 @@ pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
 pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
-    let decoded = owned_marker_positions(record, int_width)
+    let decoded = construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_curve_block(record, position, int_width))
         .next_back()?;

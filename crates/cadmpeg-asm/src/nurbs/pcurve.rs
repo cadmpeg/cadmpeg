@@ -3,8 +3,8 @@
 
 use crate::nurbs::core::KnotPatchLayout;
 use crate::nurbs::reader::{
-    is_periodic, marker_at, marker_positions, owned_marker_positions, read_knots, take_tagged_int,
-    INT_WIDTHS,
+    construction_marker_positions, is_periodic, marker_at, marker_positions, read_knots,
+    take_tagged_int, INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
@@ -52,7 +52,7 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: usize) -> Option<Pcur
 }
 
 fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
-    owned_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
             let (_cp_dims, marker_len, rational) = marker_at(record, marker_pos)?;
@@ -242,7 +242,7 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 /// pcurve block in `toks`. Token-space counterpart of
 /// [`decode_pcurve_fit_tolerance`].
 pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
-    let scope = toks::owned_construction_scope(toks).unwrap_or(toks);
+    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
     let (_, end) = toks::owned_marker_positions(scope)
         .into_iter()
         .filter_map(|pos| pcurve_block_with_end(scope, pos))
@@ -1342,7 +1342,12 @@ mod width_tests {
     #[test]
     fn patch_layout_roles_exclude_nested_construction_caches() {
         for int_width in [4usize, 8] {
-            let mut surfaces = vec![0x0f];
+            let mut surfaces = Vec::new();
+            push_ident(&mut surfaces, "spline");
+            surfaces.push(0x0f);
+            push_ident(&mut surfaces, "auxiliary");
+            surfaces.push(0x10);
+            surfaces.push(0x0f);
             push_ident(&mut surfaces, "carrier");
             surfaces.extend_from_slice(&surface_block(int_width));
             let surface_end = surfaces.len();
@@ -1357,8 +1362,19 @@ mod width_tests {
                 surface_end
             );
             assert!(surface_patch_layout_at(&surfaces, 1, int_width).is_none());
+            let mut ambiguous_surfaces = surfaces.clone();
+            ambiguous_surfaces.push(0x0f);
+            push_ident(&mut ambiguous_surfaces, "competing");
+            ambiguous_surfaces.extend_from_slice(&surface_block(int_width));
+            ambiguous_surfaces.push(0x10);
+            assert!(final_surface_patch_layout(&ambiguous_surfaces, int_width).is_none());
 
-            let mut curves = vec![0x0f];
+            let mut curves = Vec::new();
+            push_ident(&mut curves, "intcurve");
+            curves.push(0x0f);
+            push_ident(&mut curves, "auxiliary");
+            curves.push(0x10);
+            curves.push(0x0f);
             push_ident(&mut curves, "carrier");
             curves.extend_from_slice(&curve_block(int_width));
             let curve_end = curves.len();
@@ -1379,7 +1395,12 @@ mod width_tests {
                 curve_end
             );
 
-            let mut pcurves = vec![0x0f];
+            let mut pcurves = Vec::new();
+            push_ident(&mut pcurves, "pcurve");
+            pcurves.push(0x0f);
+            push_ident(&mut pcurves, "auxiliary");
+            pcurves.push(0x10);
+            pcurves.push(0x0f);
             push_ident(&mut pcurves, "carrier");
             pcurves.extend_from_slice(&pcurve_block(int_width));
             let pcurve_end = pcurves.len();
