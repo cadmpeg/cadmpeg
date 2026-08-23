@@ -100,6 +100,35 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
 }
 
 #[test]
+fn definition_catalog_deduplicates_equal_records_and_rejects_conflicts() {
+    fn definition(asset: &str, category: &str) -> DefinitionCatalogRecord {
+        DefinitionCatalogRecord {
+            schema: "PrismMetalSchema".into(),
+            asset_id: asset.into(),
+            base_asset_id: asset.into(),
+            category: category.into(),
+            group: "Default".into(),
+            description: "Steel - satin".into(),
+            tags: vec!["Metal".into(), "Steel".into()],
+            preview_paths: vec!["Mats/PrismMetal/Presets/t_Prism-256.png".into()],
+        }
+    }
+
+    let mut definitions = std::collections::HashMap::new();
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"))
+        .expect("first definition");
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"))
+        .expect("equal duplicate definition");
+    assert_eq!(definitions.len(), 1);
+
+    assert!(merge_definition_catalog_record(
+        &mut definitions,
+        definition("Prism-256", "Metal/Stainless")
+    )
+    .is_err());
+}
+
+#[test]
 fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
     let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
     let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {

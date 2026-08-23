@@ -54,3 +54,5 @@ A `DefinitionIteratorProperties.bin` logical record has this sequence:
 8. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
 
 The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and category.
+
+A definition stream can repeat one asset identifier with the same schema, base asset identifier, category, group, description, tags, and preview paths. Equal definitions denote one catalog entry. Repeated asset identifiers with different definition fields are invalid.

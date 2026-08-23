@@ -1782,29 +1782,46 @@ fn definition_catalog<'a>(
     let frames = cadmpeg_protein::record_frames(entry.window()).ok_or_else(|| {
         CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
     })?;
-    let mut out = std::collections::HashMap::new();
+    let mut definitions = std::collections::HashMap::new();
     for frame in frames {
         let definition = decode_definition_catalog_record(&frame.bytes)?;
-        if out
-            .insert(
-                definition.asset_id.clone(),
-                (definition.schema, Some(definition.category)),
-            )
-            .is_some()
-        {
-            return Err(CodecError::Malformed(format!(
-                "Protein definition catalog repeats asset {}",
-                definition.asset_id
-            )));
-        }
+        merge_definition_catalog_record(&mut definitions, definition)?;
     }
-    Ok(out)
+    Ok(definitions
+        .into_iter()
+        .map(|(asset_id, definition)| (asset_id, (definition.schema, Some(definition.category))))
+        .collect())
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct DefinitionCatalogRecord {
     schema: String,
     asset_id: String,
+    base_asset_id: String,
     category: String,
+    group: String,
+    description: String,
+    tags: Vec<String>,
+    preview_paths: Vec<String>,
+}
+
+fn merge_definition_catalog_record(
+    definitions: &mut std::collections::HashMap<String, DefinitionCatalogRecord>,
+    definition: DefinitionCatalogRecord,
+) -> Result<(), CodecError> {
+    match definitions.entry(definition.asset_id.clone()) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(definition);
+        }
+        std::collections::hash_map::Entry::Occupied(entry) if entry.get() == &definition => {}
+        std::collections::hash_map::Entry::Occupied(entry) => {
+            return Err(CodecError::Malformed(format!(
+                "Protein definition catalog repeats asset {} with conflicting fields",
+                entry.key()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
@@ -1820,38 +1837,47 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     }
     position += 1;
     let asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let _base_asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let base_asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
     let version = View::u32_le_at(record, position).ok_or_else(&malformed)?;
     position += 4;
     if version != 2 {
         return Err(malformed());
     }
     let category = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let _group = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let _description = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    skip_catalog_strings(record, &mut position)?;
-    skip_catalog_strings(record, &mut position)?;
+    let group = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let description = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let tags = take_catalog_strings(record, &mut position)?;
+    let preview_paths = take_catalog_strings(record, &mut position)?;
     if record[position..].iter().any(|byte| *byte != 0) {
         return Err(malformed());
     }
     Ok(DefinitionCatalogRecord {
         schema,
         asset_id,
+        base_asset_id,
         category,
+        group,
+        description,
+        tags,
+        preview_paths,
     })
 }
 
-fn skip_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), CodecError> {
+fn take_catalog_strings(record: &[u8], position: &mut usize) -> Result<Vec<String>, CodecError> {
     let malformed =
         || CodecError::Malformed("Protein definition catalog record is malformed".into());
     let count = View::u32_le_at(record, *position).ok_or_else(&malformed)?;
     *position += 4;
     let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
         .ok_or_else(&malformed)?;
+    let mut values = Vec::new();
+    values.try_reserve(count).map_err(|_| {
+        CodecError::Malformed("Protein catalog string count exceeds capacity".into())
+    })?;
     for _ in 0..count {
-        take_lp_utf8(record, position).ok_or_else(&malformed)?;
+        values.push(take_lp_utf8(record, position).ok_or_else(&malformed)?);
     }
-    Ok(())
+    Ok(values)
 }
 
 pub(crate) fn nested_entry<'a>(
