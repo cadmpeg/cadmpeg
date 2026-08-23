@@ -621,6 +621,10 @@ fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
         && number(second_start, second_start + 2).is_some_and(|second| second < 60)
 }
 
+// The resolver uses the newest version table for declarations outside its
+// numeric range. This is decoder recovery policy, not an extension of the
+// IGES 4.0 version table: preserve the declaration and report a dialect loss
+// whenever the recovery changes it.
 const fn effective_version(declared: i64) -> (i64, &'static str) {
     match declared {
         1 => (1, "1.0"),
