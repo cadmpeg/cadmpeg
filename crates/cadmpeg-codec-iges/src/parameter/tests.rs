@@ -12474,6 +12474,135 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 }
 
 #[test]
+fn type308_form0_entity_table_boundary_follows_member_count() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(11, 308);
+    let directory = BTreeMap::from([(1, &association), (5, &property), (11, &source)]);
+
+    for (members, expected_start) in [(Vec::new(), 4_usize), (vec![7_i64], 5), (vec![7, 9], 6)] {
+        let member_count = i64::try_from(members.len()).expect("test member count fits");
+        let mut values = vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            member_count.into(),
+        ];
+        values.extend(members.into_iter().map(TokenValue::from));
+        values.extend([1.into(), 1.into(), 1.into(), 5.into()]);
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(11, values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "N={member_count}");
+        assert_eq!(analysis.valid_candidate_count, 1, "N={member_count}");
+        let groups = analysis.groups.expect("Type 308 table boundary");
+        assert_eq!(groups.token_start, expected_start, "N={member_count}");
+        assert_eq!(groups.associations, vec![1], "N={member_count}");
+        assert_eq!(groups.properties, vec![5], "N={member_count}");
+    }
+}
+
+#[test]
+fn type308_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(11, 308);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (11, &source),
+    ]);
+    let record = token_parameter_record(
+        11,
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            2.into(),
+            7.into(),
+            2.into(),
+            1.into(),
+            3.into(),
+            1.into(),
+            5.into(),
+        ],
+    );
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![5, 6]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 308 table boundary");
+    assert_eq!(groups.token_start, 6);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type308_malformed_counts_or_spans_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let source = directory_target(11, 308);
+    let directory = BTreeMap::from([(1, &association), (5, &property), (11, &source)]);
+    let malformed = [
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            (-1_i64).into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            i64::MAX.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"bad-count".to_vec()),
+            1.into(),
+            1.into(),
+            1.into(),
+            5.into(),
+        ],
+        vec![308.into(), 0.into(), TokenValue::String(b"FIG".to_vec())],
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec()),
+            2.into(),
+            7.into(),
+        ],
+    ];
+    for values in malformed {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(11, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type141_entity_table_boundary_uses_nested_curve_counts() {
     for (counts, expected_start) in [
         (vec![0_i64], 8_usize),

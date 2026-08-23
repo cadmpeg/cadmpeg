@@ -533,6 +533,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// groups start at token twelve.
 /// Type 140 Form 0 stores five fixed primary fields, so its groups start at
 /// token six.
+/// Type 308 Form 0 puts the member count at index 3 and stores one pointer per
+/// member, so its groups start at token `4 + N`.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
 /// groups start at token ten.
 /// Type 312 Forms 0 and 1 store ten fixed primary fields, so their groups
@@ -837,6 +839,7 @@ pub(crate) fn entity_primary_end(
         (142, 0) => Some(fixed_primary_end(record, 6)),
         (100, 0) => Some(fixed_primary_end(record, 8)),
         (140, 0) => Some(fixed_primary_end(record, 6)),
+        (308, 0) => Some(subfigure_definition_primary_end(record)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
         (212, 0..=8 | 100..=102 | 105) => Some(general_note_primary_end(record)),
@@ -1369,6 +1372,15 @@ fn network_subfigure_primary_end(record: &ParameterRecord) -> usize {
     member_count
         .checked_add(connect_count)
         .and_then(|count| count.checked_add(8))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn subfigure_definition_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|member_count| member_count.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
