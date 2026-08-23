@@ -56,7 +56,6 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         operation_label: "operation#0".to_string(),
         body_object_index: 10,
         raw_body_object_index: vec![10],
-        relation_endpoint_tag: None,
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -109,7 +108,6 @@ fn unique_feature_body_references_require_one_field_per_operation() {
             operation_label: operation_label.to_string(),
             body_object_index,
             raw_body_object_index: vec![body_object_index as u8],
-            relation_endpoint_tag: None,
             source_offset: 0,
         };
     let references = [
@@ -131,7 +129,6 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         operation_label: "operation#0".into(),
         body_object_index: 11,
         raw_body_object_index: vec![11],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let binding = SegmentBodyBinding {
@@ -169,7 +166,6 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         operation_label: reference.operation_label.clone(),
         body_object_index: 12,
         raw_body_object_index: vec![12],
-        relation_endpoint_tag: None,
         source_offset: 91,
     };
     assert!(feature_body_segment_uses(
@@ -197,7 +193,6 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         operation_label: "operation#0".into(),
         body_object_index: 11,
         raw_body_object_index: vec![11],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -403,7 +398,6 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         operation_label: "operation#0".into(),
         body_object_index: 11,
         raw_body_object_index: vec![11],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let data_block_use = FeatureBodyDataBlockUse {
@@ -438,7 +432,6 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
         operation_label: "operation#0".into(),
         body_object_index: 99,
         raw_body_object_index: vec![99],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let input = FeatureInputBlock {
@@ -490,7 +483,6 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         operation_label: "operation#0".into(),
         body_object_index: 99,
         raw_body_object_index: vec![99],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
@@ -546,7 +538,6 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         operation_label: "operation#0".into(),
         body_object_index: 72,
         raw_body_object_index: vec![72],
-        relation_endpoint_tag: None,
         source_offset: 90,
     };
     let input = FeatureInputBlock {
@@ -587,7 +578,6 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         operation_label: "operation#0".into(),
         body_object_index: 73,
         raw_body_object_index: vec![73],
-        relation_endpoint_tag: None,
         source_offset: 91,
     };
     assert!(
@@ -619,7 +609,6 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         operation_label: "operation#0".to_string(),
         body_object_index: 30,
         raw_body_object_index: vec![30],
-        relation_endpoint_tag: None,
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {

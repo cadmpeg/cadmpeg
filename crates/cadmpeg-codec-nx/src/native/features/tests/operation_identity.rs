@@ -127,6 +127,32 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
     assert!(labels[0].stable_identity.is_none());
 }
 
+#[test]
+fn operation_body_write_retains_identity_group_and_image() {
+    let body_writes = vec![
+        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff, 0x01, 0x02,
+        0x12, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x94, 0xff,
+    ];
+    let payload = composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_writes)], &[]);
+    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]))
+    .expect("synthetic body-write container");
+    let writes = super::feature_operation_body_writes(&container);
+    let [first, second] = writes.as_slice() else {
+        panic!("two body-write frames");
+    };
+    assert_eq!(first.body_identity, 0x11);
+    assert_eq!(first.group_node, 0xa9);
+    assert_eq!(first.raw_group_node, [0x80, 0xa9]);
+    assert_eq!(first.body_image_object_index, 0x693);
+    assert_eq!(first.raw_body_image_object_index, [0x86, 0x93]);
+    assert_eq!(second.body_identity, 0x12);
+    assert_eq!(second.group_node, first.group_node);
+    assert_eq!(second.body_image_object_index, 0x694);
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,

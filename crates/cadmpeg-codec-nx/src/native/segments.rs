@@ -950,7 +950,6 @@ mod tests {
             operation_label: operation.to_string(),
             body_object_index,
             raw_body_object_index: vec![body_object_index as u8],
-            relation_endpoint_tag: None,
             source_offset: 0,
         };
         let references = [reference("operation#0", 10), reference("operation#1", 20)];
@@ -1075,7 +1074,6 @@ mod tests {
             operation_label: "operation#2".to_string(),
             body_object_index: 10,
             raw_body_object_index: vec![10],
-            relation_endpoint_tag: None,
             source_offset: 2,
         }];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
@@ -1149,7 +1147,6 @@ mod tests {
             operation_label: "operation#delete".to_string(),
             body_object_index: 10,
             raw_body_object_index: vec![10],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
@@ -1199,7 +1196,6 @@ mod tests {
                 operation_label: labels[0].id.clone(),
                 body_object_index: 10,
                 raw_body_object_index: vec![10],
-                relation_endpoint_tag: None,
                 source_offset: 0,
             },
             FeatureBodyReference {
@@ -1207,7 +1203,6 @@ mod tests {
                 operation_label: labels[0].id.clone(),
                 body_object_index: 20,
                 raw_body_object_index: vec![20],
-                relation_endpoint_tag: None,
                 source_offset: 1,
             },
         ];
@@ -1269,7 +1264,6 @@ mod tests {
             operation_label: labels[0].id.clone(),
             body_object_index: 10,
             raw_body_object_index: vec![10],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let binding = |ordinal, body_object_index, body_alias_object_index| SegmentBodyBinding {
@@ -1322,7 +1316,6 @@ mod tests {
             operation_label: "operation#delete".to_string(),
             body_object_index: 11,
             raw_body_object_index: vec![11],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let data_block_uses = [FeatureBodyDataBlockUse {
@@ -1379,7 +1372,6 @@ mod tests {
             operation_label: "operation#delete".to_string(),
             body_object_index: 11,
             raw_body_object_index: vec![11],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let inputs = [FeatureInputBlock {
@@ -1593,7 +1585,6 @@ mod tests {
             operation_label: format!("operation#{ordinal}"),
             body_object_index: 10,
             raw_body_object_index: vec![10],
-            relation_endpoint_tag: None,
             source_offset: u64::from(ordinal),
         };
         let references = [reference(0), reference(1)];
@@ -1643,7 +1634,6 @@ mod tests {
             operation_label: format!("operation#{ordinal}"),
             body_object_index: 10,
             raw_body_object_index: vec![10],
-            relation_endpoint_tag: None,
             source_offset: u64::from(ordinal),
         };
         // The raw order is newest-first, so this encodes a writer followed by
@@ -1702,7 +1692,6 @@ mod tests {
             operation_label: "operation#early".to_string(),
             body_object_index: 20,
             raw_body_object_index: vec![20],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1757,7 +1746,6 @@ mod tests {
             operation_label: "operation#0".to_string(),
             body_object_index: 150,
             raw_body_object_index: vec![0x80, 150],
-            relation_endpoint_tag: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {

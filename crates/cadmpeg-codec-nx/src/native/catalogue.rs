@@ -352,7 +352,7 @@ impl ContainerNoted for FeatureOperationRecord {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureOperationObjectRelation {
+impl ContainerNoted for FeatureOperationBodyWrite {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -1911,15 +1911,15 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_operation_object_relations",
-        tag: Some("FEATURE_OPERATION_OBJECT_RELATION"),
+        arena: "feature_operation_body_writes",
+        tag: Some("FEATURE_OPERATION_BODY_WRITE"),
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA,
         note: Some(|m, r, a| {
-            note_container(&m.features.feature_operation_object_relations, r, a);
+            note_container(&m.features.feature_operation_body_writes, r, a);
         }),
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_object_relations, r, ns),
-        len: |m| m.features.feature_operation_object_relations.len(),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_writes, r, ns),
+        len: |m| m.features.feature_operation_body_writes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

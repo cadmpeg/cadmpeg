@@ -1059,7 +1059,6 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
             offset: 103,
             object_index: 6466,
             raw_object_index: vec![0x90, 0x19, 0x42],
-            relation_endpoint_tag: None,
         })
     );
 
@@ -1077,13 +1076,11 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
                 offset: 103,
                 object_index: 6466,
                 raw_object_index: vec![0x90, 0x19, 0x42],
-                relation_endpoint_tag: None,
             },
             super::OperationBodyReference {
                 offset: 110,
                 object_index: 6466,
                 raw_object_index: vec![0x90, 0x19, 0x42],
-                relation_endpoint_tag: None,
             },
         ]
     );
@@ -1098,7 +1095,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
-fn om_operation_primary_body_reference_accepts_complete_framed_relation() {
+fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
     let label = super::OperationLabel {
         header_offset: 100,
         offset: 100,
@@ -1107,7 +1104,7 @@ fn om_operation_primary_body_reference_accepts_complete_framed_relation() {
         object_index_offsets: [0; 4],
     };
     let bytes = [
-        0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x15, 0x43, 0xff,
+        0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x10, 0x43, 0xff,
     ];
     let record = super::OperationRecord {
         offset: 100,
@@ -1116,39 +1113,30 @@ fn om_operation_primary_body_reference_accepts_complete_framed_relation() {
         payload: &bytes,
         label,
     };
+    assert!(super::operation_body_reference(record).is_none());
     assert_eq!(
-        super::operation_body_reference(record),
-        Some(super::OperationBodyReference {
-            offset: 111,
-            object_index: 0x43,
-            raw_object_index: vec![0x43],
-            relation_endpoint_tag: Some(0x15),
-        })
-    );
-    assert_eq!(
-        super::operation_object_relations(record),
-        [super::OperationObjectRelation {
+        super::operation_body_write_frames(record),
+        [super::OperationBodyWriteFrame {
             offset: 100,
-            link_tag: 0x0b,
-            first_object_index: 0x66a4,
-            raw_first_object_index: vec![0xa0, 0x66, 0xa4],
-            first_object_index_offset: 103,
-            endpoint_tag: 0x15,
-            second_object_index: 0x43,
-            raw_second_object_index: vec![0x43],
-            second_object_index_offset: 111,
+            body_identity: 0x0b,
+            group_node: 0x66a4,
+            raw_group_node: vec![0xa0, 0x66, 0xa4],
+            group_node_offset: 103,
+            body_image_object_index: 0x43,
+            raw_body_image_object_index: vec![0x43],
+            body_image_object_index_offset: 111,
             end_offset: 113,
         }]
     );
 
-    let mut endpoint_tag_ten = bytes;
-    endpoint_tag_ten[10] = 0x10;
+    let mut invalid_endpoint_tag = bytes;
+    invalid_endpoint_tag[10] = 0x11;
     let nested_record = super::OperationRecord {
-        bytes: &endpoint_tag_ten,
-        payload: &endpoint_tag_ten,
+        bytes: &invalid_endpoint_tag,
+        payload: &invalid_endpoint_tag,
         ..record
     };
-    assert_eq!(super::operation_body_references(nested_record).len(), 1);
+    assert!(super::operation_body_references(nested_record).is_empty());
 }
 
 #[test]
@@ -1161,7 +1149,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         object_index_offsets: [0; 4],
     };
     let payload = [
-        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x45, 0xff, 0x01, 0x02,
+        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x45, 0xff, 0x01, 0x02,
         0x10, 0x81, 0x23, 0xff,
     ];
     let record = super::OperationRecord {
@@ -1172,24 +1160,23 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         label,
     };
     assert_eq!(
-        super::operation_object_relations(record),
-        [super::OperationObjectRelation {
+        super::operation_body_write_frames(record),
+        [super::OperationBodyWriteFrame {
             offset: 100,
-            link_tag: 0x17,
-            first_object_index: 0x123,
-            raw_first_object_index: vec![0x81, 0x23],
-            first_object_index_offset: 103,
-            endpoint_tag: 0x11,
-            second_object_index: 0x645,
-            raw_second_object_index: vec![0x86, 0x45],
-            second_object_index_offset: 110,
+            body_identity: 0x17,
+            group_node: 0x123,
+            raw_group_node: vec![0x81, 0x23],
+            group_node_offset: 103,
+            body_image_object_index: 0x645,
+            raw_body_image_object_index: vec![0x86, 0x45],
+            body_image_object_index_offset: 110,
             end_offset: 113,
         }]
     );
 
     let mut noncanonical_first = payload;
     noncanonical_first[3] = 0x80;
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &noncanonical_first,
         payload: &noncanonical_first,
         ..record
@@ -1198,7 +1185,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
 
     let mut truncated = payload[..13].to_vec();
     truncated.pop();
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &truncated,
         payload: &truncated,
         ..record
@@ -1206,7 +1193,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     .is_empty());
 
     let direct_body = [0x01, 0x02, 0x10, 0x81, 0x23, 0xff];
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &direct_body,
         payload: &direct_body,
         ..record
@@ -1214,17 +1201,17 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     .is_empty());
 
     let nested = [
-        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x93, 0xff,
+        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff,
     ];
-    let nested_relations = super::operation_object_relations(super::OperationRecord {
+    let nested_relations = super::operation_body_write_frames(super::OperationRecord {
         bytes: &nested,
         payload: &nested,
         ..record
     });
     assert_eq!(nested_relations.len(), 1);
-    assert_eq!(nested_relations[0].link_tag, 0x11);
-    assert_eq!(nested_relations[0].first_object_index, 0xa9);
-    assert_eq!(nested_relations[0].second_object_index, 0x693);
+    assert_eq!(nested_relations[0].body_identity, 0x11);
+    assert_eq!(nested_relations[0].group_node, 0xa9);
+    assert_eq!(nested_relations[0].body_image_object_index, 0x693);
 }
 
 #[test]

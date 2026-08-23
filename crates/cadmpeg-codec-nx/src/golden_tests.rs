@@ -137,7 +137,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_operation_body_scalar_triples",
     "feature_operation_data_block_references",
     "feature_operation_labels",
-    "feature_operation_object_relations",
+    "feature_operation_body_writes",
     "feature_operation_tagged_references",
     "feature_operation_records",
     "feature_operation_common_frames",

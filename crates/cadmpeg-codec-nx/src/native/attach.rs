@@ -34,7 +34,7 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Color, Face, Sense};
+use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -1009,38 +1009,7 @@ fn attach_initial_segment_bodies(
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
     stream: cadmpeg_ir::annotations::StreamHandle,
-    materialize_missing_stream_bodies: bool,
 ) -> Option<FeatureId> {
-    if materialize_missing_stream_bodies {
-        for binding in body_bindings {
-            let stream_prefix = format!("nx:s{}:", binding.stream_ordinal);
-            if ir
-                .model
-                .bodies
-                .iter()
-                .any(|body| body.id.0.starts_with(&stream_prefix))
-            {
-                continue;
-            }
-            let id = BodyId(format!(
-                "nx:s{}:retained-history-body",
-                binding.stream_ordinal
-            ));
-            annotations
-                .note(&id.0, stream, binding.source_offset)
-                .tag("RETAINED_HISTORY_BODY");
-            annotations.derived(&id.0, "stream_image");
-            ir.model.bodies.push(Body {
-                id,
-                kind: BodyKind::General,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
-        }
-    }
     let bindings_by_body = ir
         .model
         .bodies
@@ -1222,6 +1191,7 @@ fn attach_feature_operations(
     let parameter_bindings = features.feature_parameter_bindings.as_slice();
     let parameter_uses = features.feature_parameter_uses.as_slice();
     let operation_records = features.feature_operation_records.as_slice();
+    let operation_body_writes = features.feature_operation_body_writes.as_slice();
     let operation_common_frames = features.feature_operation_common_frames.as_slice();
     let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
@@ -1247,18 +1217,8 @@ fn attach_feature_operations(
         input_blocks,
         data_blocks,
     );
-    let has_framed_primary_body_relation = body_references.iter().any(|reference| {
-        reference.relation_endpoint_tag.is_some()
-            && admitted_body_references.contains_key(reference.operation_label.as_str())
-    });
     let stream = annotations.stream("nx:container");
-    let initial_body_id = attach_initial_segment_bodies(
-        ir,
-        body_bindings,
-        annotations,
-        stream,
-        has_framed_primary_body_relation,
-    );
+    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -1832,6 +1792,15 @@ fn attach_feature_operations(
         .iter()
         .map(|record| (record.id.as_str(), record.operation_label.as_str()))
         .collect::<BTreeMap<_, _>>();
+    let mut body_writes_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
+    for write in operation_body_writes {
+        body_writes_by_operation
+            .entry(write.operation_label.as_str())
+            .or_default()
+            .push(write);
+    }
+    let mut body_identity_writers = BTreeMap::<u8, FeatureId>::new();
     let mut payload_strings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadString>>::new();
     for value in payload_strings {
@@ -1902,6 +1871,16 @@ fn attach_feature_operations(
                 )
             });
         let mut dependencies = Vec::new();
+        let operation_body_writes = body_writes_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice);
+        for write in operation_body_writes {
+            if let Some(writer) = body_identity_writers.get(&write.body_identity) {
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
+                }
+            }
+        }
         if let (
             Some(operation),
             Some(resolution),
@@ -2038,6 +2017,22 @@ fn attach_feature_operations(
             }
         }
         let mut source_properties = BTreeMap::new();
+        for write in operation_body_writes {
+            let ordinal = write.ordinal;
+            source_properties.insert(format!("body_write.{ordinal}"), write.id.clone());
+            source_properties.insert(
+                format!("body_write.{ordinal}.body_identity"),
+                write.body_identity.to_string(),
+            );
+            source_properties.insert(
+                format!("body_write.{ordinal}.group_node"),
+                write.group_node.to_string(),
+            );
+            source_properties.insert(
+                format!("body_write.{ordinal}.body_image_object_index"),
+                write.body_image_object_index.to_string(),
+            );
+        }
         source_properties.extend(operation_source_properties(
             &label.id,
             operation_records,
@@ -3444,6 +3439,9 @@ fn attach_feature_operations(
             .then_some(offset_store_primary_body)
             .flatten();
         body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
+        for write in operation_body_writes {
+            body_identity_writers.insert(write.body_identity, id.clone());
+        }
         if let Some(operation) = (!deletes_body)
             .then(|| booleans.get(label.id.as_str()))
             .flatten()
@@ -3476,7 +3474,31 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
-        if !deletes_body {
+        if !deletes_body && !operation_body_writes.is_empty() {
+            let key = label
+                .id
+                .strip_prefix("nx:feature-history:operation-label#")
+                .unwrap_or(label.id.as_str());
+            for write in operation_body_writes {
+                ir.model
+                    .feature_result_topologies
+                    .push(FeatureResultTopology {
+                        id: FeatureResultTopologyId(format!(
+                            "nx:feature-history:result-topology#{key}-{:010}",
+                            write.ordinal
+                        )),
+                        output_of: id.clone(),
+                        bodies: vec![format!(
+                            "nx:feature-history:body-identity#{:010}",
+                            write.body_identity
+                        )],
+                        faces: Vec::new(),
+                        edges: Vec::new(),
+                        vertices: Vec::new(),
+                        native_ref: Some(write.id.clone()),
+                    });
+            }
+        } else if !deletes_body {
             let result_body = native_result_body_identity(
                 body_writer_references_by_operation
                     .get(label.id.as_str())
@@ -3494,7 +3516,7 @@ fn attach_feature_operations(
                         id: FeatureResultTopologyId(format!(
                             "nx:feature-history:result-topology#{key}"
                         )),
-                        output_of: id,
+                        output_of: id.clone(),
                         bodies: vec![local_id],
                         faces: Vec::new(),
                         edges: Vec::new(),
@@ -3554,10 +3576,7 @@ fn native_result_body_identity(
 /// namespace. An offset-store field may enter that namespace only when the
 /// feature extractor has also retained one unique segment alias use for the
 /// same field. Missing or ambiguous relations remain offset-store-local. An
-/// operation with zero or multiple body fields has no primary-body writer. A
-/// unique complete nested relation frame is an independent native primary-body
-/// witness when this file has no feature-to-segment body uses; its endpoint tag
-/// is retained by the extractor and is not interpreted as a global constant.
+/// operation with zero or multiple body fields has no primary-body selection.
 fn native_primary_body_references<'a>(
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
@@ -3576,18 +3595,10 @@ fn native_primary_body_references<'a>(
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
         .collect::<BTreeSet<_>>();
-    let relation_frame_references = references
-        .iter()
-        .filter(|reference| reference.relation_endpoint_tag.is_some())
-        .map(|reference| reference.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let no_feature_segment_uses = segment_uses.is_empty();
     unique_references
         .into_iter()
         .filter(|(_, reference)| {
             bridged_segment_references.contains(reference.id.as_str())
-                || (no_feature_segment_uses
-                    && relation_frame_references.contains(reference.id.as_str()))
                 || (!offset_store_references.contains(reference.id.as_str())
                     && !offset_store_operations.contains(reference.operation_label.as_str()))
         })

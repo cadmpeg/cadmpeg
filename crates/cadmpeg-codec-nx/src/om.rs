@@ -2824,34 +2824,27 @@ pub struct OperationBodyReference {
     pub object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_object_index: Vec<u8>,
-    /// Endpoint tag when the reference is carried by the complete nested
-    /// relation frame; `None` identifies the direct `01 02 10` form.
-    pub relation_endpoint_tag: Option<u8>,
 }
 
-/// One exact nested object-relation frame in a bounded operation record.
-///
-/// Object indices in wire order; roles depend on the owning operation.
+/// One exact body-write frame in a bounded operation record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationObjectRelation {
+pub struct OperationBodyWriteFrame {
     /// Absolute offset of the opening `01 02` marker.
     pub offset: usize,
     /// Byte between the opening marker and the first object index.
-    pub link_tag: u8,
-    /// First object index in serialized order.
-    pub first_object_index: u32,
-    /// Exact serialized first object-index token.
-    pub raw_first_object_index: Vec<u8>,
-    /// Absolute offset of the first object-index token.
-    pub first_object_index_offset: usize,
-    /// Byte between the fixed relation marker and the second object index.
-    pub endpoint_tag: u8,
-    /// Second object index in serialized order.
-    pub second_object_index: u32,
-    /// Exact serialized second object-index token.
-    pub raw_second_object_index: Vec<u8>,
-    /// Absolute offset of the second object-index token.
-    pub second_object_index_offset: usize,
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_offset: usize,
+    /// Offset-store body-image object index.
+    pub body_image_object_index: u32,
+    /// Exact serialized body-image object-index token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object-index token.
+    pub body_image_object_index_offset: usize,
     /// Exclusive absolute end offset after the frame terminator.
     pub end_offset: usize,
 }
@@ -3222,16 +3215,24 @@ struct OperationHeaderLayout {
 }
 
 fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeaderLayout> {
-    const HEADER: &[u8] = &[
-        0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
-    ];
+    const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
+    const SCALAR_LEN: usize = 8;
     let mut headers = Vec::new();
     for marker in bytes
-        .windows(HEADER.len())
+        .windows(PREFIX.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == HEADER).then_some(offset))
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
-        let mut at = marker + HEADER.len();
+        let scalar_at = marker + PREFIX.len();
+        let Some(raw_scalar) = bytes.get(scalar_at..scalar_at + SCALAR_LEN) else {
+            continue;
+        };
+        if shifted_ieee_f64(raw_scalar).is_none()
+            || bytes.get(scalar_at + SCALAR_LEN..scalar_at + SCALAR_LEN + 2) != Some(&[0xff, 0xff])
+        {
+            continue;
+        }
+        let mut at = scalar_at + SCALAR_LEN + 2;
         let mut object_indices = [None; 4];
         let mut object_index_offsets = [0; 4];
         let mut valid = true;
@@ -6839,7 +6840,7 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
     })
 }
 
-/// Decode the unique direct or framed primary-body field in one operation.
+/// Decode the unique direct primary-body field in one operation.
 pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
     unique_candidate(operation_body_reference_candidates(record))
 }
@@ -6854,25 +6855,14 @@ fn operation_body_reference_candidates(
         let window = record.bytes.get(cursor..window_end)?;
         let marker = cursor;
         cursor += 1;
-        if window == [0x01, 0x02, 0x0b] {
-            let Some(payload_start) = payload_start else {
-                continue;
-            };
-            let Some(payload_marker) = marker.checked_sub(payload_start) else {
-                continue;
-            };
-            let Some(relation) = operation_object_relation_at(record, payload_marker) else {
-                continue;
-            };
-            if let Some(end) = relation.end_offset.checked_sub(record.offset) {
+        let body_write = payload_start
+            .and_then(|payload_start| marker.checked_sub(payload_start))
+            .and_then(|payload_marker| operation_body_write_frame_at(record, payload_marker));
+        if let Some(body_write) = body_write {
+            if let Some(end) = body_write.end_offset.checked_sub(record.offset) {
                 cursor = cursor.max(end);
             }
-            return Some(OperationBodyReference {
-                offset: relation.second_object_index_offset,
-                object_index: relation.second_object_index,
-                raw_object_index: relation.raw_second_object_index,
-                relation_endpoint_tag: Some(relation.endpoint_tag),
-            });
+            continue;
         }
         if window == [0x01, 0x02, 0x10] {
             let token = marker + 3;
@@ -6886,26 +6876,21 @@ fn operation_body_reference_candidates(
                 offset: record.offset + token,
                 object_index,
                 raw_object_index: record.bytes[token..end].to_vec(),
-                relation_endpoint_tag: None,
             });
         }
     })
 }
 
-/// Decode every ordered primary-body field in one operation.
-///
-/// The direct form is `01 02 10 index ff`. The framed form is
-/// `01 02 0b object 97 75 01 02 tag index ff`; its endpoint tag is retained
-/// because the tag is scoped by the owning NX file rather than globally fixed.
+/// Decode every ordered direct primary-body field in one operation.
 pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
     operation_body_reference_candidates(record).collect()
 }
 
 /// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
 ///
-/// Both indices are non-null and canonical. The fixed middle sequence is a
-/// structural relation marker; this parser does not assign endpoint roles.
-pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationObjectRelation> {
+/// Both indices are non-null and canonical. The endpoint tag is the fixed
+/// direct body-reference tag `10`.
+pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<OperationBodyWriteFrame> {
     let mut relations = Vec::new();
     for marker in record
         .payload
@@ -6913,18 +6898,18 @@ pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationO
         .enumerate()
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
-        if let Some(relation) = operation_object_relation_at(record, marker) {
-            relations.push(relation);
+        if let Some(write) = operation_body_write_frame_at(record, marker) {
+            relations.push(write);
         }
     }
     relations
 }
 
-fn operation_object_relation_at(
+fn operation_body_write_frame_at(
     record: OperationRecord<'_>,
     marker: usize,
-) -> Option<OperationObjectRelation> {
-    let link_tag = *record.payload.get(marker + 2)?;
+) -> Option<OperationBodyWriteFrame> {
+    let body_identity = *record.payload.get(marker + 2)?;
     let first_token = marker + 3;
     let (Some(first_object_index), first_end) =
         operation_relation_object_index(record.payload, first_token)?
@@ -6938,6 +6923,7 @@ fn operation_object_relation_at(
         return None;
     }
     let endpoint_tag = *record.payload.get(first_end + 4)?;
+    (endpoint_tag == 0x10).then_some(())?;
     let second_token = first_end + 5;
     let (Some(second_object_index), second_end) =
         operation_relation_object_index(record.payload, second_token)?
@@ -6952,24 +6938,23 @@ fn operation_object_relation_at(
     {
         return None;
     }
-    Some(OperationObjectRelation {
+    Some(OperationBodyWriteFrame {
         offset: record.payload_offset + marker,
-        link_tag,
-        first_object_index,
-        raw_first_object_index: raw_first_object_index.to_vec(),
-        first_object_index_offset: record.payload_offset + first_token,
-        endpoint_tag,
-        second_object_index,
-        raw_second_object_index: raw_second_object_index.to_vec(),
-        second_object_index_offset: record.payload_offset + second_token,
+        body_identity,
+        group_node: first_object_index,
+        raw_group_node: raw_first_object_index.to_vec(),
+        group_node_offset: record.payload_offset + first_token,
+        body_image_object_index: second_object_index,
+        raw_body_image_object_index: raw_second_object_index.to_vec(),
+        body_image_object_index_offset: record.payload_offset + second_token,
         end_offset: record.payload_offset + second_end + 1,
     })
 }
 
 /// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
 ///
-/// The fixed suffix separates this field from the nested object-relation
-/// frame, which uses the same opening marker and tag but has a different
+/// The fixed suffix separates this field from the nested body-write frame,
+/// which uses the same opening marker and tag but has a different
 /// middle sequence. The parser retains no endpoint or operation role.
 pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<OperationTaggedReference> {
     const PREFIX: &[u8] = &[0x01, 0x02, 0x17];

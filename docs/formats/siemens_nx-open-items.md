@@ -339,23 +339,6 @@ eight-byte fingerprint, and one terminal byte for both class and member
 declarations. The decomposition does not assign a member type, cardinality,
 ownership, or access role.
 
-### OM-08. Other feature-history object relations
-
-**Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
-
-**Known.** `siemens_nx.md` §7.1 "A nested operation object-relation frame is" defines the exact nested frame, canonical endpoint encoding, ordered endpoint retention, endpoint tags, and source offsets. The native decoder retains these frames as `feature_operation_object_relations`. The complete `01 02 0b, relation_object, 97 75 01 02 endpoint_tag, body_object, ff` form is also retained as a primary-body field. Its unique body endpoint is admitted to native active-state closure when the file has no feature-to-segment body uses; the endpoint tag is retained and is not interpreted as a global constant. `siemens_nx.md` §7.1 "A direct operation tagged-reference field is" defines the exact direct `0x17` field, canonical object-index encoding, optional unique offset-store target, and source offsets. The native decoder retains these fields as `feature_operation_tagged_references` without assigning endpoint roles. `siemens_nx.md` §7.1 "A direct operation data-block reference field is" defines the exact direct `0x03` field, canonical object-index encoding, optional unique offset-store target, and source offsets. The native decoder retains these fields as `feature_operation_data_block_references` without assigning endpoint roles. `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands. A non-null header slot contributes to an operation identity witness only when its offset-store block has one unique content-backed identity; the ordered tuple of those identities and literal null slots must be globally unique. All-null, unresolved, and duplicate tuples have no such witness.
-
-**Need.** We must map each retained nested frame to its owning feature relation before constructing feature dependencies or selections. The link tag and endpoint identities alone do not establish a body, operand, input, or output role.
-
-**Conflict.** Nested relation tags other than the complete primary-body frame,
-and direct reference tags, retain endpoint identities and serialized order but
-no endpoint owner or semantic role. Shared
-operation-header input blocks establish operation identity groups only; they do
-not join an unowned endpoint to a body, tool, input, or output. A non-null
-header slot contributes only when its offset-store block has one unique
-content-backed identity; all-null, unresolved, and duplicate tuples remain
-without an identity witness.
-
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?
@@ -600,22 +583,6 @@ are payload-owned and do not add those roles.
 counted branch grammar with `SKIN`; the operation label selects the family but
 does not label individual references or branch members. No serialized field
 assigns control geometry, continuity, or terminal semantics.
-
-### OM-28. Plain cached-body ownership
-
-**Question.** Which feature owns each plain cached-body stream?
-
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §7.2 "Across the ordered feature-history sections, the last non-`DELETE` operation carrying a primary-body field is that body object's latest writer." define segment tuples for partition and plain cached-body streams, body writers, operands, aliases, and terminal lineage.
-
-**Need.** We must know the ownership relation to use a cached body as the correct feature result or tool.
-
-**Conflict.** The tuple identifies the stream wrapper, classification, two
-aliases, and role word. A primary-body field or resolved segment operand can
-establish a unique alias-use relation, and ordered feature history can
-establish the latest writer and consumer for that alias component. Neither
-the tuple nor its role word identifies the feature that authored a plain
-cached-body image when no unique primary or operand relation exists. Stream
-order and alias equality do not assign feature ownership.
 
 ### OM-29. `RMFastLoad` class records
 

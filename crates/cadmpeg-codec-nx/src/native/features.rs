@@ -97,36 +97,31 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
-/// Exact nested object-relation frame retained from one feature operation.
-///
-/// The endpoint order and link tag are native evidence. They do not assign a
-/// body, operand, input, or output role.
+/// Exact body-write frame retained from one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationObjectRelation {
+pub struct FeatureOperationBodyWrite {
     /// Globally unique relation identity.
     pub id: String,
     /// Owning operation-label identity.
     pub operation_label: String,
     /// Owning bounded operation-record identity.
     pub operation_record: String,
-    /// Zero-based relation order within the operation payload.
+    /// Zero-based body-write order within the operation payload.
     pub ordinal: u32,
-    /// Byte between the opening `01 02` marker and the first object index.
-    pub link_tag: u8,
-    /// First object index in serialized order.
-    pub first_object_index: u32,
-    /// Exact serialized first object-index token.
-    pub raw_first_object_index: Vec<u8>,
-    /// Absolute offset of the first object-index token.
-    pub first_object_index_source_offset: u64,
-    /// Byte between the fixed relation marker and the second object index.
-    pub endpoint_tag: u8,
-    /// Second object index in serialized order.
-    pub second_object_index: u32,
-    /// Exact serialized second object-index token.
-    pub raw_second_object_index: Vec<u8>,
-    /// Absolute offset of the second object-index token.
-    pub second_object_index_source_offset: u64,
+    /// Persistent identity of the body written by this operation.
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node owned by this feature.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_source_offset: u64,
+    /// Offset-store object containing the body's serialized image.
+    pub body_image_object_index: u32,
+    /// Exact serialized body-image object token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object token.
+    pub body_image_object_index_source_offset: u64,
     /// Exact serialized frame byte length.
     pub byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
@@ -540,7 +535,7 @@ pub enum SimpleHoleEndTreatment {
     Chamfer,
 }
 
-/// Primary body reference read or written by one feature-history operation.
+/// Direct primary-body selection in one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
     /// Globally unique reference identity.
@@ -551,9 +546,6 @@ pub struct FeatureBodyReference {
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
-    /// Endpoint tag when this field uses the complete nested relation frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_endpoint_tag: Option<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -571,9 +563,6 @@ pub struct FeatureBodyReferenceOccurrence {
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
-    /// Endpoint tag when this field uses the complete nested relation frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_endpoint_tag: Option<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -3326,11 +3315,9 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         .collect()
 }
 
-/// Decode exact nested object-relation frames from bounded feature operations.
-pub fn feature_operation_object_relations(
-    container: &Container,
-) -> Vec<FeatureOperationObjectRelation> {
-    let mut relations = Vec::new();
+/// Decode exact body-write frames from bounded feature operations.
+pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperationBodyWrite> {
+    let mut writes = Vec::new();
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
@@ -3339,34 +3326,33 @@ pub fn feature_operation_object_relations(
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, relation) in crate::om::operation_object_relations(record)
+            for (ordinal, write) in crate::om::operation_body_write_frames(record)
                 .into_iter()
                 .enumerate()
             {
-                relations.push(FeatureOperationObjectRelation {
+                writes.push(FeatureOperationBodyWrite {
                     id: format!(
-                        "nx:feature-history:operation-object-relation#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                        "nx:feature-history:operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    link_tag: relation.link_tag,
-                    first_object_index: relation.first_object_index,
-                    raw_first_object_index: relation.raw_first_object_index,
-                    first_object_index_source_offset: entry_offset
-                        + relation.first_object_index_offset as u64,
-                    endpoint_tag: relation.endpoint_tag,
-                    second_object_index: relation.second_object_index,
-                    raw_second_object_index: relation.raw_second_object_index,
-                    second_object_index_source_offset: entry_offset
-                        + relation.second_object_index_offset as u64,
-                    byte_len: (relation.end_offset - relation.offset) as u64,
-                    source_offset: entry_offset + relation.offset as u64,
+                    body_identity: write.body_identity,
+                    group_node: write.group_node,
+                    raw_group_node: write.raw_group_node,
+                    group_node_source_offset: entry_offset
+                        + write.group_node_offset as u64,
+                    body_image_object_index: write.body_image_object_index,
+                    raw_body_image_object_index: write.raw_body_image_object_index,
+                    body_image_object_index_source_offset: entry_offset
+                        + write.body_image_object_index_offset as u64,
+                    byte_len: (write.end_offset - write.offset) as u64,
+                    source_offset: entry_offset + write.offset as u64,
                 });
             }
         },
     );
-    relations
+    writes
 }
 
 /// Decode exact direct tagged-reference fields from bounded feature operations.
@@ -4204,7 +4190,6 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                 operation_label,
                 body_object_index: reference.object_index,
                 raw_body_object_index: reference.raw_object_index,
-                relation_endpoint_tag: reference.relation_endpoint_tag,
                 source_offset: entry_offset + reference.offset as u64,
             });
         },
@@ -4257,7 +4242,6 @@ pub fn feature_body_reference_occurrences(
                         ordinal: ordinal as u32,
                         body_object_index: reference.object_index,
                         raw_body_object_index: reference.raw_object_index,
-                        relation_endpoint_tag: reference.relation_endpoint_tag,
                         source_offset: entry_offset + reference.offset as u64,
                     }),
             );
