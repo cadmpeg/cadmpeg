@@ -1091,6 +1091,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         operation_label: boolean.operation_label.clone(),
         body_object_index: 7,
         raw_body_object_index: vec![7],
+        relation_endpoint_tag: None,
         source_offset: 3,
     };
     assert_eq!(
@@ -1571,6 +1572,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         operation_label: operation_label.to_string(),
         body_object_index,
         raw_body_object_index: vec![body_object_index as u8],
+        relation_endpoint_tag: None,
         source_offset: 0,
     };
     let references = [
@@ -1683,6 +1685,37 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
     assert!(!native.contains_key("operation#missing"));
     assert!(!native.contains_key("operation#ambiguous"));
     assert!(!native.contains_key("operation#duplicate"));
+
+    let framed = FeatureBodyReference {
+        id: "reference#framed".to_string(),
+        operation_label: "operation#framed".to_string(),
+        body_object_index: 0x43,
+        raw_body_object_index: vec![0x43],
+        relation_endpoint_tag: Some(0x15),
+        source_offset: 0,
+    };
+    let framed_input = input("input#framed", "operation#framed", 0, "block#exact-input");
+    let native = super::native_primary_body_references(
+        std::slice::from_ref(&framed),
+        &[],
+        &[],
+        std::slice::from_ref(&framed_input),
+        &blocks,
+    );
+    assert_eq!(native.get("operation#framed"), Some(&0x43));
+
+    let native = super::native_primary_body_references(
+        std::slice::from_ref(&framed),
+        &[],
+        &[FeatureBodySegmentUse {
+            id: "segment-use#unrelated".to_string(),
+            feature_body_reference: "reference#other".to_string(),
+            segment_body_binding: "binding#other".to_string(),
+        }],
+        std::slice::from_ref(&framed_input),
+        &blocks,
+    );
+    assert!(!native.contains_key("operation#framed"));
 }
 
 #[test]
@@ -1726,8 +1759,9 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
 
-    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream)
-        .expect("one emitted body has an exact segment binding");
+    let id =
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream, false)
+            .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
         id,
@@ -1749,6 +1783,42 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             rederived: vec![bound],
             saved: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
         }
+    );
+}
+
+#[test]
+fn framed_relation_materializes_missing_stream_body_for_history_closure() {
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "nx:segment-body-bindings:binding#0".to_string(),
+        stream_link: "nx:segment-stream-links:link#0".to_string(),
+        stream_ordinal: 2,
+        stream_kind: "plain".to_string(),
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 5,
+        source_offset: 100,
+    };
+    let mut annotations = AnnotationBuilder::new();
+    let stream = annotations.stream("nx:container");
+
+    let id =
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream, true)
+            .expect("framed relation admits the binding-only history input");
+    let body = BodyId("nx:s2:retained-history-body".to_string());
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.bodies[0].id, body);
+    assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&body));
+    assert_eq!(
+        id,
+        FeatureId("nx:feature-history:feature#initial-bodies".into())
+    );
+    assert_eq!(
+        ir.model.features[0].source_properties,
+        BTreeMap::from([(
+            "segment_body_binding.0".to_string(),
+            "nx:segment-body-bindings:binding#0".to_string(),
+        )])
     );
 }
 

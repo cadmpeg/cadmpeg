@@ -34,7 +34,7 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Color, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -1009,7 +1009,38 @@ fn attach_initial_segment_bodies(
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
     stream: cadmpeg_ir::annotations::StreamHandle,
+    materialize_missing_stream_bodies: bool,
 ) -> Option<FeatureId> {
+    if materialize_missing_stream_bodies {
+        for binding in body_bindings {
+            let stream_prefix = format!("nx:s{}:", binding.stream_ordinal);
+            if ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.0.starts_with(&stream_prefix))
+            {
+                continue;
+            }
+            let id = BodyId(format!(
+                "nx:s{}:retained-history-body",
+                binding.stream_ordinal
+            ));
+            annotations
+                .note(&id.0, stream, binding.source_offset)
+                .tag("RETAINED_HISTORY_BODY");
+            annotations.derived(&id.0, "stream_image");
+            ir.model.bodies.push(Body {
+                id,
+                kind: BodyKind::General,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+        }
+    }
     let bindings_by_body = ir
         .model
         .bodies
@@ -1209,8 +1240,25 @@ fn attach_feature_operations(
     let hole_package_construction_group_uses = features
         .feature_hole_package_construction_group_uses
         .as_slice();
+    let admitted_body_references = native_primary_body_references(
+        body_references,
+        body_data_block_uses,
+        body_segment_uses,
+        input_blocks,
+        data_blocks,
+    );
+    let has_framed_primary_body_relation = body_references.iter().any(|reference| {
+        reference.relation_endpoint_tag.is_some()
+            && admitted_body_references.contains_key(reference.operation_label.as_str())
+    });
     let stream = annotations.stream("nx:container");
-    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, stream);
+    let initial_body_id = attach_initial_segment_bodies(
+        ir,
+        body_bindings,
+        annotations,
+        stream,
+        has_framed_primary_body_relation,
+    );
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()
@@ -1249,13 +1297,7 @@ fn attach_feature_operations(
             .or_default()
             .push((reference.body_object_index, body_use.data_block.clone()));
     }
-    let body_references = native_primary_body_references(
-        body_references,
-        body_data_block_uses,
-        body_segment_uses,
-        input_blocks,
-        data_blocks,
-    );
+    let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReferenceOccurrence>>::new();
     for reference in body_reference_occurrences {
@@ -3512,7 +3554,10 @@ fn native_result_body_identity(
 /// namespace. An offset-store field may enter that namespace only when the
 /// feature extractor has also retained one unique segment alias use for the
 /// same field. Missing or ambiguous relations remain offset-store-local. An
-/// operation with zero or multiple body fields has no primary-body writer.
+/// operation with zero or multiple body fields has no primary-body writer. A
+/// unique complete nested relation frame is an independent native primary-body
+/// witness when this file has no feature-to-segment body uses; its endpoint tag
+/// is retained by the extractor and is not interpreted as a global constant.
 fn native_primary_body_references<'a>(
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
@@ -3531,10 +3576,18 @@ fn native_primary_body_references<'a>(
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
         .collect::<BTreeSet<_>>();
+    let relation_frame_references = references
+        .iter()
+        .filter(|reference| reference.relation_endpoint_tag.is_some())
+        .map(|reference| reference.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let no_feature_segment_uses = segment_uses.is_empty();
     unique_references
         .into_iter()
         .filter(|(_, reference)| {
             bridged_segment_references.contains(reference.id.as_str())
+                || (no_feature_segment_uses
+                    && relation_frame_references.contains(reference.id.as_str()))
                 || (!offset_store_references.contains(reference.id.as_str())
                     && !offset_store_operations.contains(reference.operation_label.as_str()))
         })

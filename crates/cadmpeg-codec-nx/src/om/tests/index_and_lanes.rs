@@ -1059,6 +1059,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
             offset: 103,
             object_index: 6466,
             raw_object_index: vec![0x90, 0x19, 0x42],
+            relation_endpoint_tag: None,
         })
     );
 
@@ -1076,11 +1077,13 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
                 offset: 103,
                 object_index: 6466,
                 raw_object_index: vec![0x90, 0x19, 0x42],
+                relation_endpoint_tag: None,
             },
             super::OperationBodyReference {
                 offset: 110,
                 object_index: 6466,
                 raw_object_index: vec![0x90, 0x19, 0x42],
+                relation_endpoint_tag: None,
             },
         ]
     );
@@ -1092,6 +1095,60 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         label,
     })
     .is_none());
+}
+
+#[test]
+fn om_operation_primary_body_reference_accepts_complete_framed_relation() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let bytes = [
+        0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x15, 0x43, 0xff,
+    ];
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: &bytes,
+        payload_offset: 100,
+        payload: &bytes,
+        label,
+    };
+    assert_eq!(
+        super::operation_body_reference(record),
+        Some(super::OperationBodyReference {
+            offset: 111,
+            object_index: 0x43,
+            raw_object_index: vec![0x43],
+            relation_endpoint_tag: Some(0x15),
+        })
+    );
+    assert_eq!(
+        super::operation_object_relations(record),
+        [super::OperationObjectRelation {
+            offset: 100,
+            link_tag: 0x0b,
+            first_object_index: 0x66a4,
+            raw_first_object_index: vec![0xa0, 0x66, 0xa4],
+            first_object_index_offset: 103,
+            endpoint_tag: 0x15,
+            second_object_index: 0x43,
+            raw_second_object_index: vec![0x43],
+            second_object_index_offset: 111,
+            end_offset: 113,
+        }]
+    );
+
+    let mut endpoint_tag_ten = bytes;
+    endpoint_tag_ten[10] = 0x10;
+    let nested_record = super::OperationRecord {
+        bytes: &endpoint_tag_ten,
+        payload: &endpoint_tag_ten,
+        ..record
+    };
+    assert_eq!(super::operation_body_references(nested_record).len(), 1);
 }
 
 #[test]
@@ -1122,6 +1179,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
             first_object_index: 0x123,
             raw_first_object_index: vec![0x81, 0x23],
             first_object_index_offset: 103,
+            endpoint_tag: 0x11,
             second_object_index: 0x645,
             raw_second_object_index: vec![0x86, 0x45],
             second_object_index_offset: 110,

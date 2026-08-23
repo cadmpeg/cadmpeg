@@ -1151,6 +1151,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         ordinal: 0,
         body_object_index: 20,
         raw_body_object_index: vec![20],
+        relation_endpoint_tag: None,
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {

@@ -2739,6 +2739,9 @@ pub struct OperationBodyReference {
     pub object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_object_index: Vec<u8>,
+    /// Endpoint tag when the reference is carried by the complete nested
+    /// relation frame; `None` identifies the direct `01 02 10` form.
+    pub relation_endpoint_tag: Option<u8>,
 }
 
 /// One exact nested object-relation frame in a bounded operation record.
@@ -2756,6 +2759,8 @@ pub struct OperationObjectRelation {
     pub raw_first_object_index: Vec<u8>,
     /// Absolute offset of the first object-index token.
     pub first_object_index_offset: usize,
+    /// Byte between the fixed relation marker and the second object index.
+    pub endpoint_tag: u8,
     /// Second object index in serialized order.
     pub second_object_index: u32,
     /// Exact serialized second object-index token.
@@ -6427,7 +6432,7 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
     })
 }
 
-/// Decode the unique `01 02 10 index ff` primary-body field in one operation.
+/// Decode the unique direct or framed primary-body field in one operation.
 pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
     unique_candidate(operation_body_reference_candidates(record))
 }
@@ -6435,35 +6440,65 @@ pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<Operation
 fn operation_body_reference_candidates(
     record: OperationRecord<'_>,
 ) -> impl Iterator<Item = OperationBodyReference> + '_ {
-    record
-        .bytes
-        .windows(3)
-        .enumerate()
-        .filter_map(|(offset, window)| (window == [0x01, 0x02, 0x10]).then_some(offset))
-        .filter_map(move |marker| {
-            let token = marker + 3;
-            let (Some(object_index), end) = feature_object_index(record.bytes, token)? else {
-                return None;
+    let payload_start = record.payload_offset.checked_sub(record.offset);
+    let mut cursor = 0usize;
+    std::iter::from_fn(move || loop {
+        let window_end = cursor.checked_add(3)?;
+        let window = record.bytes.get(cursor..window_end)?;
+        let marker = cursor;
+        cursor += 1;
+        if window == [0x01, 0x02, 0x0b] {
+            let Some(payload_start) = payload_start else {
+                continue;
             };
-            (record.bytes.get(end) == Some(&0xff)).then_some(OperationBodyReference {
+            let Some(payload_marker) = marker.checked_sub(payload_start) else {
+                continue;
+            };
+            let Some(relation) = operation_object_relation_at(record, payload_marker) else {
+                continue;
+            };
+            if let Some(end) = relation.end_offset.checked_sub(record.offset) {
+                cursor = cursor.max(end);
+            }
+            return Some(OperationBodyReference {
+                offset: relation.second_object_index_offset,
+                object_index: relation.second_object_index,
+                raw_object_index: relation.raw_second_object_index,
+                relation_endpoint_tag: Some(relation.endpoint_tag),
+            });
+        }
+        if window == [0x01, 0x02, 0x10] {
+            let token = marker + 3;
+            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+                continue;
+            };
+            if record.bytes.get(end) != Some(&0xff) {
+                continue;
+            }
+            return Some(OperationBodyReference {
                 offset: record.offset + token,
                 object_index,
                 raw_object_index: record.bytes[token..end].to_vec(),
-            })
-        })
+                relation_endpoint_tag: None,
+            });
+        }
+    })
 }
 
-/// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
+/// Decode every ordered primary-body field in one operation.
+///
+/// The direct form is `01 02 10 index ff`. The framed form is
+/// `01 02 0b object 97 75 01 02 tag index ff`; its endpoint tag is retained
+/// because the tag is scoped by the owning NX file rather than globally fixed.
 pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
     operation_body_reference_candidates(record).collect()
 }
 
-/// Decode every exact nested `01 02 tag index 97 75 01 02 11 index ff` frame.
+/// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
 ///
 /// Both indices are non-null and canonical. The fixed middle sequence is a
 /// structural relation marker; this parser does not assign endpoint roles.
 pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationObjectRelation> {
-    const MIDDLE: &[u8] = &[0x97, 0x75, 0x01, 0x02, 0x11];
     let mut relations = Vec::new();
     for marker in record
         .payload
@@ -6471,46 +6506,57 @@ pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationO
         .enumerate()
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
-        let Some(link_tag) = record.payload.get(marker + 2).copied() else {
-            continue;
-        };
-        let first_token = marker + 3;
-        let Some((Some(first_object_index), first_end)) =
-            feature_object_index(record.payload, first_token)
-        else {
-            continue;
-        };
-        let raw_first_object_index = &record.payload[first_token..first_end];
-        if !canonical_feature_object_index(Some(first_object_index), raw_first_object_index)
-            || record.payload.get(first_end..first_end + MIDDLE.len()) != Some(MIDDLE)
-        {
-            continue;
+        if let Some(relation) = operation_object_relation_at(record, marker) {
+            relations.push(relation);
         }
-        let second_token = first_end + MIDDLE.len();
-        let Some((Some(second_object_index), second_end)) =
-            feature_object_index(record.payload, second_token)
-        else {
-            continue;
-        };
-        let raw_second_object_index = &record.payload[second_token..second_end];
-        if !canonical_feature_object_index(Some(second_object_index), raw_second_object_index)
-            || record.payload.get(second_end) != Some(&0xff)
-        {
-            continue;
-        }
-        relations.push(OperationObjectRelation {
-            offset: record.payload_offset + marker,
-            link_tag,
-            first_object_index,
-            raw_first_object_index: raw_first_object_index.to_vec(),
-            first_object_index_offset: record.payload_offset + first_token,
-            second_object_index,
-            raw_second_object_index: raw_second_object_index.to_vec(),
-            second_object_index_offset: record.payload_offset + second_token,
-            end_offset: record.payload_offset + second_end + 1,
-        });
     }
     relations
+}
+
+fn operation_object_relation_at(
+    record: OperationRecord<'_>,
+    marker: usize,
+) -> Option<OperationObjectRelation> {
+    let link_tag = *record.payload.get(marker + 2)?;
+    let first_token = marker + 3;
+    let (Some(first_object_index), first_end) =
+        operation_relation_object_index(record.payload, first_token)?
+    else {
+        return None;
+    };
+    let raw_first_object_index = record.payload.get(first_token..first_end)?;
+    if !canonical_operation_relation_object_index(Some(first_object_index), raw_first_object_index)
+        || record.payload.get(first_end..first_end + 4) != Some(&[0x97, 0x75, 0x01, 0x02])
+    {
+        return None;
+    }
+    let endpoint_tag = *record.payload.get(first_end + 4)?;
+    let second_token = first_end + 5;
+    let (Some(second_object_index), second_end) =
+        operation_relation_object_index(record.payload, second_token)?
+    else {
+        return None;
+    };
+    let raw_second_object_index = record.payload.get(second_token..second_end)?;
+    if !canonical_operation_relation_object_index(
+        Some(second_object_index),
+        raw_second_object_index,
+    ) || record.payload.get(second_end) != Some(&0xff)
+    {
+        return None;
+    }
+    Some(OperationObjectRelation {
+        offset: record.payload_offset + marker,
+        link_tag,
+        first_object_index,
+        raw_first_object_index: raw_first_object_index.to_vec(),
+        first_object_index_offset: record.payload_offset + first_token,
+        endpoint_tag,
+        second_object_index,
+        raw_second_object_index: raw_second_object_index.to_vec(),
+        second_object_index_offset: record.payload_offset + second_token,
+        end_offset: record.payload_offset + second_end + 1,
+    })
 }
 
 /// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
@@ -6613,6 +6659,11 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
+}
+
+fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
+    let token = operation_state_index_at(bytes, at, 0)?;
+    Some((token.value, at + token.raw.len()))
 }
 
 /// Decode one object-index token used by the operation-state block.
@@ -7466,6 +7517,17 @@ fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
             | (Some(0..=0x7f), [_])
             | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
             | (Some(0x1000..=0xffff), [0x90, _, _])
+    )
+}
+
+fn canonical_operation_relation_object_index(value: Option<u32>, raw: &[u8]) -> bool {
+    matches!(
+        (value, raw),
+        (None, [0xff])
+            | (Some(0..=0x7f), [_])
+            | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
+            | (Some(0x1000..=0xffff), [0x90, _, _])
+            | (Some(_), [0xa0..=0xaf | 0xf1, _, _])
     )
 }
 

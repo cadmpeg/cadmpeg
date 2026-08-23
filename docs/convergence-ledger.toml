@@ -34,9 +34,9 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 151
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1777
+test_line_debt = 1892
 production_line_debt = 0
 
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"
+test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit; NX owner tests cover framed operation body relations and retained-history body materialization"

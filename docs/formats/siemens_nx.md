@@ -253,10 +253,13 @@ ambiguous block relation or namespace collision, or identity overlap leaves
 both native selections unresolved without discarding the operation family or
 Boolean kind.
 
-A body-affecting operation record contains exactly one primary-body field
-`01 02 10 reference_index ff`. The index uses the operation-header encoding and
-retains its exact token and offset. The operation-selected namespace determines
-whether it addresses an offset-store block or an object identity. An
+A body-affecting operation record contains exactly one primary-body field. The
+direct field is `01 02 10 reference_index ff`. The framed field is
+`01 02 0b relation_object 97 75 01 02 endpoint_tag body_object ff`; its
+endpoint tag is retained as native evidence and is scoped by the owning file.
+Each index uses the operation-header encoding and retains its exact token and
+offset. The operation-selected namespace determines whether it addresses an
+offset-store block or an object identity. An
 offset-store primary field may also retain the exact segment-alias bridge
 defined for its body image. Operations
 sharing an object-namespace index form one ordered body lineage. Operations
@@ -276,7 +279,10 @@ one offset store has no segment-image writer or consumption effect; equal
 integer values in the two namespaces do not establish a cross-store relation.
 Partial, duplicate, or cross-store offset-store participant evidence is also
 unresolved in the segment namespace and has no segment-image writer or
-consumption effect.
+consumption effect. A unique framed primary-body field is an independent
+native relation witness when the file has no feature-to-segment body uses; this
+witness may establish native active-state closure but does not create a neutral
+body or construction output.
 
 For a complete Boolean offset-store participant set, that one-store relation
 owns every participant even when an integer also names a segment alias. A
@@ -1619,7 +1625,7 @@ visible text and the second string is the font family. The operation label is
 both the annotation object and its native identity. Any other payload
 cardinality remains native-only.
 
-Bodies named by validated segment binding tuples exist at the start of retained feature history. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A Boolean target list writes its selected body image. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Every segment binding receives one terminal or consumed lineage status when the complete ordered history resolves atomically. A lineage mapping is complete only when one status exists for every validated segment binding and those bindings cover every emitted partition image. An empty ordered operation set is complete: each bound image is an initial terminal image. Missing or ambiguous status, or incomplete image coverage, leaves lineage selection unresolved and retains every emitted image. A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection. Terminal selection retains at least one but fewer than all images; an all-terminal mapping is retained without pruning.
+Bodies named by validated segment binding tuples exist at the start of retained feature history. When a unique framed primary-body relation is admitted but no reconstructed body matches a binding stream, the decoder materializes one general stream-image body for that stream and uses it only as retained-history input. The synthetic body has no topology regions and does not assert geometry or alter geometry-loss accounting. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A Boolean target list writes its selected body image. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Every segment binding receives one terminal or consumed lineage status when the complete ordered history resolves atomically. A lineage mapping is complete only when one status exists for every validated segment binding and those bindings cover every emitted partition image. An empty ordered operation set is complete: each bound image is an initial terminal image. Missing or ambiguous status, or incomplete image coverage, leaves lineage selection unresolved and retains every emitted image. A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection. Terminal selection retains at least one but fewer than all images; an all-terminal mapping is retained without pruning.
 
 An `OFFSET` operation projects as a neutral surface-offset feature. Exactly one
 segment-bound output image establishes a native support selection when its
@@ -1680,9 +1686,9 @@ placement does not imply the identity transform.
 
 A complete block construction requires nineteen contiguous reference ordinals, one uniform control byte, exactly eighteen nonterminal members, one final terminal reference, and unique data-block resolution for every reference. It retains the member lane and terminal reference as distinct fields. Missing, reordered, differently controlled, incorrectly terminated, or unresolved inputs reject the construction atomically.
 
-A body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. Every complete non-null field in a bounded operation record is retained in byte order. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.
+A direct body-reference field is `01 02 10, object_index, ff`. `object_index` uses the feature object-index form: `00..7f` is direct, `80..8f` contributes the high index byte and is followed by one low byte, `90` is followed by a big-endian `u16`, and `ff` is null. A framed body-reference field is `01 02 0b, relation_object, 97 75 01 02 endpoint_tag:u8, body_object, ff`. The relation object and body object use the operation relation-index form: direct `00..7f`, compact `80..8f` plus one low byte, `90` plus big-endian `u16`, `a0..af` plus big-endian `u16`, `f1` plus big-endian `u16`, or `ff` null; both endpoints are non-null in a complete frame. Every complete non-null field in a bounded operation record is retained in byte order, including the framed endpoint tag. Exactly one field identifies an unambiguous primary-body writer; records containing zero or multiple fields do not establish that writer role.
 
-A nested operation object-relation frame is `01 02, link_tag:u8, first:object_index, 97 75 01 02 11, second:object_index, ff`. Both object indices are non-null and use the canonical feature object-index form. The frame retains its link tag, ordered object indices, exact serialized index tokens, byte length, and absolute offsets. The frame does not assign a body, operand, input, or output role to either endpoint.
+A nested operation object-relation frame is `01 02, link_tag:u8, first:relation_object, 97 75 01 02 endpoint_tag:u8, second:relation_object, ff`. Both object indices are non-null and use the canonical operation relation-index form. The frame retains its link tag, endpoint tag, ordered object indices, exact serialized index tokens, byte length, and absolute offsets. The frame does not assign a body, operand, input, or output role to either endpoint unless it is the complete `link_tag=0b` body-reference form above and the native namespace proof admits its unique body endpoint. A framed body-reference endpoint is admitted without a segment alias only when the file has no feature-to-segment body uses; an offset-store operation with any other body-reference form remains unresolved without the existing data-block/object-frame/segment-alias proof.
 
 A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
 

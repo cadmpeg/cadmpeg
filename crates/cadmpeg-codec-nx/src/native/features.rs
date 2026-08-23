@@ -119,6 +119,8 @@ pub struct FeatureOperationObjectRelation {
     pub raw_first_object_index: Vec<u8>,
     /// Absolute offset of the first object-index token.
     pub first_object_index_source_offset: u64,
+    /// Byte between the fixed relation marker and the second object index.
+    pub endpoint_tag: u8,
     /// Second object index in serialized order.
     pub second_object_index: u32,
     /// Exact serialized second object-index token.
@@ -461,6 +463,9 @@ pub struct FeatureBodyReference {
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
+    /// Endpoint tag when this field uses the complete nested relation frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_endpoint_tag: Option<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -478,6 +483,9 @@ pub struct FeatureBodyReferenceOccurrence {
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
     pub raw_body_object_index: Vec<u8>,
+    /// Endpoint tag when this field uses the complete nested relation frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_endpoint_tag: Option<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -3168,6 +3176,7 @@ pub fn feature_operation_object_relations(
                     raw_first_object_index: relation.raw_first_object_index,
                     first_object_index_source_offset: entry_offset
                         + relation.first_object_index_offset as u64,
+                    endpoint_tag: relation.endpoint_tag,
                     second_object_index: relation.second_object_index,
                     raw_second_object_index: relation.raw_second_object_index,
                     second_object_index_source_offset: entry_offset
@@ -3819,6 +3828,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                 operation_label,
                 body_object_index: reference.object_index,
                 raw_body_object_index: reference.raw_object_index,
+                relation_endpoint_tag: reference.relation_endpoint_tag,
                 source_offset: entry_offset + reference.offset as u64,
             });
         },
@@ -3871,6 +3881,7 @@ pub fn feature_body_reference_occurrences(
                         ordinal: ordinal as u32,
                         body_object_index: reference.object_index,
                         raw_body_object_index: reference.raw_object_index,
+                        relation_endpoint_tag: reference.relation_endpoint_tag,
                         source_offset: entry_offset + reference.offset as u64,
                     }),
             );
