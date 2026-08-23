@@ -182,6 +182,14 @@ pointer, remains inside the same size-framed section, and begins with three
 00`. When this pointer exists, the field registry ends at the pointer word;
 every length-framed `m_` declaration before it belongs to that registry. The
 pointed record area extends to the size-framed section boundary.
+Legacy feature-history sections use the same section boundary and operation
+headers with a legacy record-area pointer form. The section must declare
+`UGS::FEATURE_RECORD`. A unique five-byte lane `01 relative:u32 LE` identifies
+the pointer; the record-area control prefix begins at
+`section_offset + relative + 1`. It contains three `u32 LE` control words,
+followed by `01 text_length:u8 "NX " product_text 00`, and extends to the
+size-framed section boundary. The legacy product frame is selected only for a
+feature-history section and does not change the modern product-frame grammar.
 Feature-history sections are traversed in ascending physical section-offset
 order. Multiple validated segment-index links to one section identify one
 semantic feature-history section; the complete segment-link set remains raw

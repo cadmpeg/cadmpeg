@@ -2940,14 +2940,14 @@ impl<'a> Section<'a> {
             View::u32_le_at(bytes, 8)?,
         ];
         let suffix = bytes.get(12..)?;
-        is_product_record(suffix).then_some(())?;
-        let length = usize::from(suffix[2]) - 2;
+        let layout = product_record_layout(suffix, ProductRecordForm::Modern)
+            .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
         Some(RecordAreaHeader {
             offset,
             control_words,
             product: StoreVersion {
                 offset: offset + 12,
-                value: std::str::from_utf8(&suffix[3..3 + length]).ok()?,
+                value: std::str::from_utf8(&suffix[layout.text_start..layout.text_end]).ok()?,
             },
         })
     }
@@ -3045,7 +3045,7 @@ impl<'a> Section<'a> {
         let base_offset = self.record_area_offset?;
         let header = self.record_area_header()?;
         let product = header.product.offset.checked_sub(base_offset)?;
-        let product_end = product_record_range_at(bytes, product)?.end;
+        let product_end = record_area_product_end(bytes, product)?;
         let start = operation_state_journal_start(bytes, product_end)?;
         let end = self
             .cached_operation_labels
@@ -8230,7 +8230,10 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
         let field_start = types.last().map_or(offset + 16, |definition| {
             definition.offset + definition.name.len() + 2
         });
-        let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end);
+        let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
+            .or_else(|| {
+                legacy_feature_record_area_pointer(bytes, offset, field_start, end, &types)
+            });
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
@@ -8285,28 +8288,75 @@ fn section_record_area_pointer(
     matches.next().is_none().then_some(first)
 }
 
+fn legacy_feature_record_area_pointer(
+    bytes: &[u8],
+    section_offset: usize,
+    schema_start: usize,
+    section_end: usize,
+    types: &[TypeDefinition<'_>],
+) -> Option<(usize, usize)> {
+    if !types
+        .iter()
+        .any(|definition| definition.name == "UGS::FEATURE_RECORD")
+    {
+        return None;
+    }
+    unique_candidate(
+        (schema_start..section_end.saturating_sub(4)).filter_map(|at| {
+            if bytes.get(at) != Some(&0x01) {
+                return None;
+            }
+            let relative = usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?;
+            let target = section_offset.checked_add(relative)?.checked_add(1)?;
+            (target >= at.checked_add(5)? && target.checked_add(12)? <= section_end)
+                .then_some(())?;
+            View::u32_le_at(bytes, target)?;
+            View::u32_le_at(bytes, target + 4)?;
+            View::u32_le_at(bytes, target + 8)?;
+            product_record_layout(
+                bytes.get(target + 12..section_end)?,
+                ProductRecordForm::LegacyFeature,
+            )?;
+            Some((target, at))
+        }),
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProductRecordLayout {
+    text_start: usize,
+    text_end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ProductRecordForm {
+    Modern,
+    LegacyFeature,
+}
+
+fn product_record_layout(bytes: &[u8], form: ProductRecordForm) -> Option<ProductRecordLayout> {
+    let (length_offset, text_start): (usize, usize) = match form {
+        ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => (2, 3),
+        ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
+        _ => return None,
+    };
+    let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
+    let text_end = text_start.checked_add(text_length)?;
+    let text = bytes.get(text_start..text_end)?;
+    (text.starts_with(b"NX ")
+        && text
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        && bytes.get(text_end) == Some(&0))
+    .then_some(ProductRecordLayout {
+        text_start,
+        text_end,
+    })
+}
+
 /// Validate one self-framed NX product record.
 pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
-    if !matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) {
-        return false;
-    }
-    let Some(length) = bytes
-        .get(2)
-        .copied()
-        .map(usize::from)
-        .and_then(|declared| declared.checked_sub(2))
-    else {
-        return false;
-    };
-    let Some(end) = 3usize.checked_add(length) else {
-        return false;
-    };
-    bytes.get(3..end).is_some_and(|text| {
-        text.starts_with(b"NX ")
-            && text
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    }) && bytes.get(end) == Some(&0)
+    product_record_layout(bytes, ProductRecordForm::Modern).is_some()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -8348,13 +8398,18 @@ struct IndexedCandidate {
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
     let suffix = bytes.get(offset..)?;
-    is_product_record(suffix).then_some(())?;
-    let text_length = usize::from(*suffix.get(2)?).checked_sub(2)?;
-    let record_len = 3usize.checked_add(text_length)?.checked_add(1)?;
+    let layout = product_record_layout(suffix, ProductRecordForm::Modern)?;
     Some(ProductRecordRange {
         start: offset,
-        end: offset.checked_add(record_len)?,
+        end: offset.checked_add(layout.text_end)?.checked_add(1)?,
     })
+}
+
+fn record_area_product_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    let suffix = bytes.get(offset..)?;
+    let layout = product_record_layout(suffix, ProductRecordForm::Modern)
+        .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
+    offset.checked_add(layout.text_end)?.checked_add(1)
 }
 
 /// Count validated product records fully contained in `[lower, upper]`.

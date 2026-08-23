@@ -1568,6 +1568,55 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
     assert_eq!(super::sections(&invalid)[0].record_area, None);
 }
 
+fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
+    let mut bytes = vec![0xff; 16];
+    bytes[12..14].copy_from_slice(b"OM");
+    bytes.extend_from_slice(&[0, 1, 2]);
+    let class_name = b"UGS::FEATURE_RECORD";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0xa0);
+    bytes.extend_from_slice(&[0x81, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x06]);
+    let pointer_offset = bytes.len();
+    let record_area_offset = pointer_offset + 20;
+    bytes.push(0x01);
+    bytes.extend_from_slice(&((record_area_offset - 1) as u32).to_le_bytes());
+    bytes.resize(record_area_offset, 0);
+    bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    bytes.extend_from_slice(b"\x01\x0eNX 1980.1700\0");
+    bytes.extend_from_slice(
+        b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0",
+    );
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
+    let bytes = legacy_feature_om_section_with_record_area();
+    let section = super::sections(&bytes).remove(0);
+    let record_area_offset = section.record_area_offset.expect("record area");
+    assert_eq!(
+        record_area_offset,
+        16 + 3 + 1 + b"UGS::FEATURE_RECORD".len() + 1 + 12 + 20
+    );
+    assert_eq!(
+        section
+            .record_area_header()
+            .expect("record header")
+            .product
+            .value,
+        "NX 1980.1700"
+    );
+    assert_eq!(section.operation_labels().len(), 1);
+    assert_eq!(section.operation_labels()[0].value, "UNITE");
+
+    let mut invalid = bytes;
+    invalid[record_area_offset + 13] = 0x02;
+    assert!(super::sections(&invalid)[0].record_area.is_none());
+}
+
 #[test]
 fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     let mut bytes = size_framed_om_section();
