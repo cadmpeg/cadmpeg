@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::layout::class_root_directory_prefix as class_root;
 use crate::layout::entity_common_header as entity_hdr;
 
+mod body_bridge;
 pub(crate) mod final_state;
 mod record_lattice;
 
@@ -10014,7 +10015,10 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
         let shells = reachable_records(by_attr, regions[0], 0x0016);
         if let [shell] = shells.as_slice() {
             if !canonical_faces.is_empty() && face_use_faces == canonical_faces {
-                let mut refs = canonical_faces.into_iter().collect::<Vec<_>>();
+                let mut refs = canonical_faces.iter().copied().collect::<Vec<_>>();
+                if let Some(bridge_refs) = body_bridge::bridge_refs(by_attr, &canonical_faces) {
+                    refs.extend(bridge_refs);
+                }
                 refs.sort_unstable();
                 return vec![BodyRecord {
                     attr: regions[0].attr,
@@ -10313,6 +10317,7 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod body_bridge;
     mod disc16_disc0e_disc20_disc14_disc04;
     mod disc18_disc1a_disc20_disc16_disc14;
     mod disc1a_disc14_disc12_disc10_disc0e_disc0c_disc04;
