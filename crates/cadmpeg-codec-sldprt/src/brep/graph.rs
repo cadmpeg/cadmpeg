@@ -904,19 +904,33 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             (body, header.schema.as_str(), is_deltas)
         })
         .collect::<Vec<_>>();
-    let final_body_selectors = entity::final_state::scan_final_body_selectors(&entity_streams);
+    let typed_streams = entity_streams
+        .iter()
+        .map(|(body, _, _)| typed::scan(body))
+        .collect::<Vec<_>>();
+    for stream_typed_facts in &typed_streams {
+        typed_facts.merge_missing(stream_typed_facts.clone());
+    }
+    let typed_present = typed_facts.has_valid_ownership();
+    let final_body_selectors = if typed_present {
+        None
+    } else {
+        entity::final_state::scan_final_body_selectors(&entity_streams)
+    };
     let final_state_refs = final_body_selectors.as_ref().map(|selectors| {
         selectors
             .iter()
             .flat_map(|body| body.refs.iter().copied())
             .collect::<HashSet<_>>()
     });
-    let combined_body_facts =
-        (entity_streams.len() > 1).then(|| entity::scan_combined_bodies(&entity_streams));
-    for (stream_order, (payload, header)) in ordered.into_iter().enumerate() {
+    let combined_body_facts = (!typed_present && entity_streams.len() > 1)
+        .then(|| entity::scan_combined_bodies(&entity_streams));
+    for (stream_order, ((payload, header), stream_typed_facts)) in
+        ordered.into_iter().zip(typed_streams).enumerate()
+    {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-        typed_facts.merge_missing(typed::scan(body));
+        typed_facts.merge_missing(stream_typed_facts);
         carriers.merge_missing(scan_carriers(body));
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
@@ -924,7 +938,13 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         } else {
             topology::scan_with_curve_attrs(body, &curve_attrs)
         };
-        let mut scanned_facts = if is_deltas {
+        let mut scanned_facts = if typed_present {
+            if is_deltas {
+                entity::scan_delta_metadata(body, &header.schema)
+            } else {
+                entity::scan_metadata(body, &header.schema)
+            }
+        } else if is_deltas {
             entity::scan_deltas(body, &header.schema)
         } else {
             entity::scan(body, &header.schema)
@@ -994,8 +1014,12 @@ fn decode_body(body: &[u8], schema: &str, stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let t = topology::scan_with_curve_attrs(body, &curve_attrs);
-    let entity_facts = entity::scan(body, schema);
     let typed_facts = typed::scan(body);
+    let entity_facts = if typed_facts.bodies.is_empty() {
+        entity::scan(body, schema)
+    } else {
+        entity::scan_metadata(body, schema)
+    };
     decode_graph(&carriers, &t, entity_facts, &typed_facts, stream)
 }
 
@@ -1150,7 +1174,7 @@ fn decode_graph(
     // candidates can occur in unrelated node payloads until their ownership
     // closure is established; they must not disable the existing body routes
     // on their own.
-    let typed_present = !typed_facts.bodies.is_empty();
+    let typed_present = typed_facts.has_valid_ownership();
     let typed_selected = typed_records.is_some();
     let typed_authoritative = typed_selected || typed_present;
     let mut body_records = if typed_authoritative {
@@ -6064,8 +6088,8 @@ mod tests {
                 attr: 3,
                 node_id: 7,
                 topology_refs: [7, 8, 9, 10, 1, 12, 11],
+                ownership_refs: Vec::new(),
                 body_type: 3,
-                region_head_slot: 6,
                 offset: 1,
                 end: 2,
             }],

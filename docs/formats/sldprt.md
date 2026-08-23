@@ -1206,13 +1206,13 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 | Tag     | Role                           | Bare length | Magic       |
 | ------- | ------------------------------ | ----------: | ----------- |
 | `00 0c` | XT BODY ownership node        |    variable | first/edit or tagged |
-| `00 0d` | XT SHELL ownership node       |    variable | tagged      |
+| `00 0d` | XT SHELL ownership node       |    variable | first/edit or tagged |
 | `00 0e` | bridge / face-use→surface link |          37 | at body +8  |
 | `00 0f` | loop head                      |         ≥14 | none        |
 | `00 10` | edge-use                       |          28 | at body +8  |
 | `00 11` | oriented coedge                |          21 | none        |
 | `00 12` | vertex-use                     |          24 | at body +16 |
-| `00 13` | XT REGION ownership node       |    variable | tagged      |
+| `00 13` | XT REGION ownership node       |    variable | first/edit or tagged |
 | `00 1d` | world point                    |          38 | none        |
 
 Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
@@ -1242,12 +1242,13 @@ An edited type uses `C`, `D`, `I`, and `A` field-edit instructions ending in
 fields follow the `Z` terminator of its first-of-type edit sequence; later
 BODY nodes start with `00 0c`.
 
-A BODY payload has this field order after `attr u16 BE` and `node_id u32 BE`:
+A BODY payload follows `attr u16 BE` and `node_id u32 BE` directly. The first
+BODY of an edited type follows the schema edit sequence's `Z` terminator; a
+tagged BODY starts after `00 0c` and its optional `ff` byte. There is no
+length/index frame between the prefix and the fields.
 
 ```
-frame_length       u16 BE
-node_index         u16 BE
-header_refs        u16 references[4 or 6]
+header_refs        u16 references[ schema-defined count ]
 resolution_size    f64 BE
 resolution_linear  f64 BE
 body_links         u16 references[3]
@@ -1255,16 +1256,17 @@ state              u8              ; 1
 owner              u16 reference
 body_type          u8              ; 1 solid, 2 wire, 3 sheet, 6 general
 nominal_state      u8
-topology_refs      u16 references[7]
+ownership_fields   schema-defined pointer and index-map fields
 ```
 
-The six-reference header is the base BODY form; a schema field edit can
-produce the four-reference form. The trailing topology vector begins with
-the shell reference. Its region-chain head is schema-form dependent: slot 4
-in the four-reference form and slot 6 in the six-reference form. A BODY is
-valid only when exactly one header form satisfies the complete field grammar,
-the resolution values are finite, and `body_type` is one of the four defined
-values.
+The header reference count and the placement of the ownership fields come
+from the embedded schema. The ownership field sequence contains the shell,
+boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
+references plus the index-map fields. The region head is selected by a unique
+FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
+an ownership selector. A BODY is valid only when exactly one schema field
+interpretation satisfies the complete field grammar, the resolution values
+are finite, and `body_type` is one of the four defined values.
 
 A SHELL has eight references:
 

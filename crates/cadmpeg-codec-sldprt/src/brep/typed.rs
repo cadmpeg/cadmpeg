@@ -23,6 +23,8 @@ const RESOLUTION_SIZE_MIN: f64 = 1.0;
 const RESOLUTION_SIZE_MAX: f64 = 1.0e6;
 const RESOLUTION_LINEAR_MIN: f64 = 1.0e-15;
 const RESOLUTION_LINEAR_MAX: f64 = 1.0e-2;
+const BODY_HEADER_REF_MAX: usize = 32;
+const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,14 +33,14 @@ pub struct BodyNode {
     pub attr: u16,
     /// Persistent XT node id.
     pub node_id: u32,
-    /// The seven trailing topology references, beginning with `shell`.
-    /// Their region-chain slot is carried by `region_head_slot`; the remaining
-    /// slots are the wire, vertex, and other topology heads for the BODY form.
+    /// The first seven pointer cells in the BODY ownership field sequence.
     pub topology_refs: [u32; 7],
+    /// Additional pointer cells following the topology fields.  Edited BODY
+    /// schemas may retain the region head in this lane; ownership closure
+    /// selects it only when REGION links validate.
+    pub ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
     pub body_type: u8,
-    /// Slot containing the region-chain head in this BODY schema.
-    pub region_head_slot: u8,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
     pub offset: usize,
     /// First byte after the complete node.
@@ -62,9 +64,14 @@ impl BodyNode {
         self.topology_refs[0]
     }
 
-    /// Head of the body's region chain.
-    pub fn region_head(&self) -> u32 {
-        self.topology_refs[usize::from(self.region_head_slot)]
+    fn region_head_candidates(&self) -> Vec<u32> {
+        let mut refs = self.ownership_refs.clone();
+        if refs.is_empty() {
+            refs.extend(self.topology_refs);
+        }
+        refs.sort_unstable();
+        refs.dedup();
+        refs
     }
 }
 
@@ -137,6 +144,27 @@ impl Facts {
         merge_nodes(&mut self.shells, other.shells, |node| node.attr);
         merge_nodes(&mut self.regions, other.regions, |node| node.attr);
         merge_nodes(&mut self.faces, other.faces, |node| node.attr);
+    }
+
+    /// Return whether the stream contains a closed typed BODY ownership set.
+    /// FACE-to-SHELL closure is checked separately against compact bridge
+    /// records because a stream may carry subordinate faces in another site.
+    pub fn has_valid_ownership(&self) -> bool {
+        let Some(bodies) = unique_map(&self.bodies, |node| node.attr) else {
+            return false;
+        };
+        let Some(shells) = unique_map(&self.shells, |node| node.attr) else {
+            return false;
+        };
+        let Some(regions) = unique_map(&self.regions, |node| node.attr) else {
+            return false;
+        };
+        !bodies.is_empty()
+            && bodies.values().all(|body| {
+                body.kind().is_some()
+                    && null_like_or_existing(body.shell(), &shells)
+                    && region_chain(body, &regions).is_some()
+            })
     }
 
     /// Return body hierarchies only when the typed ownership graph is complete
@@ -266,7 +294,35 @@ impl Facts {
 }
 
 fn region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<Vec<RegionNode>> {
-    let head = body.region_head();
+    let mut chains = Vec::new();
+    for head in body.region_head_candidates() {
+        if let Some(chain) = region_chain_from_head(body, regions, head) {
+            if !chains.iter().any(|previous: &Vec<RegionNode>| {
+                previous
+                    .iter()
+                    .map(|region| region.attr)
+                    .eq(chain.iter().map(|region| region.attr))
+            }) {
+                chains.push(chain);
+            }
+        }
+    }
+    let nonempty = chains
+        .iter()
+        .filter(|chain| !chain.is_empty())
+        .collect::<Vec<_>>();
+    match nonempty.as_slice() {
+        [chain] => Some((*chain).clone()),
+        [] if chains.iter().any(Vec::is_empty) => Some(Vec::new()),
+        _ => None,
+    }
+}
+
+fn region_chain_from_head(
+    body: &BodyNode,
+    regions: &HashMap<u16, RegionNode>,
+    head: u32,
+) -> Option<Vec<RegionNode>> {
     if head <= 1 {
         return Some(Vec::new());
     }
@@ -431,16 +487,19 @@ fn valid_resolution(size: f64, linear: f64) -> bool {
         && (RESOLUTION_LINEAR_MIN..=RESOLUTION_LINEAR_MAX).contains(&linear.abs())
 }
 
-fn parse_body_fields<const N: usize>(
+fn parse_body_fields(
     bytes: &[u8],
     offset: usize,
     payload: usize,
     mut at: usize,
+    header_ref_count: usize,
 ) -> Option<BodyNode> {
     let attr = View::u16_be_at(bytes, payload)?;
     let node_id = View::u32_be_at(bytes, payload + 2)?;
     (attr > 1 && node_id != 0).then_some(())?;
-    let _header_refs = read_refs::<N>(bytes, &mut at)?;
+    for _ in 0..header_ref_count {
+        read_ref(bytes, &mut at)?;
+    }
     let size = View::f64_be_at(bytes, at)?;
     at += 8;
     let linear = View::f64_be_at(bytes, at)?;
@@ -456,14 +515,21 @@ fn parse_body_fields<const N: usize>(
     let _nominal_geometry_state = *bytes.get(at)?;
     at += 1;
     let topology_refs = read_refs::<7>(bytes, &mut at)?;
+    let mut ownership_refs = topology_refs.to_vec();
+    let mut tail_at = at;
+    for _ in 0..BODY_POST_TOPOLOGY_REF_MAX {
+        let Some(reference) = read_ref(bytes, &mut tail_at) else {
+            break;
+        };
+        ownership_refs.push(reference);
+    }
     valid_resolution(size, linear).then_some(())?;
-    let region_head_slot = if N == 4 { 4 } else { 6 };
     let body = BodyNode {
         attr,
         node_id,
         topology_refs,
+        ownership_refs,
         body_type,
-        region_head_slot,
         offset,
         end: at,
     };
@@ -471,22 +537,20 @@ fn parse_body_fields<const N: usize>(
 }
 
 fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyNode> {
-    let frame = payload.checked_add(6)?;
-    let length = View::u16_be_at(bytes, frame)?;
-    let node_index = View::u16_be_at(bytes, frame + 2)?;
-    if length == 0 || node_index == 0 {
-        return None;
-    }
-    let fields = frame.checked_add(4)?;
-    // BODY records use both four-reference and six-reference headers.  They
-    // share the framing and the remainder of the field grammar; only one
-    // interpretation may pass the complete body invariants.
-    let four = parse_body_fields::<4>(bytes, offset, payload, fields);
-    let six = parse_body_fields::<6>(bytes, offset, payload, fields);
-    match (four, six) {
-        (Some(_), Some(_)) | (None, None) => None,
-        (Some(body), None) | (None, Some(body)) => Some(body),
-    }
+    // BODY is a fixed XT node.  Its fields begin immediately after the
+    // attribute/node-id prefix; there is no additional length/index frame.
+    // The embedded schema can add or remove leading reference fields, so the
+    // field count is selected only when exactly one complete interpretation
+    // passes the resolution, state, kind, and topology guards.
+    let fields = payload.checked_add(6)?;
+    let candidates = (0..=BODY_HEADER_REF_MAX)
+        .filter_map(|header_ref_count| {
+            parse_body_fields(bytes, offset, payload, fields, header_ref_count)
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = candidates.into_iter();
+    let body = candidates.next()?;
+    candidates.next().is_none().then_some(body)
 }
 
 fn parse_body(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyNode> {
@@ -498,9 +562,11 @@ fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyNode> {
     parse_body_layout(bytes, offset, payload.checked_sub(6)?)
 }
 
-fn parse_shell(bytes: &[u8], offset: usize) -> Option<ShellNode> {
-    let (payload, attr, node_id) = read_prefix(bytes, offset, SHELL_TAG)?;
-    let mut at = payload;
+fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
+    let attr = View::u16_be_at(bytes, payload)?;
+    let node_id = View::u32_be_at(bytes, payload + 2)?;
+    (attr > 1 && node_id != 0).then_some(())?;
+    let mut at = payload + 6;
     let refs = read_refs::<8>(bytes, &mut at)?;
     (refs[6] > 1).then_some(())?;
     Some(ShellNode {
@@ -512,11 +578,29 @@ fn parse_shell(bytes: &[u8], offset: usize) -> Option<ShellNode> {
     })
 }
 
-fn parse_region(bytes: &[u8], offset: usize) -> Option<RegionNode> {
-    let (payload, attr, node_id) = read_prefix(bytes, offset, REGION_TAG)?;
-    let mut at = payload;
+fn parse_shell(bytes: &[u8], offset: usize) -> Option<ShellNode> {
+    let (payload, _, _) = read_prefix(bytes, offset, SHELL_TAG)?;
+    parse_shell_fields(bytes, offset, payload.checked_sub(6)?)
+}
+
+fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<RegionNode> {
+    let attr = View::u16_be_at(bytes, payload)?;
+    let node_id = View::u32_be_at(bytes, payload + 2)?;
+    (attr > 1 && node_id != 0).then_some(())?;
+    let mut at = payload + 6;
     let refs = read_refs::<5>(bytes, &mut at)?;
-    let kind = *bytes.get(at)?;
+    // A schema edit may retain one additional reference before the semantic
+    // kind byte.  It is not part of the ownership tuple, but it must be
+    // consumed so the node boundary remains correct.
+    let kind = if bytes
+        .get(at)
+        .is_some_and(|byte| matches!(byte, b'S' | b'V'))
+    {
+        *bytes.get(at)?
+    } else {
+        read_ref(bytes, &mut at)?;
+        *bytes.get(at)?
+    };
     if !matches!(kind, b'S' | b'V') || refs[1] <= 1 {
         return None;
     }
@@ -530,9 +614,16 @@ fn parse_region(bytes: &[u8], offset: usize) -> Option<RegionNode> {
     })
 }
 
-fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
-    let (payload, attr, node_id) = read_prefix(bytes, offset, FACE_TAG)?;
-    let mut at = payload;
+fn parse_region(bytes: &[u8], offset: usize) -> Option<RegionNode> {
+    let (payload, _, _) = read_prefix(bytes, offset, REGION_TAG)?;
+    parse_region_fields(bytes, offset, payload.checked_sub(6)?)
+}
+
+fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<FaceNode> {
+    let attr = View::u16_be_at(bytes, payload)?;
+    let node_id = View::u32_be_at(bytes, payload + 2)?;
+    (attr > 1 && node_id != 0).then_some(())?;
+    let mut at = payload + 6;
     let attribute_chain = read_ref(bytes, &mut at)?;
     let tolerance = bytes.get(at..at + 8)?;
     let tolerance_is_sentinel = tolerance == MAGIC;
@@ -558,6 +649,11 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
     })
 }
 
+fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
+    let (payload, _, _) = read_prefix(bytes, offset, FACE_TAG)?;
+    parse_face_fields(bytes, offset, payload.checked_sub(6)?)
+}
+
 fn body_schema_bodies(bytes: &[u8], offset: usize) -> Vec<BodyNode> {
     let end = bytes.len();
     let mut bodies = Vec::new();
@@ -566,10 +662,7 @@ fn body_schema_bodies(bytes: &[u8], offset: usize) -> Vec<BodyNode> {
         if bytes[z] == b'Z' {
             let body = parse_body(bytes, z + 1, z + 1);
             if let Some(body) = body {
-                let has_edit = bytes.get(offset + 2..z).is_some_and(|edit| {
-                    edit.iter()
-                        .any(|byte| matches!(byte, b'C' | b'D' | b'I' | b'A'))
-                });
+                let has_edit = has_schema_edit(bytes, offset, z);
                 if has_edit {
                     bodies.push(body);
                 }
@@ -580,34 +673,95 @@ fn body_schema_bodies(bytes: &[u8], offset: usize) -> Vec<BodyNode> {
     bodies
 }
 
+fn has_schema_edit(bytes: &[u8], offset: usize, terminator: usize) -> bool {
+    bytes.get(offset + 2..terminator).is_some_and(|edit| {
+        edit.iter()
+            .any(|byte| matches!(byte, b'C' | b'D' | b'I' | b'A'))
+    })
+}
+
+fn schema_regions(bytes: &[u8], offset: usize) -> Vec<RegionNode> {
+    let mut regions = Vec::new();
+    for z in offset + 2..bytes.len() {
+        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
+            if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
+                regions.push(region);
+            }
+        }
+    }
+    regions
+}
+
+fn schema_shells(bytes: &[u8], offset: usize) -> Vec<ShellNode> {
+    let mut shells = Vec::new();
+    for z in offset + 2..bytes.len() {
+        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
+            if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
+                shells.push(shell);
+            }
+        }
+    }
+    shells
+}
+
+fn schema_faces(bytes: &[u8], offset: usize) -> Vec<FaceNode> {
+    let mut faces = Vec::new();
+    for z in offset + 2..bytes.len() {
+        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
+            if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
+                faces.push(face);
+            }
+        }
+    }
+    faces
+}
+
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
 pub fn scan(bytes: &[u8]) -> Facts {
     let mut facts = Facts::default();
-    let mut offsets = HashSet::new();
+    let mut body_offsets = HashSet::new();
+    let mut shell_offsets = HashSet::new();
+    let mut region_offsets = HashSet::new();
+    let mut face_offsets = HashSet::new();
     for body in body_schema_bodies(bytes, 0) {
-        offsets.insert(body.offset);
+        body_offsets.insert(body.offset);
         facts.bodies.push(body);
+    }
+    for shell in schema_shells(bytes, 0) {
+        if shell_offsets.insert(shell.offset) {
+            facts.shells.push(shell);
+        }
+    }
+    for region in schema_regions(bytes, 0) {
+        if region_offsets.insert(region.offset) {
+            facts.regions.push(region);
+        }
+    }
+    for face in schema_faces(bytes, 0) {
+        if face_offsets.insert(face.offset) {
+            facts.faces.push(face);
+        }
     }
     for offset in 0..bytes.len().saturating_sub(2) {
         if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
             if let Some(body) = parse_tagged_body(bytes, offset) {
-                if offsets.insert(body.offset) {
+                if body_offsets.insert(body.offset) {
                     facts.bodies.push(body);
                 }
             }
         }
         if let Some(shell) = parse_shell(bytes, offset) {
-            if offsets.insert(shell.offset) {
+            if shell_offsets.insert(shell.offset) {
                 facts.shells.push(shell);
             }
         }
         if let Some(region) = parse_region(bytes, offset) {
-            if offsets.insert(region.offset) {
+            if region_offsets.insert(region.offset) {
                 facts.regions.push(region);
             }
         }
         if let Some(face) = parse_face(bytes, offset) {
-            if offsets.insert(face.offset) {
+            if face_offsets.insert(face.offset) {
                 facts.faces.push(face);
             }
         }
@@ -632,16 +786,8 @@ mod tests {
         }
     }
 
-    fn body_fields<const N: usize>(
-        length: u16,
-        node_index: u16,
-        header: [u32; N],
-        body_type: u8,
-        topology: [u32; 7],
-    ) -> Vec<u8> {
+    fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&length.to_be_bytes());
-        bytes.extend_from_slice(&node_index.to_be_bytes());
         for value in header {
             push_ref(&mut bytes, value);
         }
@@ -660,23 +806,27 @@ mod tests {
         bytes
     }
 
+    fn body_node_with_header<const N: usize>(
+        attr: u16,
+        node_id: u32,
+        body_type: u8,
+        header: [u32; N],
+        topology: [u32; 7],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&node_id.to_be_bytes());
+        bytes.extend(body_fields::<N>(header, body_type, topology));
+        bytes
+    }
+
     fn body_node_with_topology(
         attr: u16,
         node_id: u32,
         body_type: u8,
         topology: [u32; 7],
     ) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&attr.to_be_bytes());
-        bytes.extend_from_slice(&node_id.to_be_bytes());
-        bytes.extend(body_fields::<6>(
-            6,
-            7,
-            [5, 6, 1, 1, 1, 1],
-            body_type,
-            topology,
-        ));
-        bytes
+        body_node_with_header(attr, node_id, body_type, [5, 6, 1, 1, 1, 1], topology)
     }
 
     fn body_node(attr: u16, node_id: u32, body_type: u8) -> Vec<u8> {
@@ -686,8 +836,6 @@ mod tests {
     fn tagged_four_ref_body(attr: u16, node_id: u32) -> Vec<u8> {
         let mut bytes = typed_prefix(BODY_TAG, attr, node_id);
         bytes.extend(body_fields::<4>(
-            38,
-            39,
             [40, 41, 42, 43],
             1,
             [44, 45, 46, 47, 48, 49, 50],
@@ -717,6 +865,22 @@ mod tests {
         for value in refs {
             push_ref(&mut bytes, value);
         }
+        bytes.push(kind);
+        bytes
+    }
+
+    fn typed_region_with_extra_ref(
+        attr: u16,
+        node_id: u32,
+        refs: [u32; 5],
+        extra_ref: u32,
+        kind: u8,
+    ) -> Vec<u8> {
+        let mut bytes = typed_prefix(REGION_TAG, attr, node_id);
+        for value in refs {
+            push_ref(&mut bytes, value);
+        }
+        push_ref(&mut bytes, extra_ref);
         bytes.push(kind);
         bytes
     }
@@ -768,8 +932,7 @@ mod tests {
         let facts = scan(&tagged_four_ref_body(7, 0x18b9));
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 7);
-        assert_eq!(facts.bodies[0].region_head_slot, 4);
-        assert_eq!(facts.bodies[0].region_head(), 48);
+        assert!(facts.bodies[0].ownership_refs.contains(&48));
         assert_eq!(facts.bodies[0].kind(), Some(BodyKind::Solid));
     }
 
@@ -788,6 +951,49 @@ mod tests {
             facts.bodies[0].topology_refs,
             [7, 8, 0x8000, 10, 11, 12, 13]
         );
+    }
+
+    #[test]
+    fn seven_reference_body_and_extended_region_fields_are_decoded() {
+        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        bytes.extend(body_node_with_header::<7>(
+            3,
+            7,
+            1,
+            [5, 6, 1, 1, 1, 1, 1],
+            [7, 1, 8, 9, 10, 1, 1],
+        ));
+        bytes.extend(typed_region_with_extra_ref(
+            11,
+            244,
+            [1, 3, 1, 1, 7],
+            1,
+            b'V',
+        ));
+
+        let facts = scan(&bytes);
+        assert_eq!(facts.bodies.len(), 1);
+        assert_eq!(facts.bodies[0].topology_refs, [7, 1, 8, 9, 10, 1, 1]);
+        assert_eq!(facts.regions.len(), 1);
+        assert_eq!(facts.regions[0].refs, [1, 3, 1, 1, 7]);
+        assert_eq!(facts.regions[0].kind, b'V');
+    }
+
+    #[test]
+    fn first_region_follows_schema_terminator() {
+        let mut bytes = vec![0, 0x13, 0x1b, b'C', b'Z'];
+        bytes.extend_from_slice(&11u16.to_be_bytes());
+        bytes.extend_from_slice(&9u32.to_be_bytes());
+        for value in [1, 3, 45, 1, 51, 1] {
+            push_ref(&mut bytes, value);
+        }
+        bytes.push(b'V');
+
+        let facts = scan(&bytes);
+        assert_eq!(facts.regions.len(), 1);
+        assert_eq!(facts.regions[0].attr, 11);
+        assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
+        assert_eq!(facts.regions[0].kind, b'V');
     }
 
     #[test]
@@ -822,8 +1028,8 @@ mod tests {
             attr: 3,
             node_id: 7,
             topology_refs: [7, 1, 1, 1, 10, 1, 1],
+            ownership_refs: Vec::new(),
             body_type: 1,
-            region_head_slot: 4,
             offset: 1,
             end: 2,
         };
@@ -870,8 +1076,8 @@ mod tests {
                 attr: 3,
                 node_id: 7,
                 topology_refs: [1, 1, 1, 1, 1, 1, 1],
+                ownership_refs: Vec::new(),
                 body_type: 2,
-                region_head_slot: 6,
                 offset: 1,
                 end: 2,
             }],

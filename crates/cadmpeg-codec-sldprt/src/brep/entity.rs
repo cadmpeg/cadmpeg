@@ -295,16 +295,36 @@ fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
 }
 
 pub fn scan(body: &[u8], schema: &str) -> Facts {
-    scan_with_framing(body, schema, false)
+    scan_with_framing(body, schema, false, true)
 }
 
 pub fn scan_deltas(body: &[u8], schema: &str) -> Facts {
-    scan_with_framing(body, schema, true)
+    scan_with_framing(body, schema, true, true)
 }
-fn scan_with_framing(body: &[u8], schema: &str, prefixed: bool) -> Facts {
+
+/// Scan non-topology entity metadata without interpreting attribute chains as
+/// body membership.  Typed Parasolid BODY/SHELL/REGION nodes own that relation
+/// and are selected by the graph decoder before this path is used.
+pub(crate) fn scan_metadata(body: &[u8], schema: &str) -> Facts {
+    scan_with_framing(body, schema, false, false)
+}
+
+/// Scan prefixed delta metadata without interpreting attribute chains as body
+/// membership.  The typed ownership graph is authoritative when a delta
+/// stream carries BODY nodes.
+pub(crate) fn scan_delta_metadata(body: &[u8], schema: &str) -> Facts {
+    scan_with_framing(body, schema, true, false)
+}
+
+fn scan_with_framing(
+    body: &[u8],
+    schema: &str,
+    prefixed: bool,
+    derive_body_records: bool,
+) -> Facts {
     let entities = scan_entities(body, schema, prefixed);
     let entity_attrs = entities.iter().map(|record| record.attr).collect();
-    let class_roots = class_root_attrs(body, &entity_attrs);
+    let class_roots = derive_body_records.then(|| class_root_attrs(body, &entity_attrs));
     let linked_colors = linked_colors(body, &entities);
     let mut face_colors = Vec::new();
     let mut face_color_versions = Vec::new();
@@ -363,14 +383,27 @@ fn scan_with_framing(body: &[u8], schema: &str, prefixed: bool) -> Facts {
             target: None,
         });
     }
-    let (bodies, ambiguous_body_assignments) = bodies(&entities);
+    let (bodies, ambiguous_body_assignments, class_root_bodies, cluster_bodies) =
+        if derive_body_records {
+            let (bodies, ambiguous_body_assignments) = bodies(&entities);
+            let class_root_bodies = class_roots.flatten().map_or_else(Vec::new, |roots| {
+                cluster_chain_bodies(&entities, Some(&roots))
+            });
+            let cluster_bodies = cluster_chain_bodies(&entities, None);
+            (
+                bodies,
+                ambiguous_body_assignments,
+                class_root_bodies,
+                cluster_bodies,
+            )
+        } else {
+            (Vec::new(), 0, Vec::new(), Vec::new())
+        };
     Facts {
         entity_count: entities.len(),
         bodies,
-        class_root_bodies: class_roots.as_ref().map_or_else(Vec::new, |roots| {
-            cluster_chain_bodies(&entities, Some(roots))
-        }),
-        cluster_bodies: cluster_chain_bodies(&entities, None),
+        class_root_bodies,
+        cluster_bodies,
         ambiguous_body_assignments,
         unresolved_face_colors,
         face_color_versions,
