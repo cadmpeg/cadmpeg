@@ -2510,8 +2510,25 @@ pub(crate) struct ParameterAssembly {
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
-    let text = std::str::from_utf8(line.payload.get(64..72)?).ok()?.trim();
-    text.parse::<u32>().ok()
+    let field = line.payload.get(64..72)?;
+    if field.first() != Some(&b' ') {
+        return None;
+    }
+    let digits_start = field[1..]
+        .iter()
+        .position(|byte| *byte != b' ')
+        .map_or(1, |offset| offset + 1);
+    let digits = field.get(digits_start..)?;
+    if digits.is_empty() || digits.iter().any(|byte| !byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut value = 0_u32;
+    for digit in digits.iter().copied() {
+        value = value
+            .checked_mul(10)?
+            .checked_add(u32::from(digit - b'0'))?;
+    }
+    (value > 0).then_some(value)
 }
 
 fn hollerith(
