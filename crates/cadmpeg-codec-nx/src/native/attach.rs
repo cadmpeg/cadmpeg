@@ -5752,11 +5752,11 @@ fn non_boolean_feature_definition_with_parameters(
             distance: None,
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         },
-        "SIMPLE HOLE" | "CBORE_HOLE" => {
+        "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE" => {
             let measured_chamfer = hole.chamfer;
             let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
                 (
-                    if kind == "CBORE_HOLE" {
+                    if matches!(kind, "CBORE_HOLE" | "CSUNK_HOLE") {
                         HoleKind::Unresolved {
                             form: None,
                             counterbore_diameter: None,
@@ -5786,6 +5786,15 @@ fn non_boolean_feature_definition_with_parameters(
                             crate::native::features::SimpleHoleForm::Counterbored => {
                                 HoleKind::Unresolved {
                                     form: Some(HoleForm::Counterbore),
+                                    counterbore_diameter: None,
+                                    counterbore_depth: None,
+                                    countersink_diameter: None,
+                                    countersink_angle: None,
+                                }
+                            }
+                            crate::native::features::SimpleHoleForm::Countersunk => {
+                                HoleKind::Unresolved {
+                                    form: Some(HoleForm::Countersink),
                                     counterbore_diameter: None,
                                     counterbore_depth: None,
                                     countersink_diameter: None,

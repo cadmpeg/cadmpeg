@@ -565,6 +565,27 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             ..
         }
     ));
+    assert!(matches!(
+        super::non_boolean_feature_definition(
+            "CSUNK_HOLE",
+            &["Hole_GeneralHole_Countersunk_Through"],
+            None,
+            None,
+            None,
+        ),
+        cadmpeg_ir::features::FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Unresolved {
+                form: Some(cadmpeg_ir::features::HoleForm::Countersink),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            exit_kind: None,
+            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            ..
+        }
+    ));
     for competing in [
         "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
         "Hole_Unknown",

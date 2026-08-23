@@ -315,6 +315,26 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
             SimpleHoleEndTreatment::None,
         ))
     );
+    assert_eq!(
+        super::parse_simple_hole_template("Hole_GeneralHole_Countersunk_Through"),
+        Some((
+            SimpleHoleFamily::GeneralHole,
+            SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Through,
+            SimpleHoleEndTreatment::None,
+            SimpleHoleEndTreatment::None,
+        ))
+    );
+    assert_eq!(
+        super::parse_simple_hole_template("Hole_GeneralHole_Countersunk_Blind"),
+        Some((
+            SimpleHoleFamily::GeneralHole,
+            SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Blind,
+            SimpleHoleEndTreatment::None,
+            SimpleHoleEndTreatment::None,
+        ))
+    );
     assert!(super::parse_simple_hole_template("Hole_GeneralHole_Simple_Through").is_none());
     assert!(super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Blind").is_none());
 
@@ -341,6 +361,30 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     };
     assert_eq!(counterbored_template.form, SimpleHoleForm::Counterbored);
     assert_eq!(counterbored_template.extent, SimpleHoleExtent::Through);
+
+    let mut countersunk_label = label.clone();
+    countersunk_label.id = "operation#5".to_string();
+    countersunk_label.value = "CSUNK_HOLE".to_string();
+    let mut countersunk_record = record.clone();
+    countersunk_record.id = "record#5".to_string();
+    countersunk_record.operation_label = countersunk_label.id.clone();
+    let countersunk_string = FeaturePayloadString {
+        id: "payload-string#5-0".to_string(),
+        operation_record: countersunk_record.id.clone(),
+        ordinal: 0,
+        value: "Hole_GeneralHole_Countersunk_Blind".to_string(),
+        source_offset: 130,
+    };
+    let countersunk_templates = super::feature_simple_hole_templates(
+        &[countersunk_label],
+        &[countersunk_record],
+        &[countersunk_string],
+    );
+    let [countersunk_template] = countersunk_templates.as_slice() else {
+        panic!("countersunk hole template was not admitted");
+    };
+    assert_eq!(countersunk_template.form, SimpleHoleForm::Countersunk);
+    assert_eq!(countersunk_template.extent, SimpleHoleExtent::Blind);
 
     let mut duplicate = string.clone();
     duplicate.id = "payload-string#3-1".to_string();

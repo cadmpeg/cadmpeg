@@ -328,7 +328,7 @@ pub struct FeaturePayloadString {
 pub struct FeatureSimpleHoleTemplate {
     /// Globally unique template identity.
     pub id: String,
-    /// Owning `SIMPLE HOLE` or `CBORE_HOLE` operation label.
+    /// Owning `SIMPLE HOLE`, `CBORE_HOLE`, or `CSUNK_HOLE` operation label.
     pub operation_label: String,
     /// Source string in the native payload-string arena.
     pub payload_string: String,
@@ -457,6 +457,8 @@ pub enum SimpleHoleForm {
     Simple,
     /// Counterbored cross-section.
     Counterbored,
+    /// Countersunk cross-section.
+    Countersunk,
 }
 
 /// Axial termination named by a simple-hole template.
@@ -3540,8 +3542,10 @@ pub fn feature_simple_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if !matches!(label.value.as_str(), "SIMPLE HOLE" | "CBORE_HOLE")
-            || !string.value.starts_with("Hole_")
+        if !matches!(
+            label.value.as_str(),
+            "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"
+        ) || !string.value.starts_with("Hole_")
         {
             continue;
         }
@@ -3882,6 +3886,7 @@ pub(crate) fn parse_simple_hole_template(
     let form = match tokens[2] {
         "Simple" => SimpleHoleForm::Simple,
         "Counterbored" => SimpleHoleForm::Counterbored,
+        "Countersunk" => SimpleHoleForm::Countersunk,
         _ => return None,
     };
     let extent = match tokens[3] {
@@ -3894,8 +3899,12 @@ pub(crate) fn parse_simple_hole_template(
             SimpleHoleEndTreatment::Chamfer,
             SimpleHoleEndTreatment::Chamfer,
         ),
-        (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through, [])
-        | (SimpleHoleForm::Simple, SimpleHoleExtent::Blind, []) => {
+        (
+            SimpleHoleForm::Counterbored | SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Through,
+            [],
+        )
+        | (SimpleHoleForm::Simple | SimpleHoleForm::Countersunk, SimpleHoleExtent::Blind, []) => {
             (SimpleHoleEndTreatment::None, SimpleHoleEndTreatment::None)
         }
         _ => return None,
