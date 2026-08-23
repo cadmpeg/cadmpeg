@@ -255,6 +255,82 @@ fn color_definition_requires_definition_directory_fields() {
 }
 
 #[test]
+fn color_definition_ignores_nonsemantic_directory_fields() {
+    let entity = || OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    };
+    for global in [GLOBAL_V4, GLOBAL_V5_0] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                    &[entity()],
+                    global,
+                    &[],
+                    &[(1, 1)],
+                    &[],
+                    &[(1, 1)],
+                    &[(1, 1)],
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(
+            result
+                .ir()
+                .model
+                .appearances
+                .iter()
+                .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"),
+            "color definition was not projected: {:#?}",
+            result.report().losses
+        );
+        assert!(!result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+                && loss.message.contains("color definition Directory fields")
+        }));
+    }
+}
+
+#[test]
+fn color_definition_requires_a_standard_fallback_color() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 314,
+                    form: 0,
+                    label: "COLOR".into(),
+                    status: "00000200",
+                    parameters: "314,20,40,60,6Hcustom;".into(),
+                }],
+                &[(1, 9)],
+                &[],
+                &[],
+                &[],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss.message.contains("color definition Directory fields")
+    }));
+    assert!(!result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+}
+
+#[test]
 fn text_font_definition_requires_an_independent_directory_entry() {
     let result = IgesCodec
         .decode(

@@ -64,7 +64,7 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
 }
 
 #[test]
-fn compressed_and_binary_representations_are_detected_and_binary_is_refused() {
+fn compressed_and_binary_representations_are_detected_and_binary_is_validated() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
     assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
@@ -103,20 +103,21 @@ fn compressed_and_binary_representations_are_detected_and_binary_is_refused() {
     binary[73..79].fill(b'0');
     binary[79] = b'1';
     assert_eq!(IgesCodec.detect(&binary), Confidence::High);
-    let summary = IgesCodec
+    let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(binary.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    assert_eq!(summary.container_kind, "binary");
-    assert_eq!(
-        IgesCodec
-            .decode(&mut Cursor::new(binary), &DecodeOptions::default())
-            .unwrap_err()
-            .to_string(),
-        "not implemented yet: IGES Binary representation decode"
-    );
+        .unwrap_err();
+    assert!(inspect_error
+        .to_string()
+        .contains("malformed container: IGES Binary: Binary primitive bit lengths"));
+    let error = IgesCodec
+        .decode(&mut Cursor::new(binary), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("malformed container: IGES Binary: Binary primitive bit lengths"));
 }
 
 #[test]

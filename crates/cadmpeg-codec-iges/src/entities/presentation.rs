@@ -439,9 +439,7 @@ pub(super) fn project(
         };
         let directory_valid = entry.status.subordinate == 0
             && entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.line_weight == 0;
+            && matches!(entry.color, 0..=8);
         if !directory_valid {
             losses.push(loss(entry, "color definition Directory fields are invalid"));
             continue;

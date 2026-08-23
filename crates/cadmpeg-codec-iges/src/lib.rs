@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES ASCII codec. Decode admits every declared version and applies
+//! IGES codec. Decode admits every declared version and applies
 //! version-specific envelope rules; semantic rules are verified for versions
 //! 5.1, 5.2, and 5.3.
 //!
 //! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 //! for the declared Fixed ASCII mechanical/document envelope, with Compressed
-//! ASCII read normalization. Bounded
+//! ASCII and Binary read normalization. Bounded
 //! semantic writing and independent-producer acceptance are part of the
 //! verified profile.
 
+mod binary;
 mod card;
 mod compressed;
 mod directory;
@@ -116,8 +117,9 @@ impl CodecBackend for IgesCodec {
                 let normalized = compressed::normalize(root.window(), Some(ctx))?;
                 reader::inspect(ctx, &normalized, "compressed-ascii", root.window().len())
             }
-            representation @ representation::Representation::Binary => {
-                Ok(representation::unsupported_summary(representation))
+            representation::Representation::Binary => {
+                let normalized = binary::normalize(root.window(), Some(ctx))?;
+                reader::inspect(ctx, &normalized, "binary", root.window().len())
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
@@ -155,8 +157,18 @@ impl CodecBackend for IgesCodec {
                     ctx,
                 )
             }
-            representation @ representation::Representation::Binary => {
-                Err(representation::unsupported_error(representation))
+            representation::Representation::Binary => {
+                let normalized = binary::normalize(root.window(), Some(ctx))?;
+                reader::decode(
+                    &normalized,
+                    root.window(),
+                    "binary",
+                    DecodeOptions {
+                        container_only: ctx.container_only(),
+                        policy: *ctx.policy(),
+                    },
+                    ctx,
+                )
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
