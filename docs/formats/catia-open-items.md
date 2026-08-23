@@ -336,6 +336,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know cross-group membership to build all bodies and shells.
 
+**Conflict.** `selected_standard_run` in
+`src/families/standard/fbb.rs` falls back to `largest_fbb_run` when no
+source-closed FBB group is reconstructed. The fallback selects a unique largest
+marker run by row count alone. Neither row count nor uniqueness by size binds
+that run as the governing topology spine, so a larger secondary or unrelated
+population can displace the required face population.
+
 ### SN-15. Standard arc branch selection
 
 **Question.** Which serialized field or identity relation selects the standard arc branch?
@@ -483,6 +490,28 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. A row covered by the indexed visualization-point allocation receives its endpoint pair from the first and last trim handles in occurrence order. The object-stream and visualization relations must select the same unordered pair; object-stream order gives physical edge direction. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for rows uncovered by both relations. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
 
 **Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every same-incidence line or spline group without object-stream or indexed visualization endpoint identity.
+
+### SN-37. Identity-free freeform carrier binding
+
+**Question.** Which serialized identity relation binds a standard freeform face
+core with no decoded alias identity to its external NURBS surface carrier?
+
+**Known.** The face core retains its native tag and serialized bounds. External
+NURBS carriers retain their own identities, control nets, weights, and parameter
+domains. Geometric coincidence does not establish persistent identity between
+the two records.
+
+**Need.** We must decode the binding relation before assigning the external
+carrier geometry to the face.
+
+**Conflict.** `associate_standard_freeform_surfaces` in
+`src/families/standard/decode.rs` admits carriers by control-net bounds and
+vertex-to-surface proximity, ranks them by the number of matching vertex rows,
+and assigns the unique highest-scoring carrier once it has at least two
+witnesses. The two-witness threshold and maximum-witness ranking are geometric
+association policy, not a decoded CATIA identity relation; coincident,
+overlapping, or geometrically equivalent carriers can therefore be assigned the
+wrong carrier geometry.
 
 ## 4. Object stream
 
