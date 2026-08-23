@@ -247,7 +247,7 @@ fn native_endpoint_evidence_rejects_directed_pair_conflicts() {
 }
 
 #[test]
-fn trim_occurrence_endpoints_corroborate_reversed_native_direction() {
+fn derived_endpoint_sources_corroborate_reversed_native_direction() {
     let mut pairs = vec![Some([34, 33])];
     assert!(merge_derived_endpoint_pair(&mut pairs, 0, [33, 34]));
     assert_eq!(pairs, [Some([34, 33])]);

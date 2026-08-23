@@ -3513,7 +3513,7 @@ fn attach_standard_topology(
         let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice()) else {
             continue;
         };
-        if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
+        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
         }
     }
