@@ -1554,6 +1554,49 @@ fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
 }
 
 #[test]
+fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
+    let build = |opener: &[u8], values: [f64; 7]| {
+        let mut body = opener.to_vec();
+        for value in values {
+            let raw = value.to_be_bytes();
+            assert_eq!(raw[0], 0x40, "test value uses the positive directrix form");
+            body.push(0x2d);
+            body.extend_from_slice(&raw[1..]);
+        }
+        body.extend_from_slice(&[0xf7, 0x17, 0xe3, 0x99]);
+        body
+    };
+    let values = [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 6.0];
+    let expected = PositionalCylinderFrame {
+        origin: [4.0, 5.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 2.0,
+        length: Some(4.0),
+    };
+    for opener in [
+        &[0x18, 0xe4, 0x11][..],
+        &[0x18, 0xe4, 0x00, 0x11, 0x07],
+        &[0x00, 0x11, 0x07, 0x18, 0x13],
+    ] {
+        assert_eq!(
+            decode_complete_directrix_interval_cylinder_frame(
+                &build(opener, values),
+                &scalar::ScalarCache::default(),
+            ),
+            Some(expected)
+        );
+    }
+
+    let inconsistent_interval = build(&[0x18, 0xe4, 0x11], [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 7.0]);
+    assert!(decode_complete_directrix_interval_cylinder_frame(
+        &inconsistent_interval,
+        &scalar::ScalarCache::default(),
+    )
+    .is_none());
+}
+
+#[test]
 fn decodes_terminal_square_radial_type24_round_envelope() {
     let body = [
         0x32, 0x90, 0x32, 0x70, 0x63, 0x1c, 0x71, 0xa7, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad, 0x2a,

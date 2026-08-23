@@ -4704,6 +4704,7 @@ fn positional_cylinder_frame_candidates(
 ) -> Vec<PositionalCylinderFrame> {
     [
         decode_compact_y_axis_cylinder_frame(body, cache),
+        decode_complete_directrix_interval_cylinder_frame(body, cache),
         decode_local_system_cylinder_frame(body, cache),
         decode_zero_support_cylinder_frame(body, cache),
         decode_signed_zero_support_cylinder_frame(body, cache),
@@ -4727,6 +4728,54 @@ fn positional_cylinder_frame_candidates(
     .flatten()
     .filter(PositionalCylinderFrame::is_valid)
     .collect()
+}
+
+fn decode_complete_directrix_interval_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let mut cursor = if body.starts_with(&[0x18, 0xe4, 0x11]) {
+        3
+    } else if body.starts_with(&[0x18, 0xe4, 0x00, 0x11, 0x07])
+        || body.starts_with(&[0x00, 0x11, 0x07, 0x18, 0x13])
+    {
+        5
+    } else {
+        return None;
+    };
+    let mut values = [0.0; 7];
+    for value in &mut values {
+        let (decoded, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (body.get(cursor..cursor + 3) == Some(&[0xf7, 0x17, psb::token::COMPOUND_CLOSE]))
+        .then_some(())?;
+
+    let [axial_low, radial_low, transverse_low, signed_length, radial_high, transverse_center, axial_high] =
+        values;
+    let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
+    (signed_length != 0.0).then_some(())?;
+    close(axial_high - axial_low, signed_length).then_some(())?;
+    let signed_radius = 0.5 * (radial_high - radial_low);
+    (signed_radius != 0.0).then_some(())?;
+    close(transverse_center - transverse_low, signed_radius.abs()).then_some(())?;
+
+    Some(PositionalCylinderFrame {
+        origin: [
+            f64::midpoint(radial_low, radial_high),
+            transverse_center,
+            axial_low,
+        ],
+        axis: [0.0, 0.0, signed_length.signum()],
+        ref_direction: [signed_radius.signum(), 0.0, 0.0],
+        radius: signed_radius.abs(),
+        length: Some(signed_length.abs()),
+    })
 }
 
 fn unique_positional_cylinder_frame(

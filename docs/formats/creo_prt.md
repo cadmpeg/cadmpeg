@@ -721,6 +721,20 @@ reverses the corner orientation: the first corner supplies the axial endpoint,
 and the axis and reference direction point toward the second corner. The
 radius-span center coordinate remains the second corner in both forms.
 
+A complete directrix-interval positional cylinder begins `18 e4 11`,
+`18 e4 00 11 07`, or `00 11 07 18 13`. Seven scalars follow in the first
+tabulated-cylinder directrix-coordinate lane: axial lower bound, first radial
+bound, first transverse bound, signed axial length, second radial bound,
+transverse center, and axial upper bound. The body then contains the exact
+trailer `f7 17 e3`; later row operands can follow that close. The difference
+of the axial bounds equals the signed length. Half the signed radial-bound
+difference is nonzero, and the transverse center differs from the first
+transverse bound by its absolute value. The radial midpoint, transverse
+center, and axial lower bound define the origin. The sign of the axial length
+defines the model-Z axis direction, the sign of the radial difference defines
+the model-X reference direction, and the absolute half-difference is the
+radius. The absolute signed length is the bounded axial length.
+
 A signed axis-aligned positional cylinder begins `11`, one nonzero signed
 axial length, and `13`, followed by one auxiliary scalar and two XYZ corners.
 All seven fields after `13` use the positional surface-row scalar lane. The
