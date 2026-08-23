@@ -3196,19 +3196,16 @@ fn taper_spl_sur(
 fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let (start, _) = toks::find_owned_subtype_marker(toks, &["comp_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?;
-    let (_, cache_end) = toks::marker_positions(span)
-        .into_iter()
-        .find_map(|at| surface_block(span, at))?;
-    let cache_fit_tolerance = match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    };
-    let mut cur = Cur::at(span, cache_end + usize::from(cache_fit_tolerance.is_some()));
+    let mut cur = Cur::at(span, 2);
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let parameters = cur.take_float_array()?;
     let mut components = Vec::with_capacity(parameters.len());
     for _ in 0..parameters.len() {
         components.push(embedded_surface(&mut cur)?);
     }
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Compound {
             parameters,
