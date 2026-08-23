@@ -104,6 +104,23 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
+fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 | Dialect::V5_0 => {
+            entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
+        }
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+            entry.status.use_flag == 2
+                && entry.structure == 0
+                && entry.line_font == 0
+                && entry.view == 0
+                && entry.transform == 0
+                && entry.label_display == 0
+                && entry.line_weight == 0
+        }
+    }
+}
+
 fn source_sequence(id: &str) -> Option<u32> {
     let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
     let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
@@ -260,13 +277,7 @@ pub(super) fn project(
         let font_valid = font.is_some_and(|font| {
             general_note_font_valid_for_dialect(font, &entries, global.dialect())
         });
-        let directory_valid = entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0;
+        let directory_valid = text_template_directory_valid(entry, global.dialect());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record

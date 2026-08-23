@@ -6,6 +6,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::global::Dialect;
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
@@ -13,7 +15,86 @@ use super::{
     general_note_font_valid_for_dialect, mirror_flag_valid, standard_color,
     vertical_text_flag_valid,
 };
-use crate::global::Dialect;
+
+const GLOBAL_V4: &[u8] =
+    b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+const GLOBAL_V5_0: &[u8] =
+    b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+const GLOBAL_V5_3: &[u8] =
+    b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+
+fn text_template_entity(status: &'static str) -> OwnedTestEntity {
+    OwnedTestEntity {
+        entity_type: 312,
+        form: 0,
+        label: "TEXTTPL".into(),
+        status,
+        parameters: "312,4,2,1,1.5707963267948966,0,0,0,10,20,0;".into(),
+    }
+}
+
+#[test]
+fn text_template_directory_rules_follow_legacy_and_later_dialects() {
+    let legacy_fields = |global| {
+        owned_test_file_with_global_and_directory_fields(
+            &[text_template_entity("00030101")],
+            global,
+            &[],
+            &[(1, 1)],
+            &[(1, 200)],
+            &[(1, 1)],
+            &[(1, 1)],
+        )
+    };
+    for (global, dialect) in [(GLOBAL_V4, Dialect::V4_0), (GLOBAL_V5_0, Dialect::V5_0)] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(legacy_fields(global)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().native.namespace("iges").unwrap().arenas["text_templates"].len(),
+            1
+        );
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| { loss.code == IgesLossCode::DisplayDataNotProjected.kind() }),
+            "legacy {dialect:?}: {:#?}",
+            result.report().losses
+        );
+    }
+
+    let later = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[text_template_entity("00000200")],
+                GLOBAL_V5_3,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!later
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+
+    let rejected = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_fields(GLOBAL_V5_3)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(rejected
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+}
 
 #[test]
 fn presentation_enumerations_match_the_iges_tables() {
