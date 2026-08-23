@@ -69,6 +69,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         xmt: 99,
         node_id: Some(42),
         references: Vec::new(),
+        group_selector: None,
+        group_linked_reference_status: None,
         position: None,
         byte_len: 1,
         inflated_offset: 0,

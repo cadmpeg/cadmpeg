@@ -52,6 +52,7 @@ pub(crate) struct DisplayJtRecords {
 /// Records extracted from the `parasolid` domain.
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ParasolidRecords {
+    pub(crate) parasolid_group_records: Vec<ParasolidGroupRecord>,
     pub(crate) parasolid_deltas_transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
     pub(crate) parasolid_deltas_terminal_null_references:
         Vec<ParasolidDeltasTerminalNullReferences>,
@@ -448,8 +449,19 @@ impl NativeModel {
         let segment_index_rows = segment_index_rows(container);
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
+        let linked_deltas = segment_stream_links
+            .iter()
+            .filter(|link| link.stream_kind == "deltas")
+            .map(|link| link.stream_ordinal as usize)
+            .collect::<BTreeSet<_>>();
+        let delta_pairs = pair_stream_indices(
+            streams,
+            (!segment_stream_links.is_empty()).then_some(&linked_deltas),
+        );
         let deltas_events =
             parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
+        let parasolid_group_records =
+            parasolid_group_records(streams, &delta_pairs, &deltas_events.records);
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
@@ -1033,6 +1045,7 @@ impl NativeModel {
                 display_jt_tri_strip_shape_nodes,
             },
             parasolid: ParasolidRecords {
+                parasolid_group_records,
                 parasolid_deltas_transmit_headers: deltas_events.transmit_headers,
                 parasolid_deltas_terminal_null_references: deltas_events.terminal_null_references,
                 parasolid_deltas_records: deltas_events.records,

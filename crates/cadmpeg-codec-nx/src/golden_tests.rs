@@ -239,6 +239,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_entity_62_unicode_records",
     "parasolid_entity_vector_records",
     "parasolid_field_names_records",
+    "parasolid_group_records",
     "parasolid_intersection_records",
     "parasolid_offset_surface_records",
     "parasolid_support_uv_records",
@@ -326,6 +327,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     f.push((
         "parasolid_entity_records",
         prt_with_partition(&parasolid_entity_records_stream()),
+    ));
+    f.push((
+        "parasolid_group_record",
+        prt_with_partition(&parasolid_group_partition_stream()),
     ));
 
     // Embedded DisplayJT stream: outer index, one JT document, one segment.
@@ -874,13 +879,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 246, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 247, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| row.phase == Phase::GroupA)
             .count(),
-        117,
+        118,
         "group A family count"
     );
     assert_eq!(

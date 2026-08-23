@@ -2732,7 +2732,7 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
     let escaped = (stream.get(offset + 2) == Some(&0xff))
         .then(|| group_layout(stream, offset, 1))
         .flatten();
-    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+    let (xmt, node_id, references, _, _, end) = unique_layout(direct, escaped)?;
     Some(Record {
         kind: 90,
         xmt,
@@ -2742,6 +2742,33 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
+    })
+}
+
+/// Exact control bytes in one already admitted GROUP record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GroupControls {
+    /// Selector between the four leading references and the linked reference.
+    pub(crate) selector: u8,
+    /// Status byte following the linked reference.
+    pub(crate) linked_reference_status: u8,
+}
+
+pub(crate) fn group_controls(record: &Record) -> Option<GroupControls> {
+    (record_family_name(record) == Some("GROUP")).then_some(())?;
+    let direct = group_layout(&record.canonical_bytes, 0, 0);
+    let escaped = (record.canonical_bytes.get(2) == Some(&0xff))
+        .then(|| group_layout(&record.canonical_bytes, 0, 1))
+        .flatten();
+    let (xmt, node_id, references, selector, linked_reference_status, end) =
+        unique_layout(direct, escaped)?;
+    (xmt == record.xmt
+        && Some(node_id) == record.node_id
+        && references == record.references
+        && end == record.canonical_bytes.len())
+    .then_some(GroupControls {
+        selector,
+        linked_reference_status,
     })
 }
 
@@ -2932,7 +2959,7 @@ fn group_layout(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, usize)> {
+) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -2946,14 +2973,23 @@ fn group_layout(
         at += 1;
         references.push(reference);
     }
-    matches!(stream.get(at), Some(2 | 4 | 9)).then_some(())?;
+    let selector = *stream.get(at)?;
+    matches!(selector, 2 | 4 | 9).then_some(())?;
     at += 1;
     let (reference, consumed) = read_xmt(stream, at)?;
     at = at.checked_add(consumed)?;
-    matches!(stream.get(at), Some(0 | 1)).then_some(())?;
+    let linked_reference_status = *stream.get(at)?;
+    matches!(linked_reference_status, 0 | 1).then_some(())?;
     at += 1;
     references.push(reference);
-    Some((xmt, node_id, references, at))
+    Some((
+        xmt,
+        node_id,
+        references,
+        selector,
+        linked_reference_status,
+        at,
+    ))
 }
 
 fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {

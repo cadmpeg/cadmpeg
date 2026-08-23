@@ -8,6 +8,126 @@ use crate::deltas::Census;
 
 use super::substrate::{ParsedStreams, StreamView};
 
+use std::collections::BTreeMap;
+
+/// One complete Parasolid GROUP record with its source and owning-partition scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidGroupRecord {
+    /// Globally unique source-record identity.
+    pub id: String,
+    /// Stream containing the exact serialized GROUP record.
+    pub stream_ordinal: u32,
+    /// `partition` or `deltas` source classification.
+    pub stream_kind: String,
+    /// Partition whose local node-id namespace owns this GROUP.
+    ///
+    /// An unpaired deltas stream retains the record without assigning a
+    /// partition namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_stream_ordinal: Option<u32>,
+    /// Stream-local XMT identity.
+    pub xmt: u32,
+    /// Partition-local kernel node identity.
+    pub node_id: u32,
+    /// Ordered GROUP references without their framing status bytes.
+    pub references: Vec<u32>,
+    /// Selector between the four leading references and the linked reference.
+    pub selector: u8,
+    /// Status byte following the linked reference.
+    pub linked_reference_status: u8,
+    /// Exact serialized record length.
+    pub byte_len: u64,
+    /// GROUP tag offset in the inflated source stream.
+    pub inflated_offset: u64,
+}
+
+/// Retain GROUP records from partition streams and raw deltas overlays.
+///
+/// Deltas records use the partition pairing already selected for topology
+/// reconstruction. A record in an unpaired deltas stream remains exact native
+/// evidence but has no partition-local namespace assignment.
+pub(crate) fn parasolid_group_records(
+    streams: &[Stream],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+    deltas_records: &[ParasolidDeltasRecord],
+) -> Vec<ParasolidGroupRecord> {
+    let paired_partition = delta_pairs
+        .iter()
+        .flat_map(|(partition, deltas)| {
+            deltas
+                .iter()
+                .filter_map(move |delta| Some((*delta, u32::try_from(*partition).ok()?)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut groups = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind != crate::parasolid::StreamKind::Partition {
+            continue;
+        }
+        let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
+            continue;
+        };
+        for record in crate::deltas::walk(&stream.inflated)
+            .records
+            .into_iter()
+            .filter(|record| crate::deltas::record_family_name(record) == Some("GROUP"))
+        {
+            let Some(node_id) = record.node_id else {
+                continue;
+            };
+            let Some(controls) = crate::deltas::group_controls(&record) else {
+                continue;
+            };
+            groups.push(ParasolidGroupRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:parasolid-group#{}-{}",
+                    record.offset, record.xmt
+                ),
+                stream_ordinal: stream_ordinal_u32,
+                stream_kind: stream.kind.label().to_string(),
+                partition_stream_ordinal: Some(stream_ordinal_u32),
+                xmt: record.xmt,
+                node_id,
+                references: record.references,
+                selector: controls.selector,
+                linked_reference_status: controls.linked_reference_status,
+                byte_len: (record.end - record.offset) as u64,
+                inflated_offset: record.offset as u64,
+            });
+        }
+    }
+    for record in deltas_records
+        .iter()
+        .filter(|record| record.family == "GROUP")
+    {
+        let Some(node_id) = record.node_id else {
+            continue;
+        };
+        let (Some(selector), Some(linked_reference_status)) =
+            (record.group_selector, record.group_linked_reference_status)
+        else {
+            continue;
+        };
+        groups.push(ParasolidGroupRecord {
+            id: record.id.replacen("deltas-record", "parasolid-group", 1),
+            stream_ordinal: record.stream_ordinal,
+            stream_kind: "deltas".to_string(),
+            partition_stream_ordinal: usize::try_from(record.stream_ordinal)
+                .ok()
+                .and_then(|delta| paired_partition.get(&delta).copied()),
+            xmt: record.xmt,
+            node_id,
+            references: record.references.clone(),
+            selector,
+            linked_reference_status,
+            byte_len: record.byte_len,
+            inflated_offset: record.inflated_offset,
+        });
+    }
+    groups.sort_by_key(|group| (group.stream_ordinal, group.inflated_offset));
+    groups
+}
+
 /// One completely bounded record in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParasolidDeltasRecord {
@@ -25,6 +145,12 @@ pub struct ParasolidDeltasRecord {
     pub node_id: Option<u32>,
     /// Ordered decoded XMT references.
     pub references: Vec<u32>,
+    /// GROUP selector byte when this is a GROUP record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_selector: Option<u8>,
+    /// GROUP linked-reference status when this is a GROUP record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_linked_reference_status: Option<u8>,
     /// Model-space point in Parasolid metres when serialized by this family.
     pub position: Option<[f64; 3]>,
     /// Exact serialized record length.
@@ -522,6 +648,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         for record in census.records {
             let family = crate::deltas::record_family_name(&record)
                 .expect("the deltas walker admits only named record families");
+            let group_controls = crate::deltas::group_controls(&record);
             events.records.push(ParasolidDeltasRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:deltas-record#{}-{}",
@@ -533,6 +660,9 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                 xmt: record.xmt,
                 node_id: record.node_id,
                 references: record.references,
+                group_selector: group_controls.map(|controls| controls.selector),
+                group_linked_reference_status: group_controls
+                    .map(|controls| controls.linked_reference_status),
                 position: record.position,
                 byte_len: (record.end - record.offset) as u64,
                 inflated_offset: record.offset as u64,
@@ -2757,6 +2887,67 @@ mod tests {
     use flate2::Compression;
 
     use crate::parasolid::Stream;
+
+    fn group_record(xmt: u16, node_id: u32, linked_reference: u16) -> Vec<u8> {
+        let mut bytes = vec![0, 90];
+        bytes.extend_from_slice(&xmt.to_be_bytes());
+        bytes.extend_from_slice(&node_id.to_be_bytes());
+        for reference in [3u16, 4, 5, 6] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+            bytes.push(1);
+        }
+        bytes.push(4);
+        bytes.extend_from_slice(&linked_reference.to_be_bytes());
+        bytes.push(0);
+        bytes
+    }
+
+    fn stream(kind: StreamKind, schema: &str, inflated: Vec<u8>) -> Stream {
+        Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated,
+            kind,
+            schema: Some(schema.to_string()),
+        }
+    }
+
+    #[test]
+    fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
+        let streams = [
+            stream(StreamKind::Partition, "SCH_TEST", group_record(10, 7, 8)),
+            stream(StreamKind::Partition, "SCH_TEST", group_record(11, 7, 9)),
+        ];
+
+        let groups = super::parasolid_group_records(&streams, &BTreeMap::new(), &[]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].node_id, groups[1].node_id);
+        assert_eq!(groups[0].partition_stream_ordinal, Some(0));
+        assert_eq!(groups[1].partition_stream_ordinal, Some(1));
+        assert_eq!(groups[0].selector, 4);
+        assert_eq!(groups[0].linked_reference_status, 0);
+        assert_ne!(groups[0].id, groups[1].id);
+    }
+
+    #[test]
+    fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
+        let streams = [
+            stream(StreamKind::Partition, "SCH_TEST", group_record(10, 7, 8)),
+            stream(StreamKind::Deltas, "SCH_TEST", group_record(11, 8, 9)),
+            stream(StreamKind::Deltas, "SCH_OTHER", group_record(12, 9, 10)),
+        ];
+        let events = super::parasolid_deltas_events(&streams);
+        let pairs = BTreeMap::from([(0, vec![1])]);
+
+        let groups = super::parasolid_group_records(&streams, &pairs, &events.records);
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].partition_stream_ordinal, Some(0));
+        assert_eq!(groups[1].partition_stream_ordinal, Some(0));
+        assert_eq!(groups[2].partition_stream_ordinal, None);
+        assert_eq!(groups[1].stream_kind, "deltas");
+    }
 
     fn deltas_type_45(xmt: u16) -> Vec<u8> {
         let mut bytes = 45u16.to_be_bytes().to_vec();

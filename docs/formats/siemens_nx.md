@@ -2040,6 +2040,13 @@ Across the ordered feature-history sections, the newest record area's last non-`
 
 A compact deltas tombstone is `type:u16 BE` followed by either the short XMT form and `00 01` or one four-byte extended XMT identity whose quotient is `1`. Outside the authoritative partition topology families, a matching key deletes the partition record and a full record replaces it. Repeated events within the final BODY revision are chronological; the last full record or tombstone for one key is current. A deltas topology image is assembled only when its partition has no validated body-shape SHELL.
 
+A complete `GROUP` record retains its source stream, XMT identity, kernel node
+identity, ordered references, byte extent, and inflated-stream offset. A GROUP
+in a partition stream owns that partition's node-id namespace. A GROUP in a
+paired deltas stream owns the paired partition's node-id namespace. An
+unpaired deltas GROUP retains no partition assignment. Equal node identities
+in different partition namespaces do not identify one GROUP.
+
 ---
 
 ## 8. Units and tolerances

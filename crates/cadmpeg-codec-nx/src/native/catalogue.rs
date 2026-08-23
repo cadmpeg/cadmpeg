@@ -548,6 +548,11 @@ impl StreamNoted for ParasolidDeltasRecord {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
 }
+impl StreamNoted for ParasolidGroupRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
 impl StreamNoted for ParasolidDeltasTombstone {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
@@ -1164,6 +1169,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.segments.segment_body_lineage_statuses, r, a)),
         emit: |m, r, ns| emit_arena(&m.segments.segment_body_lineage_statuses, r, ns),
         len: |m| m.segments.segment_body_lineage_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_group_records",
+        tag: Some("PARASOLID_GROUP_RECORD"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_per_stream(&m.parasolid.parasolid_group_records, r, a)),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_records, r, ns),
+        len: |m| m.parasolid.parasolid_group_records.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
