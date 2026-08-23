@@ -35,6 +35,38 @@ fn ordered_endpoint_seed_must_agree_with_the_unordered_candidate() {
 }
 
 #[test]
+fn deferred_port_component_closure_reaches_transitive_neighbors() {
+    let ports = [[10, 11], [11, 12], [12, 13], [20, 21]];
+    let mut deferred = [true, false, false, false];
+
+    assert!(expand_deferred_edge_port_components(&ports, &mut deferred));
+    assert_eq!(deferred, [true, true, true, false]);
+}
+
+#[test]
+fn deferred_mesh_port_component_does_not_orient_unordered_neighbors() {
+    let ports = [[10, 11], [11, 10], [12, 10], [13, 11], [10, 97], [11, 98]];
+    let pairs = [
+        Some([0, 1]),
+        Some([0, 1]),
+        Some([0, 2]),
+        Some([0, 3]),
+        Some([0, 79]),
+        Some([0, 79]),
+    ];
+
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            &ports,
+            &pairs,
+            &[],
+            &[true, false, false, false, false, false],
+        ),
+        Some(vec![None, None, None, None, None, None]),
+    );
+}
+
+#[test]
 fn partial_ordered_endpoint_seed_resolves_a_row_without_native_ports() {
     let ports = [Some([10, 11]), None];
     let pairs = [Some([0, 1]), None];
@@ -1573,12 +1605,34 @@ fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
 
 #[test]
 fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
-    let ports = [[10, 11], [11, 12]];
+    let ports = [[10, 11], [20, 21]];
     let candidates = [vec![[0, 1]], vec![[2, 3]]];
 
     assert_eq!(
         unique_mesh_edge_port_candidate_pairs_with_deferred(&ports, &candidates, &[false, true],),
         Some(vec![Some([0, 1]), None])
+    );
+}
+
+#[test]
+fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
+    let ports = [[10, 11], [11, 10], [12, 10], [13, 11], [10, 97], [11, 98]];
+    let candidates = [
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[0, 2]],
+        vec![[0, 3], [1, 3]],
+        vec![[0, 79]],
+        vec![[0, 79]],
+    ];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs_with_deferred(
+            &ports,
+            &candidates,
+            &[true, false, false, false, false, false],
+        ),
+        Some(vec![None, None, None, None, None, None]),
     );
 }
 

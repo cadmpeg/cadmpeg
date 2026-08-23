@@ -92,6 +92,41 @@ pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
 }
 
+/// Extend deferred rows to the complete connected components of the supplied
+/// endpoint-port graph. A port-domain inference is valid only when every row
+/// in the component contributes a settled endpoint relation.
+pub(crate) fn expand_deferred_edge_port_components(
+    edge_ports: &[[u32; 2]],
+    deferred_edges: &mut [bool],
+) -> bool {
+    if edge_ports.len() != deferred_edges.len() {
+        return false;
+    }
+    let mut deferred_ports = deferred_edges
+        .iter()
+        .enumerate()
+        .filter(|(_, deferred)| **deferred)
+        .flat_map(|(edge, _)| edge_ports[edge])
+        .collect::<HashSet<_>>();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (edge, ports) in edge_ports.iter().enumerate() {
+            if !deferred_edges[edge] && !ports.iter().any(|port| deferred_ports.contains(port)) {
+                continue;
+            }
+            if !deferred_edges[edge] {
+                deferred_edges[edge] = true;
+                changed = true;
+            }
+            for port in ports {
+                changed |= deferred_ports.insert(*port);
+            }
+        }
+    }
+    true
+}
+
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
@@ -2678,6 +2713,43 @@ pub fn propagate_edge_port_points_with_ordered_seeds(
     Some(resolved)
 }
 
+/// Propagate endpoint points while leaving every port component that touches
+/// an unresolved row to the joint topology solver. Independently ordered
+/// seeds remain usable, but unordered candidate rows in that component do not
+/// orient or constrain one another prematurely.
+#[must_use]
+pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
+    edge_ports: &[[u32; 2]],
+    endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
+    deferred_edges: &[bool],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if edge_ports.len() != endpoint_pairs.len()
+        || deferred_edges.len() != endpoint_pairs.len()
+        || (!ordered_endpoint_pairs.is_empty()
+            && ordered_endpoint_pairs.len() != endpoint_pairs.len())
+    {
+        return None;
+    }
+    let mut effective_deferred = deferred_edges.to_vec();
+    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
+        return None;
+    }
+    let mut masked_pairs = endpoint_pairs.to_vec();
+    for (edge, deferred) in effective_deferred.into_iter().enumerate() {
+        if deferred
+            && ordered_endpoint_pairs
+                .get(edge)
+                .copied()
+                .flatten()
+                .is_none()
+        {
+            masked_pairs[edge] = None;
+        }
+    }
+    propagate_edge_port_points_with_ordered_seeds(edge_ports, &masked_pairs, ordered_endpoint_pairs)
+}
+
 /// Propagate ordered endpoint seeds through the subset of rows with native
 /// port identities. Rows without a port pair retain their independent seed or
 /// candidate, but cannot participate in port propagation.
@@ -2946,8 +3018,12 @@ pub fn unique_mesh_edge_port_candidate_pairs_with_deferred(
     if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
         return None;
     }
+    let mut effective_deferred = deferred_edges.to_vec();
+    if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
+        return None;
+    }
     let settled = (0..ports.len())
-        .filter(|edge| !deferred_edges[*edge])
+        .filter(|edge| !effective_deferred[*edge])
         .collect::<Vec<_>>();
     let settled_ports = settled.iter().map(|edge| ports[*edge]).collect::<Vec<_>>();
     let settled_candidates = settled

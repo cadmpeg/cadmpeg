@@ -616,7 +616,7 @@ binding remains open pending the allocation-group relation.
 
 **Question.** Which admitted relation selects the second face for a repeated standard edge row when more than one alternate face remains after trim occurrence and endpoint closure pruning?
 
-**Known.** `catia.md` §5.5 retains the repeated slot as a face domain. The production solver carries each non-empty alternate set into a bounded joint assignment phase, applies each concrete face pair to trim coverage and endpoint incidence, and preserves multiple complete assignments as ambiguity. An empty alternate set retains the serialized same-face wildcard.
+**Known.** `catia.md` §5.5 retains the repeated slot as a face domain. The production solver carries each non-empty alternate set into a bounded joint assignment phase, applies each concrete face pair to trim coverage and endpoint incidence, and preserves multiple complete assignments as ambiguity. An empty alternate set retains the serialized same-face wildcard. Before quotient preparation, a concrete assignment must also have trim-domain support for every edge on both selected incident faces; this is a necessary branch rejection, not a second-face selector.
 
 The owner extractor also retains positive face-to-loop-to-edge membership from structurally complete `b5 03 5f` and `b5 03 62` records when a referenced surface or p-curve prevents full object-stream topology transfer. This evidence can fill the second slot only for one distinct alternate carrier; an incomplete graph does not prove that no other owner exists.
 
@@ -659,8 +659,12 @@ its only endpoint pair is `[6,7]`, while both roots in its settled port
 component have domain `{6}`. Forcing either concrete surviving face branch
 does not change that rejection. The narrow rule in `catia.md` §5.5 now
 withholds placement and boundary-pruned endpoint domains from the open row
-before joint assignment; the evidence does not select its second face.
-Verdict: repeated edge-face slot assignment remains open.
+before joint assignment, and the solver rejects a concrete face branch when
+either selected face has no trim-domain assignment containing the row. This
+narrows the candidate set without selecting its second face. The surviving
+branch still has two non-equivalent endpoint assignments under the admitted
+evidence, so the evidence does not select its second face. Verdict: repeated
+edge-face slot assignment remains open.
 
 A third FBB-only stream has 321 face rows and 928 standard supports. Its
 `0x60` support row at BREP-stream offset `1129551` (ordinal `109`, tag

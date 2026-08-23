@@ -10,7 +10,7 @@ use crate::families::standard::topology::{
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
-use crate::solve::missing_edge::motif_port_points;
+use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -261,7 +261,15 @@ pub fn prune_edge_candidates_by_port_domains_with_deferred(
     if !deferred_edges.is_empty() && deferred_edges.len() != edge_candidates.len() {
         return None;
     }
-    let is_deferred = |edge: usize| deferred_edges.get(edge).copied().unwrap_or(false);
+    let mut effective_deferred = if deferred_edges.is_empty() {
+        edge_candidates.iter().map(|_| false).collect()
+    } else {
+        deferred_edges.to_vec()
+    };
+    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
+        return None;
+    }
+    let is_deferred = |edge: usize| effective_deferred[edge];
     let all_points = edge_candidates
         .iter()
         .flatten()

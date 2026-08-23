@@ -6930,6 +6930,129 @@ fn mesh_candidate_point_pairs(
     Some(pairs.into_iter().map(Some).collect())
 }
 
+fn endpoint_pairs_respect_candidate_domains(
+    pairs: &[Option<[usize; 2]>],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> bool {
+    if pairs.len() != edge_candidates.len() {
+        return false;
+    }
+    pairs.iter().zip(edge_candidates).all(|(pair, candidates)| {
+        let Some(pair) = pair else {
+            return true;
+        };
+        let valid = candidates.is_empty()
+            || candidates
+                .iter()
+                .any(|candidate| same_unordered_pair(*candidate, *pair));
+        valid
+    })
+}
+
+// A concrete face assignment is viable only when each selected incident face
+// can host the edge in its retained trim-domain representation. This is a
+// necessary incidence check; it does not select an alternate face.
+fn mesh_domains_have_incident_edge_support(
+    edge_faces: &[[usize; 2]],
+    domains: &[MeshFaceBoundaryDomain],
+) -> bool {
+    edge_faces.iter().enumerate().all(|(edge, faces)| {
+        faces.iter().all(|face| {
+            let Some(domain) = domains.get(*face) else {
+                return false;
+            };
+            match domain {
+                MeshFaceBoundaryDomain::Ordered(assignments) => {
+                    assignments.iter().any(|assignment| {
+                        assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .any(|candidate| candidate.edge == edge)
+                    })
+                }
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.contains(&edge),
+                MeshFaceBoundaryDomain::DeferredValidation(coverage) => {
+                    !coverage.missing_edges.contains(&edge)
+                }
+            }
+        })
+    })
+}
+
+#[cfg(test)]
+mod face_domain_support_tests {
+    use super::*;
+
+    fn assignment(edge: usize) -> MeshFaceBoundaryAssignment {
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 1,
+                reversed: None,
+            }]],
+        }
+    }
+
+    #[test]
+    fn every_concrete_incident_face_must_host_the_edge() {
+        let edge_faces = [[0, 1]];
+        let valid = vec![
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(0)]),
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(0)]),
+        ];
+        assert!(mesh_domains_have_incident_edge_support(&edge_faces, &valid));
+
+        let wrong_face = vec![
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(0)]),
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(1)]),
+        ];
+        assert!(!mesh_domains_have_incident_edge_support(
+            &edge_faces,
+            &wrong_face
+        ));
+
+        let unordered = vec![
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(0)]),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0]),
+        ];
+        assert!(mesh_domains_have_incident_edge_support(
+            &edge_faces,
+            &unordered
+        ));
+
+        let deferred = vec![
+            MeshFaceBoundaryDomain::Ordered(vec![assignment(0)]),
+            MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+                cycles: Vec::new(),
+                missing_edges: Vec::new(),
+            }),
+        ];
+        assert!(mesh_domains_have_incident_edge_support(
+            &edge_faces,
+            &deferred
+        ));
+    }
+
+    #[test]
+    fn endpoint_pairs_must_remain_inside_candidate_domains() {
+        let candidates = vec![vec![[1, 2], [2, 3]], Vec::new()];
+        assert!(endpoint_pairs_respect_candidate_domains(
+            &[Some([2, 1]), None],
+            &candidates,
+        ));
+        assert!(!endpoint_pairs_respect_candidate_domains(
+            &[Some([0, 2]), None],
+            &candidates,
+        ));
+        assert!(!endpoint_pairs_respect_candidate_domains(
+            &[Some([1, 2])],
+            &candidates,
+        ));
+    }
+}
+
 fn resolve_fixed_mesh_endpoint_pairs(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -9425,6 +9548,9 @@ where
             deduplicate_mesh_quotient_assignments(std::slice::from_mut(assignments));
         }
     }
+    if !mesh_domains_have_incident_edge_support(edge_faces, &mesh_domains) {
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
+    }
     if port_identities.len() != edge_rows.len() {
         return MeshCandidateSolve::Rejected(MeshCandidateRejection::PortCardinality);
     }
@@ -9476,11 +9602,14 @@ where
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
         );
     }
-    let constrained_partial_solution_valid =
-        |pairs: &[Option<[usize; 2]>]| partial_solution_valid(pairs);
+    let constrained_partial_solution_valid = |pairs: &[Option<[usize; 2]>]| {
+        endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
+            && partial_solution_valid(pairs)
+    };
     let complete_preference_rejected = Cell::new(false);
     let constrained_complete_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-        let valid = complete_solution_valid(pairs);
+        let valid = endpoint_pairs_respect_candidate_domains(pairs, &completed_edge_candidates)
+            && complete_solution_valid(pairs);
         if !valid {
             complete_preference_rejected.set(true);
         }

@@ -3864,10 +3864,11 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds(
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
                 &ports,
                 &pairs,
                 &ordered_endpoint_pairs,
+                &deferred_port_edges,
             )
         })
         .zip(endpoint_options.as_ref())
@@ -3896,10 +3897,11 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds(
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
                 &ports,
                 &pairs,
                 &ordered_endpoint_pairs,
+                &deferred_port_edges,
             )
         });
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
@@ -4099,6 +4101,15 @@ fn attach_standard_topology(
             .iter()
             .map(|point| point.position)
             .collect::<Vec<_>>();
+        let mut solver_deferred_edges = deferred_port_edges.clone();
+        if let Some(ports) = missing_edge::edge_port_identities(spine) {
+            if !missing_edge::expand_deferred_edge_port_components(
+                &ports,
+                &mut solver_deferred_edges,
+            ) {
+                return None;
+            }
+        }
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
@@ -4106,7 +4117,7 @@ fn attach_standard_topology(
              solve_budget: &WorkBudget<'_>| {
                 // FBB-only rows are complete boundary runs. Their table-scoped
                 // handle quotient, not allocation rank, is the incidence source.
-                let solver_options = standard_endpoint_options_for_selected_faces(
+                let mut solver_options = standard_endpoint_options_for_selected_faces(
                     ir,
                     bindings,
                     &surface_indices,
@@ -4115,6 +4126,11 @@ fn attach_standard_topology(
                     options,
                     &edge_identity_evidence,
                 );
+                for (edge, deferred) in solver_deferred_edges.iter().copied().enumerate() {
+                    if deferred && !edge_identity_evidence[edge] {
+                        solver_options[edge].clear();
+                    }
+                }
                 let branch_groups = if fbb_only {
                     Vec::new()
                 } else {

@@ -40,7 +40,9 @@ pub(super) use crate::solve::mesh_quotient::{
 };
 pub(super) use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
-    motif_port_points, propagate_edge_port_points, propagate_edge_port_points_with_ordered_seeds,
+    expand_deferred_edge_port_components, motif_port_points, propagate_edge_port_points,
+    propagate_edge_port_points_with_ordered_seeds,
+    propagate_edge_port_points_with_ordered_seeds_and_deferred,
     propagate_partial_edge_port_points_with_ordered_seeds, resolve_edge_faces_from_runs,
     same_unordered_pair, unique_duplicate_face_assignment, unique_mesh_edge_port_candidate_pairs,
     unique_mesh_edge_port_candidate_pairs_with_deferred, visit_duplicate_face_assignments,
