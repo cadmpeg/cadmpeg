@@ -1032,6 +1032,65 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!((point.y - 0.5).abs() <= tolerance);
     assert!((point.z - expected).abs() <= tolerance);
 
+    let partials = model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless rolling-ball partials");
+    let derivative = 3.0 * std::f64::consts::FRAC_PI_2 / 2.0_f64.sqrt();
+    assert!((partials.point.x - expected).abs() <= tolerance);
+    assert!((partials.point.y - 0.5).abs() <= tolerance);
+    assert!((partials.point.z - expected).abs() <= tolerance);
+    assert!((partials.du.x + derivative).abs() <= tolerance);
+    assert!(partials.du.y.abs() <= tolerance);
+    assert!((partials.du.z - derivative).abs() <= tolerance);
+    assert!(partials.dv.x.abs() <= tolerance);
+    assert!((partials.dv.y - 1.0).abs() <= tolerance);
+    assert!(partials.dv.z.abs() <= tolerance);
+
+    let replica_surface = SurfaceId("cacheless-rolling-ball-replica".into());
+    let replica_construction = ProceduralSurfaceId("cacheless-rolling-ball-replica-def".into());
+    ir.model.surfaces.push(Surface {
+        id: replica_surface.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: replica_construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: replica_construction,
+        surface: replica_surface.clone(),
+        definition: ProceduralSurfaceDefinition::Replica {
+            source: blend_surface.clone(),
+            transform: Transform {
+                rows: [
+                    [1.0, 0.0, 0.0, 10.0],
+                    [0.0, 1.0, 0.0, 20.0],
+                    [0.0, 0.0, 1.0, 30.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let replica = model_surface_point_by_id(&index, &replica_surface, 0.5, 0.5)
+        .expect("rolling-ball replica");
+    assert!((replica.x - (expected + 10.0)).abs() <= tolerance);
+    assert!((replica.y - 20.5).abs() <= tolerance);
+    assert!((replica.z - (expected + 30.0)).abs() <= tolerance);
+
+    ir.model.curves[0].geometry = CurveGeometry::Polyline {
+        points: vec![
+            Point3::new(2.0, 0.0, 3.0),
+            Point3::new(3.0, 0.5, 3.0),
+            Point3::new(3.0, 1.0, 3.0),
+        ],
+        parameters: Some(vec![0.0, 0.5, 1.0]),
+        chordal_deflection: 0.0,
+    };
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
+
     let ProceduralSurfaceDefinition::Blend {
         native: Some(native),
         ..
@@ -1045,6 +1104,49 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
         None
     );
+}
+
+#[test]
+fn rolling_ball_partials_follow_a_changing_section_angle() {
+    let section_angle = std::f64::consts::FRAC_PI_3;
+    let radius = 3.0;
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    let section = ConstantRollingBallSection {
+        center: Point3::new(0.0, 0.0, 0.0),
+        center_tangent: Some(zero),
+        first: ContactTrackDifferential {
+            point: Point3::new(radius, 0.0, 0.0),
+            tangent: zero,
+            normal: zero,
+        },
+        second: ContactTrackDifferential {
+            point: Point3::new(
+                radius * section_angle.cos(),
+                0.0,
+                radius * section_angle.sin(),
+            ),
+            tangent: Vector3::new(
+                -radius * section_angle.sin(),
+                0.0,
+                radius * section_angle.cos(),
+            ),
+            normal: zero,
+        },
+        radius,
+    };
+    let u = 0.4;
+    let angle = u * section_angle;
+    let partials = constant_rolling_ball_partials(&section, u).expect("rolling-ball partials");
+    let tolerance = 128.0 * f64::EPSILON;
+    assert!((partials.point.x - radius * angle.cos()).abs() <= tolerance);
+    assert!(partials.point.y.abs() <= tolerance);
+    assert!((partials.point.z - radius * angle.sin()).abs() <= tolerance);
+    assert!((partials.du.x + radius * section_angle * angle.sin()).abs() <= tolerance);
+    assert!(partials.du.y.abs() <= tolerance);
+    assert!((partials.du.z - radius * section_angle * angle.cos()).abs() <= tolerance);
+    assert!((partials.dv.x + radius * u * angle.sin()).abs() <= tolerance);
+    assert!(partials.dv.y.abs() <= tolerance);
+    assert!((partials.dv.z - radius * u * angle.cos()).abs() <= tolerance);
 }
 
 #[test]

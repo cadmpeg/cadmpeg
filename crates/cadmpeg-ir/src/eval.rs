@@ -4417,6 +4417,41 @@ fn cacheless_constant_rolling_ball_point(
     u: f64,
     v: f64,
 ) -> Option<Point3> {
+    let section = cacheless_constant_rolling_ball_section(
+        index,
+        supports,
+        radius,
+        cross_section,
+        native,
+        u,
+        v,
+    )?;
+    minor_circular_arc_point(
+        section.center,
+        section.first.point,
+        section.second.point,
+        section.radius,
+        u,
+    )
+}
+
+struct ConstantRollingBallSection {
+    center: Point3,
+    center_tangent: Option<Vector3>,
+    first: ContactTrackDifferential,
+    second: ContactTrackDifferential,
+    radius: f64,
+}
+
+fn cacheless_constant_rolling_ball_section(
+    index: &crate::index::ModelIndex<'_>,
+    supports: &[Option<crate::geometry::BlendSupport>; 2],
+    radius: &crate::geometry::BlendRadiusLaw,
+    cross_section: &crate::geometry::BlendCrossSection,
+    native: &crate::geometry::RollingBallConstruction,
+    u: f64,
+    v: f64,
+) -> Option<ConstantRollingBallSection> {
     let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
         return None;
     };
@@ -4450,6 +4485,8 @@ fn cacheless_constant_rolling_ball_point(
     let first = variable_blend_contact_track_differential(index, &native.sides[0], v)?;
     let second = variable_blend_contact_track_differential(index, &native.sides[1], v)?;
     let center = model_curve_point_by_id(index, &native.slice, v)?;
+    let center_tangent = model_curve_differential_by_id(index, &native.slice, v)
+        .map(|differential| differential.tangent);
     let tolerance = index.ir().tolerances.linear.max(
         256.0
             * f64::EPSILON
@@ -4475,7 +4512,87 @@ fn cacheless_constant_rolling_ball_point(
     {
         return None;
     }
-    minor_circular_arc_point(center, first.point, second.point, radius, u)
+    Some(ConstantRollingBallSection {
+        center,
+        center_tangent,
+        first,
+        second,
+        radius,
+    })
+}
+
+fn cacheless_constant_rolling_ball_partials(
+    index: &crate::index::ModelIndex<'_>,
+    supports: &[Option<crate::geometry::BlendSupport>; 2],
+    radius: &crate::geometry::BlendRadiusLaw,
+    cross_section: &crate::geometry::BlendCrossSection,
+    native: &crate::geometry::RollingBallConstruction,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
+    let section = cacheless_constant_rolling_ball_section(
+        index,
+        supports,
+        radius,
+        cross_section,
+        native,
+        u,
+        v,
+    )?;
+    constant_rolling_ball_partials(&section, u)
+}
+
+fn constant_rolling_ball_partials(
+    section: &ConstantRollingBallSection,
+    u: f64,
+) -> Option<SurfacePartials> {
+    let center_tangent = section.center_tangent?;
+    let first_delta = point_displacement(section.first.point, section.center);
+    let second_delta = point_displacement(section.second.point, section.center);
+    let first_delta_v = vector_sum(&[(1.0, section.first.tangent), (-1.0, center_tangent)]);
+    let second_delta_v = vector_sum(&[(1.0, section.second.tangent), (-1.0, center_tangent)]);
+    let (first_radius, first_radius_v) = unit_vector_with_derivative(first_delta, first_delta_v)?;
+    let (second_radius, second_radius_v) =
+        unit_vector_with_derivative(second_delta, second_delta_v)?;
+    let cosine = first_radius.dot(second_radius).clamp(-1.0, 1.0);
+    let sine = (1.0 - cosine * cosine).max(0.0).sqrt();
+    if sine <= f64::EPSILON {
+        return None;
+    }
+    let angle = cosine.acos();
+    let cosine_v = first_radius_v.dot(second_radius) + first_radius.dot(second_radius_v);
+    let angle_v = -cosine_v / sine;
+    let first_angle = (1.0 - u) * angle;
+    let second_angle = u * angle;
+    let first_sine = first_angle.sin();
+    let second_sine = second_angle.sin();
+    let first_weight = first_sine / sine;
+    let second_weight = second_sine / sine;
+    let radial = vector_sum(&[(first_weight, first_radius), (second_weight, second_radius)]);
+    let radial_u = vector_sum(&[
+        (-angle * first_angle.cos() / sine, first_radius),
+        (angle * second_angle.cos() / sine, second_radius),
+    ]);
+    let sine_squared = sine * sine;
+    let first_weight_angle =
+        ((1.0 - u) * first_angle.cos() * sine - first_sine * cosine) / sine_squared;
+    let second_weight_angle = (u * second_angle.cos() * sine - second_sine * cosine) / sine_squared;
+    let radial_v = vector_sum(&[
+        (first_weight, first_radius_v),
+        (second_weight, second_radius_v),
+        (
+            angle_v,
+            vector_sum(&[
+                (first_weight_angle, first_radius),
+                (second_weight_angle, second_radius),
+            ]),
+        ),
+    ]);
+    Some(SurfacePartials {
+        point: offset(section.center, &[(section.radius, radial)]),
+        du: scale_vector(radial_u, section.radius),
+        dv: vector_sum(&[(1.0, center_tangent), (section.radius, radial_v)]),
+    })
 }
 
 fn cacheless_variable_blend_point(
@@ -4601,19 +4718,41 @@ pub fn model_surface_point_by_id(
                 cross_section,
                 native: Some(native),
                 ..
-            }) => cacheless_constant_rolling_ball_point(
-                index,
-                supports,
-                radius,
-                cross_section,
-                native,
-                u,
-                v,
-            )
-            .map(|point| SurfaceEvaluation {
-                point,
-                oriented_normal: None,
-            }),
+            }) => {
+                let point = cacheless_constant_rolling_ball_point(
+                    index,
+                    supports,
+                    radius,
+                    cross_section,
+                    native,
+                    u,
+                    v,
+                )?;
+                let oriented_normal = cacheless_constant_rolling_ball_partials(
+                    index,
+                    supports,
+                    radius,
+                    cross_section,
+                    native,
+                    u,
+                    v,
+                )
+                .and_then(|partials| {
+                    let normal = partials.du.cross(partials.dv);
+                    let magnitude = normal.norm();
+                    (magnitude.is_finite() && magnitude > 0.0).then(|| {
+                        Vector3::new(
+                            normal.x / magnitude,
+                            normal.y / magnitude,
+                            normal.z / magnitude,
+                        )
+                    })
+                });
+                Some(SurfaceEvaluation {
+                    point,
+                    oriented_normal,
+                })
+            }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
                 let partials = model_surface_partials_by_id(index, source, u, v)?;
@@ -4714,6 +4853,26 @@ pub fn model_surface_partials_by_id(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
+    if let Some(ProceduralSurfaceDefinition::Blend {
+        supports,
+        radius,
+        cross_section,
+        native: Some(native),
+        ..
+    }) = index
+        .procedural_surface_for_surface(&surface.0)
+        .map(|procedural| &procedural.definition)
+    {
+        return cacheless_constant_rolling_ball_partials(
+            index,
+            supports,
+            radius,
+            cross_section,
+            native,
+            u,
+            v,
+        );
+    }
     if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
         .procedural_surface_for_surface(&surface.0)
         .map(|procedural| &procedural.definition)
