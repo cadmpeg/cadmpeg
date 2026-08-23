@@ -1192,6 +1192,9 @@ fn attach_feature_operations(
     let parameter_uses = features.feature_parameter_uses.as_slice();
     let operation_records = features.feature_operation_records.as_slice();
     let operation_body_writes = features.feature_operation_body_writes.as_slice();
+    let operation_body_image_segment_uses = features
+        .feature_operation_body_image_segment_uses
+        .as_slice();
     let operation_common_frames = features.feature_operation_common_frames.as_slice();
     let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
@@ -1680,6 +1683,7 @@ fn attach_feature_operations(
             .push(lane);
     }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
+    let mut bodies_by_segment_binding = BTreeMap::<&str, Vec<BodyId>>::new();
     for binding in body_bindings {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let mut stream_bodies = Vec::new();
@@ -1701,7 +1705,12 @@ fn attach_feature_operations(
                 }
             }
         }
+        bodies_by_segment_binding.insert(binding.id.as_str(), stream_bodies);
     }
+    let body_image_outputs_by_write = operation_body_image_outputs_by_write(
+        operation_body_image_segment_uses,
+        &bodies_by_segment_binding,
+    );
     let explicit_hole_outputs = primary_hole_outputs(
         simple_hole_templates,
         &body_references,
@@ -2032,6 +2041,19 @@ fn attach_feature_operations(
                 format!("body_write.{ordinal}.body_image_object_index"),
                 write.body_image_object_index.to_string(),
             );
+            if let Some(use_) = operation_body_image_segment_uses
+                .iter()
+                .find(|use_| use_.operation_body_write == write.id)
+            {
+                source_properties.insert(
+                    format!("body_write.{ordinal}.body_image_segment_use"),
+                    use_.id.clone(),
+                );
+                source_properties.insert(
+                    format!("body_write.{ordinal}.segment_body_binding"),
+                    use_.segment_body_binding.clone(),
+                );
+            }
         }
         source_properties.extend(operation_source_properties(
             &label.id,
@@ -2109,6 +2131,12 @@ fn attach_feature_operations(
                     feature_body_outputs(*body, body_bindings, &bodies_by_object_index)
                 })
         };
+        if !deletes_body && outputs.is_empty() && !operation_body_writes.is_empty() {
+            outputs = complete_operation_body_image_outputs(
+                operation_body_writes,
+                &body_image_outputs_by_write,
+            );
+        }
         if outputs.is_empty() {
             outputs = hole_outputs
                 .get(label.id.as_str())
@@ -8094,6 +8122,54 @@ fn feature_body_outputs(
         return Vec::new();
     };
     vec![body.clone()]
+}
+
+fn operation_body_image_outputs_by_write<'a>(
+    uses: &'a [crate::native::features::FeatureOperationBodyImageSegmentUse],
+    bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
+) -> BTreeMap<&'a str, BodyId> {
+    let mut unique_uses = BTreeMap::new();
+    for use_ in uses {
+        match unique_uses.entry(use_.operation_body_write.as_str()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(use_));
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    let mut outputs = BTreeMap::new();
+    for (write, use_) in unique_uses {
+        let Some(use_) = use_ else {
+            continue;
+        };
+        let Some([body]) = bodies_by_segment_binding
+            .get(use_.segment_body_binding.as_str())
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        outputs.insert(write, body.clone());
+    }
+    outputs
+}
+
+fn complete_operation_body_image_outputs(
+    writes: &[&crate::native::features::FeatureOperationBodyWrite],
+    outputs_by_write: &BTreeMap<&str, BodyId>,
+) -> Vec<BodyId> {
+    let mut outputs = Vec::with_capacity(writes.len());
+    for write in writes {
+        let Some(body) = outputs_by_write.get(write.id.as_str()) else {
+            return Vec::new();
+        };
+        if outputs.contains(body) {
+            return Vec::new();
+        }
+        outputs.push(body.clone());
+    }
+    outputs
 }
 
 pub(crate) fn attach_expression_parameters(
