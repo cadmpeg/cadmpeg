@@ -4,6 +4,26 @@
 use super::super::feature_definition_is_incomplete;
 
 #[test]
+fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
+    let mut report = cadmpeg_ir::report::DecodeReport {
+        format: "f3d".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    };
+
+    super::super::report_untyped_material_distances(&mut report, 0);
+    assert!(report.losses.is_empty());
+    super::super::report_untyped_material_distances(&mut report, 2);
+
+    assert_eq!(report.losses.len(), 1);
+    assert_eq!(report.losses[0].code.code, "material.distance-unit-untyped");
+}
+
+#[test]
 fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};

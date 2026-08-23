@@ -56,6 +56,8 @@ pub enum F3dLossCode {
     ParameterOwnerUnrecognized,
     /// Design parameters retain unit tokens without a settled quantity kind.
     ParameterUnitUntyped,
+    /// Material Distance properties retain unit tags without a length conversion.
+    MaterialDistanceUnitUntyped,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
     /// Feature history-state dependency links were not projected.
@@ -183,6 +185,7 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
+        Self::MaterialDistanceUnitUntyped,
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -262,6 +265,7 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
+            Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
@@ -391,6 +395,7 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost => LossTaxonomy::FeatureHistoryRetained,
+            Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -480,6 +485,7 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",
+                "material.distance-unit-untyped",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",

@@ -225,6 +225,16 @@ fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize
     }
 }
 
+fn report_untyped_material_distances(report: &mut DecodeReport, count: usize) {
+    if count != 0 {
+        report
+            .losses
+            .push(F3dLossCode::MaterialDistanceUnitUntyped.note(format!(
+                "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
+            )));
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
@@ -2741,6 +2751,10 @@ impl<'a> F3dDecodeSession<'a> {
                 .geometry_materials
                 .take()
                 .expect("geometry-path materials");
+            report_untyped_material_distances(
+                &mut self.report,
+                materials.untyped_distance_properties,
+            );
             self.ir.model.appearances = materials.appearances;
             self.ir.model.appearance_bindings = materials.bindings;
             resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
@@ -2773,6 +2787,10 @@ impl<'a> F3dDecodeSession<'a> {
             }
         } else {
             let decoded_materials = materials::decode(self.ctx, scan)?;
+            report_untyped_material_distances(
+                &mut self.report,
+                decoded_materials.untyped_distance_properties,
+            );
             self.deferred_has_appearance = Some(decoded_materials.has_topology_assignments);
             self.ir.model.appearances = decoded_materials.appearances;
             self.ir.model.appearance_bindings = decoded_materials.bindings;

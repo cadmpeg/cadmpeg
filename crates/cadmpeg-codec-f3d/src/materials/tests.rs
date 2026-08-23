@@ -336,7 +336,10 @@ fn decoded_color_requires_finite_normalized_channels() {
 fn distance_tags_convert_to_millimetres() {
     for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
         let record = distance_record(unit, value);
-        assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+        assert_eq!(
+            super::distance_property(&record, "Depth"),
+            Ok(Some(expected))
+        );
     }
 }
 
@@ -467,13 +470,14 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
 fn equivalent_duplicate_texture_guids_bind_once() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let texture = texture_record(guid, "textures/albedo.png");
-    let appearances = super::appearances_from_schema_records(&[
+    let (appearances, untyped_count) = super::appearances_from_schema_records(&[
         appearance_connected_to(guid),
         texture.clone(),
         texture,
     ])
     .expect("equivalent texture records deduplicate");
 
+    assert_eq!(untyped_count, 0);
     assert_eq!(appearances.len(), 1);
     assert_eq!(appearances[0].textures.len(), 1);
     assert_eq!(appearances[0].textures[0].paths, ["textures/albedo.png"]);
@@ -501,7 +505,31 @@ fn conflicting_duplicate_texture_guids_reject_in_both_orders() {
 #[test]
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
-    assert_eq!(super::distance_property(&record, "Depth"), None);
+    assert_eq!(super::distance_property(&record, "Depth"), Err(0x0002_1008));
+}
+
+#[test]
+fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let mut texture = texture_record(guid, "textures/albedo.png");
+    texture.properties.insert(
+        "unifiedbitmap_RealWorldScaleX".into(),
+        cadmpeg_protein::DecodedProperty {
+            value_offset: 0,
+            value: cadmpeg_protein::PropertyValue::Distance {
+                unit: 0x0002_1008,
+                value: 3.0,
+            },
+            connections: Vec::new(),
+        },
+    );
+
+    let (appearances, untyped_count) =
+        super::appearances_from_schema_records(&[appearance_connected_to(guid), texture])
+            .expect("unknown unit is retained as a typed-projection loss");
+
+    assert_eq!(untyped_count, 1);
+    assert!(appearances[0].textures.is_empty());
 }
 
 #[test]
