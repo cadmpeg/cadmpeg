@@ -540,6 +540,46 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
 
+### DI-40. Extrusion profile identity without an explicit profile relation
+
+**Question.** Which native relation binds the profile of a classless
+`Extrusion` or `DissectableRoot` extrusion when `Profile` and
+`DissectableChildren` do not identify a sketch?
+
+**Known.** An explicit `Profile` attribute or a single dissected sketch child
+binds the profile. Source identifiers order feature records, but ordering alone
+does not establish that an earlier sketch is the extrusion's regeneration
+input.
+
+**Need.** We must decode the profile dependency before projecting the extrusion
+with a neutral sketch profile.
+
+**Conflict.** `project_extrude` in `src/history/project/solid.rs` selects the
+non-origin sketch with the greatest source identifier smaller than the
+extrusion's source identifier for the supported profile-less forms. An
+unrelated intervening sketch can therefore be projected as the extrusion
+profile solely because it is nearest in source order.
+
+### DI-41. Pattern seed identity without a resolved seed relation
+
+**Question.** Which native relation binds the seed of a linear or mirror pattern
+when its component vectors and persistent generated-surface identities do not
+resolve a seed feature?
+
+**Known.** Complete component paths and generated-surface identities can bind a
+pattern seed directly. A derived cosmetic-thread output identifies a generated
+child, not by itself the input feature that the pattern repeats. Feature order
+does not establish seed ownership.
+
+**Need.** We must decode the seed relation before assigning a preceding history
+feature as the repeated neutral feature.
+
+**Conflict.** `bind_pattern_inputs` in `src/resolved_features/bindings.rs`
+uses the nearest preceding sibling `moCosmeticThread_c` feature when a pattern
+has a derived cosmetic-thread output and no resolved seed. Another fallback
+uses the immediately preceding feature-input object. Either rule can assign an
+unrelated preceding feature as the pattern seed.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
