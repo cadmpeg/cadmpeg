@@ -42,6 +42,21 @@ pub(in super::super) struct PositionalCylinderTransferSummary {
     pub round_edge_unsolved_carriers: usize,
     pub round_edge_solved_carriers: usize,
     pub round_edge_transferred_carriers: usize,
+    pub round_edge_no_perpendicular_support_pair: usize,
+    pub round_edge_endpoint_incidence_mismatch: usize,
+    pub round_edge_radius_projection_mismatch: usize,
+    pub round_edge_nonunique_radius: usize,
+    pub round_edge_carrier_validation_failure: usize,
+    pub round_edge_replay_conflict: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PerpendicularRoundEdgeFailure {
+    NoPerpendicularSupportPair,
+    EndpointIncidenceMismatch,
+    RadiusProjectionMismatch,
+    NonuniqueRadius,
+    CarrierValidationFailure,
 }
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
@@ -590,7 +605,7 @@ fn round_edge_cylinder_frame(
 fn perpendicular_round_edge_cylinder_frame(
     envelope: crate::surface::Type24RoundEdgeEnvelope,
     support_planes: &[PlaneEquation],
-) -> Option<crate::surface::PositionalCylinderFrame> {
+) -> Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure> {
     let [first, second] = envelope.vertices;
     let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
     let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
@@ -603,6 +618,9 @@ fn perpendicular_round_edge_cylinder_frame(
             <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
     };
     let mut radii = Vec::new();
+    let mut has_perpendicular_support_pair = false;
+    let mut has_endpoint_incidence = false;
+    let mut has_equal_radius_projections = false;
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
         let Some(first_normal) = normalized(first_support.normal) else {
             continue;
@@ -618,6 +636,7 @@ fn perpendicular_round_edge_cylinder_frame(
             if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
                 continue;
             }
+            has_perpendicular_support_pair = true;
             let second_support = PlaneEquation {
                 origin: second_support.origin,
                 normal: second_normal,
@@ -629,6 +648,7 @@ fn perpendicular_round_edge_cylinder_frame(
                 if !plane_contains(first, first_plane) || !plane_contains(second, second_plane) {
                     continue;
                 }
+                has_endpoint_incidence = true;
                 let first_radius = dot(delta, first_plane_normal).abs();
                 let second_radius = dot(delta, second_plane_normal).abs();
                 let scale = first_radius.max(second_radius).max(1.0);
@@ -637,6 +657,7 @@ fn perpendicular_round_edge_cylinder_frame(
                 {
                     continue;
                 }
+                has_equal_radius_projections = true;
                 if !radii.iter().any(|radius: &f64| {
                     (*radius - first_radius).abs() <= EPS_ROUND_EDGE_RELATIVE * scale
                 }) {
@@ -646,9 +667,18 @@ fn perpendicular_round_edge_cylinder_frame(
         }
     }
     let [radius] = radii.as_slice() else {
-        return None;
+        return Err(if !has_perpendicular_support_pair {
+            PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair
+        } else if !has_endpoint_incidence {
+            PerpendicularRoundEdgeFailure::EndpointIncidenceMismatch
+        } else if !has_equal_radius_projections {
+            PerpendicularRoundEdgeFailure::RadiusProjectionMismatch
+        } else {
+            PerpendicularRoundEdgeFailure::NonuniqueRadius
+        });
     };
     round_edge_cylinder_frame(envelope, *radius, support_planes)
+        .ok_or(PerpendicularRoundEdgeFailure::CarrierValidationFailure)
 }
 
 pub(in super::super) fn transfer_positional_cylinders(
@@ -732,14 +762,19 @@ pub(in super::super) fn transfer_positional_cylinders(
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
             });
         let support_planes = round_edge_support_planes.get(&row.id);
+        let perpendicular_result =
+            support_planes
+                .zip(round_edge_envelope)
+                .map(|(support_planes, envelope)| {
+                    perpendicular_round_edge_cylinder_frame(envelope, support_planes)
+                });
         let round_edge_frame = support_planes.and_then(|support_planes| {
             round_edge_envelope.and_then(|envelope| {
                 let replay = constant_round_radii
                     .get(&row.feature_id)
                     .copied()
                     .and_then(|radius| round_edge_cylinder_frame(envelope, radius, support_planes));
-                let perpendicular =
-                    perpendicular_round_edge_cylinder_frame(envelope, support_planes);
+                let perpendicular = perpendicular_result.as_ref()?.as_ref().ok().copied();
                 match (replay, perpendicular) {
                     (Some(replay), Some(perpendicular))
                         if crate::surface::positional_cylinder_frames_agree(
@@ -761,6 +796,27 @@ pub(in super::super) fn transfer_positional_cylinders(
                 summary.round_edge_solved_carriers += 1;
             } else {
                 summary.round_edge_unsolved_carriers += 1;
+                if let Some(Err(failure)) = perpendicular_result {
+                    match failure {
+                        PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair => {
+                            summary.round_edge_no_perpendicular_support_pair += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::EndpointIncidenceMismatch => {
+                            summary.round_edge_endpoint_incidence_mismatch += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::RadiusProjectionMismatch => {
+                            summary.round_edge_radius_projection_mismatch += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::NonuniqueRadius => {
+                            summary.round_edge_nonunique_radius += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::CarrierValidationFailure => {
+                            summary.round_edge_carrier_validation_failure += 1;
+                        }
+                    }
+                } else {
+                    summary.round_edge_replay_conflict += 1;
+                }
             }
         }
         // Section-cut rows can use the same type-24 selector and scalar-frame

@@ -426,6 +426,30 @@ pub(super) fn transfer_and_record_scanned_geometry(
             positional_cylinders.round_edge_transferred_carriers,
         );
         coverage.insert(
+            "round_edge_no_perpendicular_support_pair_count".to_string(),
+            positional_cylinders.round_edge_no_perpendicular_support_pair,
+        );
+        coverage.insert(
+            "round_edge_endpoint_incidence_mismatch_count".to_string(),
+            positional_cylinders.round_edge_endpoint_incidence_mismatch,
+        );
+        coverage.insert(
+            "round_edge_radius_projection_mismatch_count".to_string(),
+            positional_cylinders.round_edge_radius_projection_mismatch,
+        );
+        coverage.insert(
+            "round_edge_nonunique_radius_count".to_string(),
+            positional_cylinders.round_edge_nonunique_radius,
+        );
+        coverage.insert(
+            "round_edge_carrier_validation_failure_count".to_string(),
+            positional_cylinders.round_edge_carrier_validation_failure,
+        );
+        coverage.insert(
+            "round_edge_replay_conflict_count".to_string(),
+            positional_cylinders.round_edge_replay_conflict,
+        );
+        coverage.insert(
             "decoded_type24_round_edge_envelope_count".to_string(),
             decoded_type24_round_edge_envelope_count,
         );
