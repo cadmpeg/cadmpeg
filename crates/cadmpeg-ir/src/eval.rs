@@ -3916,6 +3916,21 @@ pub fn model_surface_point(
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             cacheless_variable_blend_point(&index, construction, u, v)
         }
+        ProceduralSurfaceDefinition::Blend {
+            supports,
+            radius,
+            cross_section,
+            native: Some(native),
+            ..
+        } => cacheless_constant_rolling_ball_point(
+            &index,
+            supports,
+            radius,
+            cross_section,
+            native,
+            u,
+            v,
+        ),
         _ => None,
     }
 }
@@ -4287,6 +4302,37 @@ fn variable_blend_radius(
     }
 }
 
+fn minor_circular_arc_point(
+    center: Point3,
+    first: Point3,
+    second: Point3,
+    radius: f64,
+    u: f64,
+) -> Option<Point3> {
+    if u == 0.0 {
+        return Some(first);
+    }
+    if u == 1.0 {
+        return Some(second);
+    }
+    let first_radius =
+        Vector3::new(first.x - center.x, first.y - center.y, first.z - center.z).unit()?;
+    let second_radius = Vector3::new(
+        second.x - center.x,
+        second.y - center.y,
+        second.z - center.z,
+    )
+    .unit()?;
+    let axis = first_radius.cross(second_radius).unit()?;
+    let angle = first_radius.dot(second_radius).clamp(-1.0, 1.0).acos();
+    let section_angle = u * angle;
+    let radial = vector_sum(&[
+        (section_angle.cos(), first_radius),
+        (section_angle.sin(), axis.cross(first_radius)),
+    ]);
+    Some(offset(center, &[(radius, radial)]))
+}
+
 fn cacheless_circular_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction,
@@ -4303,7 +4349,7 @@ fn cacheless_circular_variable_blend_point(
         return None;
     }
     let radius = variable_blend_radius(&construction.first_value, v)?.abs();
-    if radius <= f64::EPSILON {
+    if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
     }
     let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
@@ -4314,7 +4360,6 @@ fn cacheless_circular_variable_blend_point(
     if u == 1.0 {
         return Some(second.point);
     }
-
     let mut best = None;
     let mut second_best_residual = f64::INFINITY;
     for first_sign in [-1.0, 1.0] {
@@ -4360,26 +4405,77 @@ fn cacheless_circular_variable_blend_point(
     if residual > tolerance || second_best_residual <= tolerance {
         return None;
     }
-    let first_radius = Vector3::new(
-        first.point.x - center.x,
-        first.point.y - center.y,
-        first.point.z - center.z,
-    )
-    .unit()?;
-    let second_radius = Vector3::new(
-        second.point.x - center.x,
-        second.point.y - center.y,
-        second.point.z - center.z,
-    )
-    .unit()?;
-    let axis = first_radius.cross(second_radius).unit()?;
-    let angle = first_radius.dot(second_radius).clamp(-1.0, 1.0).acos();
-    let section_angle = u * angle;
-    let radial = vector_sum(&[
-        (section_angle.cos(), first_radius),
-        (section_angle.sin(), axis.cross(first_radius)),
-    ]);
-    Some(offset(center, &[(radius, radial)]))
+    minor_circular_arc_point(center, first.point, second.point, radius, u)
+}
+
+fn cacheless_constant_rolling_ball_point(
+    index: &crate::index::ModelIndex<'_>,
+    supports: &[Option<crate::geometry::BlendSupport>; 2],
+    radius: &crate::geometry::BlendRadiusLaw,
+    cross_section: &crate::geometry::BlendCrossSection,
+    native: &crate::geometry::RollingBallConstruction,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+        return None;
+    };
+    if native.tail_enum != 2
+        || native.third.is_some()
+        || *cross_section != crate::geometry::BlendCrossSection::Circular
+        || !(0.0..=1.0).contains(&u)
+        || !sweep_tail_interval_contains(native.slice_range, v)
+        || !sweep_tail_interval_contains(native.u_range, u)
+        || !sweep_tail_interval_contains(native.v_range, v)
+        || !native.tail_parameterization.as_ref().is_some_and(|tail| {
+            sweep_tail_interval_contains(tail.u_interval, u)
+                && sweep_tail_interval_contains(tail.v_interval, v)
+        })
+    {
+        return None;
+    }
+    let radius = signed_radius.abs();
+    if !radius.is_finite() || radius <= f64::EPSILON {
+        return None;
+    }
+    for (support, side) in supports.iter().zip(native.sides.iter()) {
+        if support.as_ref().is_some_and(|support| {
+            side.surface
+                .as_ref()
+                .is_some_and(|surface| *surface != support.surface)
+        }) {
+            return None;
+        }
+    }
+    let first = variable_blend_contact_track_differential(index, &native.sides[0], v)?;
+    let second = variable_blend_contact_track_differential(index, &native.sides[1], v)?;
+    let center = model_curve_point_by_id(index, &native.slice, v)?;
+    let tolerance = index.ir().tolerances.linear.max(
+        256.0
+            * f64::EPSILON
+            * radius
+                .max(first.point.x.abs())
+                .max(first.point.y.abs())
+                .max(first.point.z.abs())
+                .max(second.point.x.abs())
+                .max(second.point.y.abs())
+                .max(second.point.z.abs())
+                .max(1.0),
+    );
+    let radius_error = |point: Point3| {
+        (Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z).norm() - radius)
+            .abs()
+    };
+    if native
+        .offsets
+        .iter()
+        .any(|offset| !offset.is_finite() || (*offset - signed_radius).abs() > tolerance)
+        || radius_error(first.point) > tolerance
+        || radius_error(second.point) > tolerance
+    {
+        return None;
+    }
+    minor_circular_arc_point(center, first.point, second.point, radius, u)
 }
 
 fn cacheless_variable_blend_point(
@@ -4499,6 +4595,25 @@ pub fn model_surface_point_by_id(
                     }
                 })
             }
+            Some(ProceduralSurfaceDefinition::Blend {
+                supports,
+                radius,
+                cross_section,
+                native: Some(native),
+                ..
+            }) => cacheless_constant_rolling_ball_point(
+                index,
+                supports,
+                radius,
+                cross_section,
+                native,
+                u,
+                v,
+            )
+            .map(|point| SurfaceEvaluation {
+                point,
+                oriented_normal: None,
+            }),
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
                 let partials = model_surface_partials_by_id(index, source, u, v)?;

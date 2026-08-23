@@ -5,10 +5,11 @@
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceParameterization,
-    RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm,
-    SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
+    LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, RevisionSurfaceParameterization, RollingBallConstruction,
+    RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
     VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadiusKind,
     VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
     VariableBlendValue, VariableBlendValuePayload,
@@ -954,6 +955,96 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
     assert!((point.x - expected).abs() <= tolerance);
     assert!((point.y - 0.5).abs() <= tolerance);
     assert!((point.z - expected).abs() <= tolerance);
+}
+
+#[test]
+fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(3.0, 0.0), Point2::new(0.0, 1.0)),
+            (Point2::new(0.0, 3.0), Point2::new(1.0, 0.0)),
+        ],
+        [3.0, 3.0],
+        Some(VariableBlendCrossSection::Circular),
+    );
+    ir.model.curves[0].geometry = CurveGeometry::Line {
+        origin: Point3::new(3.0, 0.0, 3.0),
+        direction: Vector3::new(0.0, 1.0, 0.0),
+    };
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &ir.model.procedural_surfaces[0].definition
+    else {
+        unreachable!()
+    };
+    let sides = construction.sides.clone();
+    let slice = construction.slice.clone();
+    let supports = sides.each_ref().map(|side| {
+        side.surface.as_ref().map(|surface| BlendSupport {
+            surface: surface.clone(),
+            reversed: false,
+        })
+    });
+    ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Blend {
+        supports,
+        spine: Some(slice.clone()),
+        radius: BlendRadiusLaw::Constant { signed_radius: 3.0 },
+        cross_section: BlendCrossSection::Circular,
+        native: Some(Box::new(RollingBallConstruction {
+            definition_index: 0,
+            sides,
+            slice,
+            slice_range: [Some(0.0), Some(1.0)],
+            offsets: [3.0, 3.0],
+            radius_selector: RollingBallRadiusSelector::None,
+            u_range: [Some(0.0), Some(1.0)],
+            v_range: [Some(0.0), Some(1.0)],
+            shape_prefix: 0,
+            parameters: [0.0, 0.0],
+            tail: 0,
+            tail_enum: 2,
+            tail_parameterization: Some(RevisionSurfaceParameterization {
+                u_interval: [Some(0.0), Some(1.0)],
+                v_interval: [Some(0.0), Some(1.0)],
+                ..Default::default()
+            }),
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+            tail_flag: false,
+            third: None,
+            tail_extensions: [0; 3],
+        })),
+    };
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5),
+        Some(Point3::new(3.0, 0.5, 0.0))
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5),
+        Some(Point3::new(0.0, 0.5, 3.0))
+    );
+    let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless constant rolling-ball blend");
+    let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
+    let tolerance = 64.0 * f64::EPSILON;
+    assert!((point.x - expected).abs() <= tolerance);
+    assert!((point.y - 0.5).abs() <= tolerance);
+    assert!((point.z - expected).abs() <= tolerance);
+
+    let ProceduralSurfaceDefinition::Blend {
+        native: Some(native),
+        ..
+    } = &mut ir.model.procedural_surfaces[0].definition
+    else {
+        unreachable!()
+    };
+    native.offsets = [4.0, 4.0];
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
+        None
+    );
 }
 
 #[test]
