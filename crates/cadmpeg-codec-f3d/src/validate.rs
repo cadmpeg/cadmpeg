@@ -7008,6 +7008,25 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
     }
 }
 
+fn recipe_reference_frames_match(
+    actual: &[records::DesignRecipeReference],
+    expected: &[records::DesignRecipeReference],
+    ignore_derived_candidates: bool,
+) -> bool {
+    if !ignore_derived_candidates {
+        return actual == expected;
+    }
+    actual.len() == expected.len()
+        && actual.iter().zip(expected).all(|(actual, expected)| {
+            actual.selector == expected.selector
+                && actual.selector_offset == expected.selector_offset
+                && actual.token == expected.token
+                && actual.token_offset == expected.token_offset
+                && actual.design_reference == expected.design_reference
+                && actual.design_reference_offset == expected.design_reference_offset
+        })
+}
+
 /// Validate edge operands and their recipe frames; returns their record set.
 fn validate_edge_operands<'a>(
     ctx: &Ctx<'a>,
@@ -7017,6 +7036,7 @@ fn validate_edge_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = native.design_edge_operands.clone();
@@ -7057,12 +7077,14 @@ fn validate_edge_operands<'a>(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
-        for reference in &mut expected_references {
-            design::decode::dimension_frames::bind_recipe_reference_candidates(
-                reference,
-                &native.persistent_subentity_tags,
-                Some(&operand.id),
-            );
+        if !historical_candidates_retained {
+            for reference in &mut expected_references {
+                design::decode::dimension_frames::bind_recipe_reference_candidates(
+                    reference,
+                    &native.persistent_subentity_tags,
+                    Some(&operand.id),
+                );
+            }
         }
         let expected_surface_patch_recipe_structure = scope
             .filter(|scope| scope.kind == "SurfacePatch")
@@ -7113,7 +7135,11 @@ fn validate_edge_operands<'a>(
                 .recipe_prefix_offset
                 .saturating_add(operand.recipe_prefix_bytes.len() as u64)
                 == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
-            && operand.recipe_references == expected_references
+            && recipe_reference_frames_match(
+                &operand.recipe_references,
+                &expected_references,
+                historical_candidates_retained,
+            )
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == crate::records::ConstructionRecipeKind::Edge
@@ -7123,7 +7149,7 @@ fn validate_edge_operands<'a>(
             && design::decode::operands::edge_recipe_structure(&operand.recipe_program)
                 == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
-            && expected_faces == operand.candidate_faces
+            && (historical_candidates_retained || expected_faces == operand.candidate_faces)
             && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((
                 native_stream,
@@ -7288,6 +7314,7 @@ fn validate_face_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
     let face_groups_by_index = native
         .design_construction_operand_groups
         .iter()
@@ -7327,12 +7354,14 @@ fn validate_face_operands<'a>(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
         );
-        for reference in &mut expected_references {
-            design::decode::dimension_frames::bind_recipe_reference_candidates(
-                reference,
-                &native.persistent_subentity_tags,
-                Some(&operand.id),
-            );
+        if !historical_candidates_retained {
+            for reference in &mut expected_references {
+                design::decode::dimension_frames::bind_recipe_reference_candidates(
+                    reference,
+                    &native.persistent_subentity_tags,
+                    Some(&operand.id),
+                );
+            }
         }
         let recipe_design_reference = recipe
             .map(|recipe| i64::from(recipe.record_index))
@@ -7613,7 +7642,11 @@ fn validate_face_operands<'a>(
                 .recipe_prefix_offset
                 .saturating_add(operand.recipe_prefix_bytes.len() as u64)
                 == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
-            && operand.recipe_references == expected_references
+            && recipe_reference_frames_match(
+                &operand.recipe_references,
+                &expected_references,
+                historical_candidates_retained,
+            )
             && matches!(
                 operand.recipe_kind,
                 records::ConstructionRecipeKind::Face
@@ -7636,9 +7669,11 @@ fn validate_face_operands<'a>(
                         .unwrap_or(u64::MAX)
                         .saturating_mul(4),
                 )
-            && operand.candidate_faces == expected_faces
-            && operand.unreferenced_candidate_faces == expected_unreferenced_faces
-            && operand.alternate_selector_candidate_faces == expected_alternate_selector_faces
+            && (historical_candidates_retained || operand.candidate_faces == expected_faces)
+            && (historical_candidates_retained
+                || operand.unreferenced_candidate_faces == expected_unreferenced_faces)
+            && (historical_candidates_retained
+                || operand.alternate_selector_candidate_faces == expected_alternate_selector_faces)
             && expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
