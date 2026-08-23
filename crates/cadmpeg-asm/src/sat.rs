@@ -162,17 +162,22 @@ impl FieldReader<'_> {
     /// Read one raw whitespace-delimited field. Returns `None` at end of
     /// input. An `@N` field consumes one separator byte and exactly `N` raw
     /// bytes, which may include whitespace and newlines.
-    fn next_field(&mut self) -> Option<(usize, String)> {
+    fn next_field(&mut self) -> Result<Option<(usize, String)>, SatError> {
         self.skip_ws();
         if self.pos >= self.bytes.len() {
-            return None;
+            return Ok(None);
         }
         let start = self.pos;
         while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
             self.pos += 1;
         }
-        let word = String::from_utf8_lossy(&self.bytes[start..self.pos]).into_owned();
-        Some((start, word))
+        let word = std::str::from_utf8(&self.bytes[start..self.pos])
+            .map_err(|error| SatError {
+                offset: start + error.valid_up_to(),
+                reason: "field is not valid UTF-8".to_string(),
+            })?
+            .to_owned();
+        Ok(Some((start, word)))
     }
 
     /// Consume the `@N` payload after its length field: one separator byte,
@@ -189,7 +194,12 @@ impl FieldReader<'_> {
                 reason: format!("truncated @{len} string"),
             });
         };
-        let payload = String::from_utf8_lossy(&self.bytes[self.pos..end]).into_owned();
+        let payload = std::str::from_utf8(&self.bytes[self.pos..end])
+            .map_err(|error| SatError {
+                offset: self.pos + error.valid_up_to(),
+                reason: format!("@{len} string is not valid UTF-8"),
+            })?
+            .to_owned();
         self.pos = end;
         Ok(payload)
     }
@@ -272,7 +282,12 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
-    let value = String::from_utf8_lossy(&line[*pos..end]).into_owned();
+    let value = std::str::from_utf8(&line[*pos..end])
+        .map_err(|error| SatError {
+            offset: at + *pos + error.valid_up_to(),
+            reason: format!("header {what} string is not valid UTF-8"),
+        })?
+        .to_owned();
     *pos = end;
     Ok(value)
 }
@@ -376,7 +391,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
     let mut records = Vec::new();
     let mut dialect = None;
     // Record name field, then payload fields until the terminator.
-    'stream: while let Some((rec_start, name)) = reader.next_field() {
+    'stream: while let Some((rec_start, name)) = reader.next_field()? {
         match name.as_str() {
             "End-of-ASM-data" => {
                 dialect = Some(Dialect::Asm);
@@ -392,7 +407,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
         let mut prims = Vec::new();
         let mut subtype_depth = 0usize;
         loop {
-            let Some((at, field)) = reader.next_field() else {
+            let Some((at, field)) = reader.next_field()? else {
                 return Err(SatError {
                     offset: rec_start,
                     reason: format!("record `{name}` has no `#` terminator"),
@@ -1606,6 +1621,43 @@ mod tests {
         // The tabled ATTRIB_CUSTOM shape types the trailing value as DOUBLE.
         assert_eq!(stream.records[0].tokens[6], Token::Long(1));
         assert!(matches!(stream.records[0].tokens[7], Token::Double(v) if approx(v, 7.0)));
+
+        let stream = parse(&asm_stream("mystery @2 é #\n")).expect("multibyte UTF-8 string");
+        assert_eq!(stream.records[0].tokens[0], Token::Str("é".to_string()));
+    }
+
+    #[test]
+    fn text_fields_reject_invalid_utf8_at_the_source_byte() {
+        let mut header = asm_stream("mystery 1 #\n");
+        let header_offset = header
+            .windows(b"Autodesk".len())
+            .position(|window| window == b"Autodesk")
+            .expect("header string offset");
+        header[header_offset] = 0xff;
+
+        let mut bare = asm_stream("mystery invalid #\n");
+        let bare_offset = bare
+            .windows(b"invalid".len())
+            .position(|window| window == b"invalid")
+            .expect("bare field offset");
+        bare[bare_offset] = 0xff;
+
+        let mut counted = asm_stream("mystery @1 x #\n");
+        let counted_offset = counted
+            .windows(b"@1 x".len())
+            .position(|window| window == b"@1 x")
+            .map(|offset| offset + 3)
+            .expect("counted string offset");
+        counted[counted_offset] = 0xff;
+
+        for (bytes, expected_offset) in [
+            (header, header_offset),
+            (bare, bare_offset),
+            (counted, counted_offset),
+        ] {
+            let error = parse(&bytes).expect_err("invalid UTF-8 must fail");
+            assert_eq!(error.offset, expected_offset);
+        }
     }
 
     #[test]

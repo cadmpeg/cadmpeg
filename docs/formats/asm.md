@@ -645,7 +645,7 @@ Three header lines precede the records.
 
 The first line holds exactly four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
 
-The second line holds exactly three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
+The second line holds exactly three UTF-8 product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many UTF-8 bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
 The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds. A negative value, infinity, or NaN makes the stream malformed.
 
@@ -653,12 +653,12 @@ The third line holds exactly three kernel doubles in the binary order: `scale`, 
 
 ### 7.2 Record grammar
 
-Each record is a record name, its fields, and the terminator field `#`. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
+Each record is a record name, its fields, and the terminator field `#`. Record names, bare fields, and counted strings are valid UTF-8. Whitespace — spaces, tabs, and newlines — separates fields, and a record continues across lines until its terminator. The record name is the `-`-joined chain the binary name tokens assemble (§2.2).
 
 Field forms:
 
 - `$N` is a reference to the record at index `N`; `$-1` is null.
-- `@N` followed by one separator byte and exactly `N` raw bytes is a string. The bytes count is exact: the payload can contain spaces and newlines.
+- `@N` followed by one separator byte and exactly `N` UTF-8 bytes is a string. The bytes count is exact: the payload can contain spaces and newlines.
 - `{` and `}` delimit a balanced, nested subtype scope. A record terminator is valid only after every opened scope closes. The bare words directly after `{` are the scope's identifier chain, including subtype names, `ref`, `nubs`, `nurbs`, and the `null_surface`, `null_curve`, and `nullbs` sentinels. The `{ref N}` form and the serializer version stamps are unchanged from the binary encoding.
 - A number field is one serialized value. A field at a `POSITION`, `VECTOR_3D`, or `VECTOR_2D` slot spans three or two consecutive number fields. An integral spelling does not select an integer type: a `DOUBLE` slot whose value is integral is written without a decimal point, so the slot's type comes from the record layout (§5, §6), not from the field's spelling.
 - A boolean is a word. A sense slot writes `forward` for `FALSE` and `reversed` for `TRUE`. A face sides slot writes `single` for `FALSE` and `double` for `TRUE`. A surface v-sense slot writes `forward_v` for `FALSE` and `reverse_v` for `TRUE`. A plain logical slot writes `F` for `FALSE` and `T` for `TRUE`. An optional range bound (§6.3) writes `I` for the absent bound (`FALSE`, no value follows) and `F` for the present bound (`TRUE`, one value follows). The word `F` therefore takes its meaning from the slot class.
