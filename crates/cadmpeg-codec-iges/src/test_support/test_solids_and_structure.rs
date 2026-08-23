@@ -44,7 +44,7 @@ pub(crate) fn parametrically_bounded_plane_file() -> Vec<u8> {
     bytes.extend(parameter_card(square, 5, 3));
     bytes.extend(parameter_card(b"141,1,3,1,1,3,1,1,5;", 7, 4));
     bytes.extend(parameter_card(b"143,1,1,1,7;", 9, 5));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000010P0000005").as_bytes(),
         b'T',
@@ -117,7 +117,7 @@ pub(crate) fn explicit_open_shell_file() -> Vec<u8> {
             parameter_sequence,
         ));
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000024P0000012").as_bytes(),
         b'T',
@@ -367,7 +367,7 @@ pub(crate) fn explicit_tetrahedron_solid_file_extended(
     let mut parameter_sequence = 1_u32;
     for (index, (entity_type, form, label, status, parameters)) in entities.iter().enumerate() {
         let sequence = u32::try_from(index * 2 + 1).unwrap();
-        let line_count = parameters.len().div_ceil(64);
+        let line_count = parameter_fragment_count(parameters.as_bytes());
         let entity_type = entity_type.to_string();
         let form = form.to_string();
         let parameter_start = parameter_sequence.to_string();
@@ -415,9 +415,10 @@ pub(crate) fn explicit_tetrahedron_solid_file_extended(
             sequence,
             parameter_sequence,
         ));
-        parameter_sequence += u32::try_from(parameters.len().div_ceil(64)).unwrap();
+        parameter_sequence +=
+            u32::try_from(parameter_fragment_count(parameters.as_bytes())).unwrap();
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!(
             "S0000001G{global_cards:07}D{:07}P{:07}",

@@ -1741,7 +1741,7 @@ pub(crate) fn nested_transformed_point_file() -> Vec<u8> {
     bytes.extend(parameter_card(b"124,1,0,0,0,0,1,0,2,0,0,1,0;", 1, 1));
     bytes.extend(parameter_card(b"124,-1,0,0,1,0,1,0,0,0,0,1,0;", 3, 2));
     bytes.extend(parameter_card(b"116,1,2,3;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -1810,7 +1810,7 @@ pub(crate) fn transform_chain_overflow_file(transform_count: u32) -> Vec<u8> {
         point_sequence,
         transform_count + 1,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!(
             "S0000001G{global_cards:07}D{:07}P{:07}",

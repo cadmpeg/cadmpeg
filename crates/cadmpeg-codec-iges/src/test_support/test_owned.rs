@@ -12,8 +12,32 @@ pub(crate) struct OwnedTestEntity {
     pub(crate) parameters: String,
 }
 
+struct DirectoryFields<'a> {
+    colors: &'a [(u32, i64)],
+    line_fonts: &'a [(u32, i64)],
+    levels: &'a [(u32, i64)],
+    line_weights: &'a [(u32, i64)],
+    structures: &'a [(u32, i64)],
+}
+
 pub(crate) fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
     owned_test_file_with_colors(entities, &[])
+}
+
+pub(crate) fn owned_test_file_with_raw_parameters(entities: &[OwnedTestEntity]) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    owned_test_file_with_parameter_layout(
+        entities,
+        global,
+        &DirectoryFields {
+            colors: &[],
+            line_fonts: &[],
+            levels: &[],
+            line_weights: &[],
+            structures: &[],
+        },
+        true,
+    )
 }
 
 pub(crate) fn owned_test_file_with_colors(
@@ -71,51 +95,69 @@ pub(crate) fn owned_test_file_with_directory_fields(
     structures: &[(u32, i64)],
 ) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    owned_test_file_with_global_and_directory_fields(
+    owned_test_file_with_parameter_layout(
         entities,
         global,
-        colors,
-        line_fonts,
-        levels,
-        line_weights,
-        structures,
+        &DirectoryFields {
+            colors,
+            line_fonts,
+            levels,
+            line_weights,
+            structures,
+        },
+        false,
     )
 }
 
 pub(crate) fn owned_test_file_with_global(entities: &[OwnedTestEntity], global: &[u8]) -> Vec<u8> {
-    owned_test_file_with_global_and_directory_fields(entities, global, &[], &[], &[], &[], &[])
+    owned_test_file_with_parameter_layout(
+        entities,
+        global,
+        &DirectoryFields {
+            colors: &[],
+            line_fonts: &[],
+            levels: &[],
+            line_weights: &[],
+            structures: &[],
+        },
+        false,
+    )
 }
 
-fn owned_test_file_with_global_and_directory_fields(
+fn owned_test_file_with_parameter_layout(
     entities: &[OwnedTestEntity],
     global: &[u8],
-    colors: &[(u32, i64)],
-    line_fonts: &[(u32, i64)],
-    levels: &[(u32, i64)],
-    line_weights: &[(u32, i64)],
-    structures: &[(u32, i64)],
+    fields: &DirectoryFields<'_>,
+    raw_parameters: bool,
 ) -> Vec<u8> {
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     let mut parameter_sequence = 1_u32;
     for (index, entity) in entities.iter().enumerate() {
         let sequence = u32::try_from(index * 2 + 1).unwrap();
-        let line_count = entity.parameters.len().div_ceil(64);
+        let line_count = if raw_parameters {
+            raw_parameter_fragment_count(entity.parameters.as_bytes())
+        } else {
+            parameter_fragment_count(entity.parameters.as_bytes())
+        };
         bytes.extend(directory_card(
             [
                 &entity.entity_type.to_string(),
                 &parameter_sequence.to_string(),
-                &structures
+                &fields
+                    .structures
                     .iter()
                     .find_map(|(entry, structure)| (*entry == sequence).then_some(*structure))
                     .unwrap_or(0)
                     .to_string(),
-                &line_fonts
+                &fields
+                    .line_fonts
                     .iter()
                     .find_map(|(entry, line_font)| (*entry == sequence).then_some(*line_font))
                     .unwrap_or(0)
                     .to_string(),
-                &levels
+                &fields
+                    .levels
                     .iter()
                     .find_map(|(entry, level)| (*entry == sequence).then_some(*level))
                     .unwrap_or(0)
@@ -130,12 +172,14 @@ fn owned_test_file_with_global_and_directory_fields(
         bytes.extend(directory_card(
             [
                 &entity.entity_type.to_string(),
-                &line_weights
+                &fields
+                    .line_weights
                     .iter()
                     .find_map(|(entry, weight)| (*entry == sequence).then_some(*weight))
                     .unwrap_or(0)
                     .to_string(),
-                &colors
+                &fields
+                    .colors
                     .iter()
                     .find_map(|(entry, color)| (*entry == sequence).then_some(*color))
                     .unwrap_or(0)
@@ -154,14 +198,27 @@ fn owned_test_file_with_global_and_directory_fields(
     parameter_sequence = 1;
     for (index, entity) in entities.iter().enumerate() {
         let sequence = u32::try_from(index * 2 + 1).unwrap();
-        bytes.extend(parameter_cards(
-            entity.parameters.as_bytes(),
-            sequence,
-            parameter_sequence,
-        ));
-        parameter_sequence += u32::try_from(entity.parameters.len().div_ceil(64)).unwrap();
+        let line_count = if raw_parameters {
+            raw_parameter_fragment_count(entity.parameters.as_bytes())
+        } else {
+            parameter_fragment_count(entity.parameters.as_bytes())
+        };
+        if raw_parameters {
+            bytes.extend(raw_parameter_cards(
+                entity.parameters.as_bytes(),
+                sequence,
+                parameter_sequence,
+            ));
+        } else {
+            bytes.extend(parameter_cards(
+                entity.parameters.as_bytes(),
+                sequence,
+                parameter_sequence,
+            ));
+        }
+        parameter_sequence += u32::try_from(line_count).unwrap();
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!(
             "S0000001G{global_cards:07}D{:07}P{:07}",

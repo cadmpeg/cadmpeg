@@ -10,6 +10,7 @@ use cadmpeg_ir::report::LossNote;
 enum Value {
     Omitted,
     String(Vec<u8>),
+    Malformed(Vec<u8>),
     ForbiddenString,
     Atom(Vec<u8>),
 }
@@ -221,6 +222,142 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
 }
 
+fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?
+        .parse::<usize>()
+        .map_err(|_| malformed("Hollerith count is out of range"))?;
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or_else(|| malformed("Hollerith payload offset overflows"))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or_else(|| malformed("Hollerith payload length overflows"))?;
+    bytes
+        .get(payload_start..payload_end)
+        .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
+    Ok(Some((cursor + 1, payload_end)))
+}
+
+/// Lay out a logical Global stream into 72-column card payloads.
+///
+/// Spaces inserted before a field are ignored by the Global reader. They let
+/// generated output keep a Hollerith count and `H` on one card and keep every
+/// non-string field together with its delimiter. Hollerith payload bytes may
+/// cross cards.
+pub(crate) fn layout_global_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+    let (parameter_delimiter, mut cursor) = if bytes.first() == Some(&b',') {
+        (b',', 1)
+    } else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, 0)? else {
+            return Err(malformed("parameter delimiter is not a Hollerith string"));
+        };
+        let payload = bytes
+            .get(header_end..payload_end)
+            .ok_or_else(|| malformed("parameter delimiter is truncated"))?;
+        if payload.len() != 1 {
+            return Err(malformed("parameter delimiter must contain one byte"));
+        }
+        let delimiter = payload[0];
+        if bytes.get(payload_end) != Some(&delimiter) {
+            return Err(malformed(
+                "parameter delimiter does not terminate its Global field",
+            ));
+        }
+        (delimiter, payload_end + 1)
+    };
+
+    let record_delimiter = if bytes.get(cursor) == Some(&parameter_delimiter) {
+        cursor += 1;
+        b';'
+    } else {
+        let Some((header_end, payload_end)) = layout_hollerith(bytes, cursor)? else {
+            return Err(malformed("record delimiter is not a Hollerith string"));
+        };
+        let payload = bytes
+            .get(header_end..payload_end)
+            .ok_or_else(|| malformed("record delimiter is truncated"))?;
+        if payload.len() != 1 {
+            return Err(malformed("record delimiter must contain one byte"));
+        }
+        let delimiter = payload[0];
+        if bytes.get(payload_end) != Some(&parameter_delimiter) {
+            return Err(malformed(
+                "record delimiter does not terminate its Global field",
+            ));
+        }
+        cursor = payload_end + 1;
+        delimiter
+    };
+
+    let mut fields = Vec::with_capacity(1);
+    fields.push(0..cursor);
+    while cursor < bytes.len() {
+        let start = cursor;
+        let mut end = cursor;
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+            end = payload_end;
+        }
+        while end < bytes.len()
+            && bytes[end] != parameter_delimiter
+            && bytes[end] != record_delimiter
+        {
+            end += 1;
+        }
+        let is_record = bytes
+            .get(end)
+            .ok_or_else(|| malformed("Global record delimiter is missing"))?
+            == &record_delimiter;
+        end += 1;
+        fields.push(start..end);
+        cursor = end;
+        if is_record {
+            break;
+        }
+    }
+
+    let mut cards = Vec::new();
+    let mut card = Vec::with_capacity(72);
+    for field in fields.iter().map(|range| &bytes[range.clone()]) {
+        let leading = field
+            .iter()
+            .position(|byte| !byte.is_ascii_whitespace())
+            .unwrap_or(field.len());
+        let header_end = if leading < field.len() {
+            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+        } else {
+            None
+        };
+        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        if minimum > 72 {
+            return Err(malformed("Global field exceeds one card"));
+        }
+        if card.len() + minimum > 72 {
+            card.resize(72, b' ');
+            cards.push(std::mem::take(&mut card));
+            card = Vec::with_capacity(72);
+        }
+        for byte in field.iter().copied() {
+            if card.len() == 72 {
+                cards.push(std::mem::take(&mut card));
+                card = Vec::with_capacity(72);
+            }
+            card.push(byte);
+        }
+    }
+    if !card.is_empty() {
+        cards.push(card);
+    }
+    Ok(cards)
+}
+
 fn field_name(index: usize) -> &'static str {
     FIELD_NAMES.get(index).copied().unwrap_or("extra field")
 }
@@ -236,7 +373,24 @@ const fn prohibited_delimiter_byte(byte: u8) -> bool {
         || matches!(byte, b' ' | b'+' | b'-' | b'.' | b'D' | b'E' | b'H')
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize, bool)>, CodecError> {
+struct GlobalStream {
+    bytes: Vec<u8>,
+    source_cards: Vec<usize>,
+}
+
+type GlobalHollerith = (Vec<u8>, usize, bool, bool);
+
+fn source_span_crosses_card(source_cards: &[usize], start: usize, end: usize) -> bool {
+    source_cards
+        .get(start..end)
+        .is_some_and(|span| span.windows(2).any(|cards| cards[0] != cards[1]))
+}
+
+fn hollerith(
+    bytes: &[u8],
+    source_cards: &[usize],
+    start: usize,
+) -> Result<Option<GlobalHollerith>, CodecError> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -258,26 +412,34 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize, bool)
         .get(payload_start..payload_end)
         .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
     let forbidden = payload.iter().copied().any(forbidden_string_byte);
-    Ok(Some((payload.to_vec(), payload_end, forbidden)))
+    let header_crosses_card = source_span_crosses_card(source_cards, start, cursor + 1);
+    Ok(Some((
+        payload.to_vec(),
+        payload_end,
+        forbidden,
+        header_crosses_card,
+    )))
 }
 
-fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
-    if bytes.first() == Some(&b',') {
+fn first_delimiter(stream: &GlobalStream) -> Result<(u8, usize), CodecError> {
+    if stream.bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor, forbidden)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor, forbidden, header_crosses_card)) =
+        hollerith(&stream.bytes, &stream.source_cards, 0)?
+    else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
-    if forbidden {
+    if forbidden || header_crosses_card {
         return Err(malformed(
-            "parameter delimiter is a non-ASCII or control character",
+            "parameter delimiter is not a valid one-card Hollerith string",
         ));
     }
     if payload.len() != 1 {
         return Err(malformed("parameter delimiter must contain one byte"));
     }
     let delimiter = payload[0];
-    if bytes.get(cursor) != Some(&delimiter) {
+    if stream.bytes.get(cursor) != Some(&delimiter) {
         return Err(malformed(
             "parameter delimiter does not terminate its Global field",
         ));
@@ -286,20 +448,25 @@ fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
 }
 
 fn delimited_value(
-    bytes: &[u8],
+    stream: &GlobalStream,
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
 ) -> Result<(Value, usize, bool), CodecError> {
+    let bytes = &stream.bytes;
     if bytes.get(start) == Some(&parameter_delimiter) {
         return Ok((Value::Omitted, start + 1, false));
     }
     if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
         return Ok((Value::Omitted, start + 1, true));
     }
-    let (value, end) = if let Some((payload, end, forbidden)) = hollerith(bytes, start)? {
+    let (value, end) = if let Some((payload, end, forbidden, header_crosses_card)) =
+        hollerith(bytes, &stream.source_cards, start)?
+    {
         if forbidden {
             (Value::ForbiddenString, end)
+        } else if header_crosses_card {
+            (Value::Malformed(payload), end)
         } else {
             (Value::String(payload), end)
         }
@@ -312,6 +479,8 @@ fn delimited_value(
         let atom = &bytes[start..end];
         if atom.iter().all(u8::is_ascii_whitespace) {
             (Value::Omitted, end)
+        } else if source_span_crosses_card(&stream.source_cards, start, end + 1) {
+            (Value::Malformed(atom.to_vec()), end)
         } else {
             (Value::Atom(atom.to_vec()), end)
         }
@@ -323,19 +492,22 @@ fn delimited_value(
     }
 }
 
-fn global_bytes(scan: &CardScan<'_>) -> Result<Vec<u8>, CodecError> {
+fn global_bytes(scan: &CardScan<'_>) -> Result<GlobalStream, CodecError> {
     let mut bytes = Vec::new();
-    let mut pending_digits = Vec::new();
+    let mut source_cards = Vec::new();
+    let mut pending_digits = Vec::<(u8, usize)>::new();
     let mut hollerith_remaining = 0_usize;
 
-    for line in scan
+    for (card, line) in scan
         .lines
         .iter()
         .filter(|line| line.section == Some(Section::Global))
+        .enumerate()
     {
         for byte in line.payload.iter().take(72).copied() {
             if hollerith_remaining > 0 {
                 bytes.push(byte);
+                source_cards.push(card);
                 hollerith_remaining -= 1;
                 continue;
             }
@@ -344,42 +516,58 @@ fn global_bytes(scan: &CardScan<'_>) -> Result<Vec<u8>, CodecError> {
                 continue;
             }
             if byte.is_ascii_digit() {
-                pending_digits.push(byte);
+                pending_digits.push((byte, card));
                 continue;
             }
             if !pending_digits.is_empty() && matches!(byte, b'H' | b'h') {
-                let count = std::str::from_utf8(&pending_digits)
+                let digits = pending_digits
+                    .iter()
+                    .map(|(byte, _)| *byte)
+                    .collect::<Vec<_>>();
+                let count = std::str::from_utf8(&digits)
                     .map_err(|_| malformed("Hollerith count is not ASCII"))?
                     .parse::<usize>()
                     .map_err(|_| malformed("Hollerith count is out of range"))?;
-                bytes.extend_from_slice(&pending_digits);
+                for (pending, source_card) in pending_digits.drain(..) {
+                    bytes.push(pending);
+                    source_cards.push(source_card);
+                }
                 bytes.push(byte);
-                pending_digits.clear();
+                source_cards.push(card);
                 hollerith_remaining = count;
                 continue;
             }
 
-            bytes.extend_from_slice(&pending_digits);
-            pending_digits.clear();
+            for (pending, source_card) in pending_digits.drain(..) {
+                bytes.push(pending);
+                source_cards.push(source_card);
+            }
             bytes.push(byte);
+            source_cards.push(card);
         }
     }
-    bytes.extend_from_slice(&pending_digits);
-    Ok(bytes)
+    for (pending, source_card) in pending_digits {
+        bytes.push(pending);
+        source_cards.push(source_card);
+    }
+    Ok(GlobalStream {
+        bytes,
+        source_cards,
+    })
 }
 
 fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
-    let bytes = global_bytes(scan)?;
-    if bytes.is_empty() {
+    let stream = global_bytes(scan)?;
+    if stream.bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let (record_value, next, _) = delimited_value(&bytes, cursor, parameter_delimiter, None)?;
+    let (parameter_delimiter, mut cursor) = first_delimiter(&stream)?;
+    let (record_value, next, _) = delimited_value(&stream, cursor, parameter_delimiter, None)?;
     cursor = next;
     let record_delimiter = match record_value {
         Value::Omitted => b';',
         Value::String(value) if value.len() == 1 => value[0],
-        Value::String(_) | Value::Atom(_) => {
+        Value::String(_) | Value::Malformed(_) | Value::Atom(_) => {
             return Err(malformed("record delimiter must contain one byte"));
         }
         Value::ForbiddenString => {
@@ -407,7 +595,7 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     ];
     loop {
         let (value, next, ended) =
-            delimited_value(&bytes, cursor, parameter_delimiter, Some(record_delimiter))?;
+            delimited_value(&stream, cursor, parameter_delimiter, Some(record_delimiter))?;
         values.push(value);
         cursor = next;
         if ended {
@@ -542,7 +730,7 @@ impl Resolution {
     fn declaration_text(&self, index: usize) -> String {
         match self.value(index) {
             Value::Omitted => String::new(),
-            Value::String(bytes) | Value::Atom(bytes) => {
+            Value::String(bytes) | Value::Malformed(bytes) | Value::Atom(bytes) => {
                 String::from_utf8_lossy(bytes).into_owned()
             }
             Value::ForbiddenString => {
@@ -558,7 +746,7 @@ impl Resolution {
             Value::String(bytes) => {
                 String::from_utf8(bytes.clone()).map_or(Supplied::Malformed, Supplied::Value)
             }
-            Value::ForbiddenString | Value::Atom(_) => Supplied::Malformed,
+            Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => Supplied::Malformed,
         }
     }
 
@@ -582,7 +770,7 @@ impl Resolution {
                 .ok()
                 .and_then(|text| text.trim().parse::<i64>().ok())
                 .map_or(Supplied::Malformed, Supplied::Value),
-            Value::String(_) | Value::ForbiddenString => Supplied::Malformed,
+            Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
         }
     }
 
@@ -594,7 +782,7 @@ impl Resolution {
                 .and_then(|text| text.trim().replace(['D', 'd'], "E").parse::<f64>().ok())
                 .filter(|value| value.is_finite())
                 .map_or(Supplied::Malformed, Supplied::Value),
-            Value::String(_) | Value::ForbiddenString => Supplied::Malformed,
+            Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
         }
     }
 

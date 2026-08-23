@@ -23,7 +23,7 @@ pub(crate) fn point_file_with_global(global: &[u8]) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"116,1.0,2.0,3.0;", 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -45,7 +45,7 @@ pub(crate) fn direction_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"123,2,-3,4;", 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -77,7 +77,7 @@ pub(crate) fn line_file(form: i64) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"110,1,2,3,4,6,3;", 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -99,7 +99,7 @@ pub(crate) fn circular_arc_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"100,0,0,0,1,0,0,1;", 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -139,7 +139,7 @@ pub(crate) fn transformed_circular_arc_file_with_form(
     ));
     bytes.extend(parameter_card(matrix, 1, 1));
     bytes.extend(parameter_card(arc, 3, 2));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',
@@ -174,7 +174,7 @@ pub(crate) fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u
     ));
     bytes.extend(parameter_card(b"100,0,0,0,2,0,0,2;", 1, 1));
     bytes.extend(parameter_card(offset, 3, 2));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',
@@ -233,7 +233,7 @@ pub(crate) fn linear_offset_line_file(basis: i64) -> Vec<u8> {
         3,
         2,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',
@@ -279,7 +279,7 @@ pub(crate) fn function_offset_line_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"130,1,3,3,2,2,0,0,0,0,0,0,1,0,1;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -319,7 +319,7 @@ pub(crate) fn composite_curve_file() -> Vec<u8> {
     bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
     bytes.extend(parameter_card(b"110,1,0,0,1,1,0;", 3, 2));
     bytes.extend(parameter_card(b"102,2,1,3;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -385,7 +385,7 @@ pub(crate) fn mixed_analytic_composite_curve_file() -> Vec<u8> {
     bytes.extend(parameter_card(b"100,0,0,0,1,0,0,1;", 1, 1));
     bytes.extend(parameter_card(b"110,0,1,0,0,2,0;", 3, 2));
     bytes.extend(parameter_card(b"102,2,1,3;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -495,7 +495,7 @@ pub(crate) fn parametric_spline_composite_curve_file() -> Vec<u8> {
 
 pub(crate) fn copious_data_file(form: i64, parameters: &[u8], status: &str) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -517,7 +517,7 @@ pub(crate) fn copious_data_file(form: i64, parameters: &[u8], status: &str) -> V
         2,
     ));
     bytes.extend(parameter_cards(parameters, 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -528,7 +528,7 @@ pub(crate) fn copious_data_file(form: i64, parameters: &[u8], status: &str) -> V
 
 pub(crate) fn conic_arc_file(form: i64, parameters: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -550,7 +550,7 @@ pub(crate) fn conic_arc_file(form: i64, parameters: &[u8]) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_cards(parameters, 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -565,7 +565,7 @@ pub(crate) fn nurbs_curve_file() -> Vec<u8> {
 
 pub(crate) fn polynomial_nurbs_curve_file(parameters: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -587,7 +587,7 @@ pub(crate) fn polynomial_nurbs_curve_file(parameters: &[u8]) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_cards(parameters, 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -618,7 +618,7 @@ pub(crate) fn parametric_spline_curve_file_with_parameters_and_resolution(
     let global = format!(
         "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1000.0,6Hauthor,3Horg,11,0,0H,0H;"
     );
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global.as_bytes());
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -640,7 +640,7 @@ pub(crate) fn parametric_spline_curve_file_with_parameters_and_resolution(
         2,
     ));
     bytes.extend(parameter_cards(parameters, 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global.as_bytes());
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -682,7 +682,7 @@ pub(crate) fn parametric_spline_surface_file() -> Vec<u8> {
     values.extend(patch);
     values.extend((0..48 * 3).map(|_| "0".to_owned()));
     let parameters = format!("{};", values.join(","));
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters.as_bytes());
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -704,7 +704,7 @@ pub(crate) fn parametric_spline_surface_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_cards(parameters.as_bytes(), 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -731,7 +731,7 @@ pub(crate) fn nonlinear_parametric_spline_surface_file() -> Vec<u8> {
     values.extend((1..=16).map(|value| (-value).to_string()));
     values.extend((0..48 * 3).map(|_| "0".to_owned()));
     let parameters = format!("{};", values.join(","));
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters.as_bytes());
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -753,7 +753,7 @@ pub(crate) fn nonlinear_parametric_spline_surface_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_cards(parameters.as_bytes(), 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -779,7 +779,7 @@ pub(crate) fn rational_nurbs_curve_file() -> Vec<u8> {
         1,
         1,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -803,7 +803,7 @@ pub(crate) fn nurbs_surface_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let parameters =
         b"128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;";
-    let parameter_count = parameters.len().div_ceil(64);
+    let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
@@ -825,7 +825,7 @@ pub(crate) fn nurbs_surface_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_cards(parameters, 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
         b'T',
@@ -887,7 +887,7 @@ pub(crate) fn ruled_surface_file_with_developable_flag(developable_flag: i64) ->
         5,
         3,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -1012,7 +1012,7 @@ pub(crate) fn tabulated_cylinder_file() -> Vec<u8> {
     }
     bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
     bytes.extend(parameter_card(b"122,1,0,0,2;", 3, 2));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',
@@ -1052,7 +1052,7 @@ pub(crate) fn surface_of_revolution_file() -> Vec<u8> {
     bytes.extend(parameter_card(b"110,0,0,0,0,0,2;", 1, 1));
     bytes.extend(parameter_card(b"110,1,0,0,1,0,2;", 3, 2));
     bytes.extend(parameter_card(b"120,1,3,0,1.5707963267948966;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
@@ -1185,7 +1185,7 @@ pub(crate) fn placed_surface_of_revolution_file() -> Vec<u8> {
     bytes.extend(parameter_card(b"110,1,0,0,1,0,2;", 3, 2));
     bytes.extend(parameter_card(b"124,1,0,0,10,0,1,0,0,0,0,1,0;", 5, 3));
     bytes.extend(parameter_card(b"120,1,3,0,1.5707963267948966;", 7, 4));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
         b'T',
@@ -1207,7 +1207,7 @@ pub(crate) fn plane_file() -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(b"108,0,0,1,2,0,0,0,2,0;", 1, 1));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
         b'T',
@@ -1276,7 +1276,7 @@ pub(crate) fn offset_plane_file_with_indicator(
         3,
         2,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',
@@ -1417,7 +1417,7 @@ pub(crate) fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u
         surface_sequence,
         surface_parameter_start,
     ));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!(
             "S0000001G{global_cards:07}D{:07}P{:07}",
@@ -1517,7 +1517,7 @@ pub(crate) fn trimmed_plane_file() -> Vec<u8> {
     bytes.extend(parameter_card(square, 5, 3));
     bytes.extend(parameter_card(b"142,0,1,5,3,3;", 7, 4));
     bytes.extend(parameter_card(b"144,1,1,0,7;", 9, 5));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000010P0000005").as_bytes(),
         b'T',
@@ -1631,7 +1631,7 @@ fn bounded_plane_file_with_global(global: &[u8]) -> Vec<u8> {
             parameter_sequence,
         ));
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000014P0000007").as_bytes(),
         b'T',

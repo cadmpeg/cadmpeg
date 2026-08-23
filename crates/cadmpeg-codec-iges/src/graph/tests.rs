@@ -58,7 +58,7 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
     let matrix = b"124,1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.;";
     bytes.extend(parameter_card(matrix, 1, 1));
     bytes.extend(parameter_card(matrix, 3, 2));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
         b'T',

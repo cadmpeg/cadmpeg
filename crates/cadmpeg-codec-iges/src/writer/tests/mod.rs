@@ -282,7 +282,9 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         .filter(|line| line.section == Some(crate::card::Section::Global))
         .flat_map(|line| line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
-    let global_text = String::from_utf8(global_text).expect("generated Global record is ASCII");
+    let global_text = String::from_utf8(global_text)
+        .expect("generated Global record is ASCII")
+        .replace(' ', "");
     assert!(global_text.starts_with(
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
@@ -308,7 +310,9 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
             .filter(|line| line.section == Some(crate::card::Section::Global))
             .flat_map(|line| line.payload.iter().take(72).copied())
             .collect::<Vec<_>>();
-        let global_text = String::from_utf8(global_text).expect("Global is ASCII");
+        let global_text = String::from_utf8(global_text)
+            .expect("Global is ASCII")
+            .replace(' ', "");
         assert!(
             global_text.contains(&format!(",{}H{timestamp}", timestamp.len())),
             "{name}: {global_text}"
@@ -679,24 +683,27 @@ fn generated_reals_round_trip_without_writer_quantization() {
 }
 
 #[test]
-fn generated_parameter_cards_end_at_delimiters() {
+fn generated_parameter_cards_preserve_field_boundaries() {
     let token = number(f64::MAX);
     let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = parameter_fragments(parameters.as_bytes())
+    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
         .expect("ordinary generated real tokens fit one card");
     assert!(fragments.len() > 1);
-    assert!(fragments
-        .iter()
-        .all(|fragment| fragment.len() <= 64 && matches!(fragment.last(), Some(b',' | b';'))));
-    assert_eq!(fragments.concat(), parameters.as_bytes());
+    assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
+    let compact = fragments
+        .concat()
+        .into_iter()
+        .filter(|byte| *byte != b' ')
+        .collect::<Vec<_>>();
+    assert_eq!(compact, parameters.as_bytes());
 }
 
 #[test]
-fn generated_parameter_token_wider_than_a_card_is_refused() {
+fn generated_parameter_field_wider_than_a_card_is_refused() {
     let parameters = format!("{};", "1".repeat(65));
-    let error = parameter_fragments(parameters.as_bytes())
-        .expect_err("a token wider than the data area must fail");
-    assert!(error.to_string().contains("token exceeds 64 bytes"));
+    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+        .expect_err("a field wider than the data area must fail");
+    assert!(error.to_string().contains("field exceeds one card"));
 }
 
 #[test]

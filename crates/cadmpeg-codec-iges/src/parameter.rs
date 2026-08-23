@@ -2161,6 +2161,8 @@ fn groups_for_candidate(
 pub(crate) enum ParameterDefect {
     HollerithCountUnreadable,
     HollerithPayloadTruncated,
+    HollerithHeaderCrossesCard,
+    NumericCrossesCard,
     TokenNotAscii,
     TokenNotANumber,
     DelimiterMissing,
@@ -2176,6 +2178,8 @@ impl ParameterDefect {
         match self {
             Self::HollerithCountUnreadable => "hollerith-count-unreadable",
             Self::HollerithPayloadTruncated => "hollerith-payload-truncated",
+            Self::HollerithHeaderCrossesCard => "hollerith-header-crosses-card",
+            Self::NumericCrossesCard => "numeric-crosses-card",
             Self::TokenNotAscii => "token-not-ascii",
             Self::TokenNotANumber => "token-not-a-number",
             Self::DelimiterMissing => "delimiter-missing",
@@ -2191,6 +2195,10 @@ impl ParameterDefect {
         match self {
             Self::HollerithCountUnreadable => "a Hollerith byte count is unreadable",
             Self::HollerithPayloadTruncated => "a Hollerith payload is truncated",
+            Self::HollerithHeaderCrossesCard => {
+                "a Hollerith count and H delimiter cross a card boundary"
+            }
+            Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
             Self::TokenNotAscii => "a token is not ASCII",
             Self::TokenNotANumber => "a token is not a number",
             Self::DelimiterMissing => "a delimiter is missing",
@@ -2250,6 +2258,104 @@ enum TokenizeFailure {
     Refusal(CodecError),
 }
 
+fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?
+        .parse::<usize>()
+        .map_err(|_| CodecError::Malformed("IGES Hollerith count is out of range".into()))?;
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload offset overflows".into()))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload length overflows".into()))?;
+    bytes
+        .get(payload_start..payload_end)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload is truncated".into()))?;
+    Ok(Some((cursor + 1, payload_end)))
+}
+
+/// Lay out an entity's logical Parameter Data into 64-column payloads.
+///
+/// A Hollerith header is kept together while its counted payload may cross a
+/// card. Numeric fields are moved to the next card when their delimiter would
+/// otherwise cross the card boundary. Bytes after the record delimiter are
+/// comment payload and may use the remaining card space without token rules.
+pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut fields = Vec::new();
+    let mut cursor = 0_usize;
+    loop {
+        let start = cursor;
+        let mut end = cursor;
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+            end = payload_end;
+        }
+        while end < bytes.len() && !matches!(bytes[end], b',' | b';') {
+            end += 1;
+        }
+        let delimiter = bytes.get(end).ok_or_else(|| {
+            CodecError::Malformed("IGES Parameter Data delimiter is missing".into())
+        })?;
+        end += 1;
+        fields.push(start..end);
+        cursor = end;
+        if *delimiter == b';' {
+            break;
+        }
+    }
+
+    let mut cards = Vec::new();
+    let mut card = Vec::with_capacity(64);
+    for field in fields.iter().map(|range| &bytes[range.clone()]) {
+        let leading = field
+            .iter()
+            .position(|byte| !byte.is_ascii_whitespace())
+            .unwrap_or(field.len());
+        let header_end = if leading < field.len() {
+            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+        } else {
+            None
+        };
+        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        if minimum > 64 {
+            return Err(CodecError::Malformed(
+                "IGES generated Parameter Data field exceeds one card".into(),
+            ));
+        }
+        if card.len() + minimum > 64 {
+            card.resize(64, b' ');
+            cards.push(std::mem::take(&mut card));
+            card = Vec::with_capacity(64);
+        }
+        for byte in field.iter().copied() {
+            if card.len() == 64 {
+                cards.push(std::mem::take(&mut card));
+                card = Vec::with_capacity(64);
+            }
+            card.push(byte);
+        }
+    }
+
+    for byte in bytes[cursor..].iter().copied() {
+        if card.len() == 64 {
+            cards.push(std::mem::take(&mut card));
+            card = Vec::with_capacity(64);
+        }
+        card.push(byte);
+    }
+    if !card.is_empty() {
+        cards.push(card);
+    }
+    Ok(cards)
+}
+
 /// Both parse results of the Parameter Data section.
 pub(crate) struct ParameterAssembly {
     pub(crate) records: Vec<ParameterRecord>,
@@ -2263,13 +2369,26 @@ fn back_pointer(line: &PhysicalLine) -> Option<u32> {
     text.parse::<u32>().ok()
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, TokenizeFailure> {
+fn hollerith(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    start: usize,
+) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
     }
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
+    }
+    if card_boundaries
+        .iter()
+        .any(|boundary| start < *boundary && *boundary < cursor + 1)
+    {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithHeaderCrossesCard,
+            start,
+        ));
     }
     let unreadable_count =
         || TokenizeFailure::Defect(ParameterDefect::HollerithCountUnreadable, start);
@@ -2320,6 +2439,7 @@ fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
 
 fn tokenize(
     bytes: &[u8],
+    card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
     ctx: Option<&DecodeContext<'_>>,
@@ -2328,6 +2448,9 @@ fn tokenize(
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
+        while bytes.get(cursor) == Some(&b' ') {
+            cursor += 1;
+        }
         if bytes.get(cursor) == Some(&record_delimiter) {
             return Ok((tokens, cursor + 1));
         }
@@ -2340,7 +2463,7 @@ fn tokenize(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, cursor)? {
+        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor)? {
             value
         } else {
             let end = bytes[cursor..]
@@ -2359,7 +2482,23 @@ fn tokenize(
                     cursor,
                 ));
             }
-            (numeric(bytes, cursor..end)?, end)
+            let span = cursor..end;
+            let first_value = span.start
+                + bytes[span.clone()]
+                    .iter()
+                    .position(|byte| !byte.is_ascii_whitespace())
+                    .unwrap_or(span.len());
+            if first_value < end
+                && card_boundaries
+                    .iter()
+                    .any(|boundary| first_value < *boundary && *boundary <= end)
+            {
+                return Err(TokenizeFailure::Defect(
+                    ParameterDefect::NumericCrossesCard,
+                    first_value,
+                ));
+            }
+            (numeric(bytes, span)?, end)
         };
         charge(ctx)?;
         tokens.push(token);
@@ -2449,12 +2588,25 @@ fn overlapping_ranges(declared: &BTreeMap<u32, Range<u32>>) -> BTreeSet<u32> {
     overlapping
 }
 
-fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> Vec<u8> {
-    cards
-        .iter()
-        .filter_map(|sequence| lines.get(sequence))
-        .flat_map(|line| line.payload.get(..64).unwrap_or_default().iter().copied())
-        .collect()
+struct OwnedParameterBytes {
+    bytes: Vec<u8>,
+    card_boundaries: Vec<usize>,
+}
+
+fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> OwnedParameterBytes {
+    let mut bytes = Vec::new();
+    let mut card_boundaries = Vec::new();
+    for sequence in cards {
+        let Some(line) = lines.get(sequence) else {
+            continue;
+        };
+        bytes.extend(line.payload.get(..64).unwrap_or_default());
+        card_boundaries.push(bytes.len());
+    }
+    OwnedParameterBytes {
+        bytes,
+        card_boundaries,
+    }
 }
 
 /// The source offset of `offset` inside the assembled 64-column card stream.
@@ -2682,9 +2834,10 @@ pub(crate) fn assemble_with_context(
             quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None));
             continue;
         }
-        let bytes = owned_bytes(&owned.cards, &lines);
+        let owned_bytes = owned_bytes(&owned.cards, &lines);
         let (tokens, record_end) = match tokenize(
-            &bytes,
+            &owned_bytes.bytes,
+            &owned_bytes.card_boundaries,
             global.parameter_delimiter,
             global.record_delimiter,
             ctx,
@@ -2722,8 +2875,12 @@ pub(crate) fn assemble_with_context(
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: bytes.get(record_end..).unwrap_or_default().to_vec(),
-            bytes,
+            comment: owned_bytes
+                .bytes
+                .get(record_end..)
+                .unwrap_or_default()
+                .to_vec(),
+            bytes: owned_bytes.bytes,
             tokens,
             parameter_end,
         };

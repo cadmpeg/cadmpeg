@@ -16,6 +16,8 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+mod lexical;
+
 impl From<i64> for TokenValue {
     fn from(value: i64) -> Self {
         Self::Integer(value)
