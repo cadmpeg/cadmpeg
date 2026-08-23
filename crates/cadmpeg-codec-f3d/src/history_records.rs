@@ -108,6 +108,9 @@ pub(crate) struct AsmHistoricalTopology {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curve_axes: Vec<AsmHistoricalCurveAxis>,
     pub pcurves: Vec<i64>,
+    /// Persistent tag groups attached to face and edge revisions in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -137,6 +140,18 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_positions: Vec<AsmHistoricalPoint>,
+}
+
+/// One persistent tag group attached to a historical face or edge revision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct AsmHistoricalPersistentSubentityTag {
+    pub entity_kind: crate::records::AsmHistoricalEntityKind,
+    pub entity_ref: i64,
+    pub selector: i64,
+    pub token: String,
+    pub design_references: Vec<i64>,
+    pub ordinal: u32,
 }
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.

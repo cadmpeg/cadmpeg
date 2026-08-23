@@ -478,9 +478,8 @@ fn bind_complete_record_tables(
         let Some(records) = materialize_record_table(state, &archive) else {
             return false;
         };
-        let Some(topology) = historical_topology(
-            &crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT).asm,
-        ) else {
+        let decoded = crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT);
+        let Some(topology) = historical_topology_with_tags(&decoded) else {
             return false;
         };
         state.record_table_complete = true;
@@ -8358,6 +8357,7 @@ pub(crate) fn historical_topology(
             })
             .collect(),
         pcurves: refs(brep.pcurves.iter().map(|entity| entity.id.0.as_str()))?,
+        persistent_subentity_tags: Vec::new(),
         body_regions: relations(brep.bodies.iter().map(|body| {
             (
                 body.id.0.as_str(),
@@ -8482,6 +8482,38 @@ pub(crate) fn historical_topology(
             })
             .collect::<Option<Vec<_>>>()?,
     })
+}
+
+pub(crate) fn historical_topology_with_tags(
+    brep: &crate::brep::Brep,
+) -> Option<AsmHistoricalTopology> {
+    let mut topology = historical_topology(&brep.asm)?;
+    topology.persistent_subentity_tags = brep
+        .persistent_subentity_tags
+        .iter()
+        .filter_map(|tag| {
+            let (entity_kind, entity_ref) = match &tag.target {
+                cadmpeg_ir::attributes::AttributeTarget::Face(face) => {
+                    (AsmHistoricalEntityKind::Face, stable_ref(&face.0)?)
+                }
+                cadmpeg_ir::attributes::AttributeTarget::Edge(edge) => {
+                    (AsmHistoricalEntityKind::Edge, stable_ref(&edge.0)?)
+                }
+                _ => return None,
+            };
+            Some(
+                crate::history_records::AsmHistoricalPersistentSubentityTag {
+                    entity_kind,
+                    entity_ref,
+                    selector: tag.selector,
+                    token: tag.token.clone(),
+                    design_references: tag.design_references.clone(),
+                    ordinal: tag.ordinal,
+                },
+            )
+        })
+        .collect();
+    Some(topology)
 }
 
 fn materialize_record_table(
