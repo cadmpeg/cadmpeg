@@ -679,12 +679,6 @@ antipodal pcurve endpoints.
 
 **Need.** We must know the field to classify loops when containment is unavailable.
 
-**Note.** The neutral path admits the circular exception only from decoded curve
-geometry and complete pcurve endpoint evidence. It does not identify the
-byte-backed field asked by this item or settle loop ownership for other
-multi-loop families. Reopen until a native topology witness settles the
-general loop-ownership field.
-
 ### TP-04. Vertex-coordinate binding
 
 **Question.** Which fields bind a topology vertex identifier to its XYZ coordinates?
@@ -866,9 +860,7 @@ neutral loop ownership or face admission.
 
 **Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
 
-**Need.** We must know the initial state to decompress the table deterministically.
-
-**Note.** The closure tests generate compressed streams with the implementation's chosen dictionary and width rules and decode them with the same implementation. No native `DispDataTable` byte stream or independent compressor/parser evidence is recorded. Passing those tests cannot verify the initial dictionary or width transition. Reopen until the framing rule is evidenced.
+**Need.** We must define the initial dictionary, first available code, initial code width, and width-transition rule for this stream variant.
 
 ### PP-07. Compressed `DispDataTable` geometry binding
 
@@ -885,8 +877,6 @@ neutral loop ownership or face admission.
 **Known.** `creo_prt.md` §8.3 defines the legacy object graph, ordered `items` and `instances` arrays, ordinal value join, complete row fields, and typed value forms 50, 51, and 52. The decoder retains a complete joined table in the native `configuration_driver_tables` arena.
 
 **Need.** We must map the complete table columns and instance state to neutral configuration, parameter, feature-state, and active-configuration records without assigning a meaning to an item type or visibility flag that the source does not establish.
-
-**Note.** The native table join does not establish active-instance selection, parameter identity, feature suppression semantics, or neutral value units.
 
 ### PP-13. Legacy persistence bodies
 
