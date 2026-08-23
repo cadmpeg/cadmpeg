@@ -4434,6 +4434,8 @@ fn extend_related_design_records(
     );
     crate::history::bind_extrude_selection_history(
         &mut native.design_extrude_selection_members,
+        &native.design_component_naming_spaces,
+        &native.design_body_bindings,
         &native.asm_histories,
     );
     let scope_histories = crate::history::bind_scope_histories(

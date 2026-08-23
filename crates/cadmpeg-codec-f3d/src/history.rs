@@ -18,7 +18,8 @@ use crate::history_records::{
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
-    AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
+    AsmHistoricalEntityKind, DesignBodyBinding, DesignComponentNamingSpace,
+    DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -6245,7 +6246,11 @@ struct HistoricalIdentityIndex {
 }
 
 impl HistoricalIdentityIndex {
-    fn build(histories: &[AsmHistory], local_ids: impl IntoIterator<Item = u64>) -> Self {
+    fn build<'a>(
+        histories: impl IntoIterator<Item = &'a AsmHistory>,
+        local_ids: impl IntoIterator<Item = u64>,
+    ) -> Self {
+        let histories = histories.into_iter().collect::<Vec<_>>();
         let record_refs = local_ids
             .into_iter()
             .filter_map(|local_id| i64::try_from(local_id).ok())
@@ -6267,7 +6272,7 @@ impl HistoricalIdentityIndex {
                 revisions,
             };
         }
-        let ambiguous_states = ambiguous_history_state_ids(histories);
+        let ambiguous_states = ambiguous_history_state_ids(&histories);
         for state in histories
             .iter()
             .flat_map(|history| &history.states)
@@ -6429,7 +6434,7 @@ pub(crate) fn historical_selection_identity_kind(
     HistoricalIdentityIndex::build(histories, [local_id]).selection_identity_kind(local_id)
 }
 
-fn ambiguous_history_state_ids(histories: &[AsmHistory]) -> HashSet<i64> {
+fn ambiguous_history_state_ids(histories: &[&AsmHistory]) -> HashSet<i64> {
     let mut unique = HashSet::new();
     let mut ambiguous = HashSet::new();
     for state in histories.iter().flat_map(|history| &history.states) {
@@ -6440,19 +6445,98 @@ fn ambiguous_history_state_ids(histories: &[AsmHistory]) -> HashSet<i64> {
     ambiguous
 }
 
+fn history_brep_basename(history: &AsmHistory) -> Option<String> {
+    let stream = crate::ids::native_stream(&history.id)?;
+    let encoded = stream.strip_prefix(crate::ids::SCHEME_PREFIX)?;
+    let entry = crate::ids::decode_identity_key_component(encoded)?;
+    entry.rsplit('/').next().map(str::to_owned)
+}
+
+/// Select the complete BREP-history set owned by one component context.
+/// `None` means the stream predates component naming-space registrations and
+/// retains the aggregate compatibility path. `Some(empty)` is a known
+/// component with no history-bearing BREP.
+fn component_histories<'a>(
+    context_id: &str,
+    naming_spaces: &[DesignComponentNamingSpace],
+    body_bindings: &[DesignBodyBinding],
+    histories: &'a [AsmHistory],
+) -> Option<Vec<&'a AsmHistory>> {
+    if naming_spaces.is_empty() {
+        return None;
+    }
+    let mut matching_spaces = naming_spaces
+        .iter()
+        .filter(|space| space.context_uuid.eq_ignore_ascii_case(context_id));
+    let Some(space) = matching_spaces.next() else {
+        return Some(Vec::new());
+    };
+    if matching_spaces.next().is_some() {
+        return Some(Vec::new());
+    }
+    let Some(stream) = crate::ids::native_stream(&space.id) else {
+        return Some(Vec::new());
+    };
+    let cluster_end = naming_spaces
+        .iter()
+        .filter(|candidate| {
+            crate::ids::native_stream(&candidate.id) == Some(stream)
+                && candidate.component_record_index > space.component_record_index
+        })
+        .map(|candidate| candidate.component_record_index)
+        .min()
+        .unwrap_or(u64::MAX);
+    let blobs = body_bindings
+        .iter()
+        .filter(|binding| {
+            crate::ids::native_stream(&binding.id) == Some(stream)
+                && binding.entity_suffix >= space.component_record_index
+                && binding.entity_suffix < cluster_end
+        })
+        .map(|binding| binding.blob_name.as_str())
+        .collect::<HashSet<_>>();
+    let mut selected = histories
+        .iter()
+        .filter(|history| {
+            history_brep_basename(history)
+                .as_deref()
+                .is_some_and(|basename| blobs.contains(basename))
+        })
+        .collect::<Vec<_>>();
+    selected.sort_by(|left, right| left.id.cmp(&right.id));
+    selected.dedup_by(|left, right| left.id == right.id);
+    Some(selected)
+}
+
+pub(crate) fn historical_extrude_selection_identity_kind(
+    member: &DesignExtrudeSelectionMember,
+    naming_spaces: &[DesignComponentNamingSpace],
+    body_bindings: &[DesignBodyBinding],
+    histories: &[AsmHistory],
+) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
+    match component_histories(&member.context_id, naming_spaces, body_bindings, histories) {
+        Some(selected) => HistoricalIdentityIndex::build(selected, [member.local_id])
+            .selection_identity_kind(member.local_id),
+        None => historical_selection_identity_kind(histories, member.local_id),
+    }
+}
+
 pub(crate) fn bind_extrude_selection_history(
     members: &mut [DesignExtrudeSelectionMember],
+    naming_spaces: &[DesignComponentNamingSpace],
+    body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
 ) {
-    let identities =
-        HistoricalIdentityIndex::build(histories, members.iter().map(|member| member.local_id));
     for member in members {
         member.historical_entity_kind = None;
         member.historical_entity_ref = None;
         member.historical_state_ids.clear();
-        if let Some((kind, entity_ref, states)) =
-            identities.selection_identity_kind(member.local_id)
-        {
+        if let Some((kind, entity_ref, states)) = historical_extrude_selection_identity_kind(
+            member,
+            naming_spaces,
+            body_bindings,
+            histories,
+        ) {
             member.historical_entity_kind = Some(kind);
             member.historical_entity_ref = Some(entity_ref);
             member.historical_state_ids = states;

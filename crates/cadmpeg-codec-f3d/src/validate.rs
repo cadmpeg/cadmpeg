@@ -6775,8 +6775,12 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .into_iter()
             .map(|identity| identity.id.as_str())
             .collect::<Vec<_>>();
-        let expected_history =
-            history::historical_selection_identity_kind(&native.asm_histories, member.local_id);
+        let expected_history = history::historical_extrude_selection_identity_kind(
+            member,
+            &native.design_component_naming_spaces,
+            &native.design_body_bindings,
+            &native.asm_histories,
+        );
         let history_matches = if history::projection_was_finalized(&native.asm_histories) {
             member.historical_entity_kind.is_some() == member.historical_entity_ref.is_some()
                 && member

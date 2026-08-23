@@ -4,6 +4,7 @@
 mod body_recipe;
 mod body_selection;
 mod budgets;
+mod component_spaces;
 mod draft;
 mod hole;
 mod mirror;
