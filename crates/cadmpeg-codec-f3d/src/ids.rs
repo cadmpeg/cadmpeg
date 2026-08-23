@@ -664,6 +664,11 @@ native_record_id!(
     native_design_feature_timeline_id,
     "design-feature-timeline"
 );
+native_record_id!(
+    /// The native Design component naming-space binding key.
+    native_design_component_naming_space_id,
+    "design-component-naming-space"
+);
 
 /// The native ordered Design feature-timeline key in an already encoded
 /// `f3d:` stream scope.

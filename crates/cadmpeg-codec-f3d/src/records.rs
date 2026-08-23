@@ -90,6 +90,22 @@ pub struct PersistentSubentityTag {
     pub ordinal: u32,
 }
 
+/// Component-local Design naming space bound to a context UUID.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignComponentNamingSpace {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the binding marker in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Component entity id named by the binding.
+    pub component_record_index: u64,
+    /// UUID used by persistent identities to select this component.
+    pub context_uuid: String,
+    /// Byte offset of the UUID length prefix.
+    pub context_uuid_offset: u64,
+}
+
 /// Original authoring time attached to a solved ASM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

@@ -4069,6 +4069,8 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
     )?;
     native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
+    native.design_component_naming_spaces =
+        crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     native.design_decal_images =

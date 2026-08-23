@@ -6,10 +6,18 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
+use crate::bytes::{
+    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
+};
 use crate::container::{role, ContainerScan};
 use crate::ids::{self, native_stream};
-use crate::records::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION};
+use crate::records::{
+    DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
+};
+
+const COMPONENT_MODULE: &str = "Component";
+const COMPONENT_NAMING_SPACE_BASE_TYPE_GUID: &str = "21F379C8-CAFD-4985-B461-767673A4C502";
+const COMPONENT_UUID_PREFIX_LENGTH: usize = 12;
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
@@ -42,6 +50,86 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
             design_type
         }));
     }
+    Ok(out)
+}
+
+/// Decode each component entity's UUID-bound local naming space.
+pub fn decode_component_naming_spaces(
+    scan: &ContainerScan,
+) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
+    let mut out = Vec::new();
+    for meta_entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+    {
+        let meta = scan.parsed_metastream(&meta_entry.name)?;
+        let component_entities = meta
+            .types
+            .iter()
+            .filter(|design_type| {
+                design_type.module == COMPONENT_MODULE
+                    && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                    })
+            })
+            .flat_map(|design_type| design_type.entity_ids.iter().copied())
+            .collect::<HashSet<_>>();
+        if component_entities.is_empty() {
+            continue;
+        }
+        let prefix = meta_entry
+            .name
+            .strip_suffix("MetaStream.dat")
+            .expect("filtered MetaStream entry has the expected basename");
+        let bulk_name = format!("{prefix}BulkStream.dat");
+        let bytes = scan.entry_bytes(&bulk_name)?;
+        let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
+        for uuid_offset in COMPONENT_UUID_PREFIX_LENGTH..bytes.len().saturating_sub(4) {
+            let marker = uuid_offset - COMPONENT_UUID_PREFIX_LENGTH;
+            if bytes[marker] != 1 || bytes[marker + 9..uuid_offset] != [0, 0, 0] {
+                continue;
+            }
+            let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
+                continue;
+            };
+            if !component_entities.contains(&component_record_index) {
+                continue;
+            }
+            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                continue;
+            };
+            if !is_guid_relaxed(&context_uuid) {
+                continue;
+            }
+            let binding = DesignComponentNamingSpace {
+                id: ids::native_design_component_naming_space_id(&bulk_name, marker),
+                byte_offset: marker as u64,
+                component_record_index,
+                context_uuid,
+                context_uuid_offset: uuid_offset as u64,
+            };
+            if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
+                if existing.context_uuid != binding.context_uuid {
+                    return Err(CodecError::Malformed(format!(
+                        "Design component {component_record_index} has conflicting context UUID bindings"
+                    )));
+                }
+                by_component.insert(component_record_index, existing);
+            }
+        }
+        if let Some(missing) = component_entities
+            .iter()
+            .filter(|entity| !by_component.contains_key(entity))
+            .min()
+        {
+            return Err(CodecError::Malformed(format!(
+                "Design component {missing} has no context UUID binding"
+            )));
+        }
+        out.extend(by_component.into_values());
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 

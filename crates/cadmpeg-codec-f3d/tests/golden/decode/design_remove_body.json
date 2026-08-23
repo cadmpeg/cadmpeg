@@ -490,6 +490,7 @@
             }
           ],
           "design_canvas_images": [],
+          "design_component_naming_spaces": [],
           "design_component_occurrences": [],
           "design_configurations": [],
           "design_construction_operand_groups": [

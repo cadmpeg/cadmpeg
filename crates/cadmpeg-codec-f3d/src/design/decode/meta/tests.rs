@@ -15,6 +15,68 @@ use zip::CompressionMethod;
 use crate::test_support::*;
 
 #[test]
+fn component_naming_space_binds_component_entity_to_context_uuid() {
+    const COMPONENT_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
+    const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+    fn archive(bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let meta = design_metastream_with_records(
+            &[(
+                COMPONENT_TYPE_GUID,
+                "21F379C8-CAFD-4985-B461-767673A4C502",
+                0,
+                "Component",
+                &[17],
+            )],
+            &[],
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    fn binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
+        out.push(1);
+        out.extend_from_slice(&component.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0]);
+        out.extend_from_slice(&36_u32.to_le_bytes());
+        for code_unit in context_uuid.encode_utf16() {
+            out.extend_from_slice(&code_unit.to_le_bytes());
+        }
+    }
+
+    let mut bulk = vec![0xaa, 0xbb];
+    let marker = bulk.len();
+    binding(&mut bulk, 17, CONTEXT_UUID);
+    let decoded = with_scan(&archive(&bulk), |scan| {
+        crate::design::decode::meta::decode_component_naming_spaces(scan)
+    })
+    .expect("component naming space");
+    let [space] = decoded.as_slice() else {
+        panic!("expected one component naming space");
+    };
+    assert_eq!(space.component_record_index, 17);
+    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.byte_offset, marker as u64);
+    assert_eq!(space.context_uuid_offset, (marker + 12) as u64);
+
+    let mut conflicting = bulk;
+    binding(&mut conflicting, 17, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb");
+    let error = with_scan(&archive(&conflicting), |scan| {
+        crate::design::decode::meta::decode_component_naming_spaces(scan)
+    })
+    .expect_err("conflicting component UUIDs must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn design_feature_timeline_versions_share_variable_width_local_references() {
     const INLINE_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
 

@@ -582,6 +582,7 @@
           ],
           "design_body_recipe_operands": [],
           "design_canvas_images": [],
+          "design_component_naming_spaces": [],
           "design_component_occurrences": [
             {
               "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#3026",

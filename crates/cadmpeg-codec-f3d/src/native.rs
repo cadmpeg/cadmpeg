@@ -34,11 +34,12 @@ use crate::history_records::{
 use crate::records::{
     ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDecalImage,
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentNamingSpace,
+    DesignComponentOccurrence, DesignConfiguration, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignDecalImage, DesignDimensionAnnotationFrame,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+    DesignDimensionPresentationFrame, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
     DesignLoftLegacyBodyCarrier, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
@@ -100,6 +101,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_members",
     "design_body_recipe_operands",
     "design_canvas_images",
+    "design_component_naming_spaces",
     "design_component_occurrences",
     "design_configurations",
     "design_construction_operand_groups",
@@ -456,6 +458,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_component_occurrences)
         },
         len: |model| model.design_component_occurrences.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_component_naming_spaces",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_component_naming_spaces)
+        },
+        len: |model| model.design_component_naming_spaces.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1207,6 +1221,9 @@ pub struct F3dNative {
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
     pub design_component_occurrences: Vec<DesignComponentOccurrence>,
+    /// Component-local entity naming spaces selected by context UUID.
+    #[serde(default)]
+    pub design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
@@ -1394,6 +1411,7 @@ impl Default for F3dNative {
             design_decal_images: Vec::new(),
             design_mesh_features: Vec::new(),
             design_component_occurrences: Vec::new(),
+            design_component_naming_spaces: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
             design_dimension_presentation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
@@ -1473,6 +1491,7 @@ impl F3dNative {
             design_decal_images: namespace.arena_as("design_decal_images")?,
             design_mesh_features: namespace.arena_as("design_mesh_features")?,
             design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
+            design_component_naming_spaces: namespace.arena_as("design_component_naming_spaces")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
             design_loft_legacy_body_carriers: namespace
                 .arena_as("design_loft_legacy_body_carriers")?,
