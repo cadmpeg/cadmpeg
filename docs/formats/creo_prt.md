@@ -989,9 +989,15 @@ An exactly eight-slot terminal frame is a single-diameter form only when the
 square-radial invariants do not also hold. If both the single-diameter and
 square-radial forms satisfy their invariants, neither form defines the carrier.
 
-Cylinder and cone prototype local systems are parameter templates. Their terminal
-triples do not establish model-space origins. Cylinder and cone carriers require
-their positional construction or a feature placement.
+Cylinder prototype local systems are parameter templates; their terminal
+triples do not establish model-space origins. A named cone prototype whose
+`local_sys` field contains the complete support-apex body and whose
+`half_angle` field contains exactly one positive angle is different. Its
+support directions, apex coordinate, axis sign, reference direction, and
+half-angle have the same model-space semantics as the positional cone suffix
+below. The named prototype therefore defines the carrier of its uniquely
+associated first surface row. Other cylinder and cone prototypes require a
+positional construction or feature placement.
 
 A positional cone suffix consists of exactly one complete nine-slot support
 frame, one axis-coordinate apex scalar, one complete `19` or `32`

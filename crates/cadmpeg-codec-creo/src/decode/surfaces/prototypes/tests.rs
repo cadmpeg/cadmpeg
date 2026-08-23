@@ -3,13 +3,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
-use crate::test_support::{
-    assert_unknown_visible_surface, build_prt, push_named_analytic_prototype,
-};
+use crate::test_support::{build_prt, push_named_analytic_prototype};
 use crate::CreoCodec;
 
 #[test]
-fn first_instance_cone_prototype_requires_a_model_space_placement() {
+fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
+    const EPS_CONE_FRAME: f64 = f64::EPSILON * 8192.0;
+
     let body = [
         197, 251, 126, 24, 209, 212, 112, 107, 81, 235, 133, 30, 184, 70, 125, 251, 126, 24, 209,
         212, 112, 123, 0, 68, 204, 99, 17, 228, 72, 66, 64, 192, 170, 175, 125, 232, 45, 177, 195,
@@ -43,7 +43,29 @@ fn first_instance_cone_prototype_requires_a_model_space_placement() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0.ends_with("#7"))
+        .expect("first cone instance");
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle,
+        } if (origin.x - 37.01).abs() < EPS_CONE_FRAME
+            && origin.y.abs() < EPS_CONE_FRAME
+            && origin.z.abs() < EPS_CONE_FRAME
+            && axis == cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+            && ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+            && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_FRAME
+    ));
 }
 
 #[test]
