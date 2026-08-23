@@ -184,6 +184,24 @@ pub struct OmRollForwardStateGroup {
     pub table_end_offset: u64,
 }
 
+/// Typed high-byte outcome of an operation-state diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OmOperationStateMessageSeverity {
+    /// Non-fatal update alert.
+    Alert,
+    /// Failed update outcome.
+    Failure,
+}
+
+fn operation_state_message_severity(word: u16) -> Option<OmOperationStateMessageSeverity> {
+    match word >> 8 {
+        0x01 => Some(OmOperationStateMessageSeverity::Alert),
+        0x03 => Some(OmOperationStateMessageSeverity::Failure),
+        _ => None,
+    }
+}
+
 /// One standalone operation-state message record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateMessage {
@@ -205,6 +223,9 @@ pub struct OmOperationStateMessage {
     pub raw_value: Vec<u8>,
     /// Big-endian count or severity word.
     pub count_or_severity: u16,
+    /// Typed high-byte severity when the word uses a known outcome class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<OmOperationStateMessageSeverity>,
     /// Directory entry containing the feature-history section.
     pub source_entry: String,
     /// Absolute file offset of the opening `03` marker.
@@ -239,6 +260,9 @@ pub enum OmOperationStateStatusPayload {
         raw_value: Vec<u8>,
         /// Big-endian count or severity word.
         count_or_severity: u16,
+        /// Typed high-byte severity when the word uses a known outcome class.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        severity: Option<OmOperationStateMessageSeverity>,
     },
     /// Typed status whose payload grammar is not assigned.
     Opaque {
@@ -576,6 +600,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
                         value: message.value.value,
                         raw_value: message.value.raw.to_vec(),
                         count_or_severity: message.count_or_severity,
+                        severity: operation_state_message_severity(message.count_or_severity),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + message.offset as u64,
                     })
@@ -635,6 +660,9 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                                 value: message.value.value,
                                 raw_value: message.value.raw.to_vec(),
                                 count_or_severity: message.count_or_severity,
+                                severity: operation_state_message_severity(
+                                    message.count_or_severity,
+                                ),
                             }
                         }
                         crate::om::OperationStateStatusPayload::Opaque { raw } => {

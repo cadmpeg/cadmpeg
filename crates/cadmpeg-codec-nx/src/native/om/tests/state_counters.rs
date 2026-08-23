@@ -10,8 +10,8 @@ use crate::native::om::{
     operation_state_counters, operation_state_groups, operation_state_journal_groups,
     operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
     OmOperationStateCounter, OmOperationStateJournalGroup, OmOperationStateMessage,
-    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
-    OmRollForwardStateRow,
+    OmOperationStateMessageSeverity, OmOperationStateSlotLane, OmOperationStateStatus,
+    OmRollForwardStateGroup, OmRollForwardStateRow,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -20,6 +20,19 @@ use crate::test_support::{
     segment_om_record_area_with_state_groups_and_counter_map,
 };
 use crate::NxCodec;
+
+#[test]
+fn operation_state_message_severity_uses_only_known_high_bytes() {
+    assert_eq!(
+        super::super::operation_state_message_severity(0x01ff),
+        Some(OmOperationStateMessageSeverity::Alert)
+    );
+    assert_eq!(
+        super::super::operation_state_message_severity(0x0300),
+        Some(OmOperationStateMessageSeverity::Failure)
+    );
+    assert_eq!(super::super::operation_state_message_severity(0x0003), None);
+}
 
 #[test]
 fn native_catalog_emits_feature_history_state_counter_rows() {
@@ -177,6 +190,10 @@ fn native_catalog_emits_bounded_operation_state_messages() {
     assert_eq!(messages[0].value_marker, 0xaa);
     assert_eq!(messages[0].value, 0x000a_606b);
     assert_eq!(messages[0].count_or_severity, 0x0100);
+    assert_eq!(
+        messages[0].severity,
+        Some(OmOperationStateMessageSeverity::Alert)
+    );
 
     let result = NxCodec
         .decode(

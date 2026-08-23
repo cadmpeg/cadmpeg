@@ -1527,7 +1527,9 @@ A diagnostic or standalone message is
 `03, declared_len:u8, text[declared_len-2], 00, 00 00 00 00,
 tagged_value, count_or_severity:u16 BE`. The text is printable ASCII. The
 record retains its declared length, text, tagged value, count or severity, and
-source offsets. In the terminal-message form, the two-byte count or severity
+source offsets. A high byte of `01` is an update alert. A high byte of `03` is
+a failed update outcome. Other high-byte values remain untyped. These outcomes
+do not encode feature suppression. In the terminal-message form, the two-byte count or severity
 word is also the first two bytes of the first roll-forward-state group opener;
 the message ends two bytes after the group-table offset. This shared boundary
 is admitted only when both complete grammars consume the same two bytes.
