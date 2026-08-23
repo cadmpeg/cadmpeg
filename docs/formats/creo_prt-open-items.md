@@ -264,14 +264,6 @@ construct their curves and endpoints.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 
-### GS-18. Other positional cones
-
-**Question.** What model-space equation does each positional cone body outside the support-apex suffix and planar-envelope forms encode?
-
-**Known.** `creo_prt.md` §3.2 "A repeated-diameter type-24 round body stores two scalar diameter endpoints" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their" define the recognized cone support, apex, axis, radial ratio, and half-angle construction.
-
-**Need.** We must know the equation to construct the cone carrier.
-
 ### GS-19. Positional cone station token
 
 **Question.** What scalar value does the three-byte station token between a positional cone's model-reference token and half-angle encode?

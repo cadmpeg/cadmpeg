@@ -1010,6 +1010,14 @@ parameter-space reference direction. The apex, signed axis, zero apex radius,
 unit radial ratio, and positive half-angle define the exact cone independently
 of the station token's scalar meaning.
 
+A later positional cone can store this support-apex operand after a separate
+envelope operand. Each operand ends with `e3`. The support-apex operand stores
+the complete nine-slot support frame, apex scalar, model-reference token,
+three-byte station token, and positive half-angle in that order. It defines
+the carrier independently of the preceding envelope. Exactly one complete
+support-apex operand must occur among the `e3`-delimited segments. Zero or
+multiple distinct complete operands do not define a carrier.
+
 A planar-envelope positional cone has an axis parallel to model Y and a
 reference direction along positive model X. It stores positive outer and inner
 apex distances, symmetric negative and positive radial bounds, and the paired

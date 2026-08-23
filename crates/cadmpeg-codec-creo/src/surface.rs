@@ -3619,6 +3619,17 @@ fn inline_surface_body(
         let mut structurally_complete = false;
         let mut geometric_interpretation_count = 0;
         let mut carriers = Vec::new();
+        if kind == SurfaceKind::Cone {
+            if let Some(angle) = terminal_cone_half_angle_layout(local) {
+                if let Some(frame) =
+                    decode_support_apex_cone_frame(&local[..angle.start], angle.value, cache)
+                {
+                    structurally_complete = true;
+                    geometric_interpretation_count += 1;
+                    carriers.push(InlineSurfaceCarrier::Cone(frame));
+                }
+            }
+        }
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
             if prefix.compact_axis.is_some() {
                 for (origin, cursor) in
@@ -5052,11 +5063,41 @@ fn decode_positional_cone_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
     decode_planar_envelope_cone_frame(body, cache)
+        .or_else(|| decode_compound_support_apex_cone_frame(body, cache))
         .or_else(|| {
             let angle = terminal_cone_half_angle_layout(body)?;
             decode_support_apex_cone_frame(&body[..angle.start], angle.value, cache)
         })
         .filter(PositionalConeFrame::is_valid)
+}
+
+fn decode_compound_support_apex_cone_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalConeFrame> {
+    let mut candidates = Vec::new();
+    let mut segment_start = 0;
+    for segment_end in body
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, byte)| (*byte == psb::token::COMPOUND_CLOSE).then_some(offset))
+    {
+        let segment = body.get(segment_start..segment_end)?;
+        if let Some(angle) = terminal_cone_half_angle_layout(segment) {
+            if let Some(frame) =
+                decode_support_apex_cone_frame(&segment[..angle.start], angle.value, cache)
+            {
+                if !candidates.contains(&frame) {
+                    candidates.push(frame);
+                }
+            }
+        }
+        segment_start = segment_end + 1;
+    }
+    let [frame] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*frame)
 }
 
 fn decode_planar_envelope_cone_frame(

@@ -290,6 +290,46 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
 }
 
 #[test]
+fn inline_cone_accepts_a_complete_support_apex_operand_after_its_envelope() {
+    let support_apex = |apex| {
+        let mut body = vec![0x18, 0xe4, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0xe4];
+        push_inline_test_negative_coordinate(&mut body, apex);
+        body.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0, 0x21, 0xfb, 0x54]);
+        body
+    };
+    let first_support_apex = support_apex(-4.0);
+    let record = inline_non_plane_record(
+        0x25,
+        [2.0, 4.0],
+        [[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]],
+        &first_support_apex,
+        &[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18],
+    );
+
+    let frame = record
+        .positional_cone_frame
+        .expect("envelope-delimited support-apex cone");
+    assert_eq!(frame.apex, [-4.0, 0.0, 0.0]);
+    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
+
+    let mut compound_replay = vec![0x99, 0xe3];
+    compound_replay.extend_from_slice(&first_support_apex);
+    compound_replay.extend_from_slice(&[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18, 0xe3, 0x98]);
+    assert_eq!(
+        decode_positional_cone_frame(&compound_replay, &scalar::ScalarCache::default()),
+        Some(frame)
+    );
+
+    let mut ambiguous = compound_replay;
+    ambiguous.pop();
+    ambiguous.extend_from_slice(&support_apex(-5.0));
+    ambiguous.extend_from_slice(&[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18, 0xe3]);
+    assert!(decode_positional_cone_frame(&ambiguous, &scalar::ScalarCache::default()).is_none());
+}
+
+#[test]
 fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
     let local_system = [
         0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x18,
