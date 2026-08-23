@@ -4043,17 +4043,18 @@ fn identity_sweep_rail(formula: &LawFormula) -> bool {
             ]
 }
 
-fn linear_sweep_path(index: &crate::index::ModelIndex<'_>, spine: &crate::ids::CurveId) -> bool {
-    let Some(curve) = index.curves(&spine.0) else {
-        return false;
-    };
-    match &curve.geometry {
-        CurveGeometry::Line { .. } => true,
-        CurveGeometry::Nurbs(curve) => {
-            curve.degree == 1 && curve.control_points.len() == 2 && curve.weights.is_none()
-        }
-        _ => false,
+fn straight_sweep_path_origin(
+    index: &crate::index::ModelIndex<'_>,
+    spine: &crate::ids::CurveId,
+) -> Option<Point3> {
+    match &index.curves(&spine.0)?.geometry {
+        CurveGeometry::Line { origin, .. } => Some(*origin),
+        _ => None,
     }
+}
+
+fn point_displacement(point: Point3, origin: Point3) -> Vector3 {
+    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
 }
 
 fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> bool {
@@ -4090,11 +4091,13 @@ fn cacheless_law_sweep_differentials(
     ModelCurveDifferential,
     ModelCurveDifferential,
     ScalarSweepDifferential,
+    Point3,
 )> {
     let form = construction.revision_form.as_ref()?;
-    if form.tail_enum != 2 || !linear_sweep_path(index, spine) {
+    if form.tail_enum != 2 {
         return None;
     }
+    let path_origin = straight_sweep_path_origin(index, spine)?;
     let SweepSurfaceLayout::LawDriven {
         profile_frame,
         first_law,
@@ -4127,7 +4130,7 @@ fn cacheless_law_sweep_differentials(
     let profile = model_curve_differential_by_id(index, profile, u)?;
     let spine = model_curve_differential_by_id(index, spine, v)?;
     let law = scalar_sweep_law_differential(first_law, v)?;
-    Some((profile, spine, law))
+    Some((profile, spine, law, path_origin))
 }
 
 fn cacheless_law_sweep_point(
@@ -4138,7 +4141,7 @@ fn cacheless_law_sweep_point(
     u: f64,
     v: f64,
 ) -> Option<Point3> {
-    let (profile, spine, law) =
+    let (profile, spine, law, path_origin) =
         cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
     let (profile_tangent, _) = unit_vector_with_derivative(profile.tangent, profile.acceleration)?;
     let (spine_tangent, _) = unit_vector_with_derivative(spine.tangent, spine.acceleration)?;
@@ -4146,10 +4149,7 @@ fn cacheless_law_sweep_point(
     Some(offset(
         profile.point,
         &[
-            (
-                1.0,
-                Vector3::new(spine.point.x, spine.point.y, spine.point.z),
-            ),
+            (1.0, point_displacement(spine.point, path_origin)),
             (law.value, normal),
         ],
     ))
@@ -4163,7 +4163,7 @@ fn cacheless_law_sweep_partials(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
-    let (profile, spine, law) =
+    let (profile, spine, law, path_origin) =
         cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
     let (profile_tangent, profile_tangent_derivative) =
         unit_vector_with_derivative(profile.tangent, profile.acceleration)?;
@@ -4176,10 +4176,7 @@ fn cacheless_law_sweep_partials(
         point: offset(
             profile.point,
             &[
-                (
-                    1.0,
-                    Vector3::new(spine.point.x, spine.point.y, spine.point.z),
-                ),
+                (1.0, point_displacement(spine.point, path_origin)),
                 (law.value, normal),
             ],
         ),

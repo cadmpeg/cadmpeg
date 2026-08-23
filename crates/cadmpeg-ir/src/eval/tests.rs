@@ -664,7 +664,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Line {
-                origin: Point3::new(0.0, 0.0, 0.0),
+                origin: Point3::new(7.0, 11.0, 13.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
             },
             source_object: None,
