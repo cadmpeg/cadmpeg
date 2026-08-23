@@ -39,9 +39,9 @@ use crate::records::{
     DesignConstructionOperandIdentity, DesignDecalImage, DesignDimensionAnnotationFrame,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionPresentationFrame, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
+    DesignEdgeOperand, DesignEdgeTreatmentVertexOperand, DesignEntityHeader,
+    DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignFaceOperand, DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
     DesignLoftLegacyBodyCarrier, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
     DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
     DesignSketchPlacement, LostEdgeReference, PersistentDesignLink, PersistentReference,
@@ -115,6 +115,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_dimension_recipe_records",
     "design_edge_identity_operands",
     "design_edge_operands",
+    "design_edge_treatment_vertex_operands",
     "design_entity_headers",
     "design_entity_selection_operands",
     "design_extrude_selection_groups",
@@ -576,6 +577,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_edge_operands),
         len: |model| model.design_edge_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_edge_treatment_vertex_operands",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_edge_treatment_vertex_operands)
+        },
+        len: |model| model.design_edge_treatment_vertex_operands.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1245,6 +1258,9 @@ pub struct F3dNative {
     /// Edge-selection operands recovered from Fillet and Chamfer scopes.
     #[serde(default)]
     pub design_edge_operands: Vec<DesignEdgeOperand>,
+    /// Corner-vertex operands recovered from edge-treatment groups.
+    #[serde(default)]
+    pub design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     /// Persistent selection identities recovered from Fillet and Chamfer groups.
     #[serde(default)]
     pub design_edge_identity_operands: Vec<DesignEdgeIdentityOperand>,
@@ -1419,6 +1435,7 @@ impl Default for F3dNative {
             design_dimension_null_locus_pairs: Vec::new(),
             design_dimension_recipe_records: Vec::new(),
             design_edge_operands: Vec::new(),
+            design_edge_treatment_vertex_operands: Vec::new(),
             design_edge_identity_operands: Vec::new(),
             design_face_operands: Vec::new(),
             design_face_source_groups: Vec::new(),
@@ -1506,6 +1523,8 @@ impl F3dNative {
             design_dimension_recipe_records: namespace
                 .arena_as("design_dimension_recipe_records")?,
             design_edge_operands: namespace.arena_as("design_edge_operands")?,
+            design_edge_treatment_vertex_operands: namespace
+                .arena_as("design_edge_treatment_vertex_operands")?,
             design_edge_identity_operands: namespace.arena_as("design_edge_identity_operands")?,
             design_entity_selection_operands: namespace
                 .arena_as("design_entity_selection_operands")?,

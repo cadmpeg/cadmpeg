@@ -739,6 +739,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
     let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
     let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
+    let edge_treatment_vertex_records =
+        validate_edge_treatment_vertex_operands(&ctx, &mut findings);
     validate_operand_group_carriers(
         &ctx,
         &mut findings,
@@ -746,6 +748,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &edge_identity_records,
         &body_recipe_operand_records,
         &edge_operand_records,
+        &edge_treatment_vertex_records,
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
@@ -755,6 +758,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         &mut findings,
         &edge_operand_records,
         &edge_identity_records,
+        &edge_treatment_vertex_records,
     );
     let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
     validate_face_group_member_resolution(
@@ -6543,6 +6547,7 @@ fn validate_operand_group_carriers<'a>(
     edge_identity_records: &HashSet<(&'a str, u32)>,
     body_recipe_operand_records: &HashSet<(&'a str, u32)>,
     edge_operand_records: &HashSet<(&'a str, u32)>,
+    edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
     for group in &native.design_construction_operand_groups {
@@ -6619,14 +6624,10 @@ fn validate_operand_group_carriers<'a>(
                         })
                     })
                 });
-        let has_exact_edge_recipe_members = !group.members.is_empty()
+        let has_exact_topology_recipe_members = !group.members.is_empty()
             && group.members.iter().all(|record_index| {
                 edge_operand_records.contains(&(native_stream, *record_index))
-                    && native.design_edge_operands.iter().any(|operand| {
-                        design_stream(&operand.id) == native_stream
-                            && operand.scope_record_index == group.scope_record_index
-                            && operand.record_index == *record_index
-                    })
+                    || edge_treatment_vertex_records.contains(&(native_stream, *record_index))
             });
         let has_exact_sketch_profile_member = group.members.len() == 1
             && ctx
@@ -6685,7 +6686,7 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_entity_selection_members
             || has_exact_face_members
             || has_exact_body_recipe_members
-            || has_exact_edge_recipe_members
+            || has_exact_topology_recipe_members
             || has_exact_sketch_profile_member
             || has_exact_group_members;
         if !has_exact_member_carrier {
@@ -7142,12 +7143,101 @@ fn validate_edge_operands<'a>(
     edge_operand_records
 }
 
+fn validate_edge_treatment_vertex_operands<'a>(
+    ctx: &Ctx<'a>,
+    findings: &mut Vec<Finding>,
+) -> HashSet<(&'a str, u32)> {
+    let native = ctx.native;
+    let mut expected = native.design_edge_treatment_vertex_operands.clone();
+    design::decode::operands::bind_edge_treatment_vertex_candidates(
+        &mut expected,
+        &native.persistent_subentity_tags,
+    );
+    let scope_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.design_body_recipe_operands,
+        &native.asm_histories,
+    );
+    history::bind_edge_treatment_vertex_history(
+        &mut expected,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &scope_histories,
+    );
+    let expected = expected
+        .iter()
+        .map(|operand| (operand.id.as_str(), operand))
+        .collect::<HashMap<_, _>>();
+    let mut records = HashSet::new();
+    for operand in &native.design_edge_treatment_vertex_operands {
+        let stream = design_stream(&operand.id);
+        let scope = ctx
+            .scopes_by_index
+            .get(&(stream, operand.scope_record_index));
+        let mut groups = native
+            .design_construction_operand_groups
+            .iter()
+            .filter(|group| {
+                design_stream(&group.id) == stream
+                    && group.scope_record_index == operand.scope_record_index
+                    && group.record_index == operand.group_record_index
+            });
+        let group = groups.next();
+        let valid = operand.id
+            == crate::ids::native_scoped_id(
+                stream,
+                "edge-treatment-vertex-operand",
+                operand.recipe.byte_offset,
+            )
+            && scope.is_some_and(|scope| {
+                design::decode::operands::has_edge_recipe_operands(&scope.kind)
+                    && usize::try_from(operand.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&operand.recipe.record_index)
+            })
+            && group.is_some_and(|group| {
+                usize::try_from(operand.group_member_ordinal)
+                    .ok()
+                    .and_then(|ordinal| group.members.get(ordinal))
+                    == Some(&operand.recipe.record_index)
+            })
+            && groups.next().is_none()
+            && operand.recipe.class_tag.len() == 3
+            && operand
+                .recipe
+                .class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && operand.recipe.recipe_record_index == operand.recipe.record_index.saturating_add(3)
+            && operand.recipe.next_record_index == operand.recipe.record_index.saturating_add(5)
+            && operand.recipe.paired_byte_offset > operand.recipe.byte_offset
+            && operand.recipe.recipe_record_byte_offset > operand.recipe.paired_byte_offset
+            && operand.recipe.next_byte_offset > operand.recipe.recipe_record_byte_offset
+            && expected.get(operand.id.as_str()) == Some(&operand)
+            && records.insert((stream, operand.recipe.record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "Fusion edge-treatment vertex operand has an invalid group or recipe frame"
+                        .into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
+    records
+}
+
 /// Report Fillet/Chamfer edge groups with incomplete selection operands.
 fn validate_edge_treatment_groups<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
     edge_operand_records: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
+    edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
     for scope in native
@@ -7166,10 +7256,10 @@ fn validate_edge_treatment_groups<'a>(
             .collect::<Vec<_>>();
         let complete = !groups.is_empty()
             && groups.iter().all(|group| {
-                let recipe_backed = group
-                    .members
-                    .iter()
-                    .all(|member| edge_operand_records.contains(&(native_stream, *member)));
+                let recipe_backed = group.members.iter().all(|member| {
+                    edge_operand_records.contains(&(native_stream, *member))
+                        || edge_treatment_vertex_records.contains(&(native_stream, *member))
+                });
                 let identity_backed = group
                     .members
                     .iter()

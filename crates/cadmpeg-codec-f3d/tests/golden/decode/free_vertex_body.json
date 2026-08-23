@@ -146,6 +146,7 @@
           "design_dimension_recipe_records": [],
           "design_edge_identity_operands": [],
           "design_edge_operands": [],
+          "design_edge_treatment_vertex_operands": [],
           "design_entity_headers": [],
           "design_entity_selection_operands": [],
           "design_extrude_selection_groups": [],

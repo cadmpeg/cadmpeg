@@ -175,3 +175,84 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     assert!(reference.alternate_selector_faces.is_empty());
     assert!(reference.alternate_selector_edges.is_empty());
 }
+
+#[test]
+fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    let topology = AsmHistoricalTopology {
+        faces: vec![10, 11, 12],
+        loops: vec![100, 101, 102],
+        coedges: vec![200, 201, 202],
+        edges: vec![20, 21, 22],
+        vertices: vec![1, 2, 3, 4, 5],
+        face_loops: vec![
+            relation(10, vec![100]),
+            relation(11, vec![101]),
+            relation(12, vec![102]),
+        ],
+        loop_coedges: vec![
+            relation(100, vec![200]),
+            relation(101, vec![201]),
+            relation(102, vec![202]),
+        ],
+        coedge_topology: [(200, 100, 20), (201, 101, 21), (202, 102, 22)]
+            .into_iter()
+            .map(|(coedge, owner_loop, edge)| AsmHistoricalCoedge {
+                coedge,
+                owner_loop,
+                edge,
+                next: coedge,
+                previous: coedge,
+                radial_next: coedge,
+            })
+            .collect(),
+        edge_vertices: [(20, 1, 2), (21, 3, 4), (22, 3, 5)]
+            .into_iter()
+            .map(|(edge, start_vertex, end_vertex)| AsmHistoricalEdge {
+                edge,
+                start_vertex,
+                end_vertex,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let reference = |token: &str, faces: &[i64]| crate::records::DesignRecipeReference {
+        selector: 0,
+        selector_offset: 0,
+        token: token.into(),
+        token_offset: 0,
+        design_reference: 301,
+        design_reference_offset: 0,
+        candidate_faces: faces
+            .iter()
+            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .collect(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    };
+    let recipe = crate::records::DesignVertexRecipe {
+        record_index: 1,
+        byte_offset: 0,
+        class_tag: "264".into(),
+        paired_byte_offset: 11,
+        paired_class_tag: "258".into(),
+        recipe_record_index: 4,
+        recipe_record_byte_offset: 44,
+        recipe_id: "recipe".into(),
+        recipe_prefix_offset: 55,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: vec![reference("rim", &[10, 11]), reference("end", &[12])],
+        recipe_program_offset: 66,
+        recipe_program: vec![0, -1],
+        recipe_state_id: None,
+        resolved_vertex_slot: None,
+        next_record_index: 6,
+        next_byte_offset: 77,
+    };
+
+    assert_eq!(recipe_reference_common_vertex(&recipe, &topology), Some(3));
+}

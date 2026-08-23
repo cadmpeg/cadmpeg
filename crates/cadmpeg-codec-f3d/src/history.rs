@@ -2726,6 +2726,56 @@ pub(crate) fn bind_vertex_recipe_history(
     Ok(())
 }
 
+/// Resolve edge-treatment corner recipes in their bound feature-input state.
+pub(crate) fn bind_edge_treatment_vertex_history(
+    operands: &mut [crate::records::DesignEdgeTreatmentVertexOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
+) {
+    for operand in operands {
+        operand.recipe.recipe_state_id = None;
+        operand.recipe.resolved_vertex_slot = None;
+        let stream = crate::ids::native_stream(&operand.id);
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == operand.scope_record_index
+                && crate::ids::native_stream(&scope.id) == stream
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) = (
+            scope.history_state_id,
+            effective_scope_previous_history_state_id(scope, histories),
+        ) else {
+            continue;
+        };
+        let Some((_, _, previous)) = bound_history_state_pair(
+            &scope.id,
+            state_id,
+            previous_state_id,
+            scope_histories,
+            histories,
+        ) else {
+            continue;
+        };
+        let Some(topology) = previous.topology.as_ref() else {
+            continue;
+        };
+        for reference in &mut operand.recipe.recipe_references {
+            bind_historical_recipe_reference_candidates(reference, topology);
+        }
+        let Some(vertex) = recipe_reference_common_vertex(&operand.recipe, topology) else {
+            continue;
+        };
+        operand.recipe.recipe_state_id = Some(previous_state_id);
+        operand.recipe.resolved_vertex_slot = Some(vertex);
+    }
+}
+
 fn vertex_recipe_candidate(
     recipe: &crate::records::DesignVertexRecipe,
     topology: &AsmHistoricalTopology,
@@ -2814,6 +2864,49 @@ fn common_face_vertex(face_slots: &[i64], topology: &AsmHistoricalTopology) -> O
     });
     let mut common = sets.next()??;
     for vertices in sets {
+        let vertices = vertices?;
+        common.retain(|vertex| vertices.contains(vertex));
+    }
+    let mut common = common.into_iter().collect::<Vec<_>>();
+    common.sort_unstable();
+    let [vertex] = common.as_slice() else {
+        return None;
+    };
+    Some(*vertex)
+}
+
+fn recipe_reference_common_vertex(
+    recipe: &crate::records::DesignVertexRecipe,
+    topology: &AsmHistoricalTopology,
+) -> Option<i64> {
+    let boundary_edges = face_boundary_edge_index(topology);
+    let mut reference_vertices = recipe.recipe_references.iter().map(|reference| {
+        let mut vertices = HashSet::new();
+        for face in reference
+            .candidate_faces
+            .iter()
+            .filter_map(|face| stable_ref(&face.0))
+            .filter(|face| topology.faces.contains(face))
+        {
+            for edge_slot in boundary_edges.get(&face)? {
+                let mut edges = topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|candidate| candidate.edge == *edge_slot);
+                let edge = edges.next()?;
+                if edges.next().is_some()
+                    || !topology.vertices.contains(&edge.start_vertex)
+                    || !topology.vertices.contains(&edge.end_vertex)
+                {
+                    return None;
+                }
+                vertices.extend([edge.start_vertex, edge.end_vertex]);
+            }
+        }
+        (!vertices.is_empty()).then_some(vertices)
+    });
+    let mut common = reference_vertices.next()??;
+    for vertices in reference_vertices {
         let vertices = vertices?;
         common.retain(|vertex| vertices.contains(vertex));
     }

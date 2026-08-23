@@ -4475,6 +4475,24 @@ fn extend_related_design_records(
         &native.asm_histories,
         &scope_histories,
     );
+    native.design_edge_treatment_vertex_operands =
+        crate::design::decode::operands::decode_edge_treatment_vertex_operands(
+            scan,
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_record_headers,
+            &native.construction_recipes,
+        )?;
+    crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
+        &mut native.design_edge_treatment_vertex_operands,
+        &native.persistent_subentity_tags,
+    );
+    crate::history::bind_edge_treatment_vertex_history(
+        &mut native.design_edge_treatment_vertex_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &scope_histories,
+    );
     crate::design::decode::operands::bind_work_plane_constructions(
         scan,
         &mut native.design_parameter_scopes,

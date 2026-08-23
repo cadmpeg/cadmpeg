@@ -31,16 +31,17 @@ use crate::records::{
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
-    DesignSketchProfileRegionSelection, DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, DesignVertexRecipe,
-    DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEdgeTreatmentVertexOperand,
+    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFaceSourceGroup,
+    DesignFaceSourceMember, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+    DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
+    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
@@ -167,6 +168,86 @@ pub fn decode_edge_operands(
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+/// Decode vertex-recipe members retained inside edge-treatment groups.
+pub fn decode_edge_treatment_vertex_operands(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+) -> Result<Vec<DesignEdgeTreatmentVertexOperand>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut out = Vec::new();
+    for scope in scopes
+        .iter()
+        .filter(|scope| has_edge_recipe_operands(&scope.kind))
+    {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let records = record_offset_index
+            .entry(stream)
+            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        for (scope_reference_ordinal, record_index) in
+            scope.reference_members.iter().copied().enumerate()
+        {
+            let matches = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                })
+                .filter_map(|group| {
+                    let mut ordinals = group
+                        .members
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, member)| **member == record_index);
+                    let (ordinal, _) = ordinals.next()?;
+                    ordinals.next().is_none().then_some((group, ordinal))
+                })
+                .collect::<Vec<_>>();
+            let [(group, group_member_ordinal)] = matches.as_slice() else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
+                continue;
+            };
+            let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (
+                u32::try_from(scope_reference_ordinal),
+                u32::try_from(*group_member_ordinal),
+            ) else {
+                continue;
+            };
+            out.push(DesignEdgeTreatmentVertexOperand {
+                id: crate::ids::native_scoped_id(
+                    stream,
+                    "edge-treatment-vertex-operand",
+                    header.byte_offset,
+                ),
+                scope_record_index: scope.record_index,
+                scope_reference_ordinal,
+                group_record_index: group.record_index,
+                group_member_ordinal,
+                recipe,
+            });
+        }
+    }
+    out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(out)
 }
 
@@ -441,6 +522,18 @@ pub fn bind_vertex_recipe_candidates(
             for reference in &mut recipe.recipe_references {
                 bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
             }
+        }
+    }
+}
+
+/// Bind active fallback candidates for edge-treatment corner recipes.
+pub fn bind_edge_treatment_vertex_candidates(
+    operands: &mut [DesignEdgeTreatmentVertexOperand],
+    tags: &[PersistentSubentityTag],
+) {
+    for operand in operands {
+        for reference in &mut operand.recipe.recipe_references {
+            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
         }
     }
 }

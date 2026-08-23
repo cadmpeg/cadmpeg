@@ -2296,6 +2296,24 @@ pub struct DesignVertexRecipe {
     pub next_byte_offset: u64,
 }
 
+/// Corner-vertex recipe carried as one member of an edge-treatment group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignEdgeTreatmentVertexOperand {
+    /// Globally unique deterministic identifier for this group member.
+    pub id: String,
+    /// Owning edge-treatment scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope reference table.
+    pub scope_reference_ordinal: u32,
+    /// Owning counted construction group.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's member run.
+    pub group_member_ordinal: u32,
+    /// Exact persistent vertex-recipe envelope and resolved historical corner.
+    pub recipe: DesignVertexRecipe,
+}
+
 /// Exact construction rule carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
