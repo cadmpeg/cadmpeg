@@ -94,6 +94,24 @@ struct EvaluatedFeatureState<'a> {
     definition: &'a cadmpeg_ir::features::FeatureDefinition,
 }
 
+/// Return whether a native definition represents an operation that needs a
+/// neutral definition, rather than a metadata-only tree node.
+///
+/// Some localized feature-manager records have no neutral tree-node role. The
+/// native definition preserves those records, but they do not describe a
+/// modeling operation. Operation evidence is carried by the state edges,
+/// source content, or source properties; without it, a native record is only
+/// a retained tree item and must not create an operation-completeness loss.
+fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> bool {
+    matches!(
+        state.definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { .. }
+    ) && (!state.dependencies.is_empty()
+        || !state.outputs.is_empty()
+        || !state.feature.source_content.is_empty()
+        || !state.feature.source_properties.is_empty())
+}
+
 /// Decode one seekable `.sldprt` stream into IR and diagnostics.
 ///
 /// The function reads and retains the complete source image. Container framing
@@ -936,7 +954,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
 
     let native_features = evaluated_feature_states
         .iter()
-        .filter(|state| matches!(state.definition, FeatureDefinition::Native { .. }))
+        .filter(|state| native_feature_has_operation_evidence(state))
         .count();
     if native_features > 0 {
         report.losses.push(SldprtLossCode::FeatureNativeKindRetained.note(format!(
