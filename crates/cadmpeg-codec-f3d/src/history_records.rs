@@ -23,7 +23,8 @@ pub(crate) struct AsmHistory {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_binding_budget_exceeded: bool,
     /// Historical projection consumers finished and any temporary complete
-    /// topology snapshots were released.
+    /// topology snapshots were released. A compact plane-selection topology can
+    /// remain for late feature projection.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub projection_finalized: bool,
     pub states: Vec<AsmDeltaState>,
@@ -50,8 +51,9 @@ pub(crate) struct AsmDeltaState {
     pub bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
     pub records: Vec<AsmHistoryRecord>,
-    /// Complete entity-slot to record-revision map at this state. Empty when
-    /// the history does not form a complete reversible chain.
+    /// Topology-entity slot to record-revision map at this state. The decoder
+    /// retains this compact map for late persistent-selection binding after
+    /// projection caches are finalized.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entity_versions: Vec<AsmEntityVersion>,
     /// Every selected record frames and every entity reference resolves after

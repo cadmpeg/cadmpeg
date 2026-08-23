@@ -4,6 +4,83 @@
 use super::super::*;
 
 #[test]
+fn discard_projection_caches_retains_compact_mirror_plane_topology() {
+    use crate::history_records::{
+        AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalPlane, AsmHistoricalTopology,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let topology = AsmHistoricalTopology {
+        bodies: vec![99],
+        faces: vec![10],
+        surfaces: vec![20],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 10,
+            carrier: 20,
+        }],
+        surface_planes: vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }],
+        ..Default::default()
+    };
+    let mut histories = [AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: false,
+        states: vec![AsmDeltaState {
+            id: "history:state#1".into(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 1,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: vec![AsmEntityVersion {
+                entity_ref: 10,
+                record_ref: 30,
+            }],
+            record_table_complete: true,
+            topology: Some(topology),
+            transition: None,
+        }],
+    }];
+
+    discard_projection_caches(&mut histories);
+
+    let retained = histories[0].states[0]
+        .topology
+        .as_ref()
+        .expect("plane topology remains available to late Mirror binding");
+    assert_eq!(retained.bodies, [99]);
+    assert_eq!(retained.faces, [10]);
+    assert_eq!(retained.surfaces, [20]);
+    assert_eq!(retained.face_surfaces.len(), 1);
+    assert_eq!(retained.surface_planes.len(), 1);
+    assert_eq!(
+        histories[0].states[0].entity_versions,
+        [AsmEntityVersion {
+            entity_ref: 10,
+            record_ref: 30,
+        }]
+    );
+    assert_eq!(
+        historical_selection_identity_kind(&histories, 30),
+        Some((AsmHistoricalEntityKind::Face, 10, vec![1]))
+    );
+}
+
+#[test]
 fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     use crate::history_records::{
         AsmHistoricalCarrierBinding, AsmHistoricalPlane, AsmHistoricalTopology,

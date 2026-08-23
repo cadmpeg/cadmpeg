@@ -488,10 +488,18 @@ fn bind_complete_record_tables(
     });
     if complete {
         bind_historical_transitions(states);
-        // Drop version tables once sparse transitions exist; retaining them is
-        // quadratic in states × active entities.
+        // Keep only record revisions that can be named by a late persistent
+        // selection. Non-topological ASM attributes do not participate in
+        // feature selection and need not survive projection finalization.
         for state in states {
-            state.entity_versions.clear();
+            if let Some(topology) = state.topology.as_ref() {
+                let slots = topology_entity_slots(topology);
+                state
+                    .entity_versions
+                    .retain(|version| slots.contains(&version.entity_ref));
+            } else {
+                state.entity_versions.clear();
+            }
         }
     } else {
         for state in states {
@@ -500,6 +508,27 @@ fn bind_complete_record_tables(
         }
     }
     false
+}
+
+fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
+    [
+        &topology.bodies,
+        &topology.regions,
+        &topology.shells,
+        &topology.faces,
+        &topology.loops,
+        &topology.coedges,
+        &topology.edges,
+        &topology.vertices,
+        &topology.points,
+        &topology.surfaces,
+        &topology.curves,
+        &topology.pcurves,
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .collect()
 }
 
 struct HistoricalRecordArchive {
@@ -608,15 +637,61 @@ fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
     }
 }
 
+fn retain_mirror_plane_topology(
+    mut topology: AsmHistoricalTopology,
+) -> Option<AsmHistoricalTopology> {
+    let retained = AsmHistoricalTopology {
+        bodies: std::mem::take(&mut topology.bodies),
+        regions: std::mem::take(&mut topology.regions),
+        shells: std::mem::take(&mut topology.shells),
+        faces: std::mem::take(&mut topology.faces),
+        loops: std::mem::take(&mut topology.loops),
+        coedges: std::mem::take(&mut topology.coedges),
+        edges: std::mem::take(&mut topology.edges),
+        vertices: std::mem::take(&mut topology.vertices),
+        points: std::mem::take(&mut topology.points),
+        surfaces: std::mem::take(&mut topology.surfaces),
+        curves: std::mem::take(&mut topology.curves),
+        pcurves: std::mem::take(&mut topology.pcurves),
+        face_surfaces: std::mem::take(&mut topology.face_surfaces),
+        surface_planes: std::mem::take(&mut topology.surface_planes),
+        loop_coedges: std::mem::take(&mut topology.loop_coedges),
+        coedge_topology: std::mem::take(&mut topology.coedge_topology),
+        face_loops: std::mem::take(&mut topology.face_loops),
+        edge_curves: std::mem::take(&mut topology.edge_curves),
+        coedge_pcurves: std::mem::take(&mut topology.coedge_pcurves),
+        curve_axes: std::mem::take(&mut topology.curve_axes),
+        ..Default::default()
+    };
+    (!retained.face_surfaces.is_empty()
+        || !retained.surface_planes.is_empty()
+        || !retained.loop_coedges.is_empty()
+        || !retained.coedge_topology.is_empty()
+        || !retained.face_loops.is_empty()
+        || !retained.edge_curves.is_empty()
+        || !retained.coedge_pcurves.is_empty()
+        || !retained.curve_axes.is_empty())
+    .then_some(retained)
+}
+
 /// Release complete historical snapshots after every projection consumer has
-/// finished. Raw history records and sparse transitions remain retained.
+/// finished. Raw history records, sparse transitions, and the compact
+/// plane-selection topology remain retained.
 pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
     for history in histories {
         history.projection_finalized = true;
         for state in &mut history.states {
-            state.entity_versions.clear();
             state.record_table_complete = false;
-            state.topology = None;
+            let topology = state.topology.take().and_then(retain_mirror_plane_topology);
+            if let Some(topology) = topology {
+                let slots = topology_entity_slots(&topology);
+                state
+                    .entity_versions
+                    .retain(|version| slots.contains(&version.entity_ref));
+                state.topology = Some(topology);
+            } else {
+                state.entity_versions.clear();
+            }
         }
     }
 }
@@ -6210,12 +6285,14 @@ impl HistoricalIdentityIndex {
         }
         let versioned_revisions = revisions.keys().copied().collect::<HashSet<_>>();
         let mut reconstructed_revisions = HashSet::new();
+        // Finalized histories retain the entity-slot membership and the
+        // bulletin-board chain after their geometry caches are compacted.
         for history in histories.iter().filter(|history| {
             !history.states.is_empty()
-                && history
-                    .states
-                    .iter()
-                    .all(|state| state.record_table_complete && state.topology.is_some())
+                && history.states.iter().all(|state| {
+                    state.topology.is_some()
+                        && (state.record_table_complete || history.projection_finalized)
+                })
         }) {
             for change in history
                 .states
