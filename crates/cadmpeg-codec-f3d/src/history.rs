@@ -3799,7 +3799,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             .collect();
         operand.historical_support_contexts = historical_face_support_contexts(
             &history_candidates,
-            histories,
+            history,
             topology,
             &changed_faces,
         );
@@ -5021,7 +5021,7 @@ fn edge_changes_across_state_chain<'a>(
 
 fn historical_face_support_contexts(
     candidates: &[cadmpeg_ir::ids::FaceId],
-    histories: &[AsmHistory],
+    history: &AsmHistory,
     preceding_topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Vec<crate::records::DesignHistoricalFaceSupportContext> {
@@ -5034,36 +5034,48 @@ fn historical_face_support_contexts(
         .iter()
         .filter_map(|candidate| {
             let active_face_slot = stable_ref(&candidate.0)?;
-            let mut carriers = histories
+            let preceding_bindings = preceding_topology
+                .face_surfaces
                 .iter()
-                .flat_map(|history| &history.states)
-                .filter_map(|state| state.topology.as_ref())
-                .map(|topology| {
-                    let bindings = topology
-                        .face_surfaces
-                        .iter()
-                        .filter(|binding| binding.entity == active_face_slot)
-                        .collect::<Vec<_>>();
-                    match bindings.as_slice() {
-                        [] => Some(None),
-                        [binding] => Some(Some(binding.carrier)),
-                        _ => None,
-                    }
-                })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .flatten()
+                .filter(|binding| binding.entity == active_face_slot)
                 .collect::<Vec<_>>();
-            carriers.sort_unstable();
-            carriers.dedup();
-            let [surface_slot] = carriers.as_slice() else {
-                return None;
+            let surface_slot = match preceding_bindings.as_slice() {
+                [binding] => binding.carrier,
+                [] => {
+                    let mut carriers = history
+                        .states
+                        .iter()
+                        .filter_map(|state| state.topology.as_ref())
+                        .map(|topology| {
+                            let bindings = topology
+                                .face_surfaces
+                                .iter()
+                                .filter(|binding| binding.entity == active_face_slot)
+                                .collect::<Vec<_>>();
+                            match bindings.as_slice() {
+                                [] => Some(None),
+                                [binding] => Some(Some(binding.carrier)),
+                                _ => None,
+                            }
+                        })
+                        .collect::<Option<Vec<_>>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+                    carriers.sort_unstable();
+                    carriers.dedup();
+                    let [surface_slot] = carriers.as_slice() else {
+                        return None;
+                    };
+                    *surface_slot
+                }
+                _ => return None,
             };
             let mut preceding_face_slots = preceding_topology
                 .face_surfaces
                 .iter()
                 .filter(|binding| {
-                    binding.carrier == *surface_slot && preceding_faces.contains(&binding.entity)
+                    binding.carrier == surface_slot && preceding_faces.contains(&binding.entity)
                 })
                 .map(|binding| binding.entity)
                 .collect::<Vec<_>>();
@@ -5079,7 +5091,7 @@ fn historical_face_support_contexts(
                 .collect();
             Some(crate::records::DesignHistoricalFaceSupportContext {
                 active_face_slot,
-                surface_slot: *surface_slot,
+                surface_slot,
                 preceding_face_boundaries: face_boundary_contexts_for_slots(
                     &preceding_face_slots,
                     preceding_topology,

@@ -1029,7 +1029,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     assert_eq!(
         historical_face_support_contexts(
             &[FaceId("f3d:brep:entity#40".into())],
-            &[history.clone()],
+            &history,
             &preceding,
             &changed_faces,
         ),
@@ -1044,9 +1044,24 @@ fn active_face_support_retains_invariant_preceding_owners() {
 
     let mut variant = history;
     variant.states[1].topology.as_mut().unwrap().face_surfaces[0].carrier = 21;
+    assert_eq!(
+        historical_face_support_contexts(
+            &[FaceId("f3d:brep:entity#4".into())],
+            &variant,
+            &preceding,
+            &changed_faces,
+        ),
+        [crate::records::DesignHistoricalFaceSupportContext {
+            active_face_slot: 4,
+            surface_slot: 20,
+            preceding_face_slots: vec![4, 5],
+            preceding_face_boundaries: Vec::new(),
+            changed_preceding_face_slots: vec![5],
+        }]
+    );
     assert!(historical_face_support_contexts(
         &[FaceId("f3d:brep:entity#40".into())],
-        &[variant],
+        &variant,
         &preceding,
         &changed_faces,
     )
