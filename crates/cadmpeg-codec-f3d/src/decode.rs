@@ -2412,6 +2412,9 @@ impl<'a> F3dDecodeSession<'a> {
                     fillet_radius_groups: &self.native.design_fillet_radius_groups,
                     edge_operands: &self.native.design_edge_operands,
                     edge_identity_operands: &self.native.design_edge_identity_operands,
+                    edge_treatment_vertex_operands: &self
+                        .native
+                        .design_edge_treatment_vertex_operands,
                     entity_selection_operands: &self.native.design_entity_selection_operands,
                     curve_identities: &self.native.sketch_curve_identities,
                     face_operands: &self.native.design_face_operands,

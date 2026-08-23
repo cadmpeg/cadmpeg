@@ -8,8 +8,9 @@ use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
-    feature_input_topology_id, project_fixed_fillet, resolved_edge_flange_group,
-    resolved_edge_group, resolved_edge_treatment_group, resolved_surface_patch_edge_group,
+    feature_input_topology_id, project_fixed_fillet_with_corners, resolved_edge_flange_group,
+    resolved_edge_group, resolved_edge_treatment_group_with_corners,
+    resolved_surface_patch_edge_group,
 };
 use crate::design::face_resolve::{
     design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
@@ -36,14 +37,14 @@ use crate::layout::{
 use crate::records::{
     ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
-    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier,
-    DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignSketchPlacement, DesignSolidPrimitive,
-    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, SketchCurveGeometry,
-    SketchCurveIdentity,
+    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand,
+    DesignEdgeTreatmentVertexOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+    DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+    DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
@@ -64,6 +65,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) fillet_radius_groups: &'a [DesignFilletRadiusGroup],
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
     pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
+    pub(crate) edge_treatment_vertex_operands: &'a [DesignEdgeTreatmentVertexOperand],
     pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
@@ -482,6 +484,7 @@ pub fn project_parameter_design(
         fillet_radius_groups,
         edge_operands,
         edge_identity_operands: &[],
+        edge_treatment_vertex_operands: &[],
         entity_selection_operands: &[],
         curve_identities: &[],
         face_operands,
@@ -518,6 +521,7 @@ pub fn project_parameter_design_with_edge_identities(
         construction_groups,
         edge_operands,
         edge_identity_operands,
+        edge_treatment_vertex_operands,
         entity_selection_operands,
         curve_identities,
         face_operands,
@@ -633,6 +637,8 @@ pub fn project_parameter_design_with_edge_identities(
                             construction_groups,
                             edge_operands,
                             edge_identity_operands,
+                            edge_treatment_vertex_operands,
+                            histories,
                         )
                     })
                     .flatten()
@@ -643,6 +649,8 @@ pub fn project_parameter_design_with_edge_identities(
                             construction_groups,
                             edge_operands,
                             edge_identity_operands,
+                            edge_treatment_vertex_operands,
+                            histories,
                         )
                     })
                     .unwrap_or_else(|| FeatureDefinition::Native {
@@ -1973,6 +1981,8 @@ fn project_fillet_arm(
         fillet_radius_groups,
         edge_operands,
         edge_identity_operands,
+        edge_treatment_vertex_operands,
+        histories,
         placements,
         ..
     } = inputs;
@@ -1983,16 +1993,20 @@ fn project_fillet_arm(
         construction_groups,
         edge_operands,
         edge_identity_operands,
+        edge_treatment_vertex_operands,
+        histories,
     ) {
         definition
     } else if let Some(definition) = parameters
         .is_empty()
         .then(|| {
-            project_fixed_fillet(
+            project_fixed_fillet_with_corners(
                 scope,
                 construction_groups,
                 edge_operands,
                 edge_identity_operands,
+                edge_treatment_vertex_operands,
+                histories,
             )
         })
         .flatten()
@@ -2135,11 +2149,13 @@ fn project_fillet_arm(
                         .map_or_else(
                             || EdgeSelection::Native(assignment.id.clone()),
                             |group| {
-                                resolved_edge_treatment_group(
+                                resolved_edge_treatment_group_with_corners(
                                     group,
                                     construction_groups,
                                     edge_operands,
                                     edge_identity_operands,
+                                    edge_treatment_vertex_operands,
+                                    histories,
                                     scope.previous_history_state_id,
                                     &neutral_feature_id(scope),
                                     edge_radius,
@@ -5024,6 +5040,8 @@ fn project_variable_fillet(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, FilletGroup, RadiusSpec};
 
@@ -5042,11 +5060,13 @@ fn project_variable_fillet(
     let (points, tangency_weight) = variable_fillet_law(parameters)?;
     Some(FeatureDefinition::Fillet {
         groups: vec![FilletGroup {
-            edges: resolved_edge_treatment_group(
+            edges: resolved_edge_treatment_group_with_corners(
                 group,
                 construction_groups,
                 edge_operands,
                 edge_identity_operands,
+                edge_treatment_vertex_operands,
+                histories,
                 scope.previous_history_state_id,
                 &neutral_feature_id(scope),
                 None,
@@ -5189,6 +5209,8 @@ fn project_chamfer(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition};
 
@@ -5361,11 +5383,13 @@ fn project_chamfer(
             let edge_group = edge_groups.get(index).copied();
             ChamferGroup {
                 edges: match edge_group {
-                    Some(group) => resolved_edge_treatment_group(
+                    Some(group) => resolved_edge_treatment_group_with_corners(
                         group,
                         construction_groups,
                         edge_operands,
                         edge_identity_operands,
+                        edge_treatment_vertex_operands,
+                        histories,
                         scope.previous_history_state_id,
                         &neutral_feature_id(scope),
                         None,
@@ -5387,6 +5411,8 @@ fn project_fixed_chamfer(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
+    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, Length};
 
@@ -5417,11 +5443,13 @@ fn project_fixed_chamfer(
     };
     Some(FeatureDefinition::Chamfer {
         groups: vec![ChamferGroup {
-            edges: resolved_edge_treatment_group(
+            edges: resolved_edge_treatment_group_with_corners(
                 group,
                 construction_groups,
                 edge_operands,
                 edge_identity_operands,
+                edge_treatment_vertex_operands,
+                histories,
                 scope.previous_history_state_id,
                 &neutral_feature_id(scope),
                 None,

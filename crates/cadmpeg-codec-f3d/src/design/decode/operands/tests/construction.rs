@@ -484,6 +484,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &plane_selections,
             curve_identities: &[],
             face_operands: &[],

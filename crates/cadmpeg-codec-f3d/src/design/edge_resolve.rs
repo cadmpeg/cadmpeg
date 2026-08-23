@@ -4,7 +4,7 @@
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignParameterScope,
+    DesignEdgeTreatmentVertexOperand, DesignParameterScope,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -272,8 +272,109 @@ pub(crate) fn resolved_edge_treatment_group(
     feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
 ) -> cadmpeg_ir::features::EdgeSelection {
-    resolved_edge_group_with_transition_chain(
+    resolved_edge_treatment_group_with_corners(
         group,
+        groups,
+        operands,
+        identity_operands,
+        &[],
+        &[],
+        previous_state_id,
+        feature_id,
+        treatment_radius,
+    )
+}
+
+pub(crate) fn resolved_edge_treatment_group_with_corners(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    treatment_radius: Option<f64>,
+) -> cadmpeg_ir::features::EdgeSelection {
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let stream = native_stream(&group.id);
+    let has_group_corner = vertex_operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == group.scope_record_index
+            && operand.group_record_index == group.record_index
+    });
+    if !has_group_corner {
+        return resolved_edge_group_with_transition_chain(
+            group,
+            groups,
+            operands,
+            identity_operands,
+            previous_state_id,
+            feature_id,
+            EdgeGroupProof::Treatment {
+                radius: treatment_radius,
+            },
+        );
+    }
+    let mut edge_group = group.clone();
+    let mut corner_slots = Vec::new();
+    if group.members.len() != group.member_offsets.len() {
+        return EdgeSelection::Native(group.id.clone());
+    }
+    edge_group.members.clear();
+    edge_group.member_offsets.clear();
+    for (ordinal, (member, offset)) in group
+        .members
+        .iter()
+        .copied()
+        .zip(group.member_offsets.iter().copied())
+        .enumerate()
+    {
+        let edge_count = operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.record_index == member
+            })
+            .count();
+        let corner = u32::try_from(ordinal).ok().and_then(|ordinal| {
+            let mut matches = vertex_operands.iter().filter(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.recipe.record_index == member
+            });
+            let corner = matches.next()?;
+            matches.next().is_none().then_some(corner)
+        });
+        match (edge_count, corner) {
+            (1, None) => {
+                edge_group.members.push(member);
+                edge_group.member_offsets.push(offset);
+            }
+            (0, Some(corner)) => {
+                let (Some(state), Some(vertex)) = (
+                    corner.recipe.recipe_state_id,
+                    corner.recipe.resolved_vertex_slot,
+                ) else {
+                    return EdgeSelection::Native(group.id.clone());
+                };
+                if Some(state) != previous_state_id {
+                    return EdgeSelection::Native(group.id.clone());
+                }
+                corner_slots.push(vertex);
+            }
+            _ => return EdgeSelection::Native(group.id.clone()),
+        }
+    }
+    if edge_group.members.is_empty() {
+        return EdgeSelection::Native(group.id.clone());
+    }
+    let selection = resolved_edge_group_with_transition_chain(
+        &edge_group,
         groups,
         operands,
         identity_operands,
@@ -282,7 +383,57 @@ pub(crate) fn resolved_edge_treatment_group(
         EdgeGroupProof::Treatment {
             radius: treatment_radius,
         },
-    )
+    );
+    if corner_slots.is_empty() {
+        return selection;
+    }
+    let EdgeSelection::Historical { edges, .. } = &selection else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let Some(state_id) = previous_state_id else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let mut states = histories
+        .iter()
+        .filter(|history| ids::same_native_occurrence(&history.id, &group.id))
+        .flat_map(|history| &history.states)
+        .filter(|state| state.state_id == state_id);
+    let Some(topology) = states.next().and_then(|state| state.topology.as_ref()) else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    if states.next().is_some() {
+        return EdgeSelection::Native(group.id.clone());
+    }
+    let edge_slots = edges
+        .iter()
+        .map(|edge| edge.0.rsplit(':').next()?.parse::<i64>().ok())
+        .collect::<Option<Vec<_>>>();
+    let Some(edge_slots) = edge_slots else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let endpoints = edge_slots
+        .iter()
+        .map(|edge_slot| {
+            let mut matches = topology
+                .edge_vertices
+                .iter()
+                .filter(|edge| edge.edge == *edge_slot);
+            let edge = matches.next()?;
+            matches
+                .next()
+                .is_none()
+                .then_some([edge.start_vertex, edge.end_vertex])
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(endpoints) = endpoints else {
+        return EdgeSelection::Native(group.id.clone());
+    };
+    let endpoints = endpoints.into_iter().flatten().collect::<HashSet<_>>();
+    if corner_slots.iter().all(|corner| endpoints.contains(corner)) {
+        selection
+    } else {
+        EdgeSelection::Native(group.id.clone())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2201,6 +2352,24 @@ pub(crate) fn project_fixed_fillet(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    project_fixed_fillet_with_corners(
+        scope,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        &[],
+        &[],
+    )
+}
+
+pub(crate) fn project_fixed_fillet_with_corners(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    vertex_operands: &[DesignEdgeTreatmentVertexOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FilletGroup, Length, RadiusSpec, VariableRadius,
     };
@@ -2311,11 +2480,13 @@ pub(crate) fn project_fixed_fillet(
                 | RadiusSpec::Variable { .. }
                 | RadiusSpec::Unresolved { .. } => None,
             };
-            let edges = resolved_edge_treatment_group(
+            let edges = resolved_edge_treatment_group_with_corners(
                 edge_group,
                 construction_groups,
                 edge_operands,
                 edge_identity_operands,
+                vertex_operands,
+                histories,
                 scope.previous_history_state_id,
                 &neutral_feature_id(scope),
                 edge_radius,

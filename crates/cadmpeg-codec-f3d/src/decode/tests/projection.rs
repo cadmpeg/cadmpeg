@@ -1743,6 +1743,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 fillet_radius_groups: &[],
                 edge_operands: &[],
                 edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
                 entity_selection_operands: &[],
                 curve_identities: &[],
                 face_operands: &[],

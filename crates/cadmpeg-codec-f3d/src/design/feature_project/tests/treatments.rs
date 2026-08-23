@@ -709,6 +709,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                 fillet_radius_groups: &[],
                 edge_operands: &[],
                 edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
                 entity_selection_operands: std::slice::from_ref(selection),
                 curve_identities: &[],
                 face_operands: &[],

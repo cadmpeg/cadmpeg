@@ -309,6 +309,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],

@@ -274,6 +274,122 @@ fn recipe_edge_operand(
     .expect("edge recipe operand")
 }
 
+#[test]
+fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repeats() {
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
+    };
+    use crate::records::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
+
+    let mut selection_group = group(2, 10);
+    selection_group.members = vec![10, 11, 12, 13];
+    selection_group.member_offsets = vec![0; 4];
+    let mut first_edge = recipe_edge_operand(11, &[], &[]);
+    first_edge.recipe_state_id = Some(7);
+    first_edge.resolved_edge_slot = Some(17);
+    let mut repeated_edge = recipe_edge_operand(13, &[], &[]);
+    repeated_edge.recipe_state_id = Some(7);
+    repeated_edge.resolved_edge_slot = Some(17);
+    let corner = |record_index, group_member_ordinal, vertex| DesignEdgeTreatmentVertexOperand {
+        id: format!("f3d:test:edge-treatment-vertex-operand#{record_index}"),
+        scope_record_index: 1,
+        scope_reference_ordinal: group_member_ordinal,
+        group_record_index: 2,
+        group_member_ordinal,
+        recipe: DesignVertexRecipe {
+            record_index,
+            byte_offset: u64::from(record_index),
+            class_tag: "306".into(),
+            paired_byte_offset: 1,
+            paired_class_tag: "261".into(),
+            recipe_record_index: record_index + 3,
+            recipe_record_byte_offset: 2,
+            recipe_id: format!("f3d:test:construction-recipe#{record_index}"),
+            recipe_prefix_offset: 3,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            recipe_state_id: Some(7),
+            resolved_vertex_slot: Some(vertex),
+            next_record_index: record_index + 5,
+            next_byte_offset: 5,
+        },
+    };
+    let state = AsmDeltaState {
+        id: "f3d:test:state#7".into(),
+        parent: "f3d:test:history".into(),
+        byte_offset: 0,
+        state_id: 7,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 7,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        record_table_complete: true,
+        topology: Some(AsmHistoricalTopology {
+            edges: vec![17],
+            vertices: vec![3, 4, 5],
+            edge_vertices: vec![AsmHistoricalEdge {
+                edge: 17,
+                start_vertex: 3,
+                end_vertex: 4,
+            }],
+            ..AsmHistoricalTopology::default()
+        }),
+        transition: None,
+    };
+    let history = AsmHistory {
+        id: "f3d:test:history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: false,
+        states: vec![state],
+    };
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+    let corners = [corner(10, 0, 3), corner(12, 2, 4)];
+    let edges = [first_edge.clone(), repeated_edge.clone()];
+
+    assert!(matches!(
+        resolved_edge_treatment_group_with_corners(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &edges,
+            &[],
+            &corners,
+            std::slice::from_ref(&history),
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+            if edges.len() == 1 && edges[0].0.ends_with(":17")
+    ));
+
+    let invalid_corners = [corner(10, 0, 3), corner(12, 2, 5)];
+    assert!(matches!(
+        resolved_edge_treatment_group_with_corners(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &[first_edge, repeated_edge],
+            &[],
+            &invalid_corners,
+            std::slice::from_ref(&history),
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+}
+
 fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
     DesignRecipeReference {
         selector: 1,
