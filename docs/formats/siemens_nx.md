@@ -1419,6 +1419,13 @@ no serialized owner distinguishes them.
 
 The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. A **type registry** declaration is `declared_len:u8, name[declared_len-1], trailing_code:u8`; `name` is printable ASCII beginning with `UGS::`. The zero-based declaration ordinal is the class identity. A **field registry** declaration has the same core framing with a printable name beginning `m_`. The bytes from its trailing code through the next length-framed `m_` declaration form that field's registry suffix. The final declaration has no next-declaration boundary and therefore no bounded suffix.
 
+The part member `m_objectStateCollection` has trailing code `78`. The code is
+not a section-local class ordinal: the UG_PART class registry declares
+`UGS::OM::ObjectStateCollection` at other ordinals, and the RMFastLoad member
+registry carries the same member declaration without that class declaration.
+The member declaration does not identify an object record or a serialized
+collection value.
+
 The primary UG_PART section uses an offset-only index. A trailing `record_count:u32 LE` follows `record_count+2` monotone offsets. Offsets are relative to the UG_PART payload start. `index[0]` starts identity metadata, `index[1]` starts the first entity, and the remaining entries bound `record_count` entities:
 
 ```text
