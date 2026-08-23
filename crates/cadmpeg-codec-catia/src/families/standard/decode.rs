@@ -58,7 +58,6 @@ const NURBS_SURFACE_SEEDS_PER_SPAN: usize = 3;
 const NURBS_SURFACE_MAX_SEEDS: usize = 256;
 const NURBS_SURFACE_REFINEMENT_ITERATIONS: usize = 24;
 const NURBS_SURFACE_BACKTRACK_STEPS: usize = 8;
-const FREEFORM_FACE_MIN_SURFACE_WITNESSES: usize = 2;
 const NURBS_LINE_FACE_SAMPLES: [f64; 3] = [0.25, 0.5, 0.75];
 
 fn bind_consolidated_revolution_faces_and_seams(
@@ -976,24 +975,6 @@ fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
     ]
 }
 
-fn control_bounds_overlap_face(
-    control_bounds: [[f64; 2]; 3],
-    face_bounds: crate::families::standard::records::StandardFaceBounds,
-) -> bool {
-    let face_bounds = (0..3)
-        .map(|axis| {
-            [
-                face_bounds.aabb_center[axis] - face_bounds.aabb_half_extents[axis],
-                face_bounds.aabb_center[axis] + face_bounds.aabb_half_extents[axis],
-            ]
-        })
-        .collect::<Vec<_>>();
-    (0..3).all(|axis| {
-        control_bounds[axis][1] >= face_bounds[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-            && control_bounds[axis][0] <= face_bounds[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-    })
-}
-
 fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
     let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
     for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
@@ -1116,94 +1097,6 @@ pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
             ))
         })
         .collect()
-}
-
-fn associate_standard_freeform_surfaces(
-    records: &[crate::families::standard::records::StandardSurfaceRecord],
-    points: &[Point3],
-    carriers: &[crate::families::a5a8::records::FreeformSurface],
-) -> HashMap<u32, SurfaceGeometry> {
-    // A standard freeform tag and an external NURBS frame do not share a
-    // decoded identity in every stream.  Geometry is inferred only from a
-    // unique candidate with finite control data and multiple vertex witnesses;
-    // ties and weak matches stay unresolved and retain their source identity.
-    let mut associations = HashMap::<u32, Option<SurfaceGeometry>>::new();
-    for record in records {
-        let crate::families::standard::records::StandardSurfaceRecord::Freeform {
-            tag, bounds, ..
-        } = record
-        else {
-            continue;
-        };
-        let witnesses = points
-            .iter()
-            .copied()
-            .filter(|point| {
-                point_on_standard_face(
-                    *point,
-                    &SurfaceGeometry::Unknown { record: None },
-                    Some(*bounds),
-                )
-            })
-            .collect::<Vec<_>>();
-        if witnesses.len() < FREEFORM_FACE_MIN_SURFACE_WITNESSES {
-            continue;
-        }
-        let mut scores = carriers
-            .iter()
-            .filter_map(|carrier| {
-                let SurfaceGeometry::Nurbs(surface) = &carrier.geometry else {
-                    return None;
-                };
-                let control_bounds = nurbs_surface_control_bounds(surface)?;
-                if !control_bounds_overlap_face(control_bounds, *bounds) {
-                    return None;
-                }
-                let mut matched = 0usize;
-                for witness in &witnesses {
-                    let inside_control_bounds = [witness.x, witness.y, witness.z]
-                        .into_iter()
-                        .enumerate()
-                        .all(|(axis, coordinate)| {
-                            coordinate
-                                >= control_bounds[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                                && coordinate
-                                    <= control_bounds[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
-                        });
-                    if !inside_control_bounds {
-                        continue;
-                    }
-                    if nurbs_surface_witness_distance(surface, *witness).is_some_and(|distance| {
-                        distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2)
-                    }) {
-                        matched += 1;
-                    }
-                }
-                (matched > 0).then_some((matched, carrier.geometry.clone()))
-            })
-            .collect::<Vec<_>>();
-        scores.sort_by_key(|right| std::cmp::Reverse(right.0));
-        let Some((matched, geometry)) = scores.first().cloned() else {
-            continue;
-        };
-        let tied = scores
-            .get(1)
-            .is_some_and(|(other_matched, _)| *other_matched == matched);
-        let association =
-            (!tied && matched >= FREEFORM_FACE_MIN_SURFACE_WITNESSES).then_some(geometry);
-        associations
-            .entry(*tag)
-            .and_modify(|stored| {
-                if stored.as_ref() != association.as_ref() {
-                    *stored = None;
-                }
-            })
-            .or_insert(association);
-    }
-    associations
-        .into_iter()
-        .filter_map(|(tag, geometry)| geometry.map(|geometry| (tag, geometry)))
-        .collect::<HashMap<_, _>>()
 }
 
 pub(crate) fn try_decode_standard(
@@ -1330,19 +1223,6 @@ pub(crate) fn try_decode_standard(
             }
         }
     }
-    let freeform_carriers =
-        crate::families::a5a8::records::a5_surfaces_from_records(&scan.data, &consolidated_records);
-    let inferred_freeform_geometries =
-        associate_standard_freeform_surfaces(&records, &points, &freeform_carriers);
-    let mut inferred_freeform_tags = HashSet::new();
-    for (tag, geometry) in inferred_freeform_geometries {
-        if freeform_geometries.contains_key(&tag) || freeform_procedural_surfaces.contains_key(&tag)
-        {
-            continue;
-        }
-        freeform_geometries.insert(tag, geometry);
-        inferred_freeform_tags.insert(tag);
-    }
     let unresolved_freeform_record_count = records
         .iter()
         .filter(|record| {
@@ -1387,8 +1267,6 @@ pub(crate) fn try_decode_standard(
                 if freeform_procedural_surfaces.contains_key(tag) || e5_freeform_tags.contains(tag)
                 {
                     Exactness::ByteExact
-                } else if inferred_freeform_tags.contains(tag) {
-                    Exactness::Inferred
                 } else if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
                     Exactness::Unknown
                 } else {

@@ -446,56 +446,6 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
 }
 
 #[test]
-fn freeform_surface_association_requires_a_unique_witnessed_carrier() {
-    let bounds = StandardFaceBounds {
-        aabb_center: [0.5, 0.5, 0.0],
-        aabb_half_extents: [0.5, 0.5, 0.1],
-        sphere_center: [0.5, 0.5, 0.0],
-        sphere_radius: 1.0,
-    };
-    let records = [StandardSurfaceRecord::Freeform {
-        pos: 0,
-        tag: 7,
-        bounds,
-        forward: true,
-    }];
-    let points = [
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        Point3::new(0.0, 1.0, 0.0),
-        Point3::new(1.0, 1.0, 0.0),
-    ];
-    let geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: points.to_vec(),
-        weights: None,
-        u_periodic: false,
-        v_periodic: false,
-    });
-    let carrier = |pos, geometry| FreeformSurface {
-        pos,
-        identity: FreeformSurfaceIdentity::FrameOffset(pos),
-        geometry,
-    };
-
-    let associated =
-        associate_standard_freeform_surfaces(&records, &points, &[carrier(0, geometry.clone())]);
-    assert_eq!(associated.get(&7), Some(&geometry));
-
-    let tied = associate_standard_freeform_surfaces(
-        &records,
-        &points,
-        &[carrier(0, geometry.clone()), carrier(1, geometry)],
-    );
-    assert!(tied.is_empty());
-}
-
-#[test]
 fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
     let mut stream = e5_torus_stream();
     let mut wrapper = vec![0x85, 0x80, 0x81, 0x82, 0x83, 0x84];

@@ -228,6 +228,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the configuration/view and annotation owner relations before transferring saved-view state, note ownership, datum ownership, or typed PMI.
 
+### DI-29. Exact alias lead `0x00000133`
+
+**Question.** Which storage role does the fixed outer-alias lead value `0x00000133` select?
+
+**Known.** The lead precedes a complete fixed alias core. Its F1 ordinal links the alias tag to one object-graph record and, when present, that record's owner design object. The ordinal identifies design-history storage and does not identify a consolidated freeform carrier.
+
+**Need.** We must identify the lead's storage role before assigning semantics beyond the retained alias and object-graph relations.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-01. `a5 03 32` header type codes
@@ -490,28 +498,6 @@ population can displace the required face population.
 **Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. A row covered by the indexed visualization-point allocation receives its endpoint pair from the first and last trim handles in occurrence order. The object-stream and visualization relations must select the same unordered pair; object-stream order gives physical edge direction. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for rows uncovered by both relations. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
 
 **Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every same-incidence line or spline group without object-stream or indexed visualization endpoint identity.
-
-### SN-37. Identity-free freeform carrier binding
-
-**Question.** Which serialized identity relation binds a standard freeform face
-core with no decoded alias identity to its external NURBS surface carrier?
-
-**Known.** The face core retains its native tag and serialized bounds. External
-NURBS carriers retain their own identities, control nets, weights, and parameter
-domains. Geometric coincidence does not establish persistent identity between
-the two records.
-
-**Need.** We must decode the binding relation before assigning the external
-carrier geometry to the face.
-
-**Conflict.** `associate_standard_freeform_surfaces` in
-`src/families/standard/decode.rs` admits carriers by control-net bounds and
-vertex-to-surface proximity, ranks them by the number of matching vertex rows,
-and assigns the unique highest-scoring carrier once it has at least two
-witnesses. The two-witness threshold and maximum-witness ranking are geometric
-association policy, not a decoded CATIA identity relation; coincident,
-overlapping, or geometrically equivalent carriers can therefore be assigned the
-wrong carrier geometry.
 
 ## 4. Object stream
 

@@ -684,6 +684,46 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
 }
 
 #[test]
+fn a5_surface_parser_reads_multispan_cubic_nurbs() {
+    let mut bytes = vec![0xa5, 0x03, 0x34];
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0x05);
+    for offset in [0.0, 10.0] {
+        bytes.extend_from_slice(&[0x0d, 0x0d, 0x0c]);
+        bytes.extend(
+            [offset, offset + 1.0, offset + 2.0]
+                .into_iter()
+                .flat_map(le_f64),
+        );
+    }
+    bytes.push(0x01);
+    for pole in 0..25 {
+        bytes.extend(
+            [f64::from(pole), f64::from(pole % 5), f64::from(pole / 5)]
+                .into_iter()
+                .flat_map(le_f64),
+        );
+    }
+    bytes.extend_from_slice(&a5_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 8).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&bytes)
+        .try_into()
+        .expect("one multispan cubic surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
+    assert_eq!((surface.u_count, surface.v_count), (5, 5));
+    assert_eq!(
+        surface.u_knots,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+    );
+    assert_eq!(surface.control_points.len(), 25);
+}
+
+#[test]
 fn surface_parsers_accept_finite_large_control_points() {
     let mut a5 = a5_surface_stream();
     a5[47..55].copy_from_slice(&le_f64(2e12));

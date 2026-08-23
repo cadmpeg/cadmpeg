@@ -252,7 +252,7 @@ pub enum AliasLead {
     OrdinalLinkedStorage8f,
     /// Zero word preceding a complete grouped-alias core.
     NonSurfaceAlias,
-    /// Other word preceding a complete grouped-alias core.
+    /// Other admitted word preceding a complete alias core.
     Unclassified(u32),
 }
 
@@ -351,6 +351,8 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
                 AliasLead::E5LinkedSurfaceStorage
             } else if lead_raw == 0x8f {
                 AliasLead::OrdinalLinkedStorage8f
+            } else if lead_raw == 0x0000_0133 {
+                AliasLead::Unclassified(lead_raw)
             } else if group.is_none() {
                 return None;
             } else if lead_raw == 0 {

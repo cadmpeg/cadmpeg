@@ -4,8 +4,7 @@ pub(super) use crate::assemble::{
 };
 pub(super) use crate::families::standard::decode::{
     analytic_surface_uv, associate_standard_freeform_e5_rolling_ball_jets,
-    associate_standard_freeform_e5_surfaces, associate_standard_freeform_surfaces,
-    build_standard_edge_curve, circle_axis_from_endpoints,
+    associate_standard_freeform_e5_surfaces, build_standard_edge_curve, circle_axis_from_endpoints,
     circular_range_choices_have_simple_selection, circular_ranges_are_nonoverlapping_or_coincident,
     combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
     emit_standard_topology, include_native_endpoint_pairs, intersection_line_direction,
@@ -29,7 +28,6 @@ pub(super) use crate::families::standard::decode::{
     PERPENDICULAR_CYLINDER_CONIC_TOLERANCE, SPHERE_SECTION_ENDPOINT_TOLERANCE,
 };
 
-pub(super) use crate::families::a5a8::records::{FreeformSurface, FreeformSurfaceIdentity};
 pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
 pub(super) use crate::test_support::{
     append_b5_record, append_e5_record, b5_closed_triangle_stream, e5_d8_rolling_ball_stream,

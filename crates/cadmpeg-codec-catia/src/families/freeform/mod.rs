@@ -18,7 +18,7 @@ use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
@@ -1533,12 +1533,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .collect::<Vec<_>>();
     let mut attached_curves = HashSet::new();
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
+    let mut partner_support_blocks = HashSet::new();
 
-    for resolved in
+    let mut pending = VecDeque::from(
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             data, records,
-        )
-    {
+        ),
+    );
+    while let Some(resolved) = pending.pop_front() {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
             continue;
         };
@@ -1819,7 +1821,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     pcurve: Some(partner_pcurve),
                     pcurve_parameter_range: None,
                 };
-                binding_counts.partner_supports += 1;
+                partner_support_blocks.insert(resolved.block.pcurves[0].pos);
                 Some((*resolved_side, carrier))
             } else {
                 None
@@ -2059,6 +2061,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             };
             Some((identity, partner_pcurves))
         });
+        let mut bound_new_standard_surface = false;
         if let Some((_, Some(binding))) = attachment.as_ref() {
             if let Some((standard_partner_side, carrier)) = binding.inferred_partner {
                 let surface_id = &binding.standard_surfaces[standard_partner_side];
@@ -2072,6 +2075,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         surface.geometry = freeform_surfaces[carrier].geometry.clone();
                         annotations.derived(&surface.id, "geometry");
                         binding_counts.standard_face_surfaces += 1;
+                        bound_new_standard_surface = true;
                     }
                     sides = std::array::from_fn(|side| IntcurveSupportSide {
                         surface: Some(binding.standard_surfaces[side].clone()),
@@ -2080,6 +2084,12 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     });
                 }
             }
+        }
+        if bound_new_standard_surface {
+            // The new carrier can make both coedge pcurves resolvable. Replay this
+            // block after mutating the face geometry and emit only on that replay.
+            pending.push_back(resolved);
+            continue;
         }
         let context = IntcurveSupportContext {
             sides,
@@ -2193,6 +2203,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             });
         }
     }
+    binding_counts.partner_supports = partner_support_blocks.len();
     binding_counts
 }
 

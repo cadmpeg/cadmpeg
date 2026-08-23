@@ -1736,13 +1736,18 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
 
 pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let multiplicities = match degree {
+        1 | 3 if distinct.len() >= 2 => {
+            let mut values = vec![degree + 1];
+            values.extend(std::iter::repeat_n(1, distinct.len() - 2));
+            values.push(degree + 1);
+            values
+        }
         5 if distinct.len() >= 2 => {
             let mut values = vec![6u32];
             values.extend(std::iter::repeat_n(3, distinct.len() - 2));
             values.push(6);
             values
         }
-        1 | 3 | 5 if distinct.len() == 2 => vec![degree + 1, degree + 1],
         _ => return None,
     };
     let count = pole_count(&multiplicities, degree)?;
