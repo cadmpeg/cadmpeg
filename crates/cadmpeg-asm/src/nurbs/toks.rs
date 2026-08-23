@@ -272,13 +272,6 @@ pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
     }
 }
 
-/// Token indices of every `nubs`/`nurbs` marker in `toks`, in order.
-pub(crate) fn marker_positions(toks: &[Token]) -> Vec<usize> {
-    (0..toks.len())
-        .filter(|&pos| marker_at(toks, pos).is_some())
-        .collect()
-}
-
 /// Token indices of the `nubs`/`nurbs` markers `toks` itself owns: those
 /// outside every construction nested within it. The span's outer
 /// `SubtypeOpen` sets the initial nesting depth.
@@ -651,7 +644,6 @@ mod tests {
         // Leading open is the span's own scope: the first `nubs` is owned, the
         // `nurbs` inside the nested scope is not.
         assert_eq!(owned_marker_positions(&toks), vec![1]);
-        assert_eq!(marker_positions(&toks), vec![1, 3]);
         assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
         assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
     }

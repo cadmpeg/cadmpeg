@@ -2984,11 +2984,7 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     cur.bump();
     let mut components = Vec::with_capacity(count);
     for _ in 0..count {
-        let position = cur.pos();
-        let relative = crate::nurbs::toks::marker_positions(toks.get(position..)?)
-            .into_iter()
-            .next()?;
-        let (curve, end) = curve_block(toks, position + relative)?;
+        let (curve, end) = curve_block(toks, cur.pos())?;
         components.push(curve);
         cur.set_pos(end);
     }
@@ -2997,26 +2993,19 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
 
 fn subset_definition(toks: &[Token]) -> Option<SubsetDefinition> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "subset_int_cur")?;
-    let start = marker + 2;
-    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
-        .into_iter()
-        .next()?
-        + start;
-    let (source, source_end) = curve_block(toks, source_marker)?;
-    let mut cur = Cur::at(toks, source_end);
+    let mut cur = Cur::at(toks, marker + 2);
+    let (source, source_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(source_end);
     let range = [cur.take_range_value()?, cur.take_range_value()?];
     Some((source, range))
 }
 
 fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "offset_int_cur")?;
-    let start = marker + 2;
-    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
-        .into_iter()
-        .next()?
-        + start;
-    let (source, source_end) = curve_block(toks, source_marker)?;
-    let mut cur = Cur::at(toks, source_end);
+    let mut cur = Cur::at(toks, marker + 2);
+    cur.take_bool()?;
+    let (source, source_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(source_end);
     if !matches!(toks.get(cur.pos()), Some(Token::Double(_)))
         || !matches!(toks.get(cur.pos() + 1), Some(Token::Double(_)))
     {

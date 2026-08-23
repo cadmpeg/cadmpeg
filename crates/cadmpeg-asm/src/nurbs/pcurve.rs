@@ -243,11 +243,12 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 /// pcurve block in `toks`. Token-space counterpart of
 /// [`decode_pcurve_fit_tolerance`].
 pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
-    let (_, end) = toks::marker_positions(toks)
+    let scope = toks::owned_construction_scope(toks).unwrap_or(toks);
+    let (_, end) = toks::owned_marker_positions(scope)
         .into_iter()
-        .filter_map(|pos| pcurve_block_with_end(toks, pos))
+        .filter_map(|pos| pcurve_block_with_end(scope, pos))
         .next_back()?;
-    match toks.get(end) {
+    match scope.get(end) {
         Some(Token::Double(value)) => Some(*value),
         _ => None,
     }
@@ -1256,6 +1257,68 @@ mod width_tests {
             let mut pcurves = pcurve_block(int_width);
             pcurves.extend_from_slice(&pcurve_block(int_width));
             assert!(super::decode_pcurve_cache(&pcurves).is_none());
+        }
+    }
+
+    #[test]
+    fn wrapper_directrix_fields_reject_nested_curve_substitution() {
+        for int_width in [4usize, 8] {
+            let mut subset = vec![0x0f];
+            push_ident(&mut subset, "subset_int_cur");
+            subset.push(0x0f);
+            push_ident(&mut subset, "support");
+            subset.extend_from_slice(&curve_block(int_width));
+            subset.push(0x10);
+            push_f64(&mut subset, -1.0);
+            push_f64(&mut subset, 2.0);
+            subset.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut subset, 0.001);
+            subset.push(0x10);
+            let subset_tokens = lex_test_span(&subset, int_width);
+            let subset_decoded =
+                procedural_curve_resolving_refs(&subset_tokens, &test_table(&subset, int_width))
+                    .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
+            assert!(subset_decoded.subset.is_none());
+
+            let mut offset = vec![0x0f];
+            push_ident(&mut offset, "offset_int_cur");
+            offset.push(0x0b);
+            offset.push(0x0f);
+            push_ident(&mut offset, "support");
+            offset.extend_from_slice(&curve_block(int_width));
+            offset.push(0x10);
+            push_f64(&mut offset, -1.0);
+            push_f64(&mut offset, 2.0);
+            push_vector(&mut offset, [1.0, 2.0, 3.0]);
+            push_string(&mut offset, "first");
+            push_int(&mut offset, 0x04, 4, int_width);
+            push_string(&mut offset, "second");
+            push_int(&mut offset, 0x04, 5, int_width);
+            offset.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut offset, 0.001);
+            offset.push(0x10);
+            let offset_tokens = lex_test_span(&offset, int_width);
+            let offset_decoded =
+                procedural_curve_resolving_refs(&offset_tokens, &test_table(&offset, int_width))
+                    .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
+            assert!(offset_decoded.vector_offset.is_none());
+        }
+    }
+
+    #[test]
+    fn pcurve_fit_tolerance_withholds_nested_only_cache() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "exp_par_cur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            push_f64(&mut bytes, 0.9);
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            assert!(super::pcurve_fit_tolerance(&tokens).is_none());
         }
     }
 
