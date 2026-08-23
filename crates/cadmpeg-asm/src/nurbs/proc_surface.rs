@@ -621,6 +621,7 @@ fn g2_blend_spl_sur(
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
+        cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
                 EmbeddedRevisionG2Blend {
@@ -2018,7 +2019,7 @@ fn revision_compound_loft(
     } else {
         None
     };
-    matches!(span.get(cur.pos()), Some(Token::SubtypeClose)).then_some(())?;
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
@@ -3108,6 +3109,7 @@ fn taper_spl_sur(
         // orthogonal-sense field, positionally matching the text form's single
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
         let sense = cur.take_bool()?;
+        cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Taper {
                 support,
@@ -3635,6 +3637,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             ],
         ];
         let extension = cur.take_enum()?;
+        cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Exact {
                 parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
@@ -3786,6 +3789,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     }
     cur.bump();
     let trailing_value = cur.take_long()?;
+    cur.at_scope_end().then_some(())?;
     let program_graph = match &subtransform {
         TSplineSubtransform::Inline { program, .. } => {
             Some(cadmpeg_ir::geometry::TSplineProgram::parse(program))

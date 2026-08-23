@@ -1111,6 +1111,7 @@ pub(crate) fn var_blend_spl_sur(
         Some(post)
     };
     let post_pcurve = nullable_embedded_pcurve(&mut cur)?;
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
             EmbeddedVariableBlend {
@@ -1457,6 +1458,7 @@ pub(crate) fn full_rb_blend_spl_sur(
         None
     };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
+    cur.at_scope_end().then_some(())?;
     let radius = if offsets[0] == offsets[1] {
         BlendRadiusLaw::Constant {
             signed_radius: offsets[0],
