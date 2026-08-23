@@ -735,6 +735,101 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
 }
 
 #[test]
+fn chordal_cylindrical_mesh_records_measured_support_deflection() {
+    let mut model = model_with_body();
+    let face = add_cylindrical_patch_face(&mut model, "chordal", 0.0, 1.0);
+    model.shells[0].faces.push(face.clone());
+    let deflection = 0.1;
+    model.tessellations.push(Tessellation {
+        id: "chordal-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(5.0 - deflection, 0.0, 0.25),
+            Point3::new(0.0, 5.0 - deflection, 0.25),
+            Point3::new(5.0 - deflection, 0.0, 0.75),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: vec![
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_analytic_owners(&mut model),
+        vec!["chordal-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert!(model.tessellations[0]
+        .chordal_deflection
+        .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
+}
+
+#[test]
+fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "off-surface", 0.0);
+    model.shells[0].faces.push(face);
+    model.tessellations.push(Tessellation {
+        id: "off-surface-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.25, -0.75, 0.1),
+            Point3::new(1.75, -0.75, 0.1),
+            Point3::new(1.0, 0.75, 0.1),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: vec![
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert!(assign_unique_analytic_owners(&mut model).is_empty());
+    assert!(model.tessellations[0].body.is_none());
+    assert!(model.tessellations[0].faces.is_empty());
+}
+
+#[test]
+fn cylindrical_trim_uses_the_short_boundary_arc() {
+    let (start, span) = circular_interval(&[0.0, std::f64::consts::FRAC_PI_2]).unwrap();
+    assert_eq!(start, 0.0);
+    assert_eq!(span, std::f64::consts::FRAC_PI_2);
+    assert!(circular_interval_contains(
+        start,
+        span,
+        std::f64::consts::FRAC_PI_4,
+        0.0
+    ));
+    assert!(!circular_interval_contains(
+        start,
+        span,
+        std::f64::consts::PI,
+        0.0
+    ));
+}
+
+#[test]
 fn cone_support_binds_display_list_face() {
     let mut model = model_with_body();
     let cone = SurfaceGeometry::Cone {
@@ -794,12 +889,12 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
             v_axis: Vector3::new(0.0, 1.0, 0.0),
         },
-        outer: vec![
+        outer: Some(PlanarOuter::Polygon(vec![
             Point2::new(-3.0, -3.0),
             Point2::new(3.0, -3.0),
             Point2::new(3.0, 3.0),
             Point2::new(-3.0, 3.0),
-        ],
+        ])),
         holes: vec![CircularHole {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
@@ -848,6 +943,68 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
         cadmpeg_ir::transform::Transform::identity(),
         1.0e-9
     ));
+}
+
+#[test]
+fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
+    let hole = CircularHole {
+        center: Point2::new(0.0, 0.0),
+        radius: 1.0,
+    };
+    let boundary = (0..6)
+        .map(|index| {
+            let angle = f64::from(index) * std::f64::consts::TAU / 6.0;
+            Point2::new(angle.cos(), angle.sin())
+        })
+        .collect::<Vec<_>>();
+    let mut chordal = boundary.clone();
+    let angle = std::f64::consts::PI / 6.0;
+    chordal.push(Point2::new(0.9 * angle.cos(), 0.9 * angle.sin()));
+    let (exclusion, boundary_circle) =
+        chordal_hole_constraint(hole, &chordal, EPS_DISPLAY_QUANTIZATION).unwrap();
+    assert_eq!(boundary_circle.radius, hole.radius);
+    assert!(exclusion.radius < hole.radius);
+    assert!(exclusion.radius > 0.8);
+
+    let mut deep = boundary;
+    deep.push(Point2::new(0.7 * angle.cos(), 0.7 * angle.sin()));
+    assert!(chordal_hole_constraint(hole, &deep, EPS_DISPLAY_QUANTIZATION).is_none());
+
+    let interior = vec![Point2::new(0.5, 0.0), Point2::new(0.0, 0.5)];
+    assert!(chordal_hole_constraint(hole, &interior, EPS_DISPLAY_QUANTIZATION).is_none());
+}
+
+#[test]
+fn circular_planar_bounds_choose_one_enclosing_outer() {
+    let circles = vec![
+        CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 10.0,
+        },
+        CircularHole {
+            center: Point2::new(6.0, 0.0),
+            radius: 2.0,
+        },
+        CircularHole {
+            center: Point2::new(-6.0, 0.0),
+            radius: 2.0,
+        },
+    ];
+    let (outer, holes) = circular_outer_and_holes(&circles, EPS_DISPLAY_QUANTIZATION).unwrap();
+    assert_eq!(outer.radius, 10.0);
+    assert_eq!(holes.len(), 2);
+
+    let ambiguous = vec![
+        CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 10.0,
+        },
+        CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 10.0,
+        },
+    ];
+    assert!(circular_outer_and_holes(&ambiguous, EPS_DISPLAY_QUANTIZATION).is_none());
 }
 
 #[test]

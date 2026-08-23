@@ -19,6 +19,8 @@ const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
+const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -601,6 +603,15 @@ pub fn summary(scan: &ContainerScan) -> Summary {
         })
 }
 
+struct AnalyticCandidate<'a> {
+    face: &'a FaceId,
+    body: &'a cadmpeg_ir::ids::BodyId,
+    surface: &'a SurfaceGeometry,
+    tolerance: f64,
+    inverse: cadmpeg_ir::transform::Transform,
+    trim: Option<AnalyticTrim>,
+}
+
 /// Bind a face-tessellation table when its vertices select one analytic face.
 ///
 /// Display coordinates are stored as f32, while the B-rep carriers are f64.
@@ -669,13 +680,13 @@ pub(crate) fn assign_unique_analytic_owners(
                 Some(_) => return None,
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
-            Some((
-                &face.id,
+            Some(AnalyticCandidate {
+                face: &face.id,
                 body,
-                *surfaces.get(&face.surface)?,
-                face.tolerance.unwrap_or(0.0),
+                surface: *surfaces.get(&face.surface)?,
+                tolerance: face.tolerance.unwrap_or(0.0),
                 inverse,
-                analytic_trim(
+                trim: analytic_trim(
                     face,
                     *surfaces.get(&face.surface)?,
                     &loops,
@@ -685,7 +696,7 @@ pub(crate) fn assign_unique_analytic_owners(
                     &points,
                     &curves,
                 ),
-            ))
+            })
         })
         .collect::<Vec<_>>();
 
@@ -703,30 +714,108 @@ pub(crate) fn assign_unique_analytic_owners(
             coordinate_scale * f64::from(f32::EPSILON) * 8.0 + EPS_DISPLAY_QUANTIZATION;
         let mut owners = candidates
             .iter()
-            .filter(|(_, _, surface, tolerance, inverse, _)| {
-                let tolerance = tolerance.max(quantization_tolerance);
+            .filter(|candidate| {
+                let tolerance = candidate.tolerance.max(quantization_tolerance);
                 mesh.vertices.iter().all(|point| {
-                    analytic_surface_residual(surface, inverse.apply_point(*point))
-                        .is_some_and(|residual| residual <= tolerance)
+                    analytic_surface_residual(
+                        candidate.surface,
+                        candidate.inverse.apply_point(*point),
+                    )
+                    .is_some_and(|residual| residual <= tolerance)
                 })
             })
             .collect::<Vec<_>>();
         if owners.len() > 1 {
-            owners.retain(|(_, _, _, tolerance, inverse, trim)| {
-                trim.as_ref().is_none_or(|trim| {
-                    trim.contains_mesh(mesh, *inverse, tolerance.max(quantization_tolerance))
+            owners.retain(|candidate| {
+                candidate.trim.as_ref().is_none_or(|trim| {
+                    trim.contains_mesh(
+                        mesh,
+                        candidate.inverse,
+                        candidate.tolerance.max(quantization_tolerance),
+                    )
                 })
             });
         }
-        let [owner] = owners.as_slice() else {
-            continue;
+        let (face, body, chordal_deflection) = match owners.as_slice() {
+            [owner] => (owner.face, owner.body, None),
+            _ => {
+                let Some((index, deflection)) =
+                    approximate_analytic_owner(mesh, &candidates, quantization_tolerance)
+                else {
+                    continue;
+                };
+                let owner = &candidates[index];
+                (owner.face, owner.body, Some(deflection))
+            }
         };
-        let (face, body, ..) = owner;
         mesh.faces.push((*face).clone());
         mesh.body = Some((*body).clone());
+        if let Some(deflection) = chordal_deflection {
+            mesh.chordal_deflection = Some(deflection);
+        }
         assigned.push(mesh.id.clone());
     }
     assigned
+}
+
+fn approximate_analytic_owner(
+    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    candidates: &[AnalyticCandidate<'_>],
+    quantization_tolerance: f64,
+) -> Option<(usize, f64)> {
+    if mesh.normals.len() != mesh.vertices.len() || mesh.normals.is_empty() {
+        return None;
+    }
+    let mut fits = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            let mut max_residual = 0.0_f64;
+            for (point, normal) in mesh.vertices.iter().zip(&mesh.normals) {
+                let local_point = candidate.inverse.apply_point(*point);
+                let residual = analytic_surface_residual(candidate.surface, local_point)?;
+                let surface_normal = analytic_surface_normal(candidate.surface, local_point)?;
+                let mesh_normal = candidate.inverse.apply_vector(*normal).unit()?;
+                if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
+                    return None;
+                }
+                max_residual = max_residual.max(residual);
+            }
+            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+                return None;
+            }
+            Some((index, max_residual))
+        })
+        .collect::<Vec<_>>();
+    if fits.is_empty() {
+        return None;
+    }
+    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let best_deflection = fits[0].1;
+    fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
+    fits.retain(|(index, _)| {
+        candidates[*index].trim.as_ref().is_none_or(|trim| {
+            trim.contains_mesh(mesh, candidates[*index].inverse, quantization_tolerance)
+        })
+    });
+    let [(index, deflection), rest @ ..] = fits.as_slice() else {
+        return None;
+    };
+    if rest
+        .first()
+        .is_some_and(|(_, next, ..)| *next <= *deflection + quantization_tolerance)
+    {
+        return None;
+    }
+    Some((*index, *deflection))
+}
+
+fn is_planar_surface(surface: &SurfaceGeometry) -> bool {
+    match surface {
+        SurfaceGeometry::Plane { .. } => true,
+        SurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
+        _ => false,
+    }
 }
 
 /// Bind `DisplayLists` tables to faces through their complete persistent identity.
@@ -848,9 +937,15 @@ impl AnalyticTrim {
 }
 
 #[derive(Debug, Clone)]
+enum PlanarOuter {
+    Polygon(Vec<Point2>),
+    Circle(CircularHole),
+}
+
+#[derive(Debug, Clone)]
 struct PlanarTrim {
     frame: PlaneFrame,
-    outer: Vec<Point2>,
+    outer: Option<PlanarOuter>,
     holes: Vec<CircularHole>,
 }
 
@@ -858,8 +953,12 @@ struct PlanarTrim {
 struct CylindricalTrim {
     origin: Point3,
     axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
     min_axial: f64,
     max_axial: f64,
+    angular_start: f64,
+    angular_span: f64,
 }
 
 impl CylindricalTrim {
@@ -872,9 +971,19 @@ impl CylindricalTrim {
         mesh.vertices.iter().all(|point| {
             let point = inverse_body.apply_point(*point);
             let axial = point.vector_from(self.origin).dot(self.axis);
+            let angular = cylinder_angle(point, self.origin, self.axis, self.ref_direction);
             axial.is_finite()
                 && axial >= self.min_axial - tolerance
                 && axial <= self.max_axial + tolerance
+                && angular.is_some_and(|angular| {
+                    self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
+                        || circular_interval_contains(
+                            self.angular_start,
+                            self.angular_span,
+                            angular,
+                            tolerance / self.radius,
+                        )
+                })
         })
     }
 }
@@ -891,12 +1000,23 @@ impl PlanarTrim {
             .iter()
             .map(|point| self.frame.project(inverse_body.apply_point(*point)))
             .collect::<Vec<_>>();
+        let holes = self
+            .holes
+            .iter()
+            .map(|hole| chordal_hole_constraint(*hole, &projected, tolerance))
+            .collect::<Option<Vec<_>>>();
+        let Some(holes) = holes else {
+            return false;
+        };
         if projected.iter().any(|point| {
-            !convex_polygon_contains(&self.outer, *point, tolerance)
-                || self
-                    .holes
-                    .iter()
-                    .any(|hole| point_distance(*point, hole.center) < hole.radius - tolerance)
+            self.outer.as_ref().is_some_and(|outer| !match outer {
+                PlanarOuter::Polygon(outer) => convex_polygon_contains(outer, *point, tolerance),
+                PlanarOuter::Circle(outer) => {
+                    point_distance(*point, outer.center) <= outer.radius + tolerance
+                }
+            }) || holes
+                .iter()
+                .any(|(hole, _)| point_distance(*point, hole.center) < hole.radius - tolerance)
         }) {
             return false;
         }
@@ -906,11 +1026,56 @@ impl PlanarTrim {
             else {
                 return false;
             };
-            self.holes
-                .iter()
-                .all(|hole| !triangle_crosses_hole([a, b, c], *hole, tolerance))
+            holes.iter().all(|(exclusion, boundary)| {
+                !triangle_crosses_hole([a, b, c], *exclusion, *boundary, tolerance)
+            })
         })
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn closed_planar_circle(
+    loop_: &cadmpeg_ir::topology::Loop,
+    surface: &SurfaceGeometry,
+    frame: PlaneFrame,
+    tolerance: f64,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<CircularHole> {
+    let coedge = *coedges.get(&loop_.coedges[0])?;
+    let edge = *edges.get(&coedge.edge)?;
+    if coedge.owner_loop != loop_.id || coedge.next != coedge.id || coedge.previous != coedge.id {
+        return None;
+    }
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = *curves.get(edge.curve.as_ref()?)?
+    else {
+        return None;
+    };
+    let axis = axis.unit()?;
+    let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
+    let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
+    if !radius.is_finite()
+        || *radius <= tolerance
+        || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+        || analytic_surface_residual(surface, *center)? > tolerance
+        || analytic_surface_residual(surface, boundary_point)? > tolerance
+        || boundary_point.distance(end_point) > tolerance
+        || (boundary_point.distance(*center) - radius).abs() > tolerance
+    {
+        return None;
+    }
+    Some(CircularHole {
+        center: frame.project(*center),
+        radius: *radius,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -927,46 +1092,16 @@ fn planar_trim(
     let frame = plane_frame(surface)?;
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut polygons = Vec::new();
-    let mut holes = Vec::new();
+    let mut circles = Vec::new();
     for loop_id in &face.loops {
         let loop_ = *loops.get(loop_id)?;
         if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
             return None;
         }
         if loop_.coedges.len() == 1 {
-            let coedge = *coedges.get(&loop_.coedges[0])?;
-            let edge = *edges.get(&coedge.edge)?;
-            if coedge.owner_loop != loop_.id
-                || coedge.next != coedge.id
-                || coedge.previous != coedge.id
-                || edge.start != edge.end
-            {
-                return None;
-            }
-            let CurveGeometry::Circle {
-                center,
-                axis,
-                radius,
-                ..
-            } = *curves.get(edge.curve.as_ref()?)?
-            else {
-                return None;
-            };
-            let axis = axis.unit()?;
-            let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
-            if !radius.is_finite()
-                || *radius <= tolerance
-                || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                || analytic_surface_residual(surface, *center)? > tolerance
-                || analytic_surface_residual(surface, boundary_point)? > tolerance
-                || (boundary_point.distance(*center) - radius).abs() > tolerance
-            {
-                return None;
-            }
-            holes.push(CircularHole {
-                center: frame.project(*center),
-                radius: *radius,
-            });
+            circles.push(closed_planar_circle(
+                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
+            )?);
             continue;
         }
 
@@ -1008,24 +1143,70 @@ fn planar_trim(
         }
         polygons.push(polygon);
     }
-    let [outer] = polygons.as_slice() else {
-        return None;
+    let (outer, holes) = match (polygons.as_slice(), circles.as_slice()) {
+        ([outer], holes) if is_strictly_convex(outer, tolerance) => {
+            if holes
+                .iter()
+                .any(|hole| !circle_inside_polygon(outer, *hole, tolerance))
+                || holes.iter().enumerate().any(|(index, left)| {
+                    holes[index + 1..].iter().any(|right| {
+                        point_distance(left.center, right.center)
+                            < left.radius + right.radius - tolerance
+                    })
+                })
+            {
+                return None;
+            }
+            (PlanarOuter::Polygon(outer.clone()), holes.to_vec())
+        }
+        ([], circles) if !circles.is_empty() => {
+            let (outer, holes) = circular_outer_and_holes(circles, tolerance)?;
+            (PlanarOuter::Circle(outer), holes)
+        }
+        _ => return None,
     };
-    if !is_strictly_convex(outer, tolerance)
-        || holes
-            .iter()
-            .any(|hole| !circle_inside_polygon(outer, *hole, tolerance))
-        || holes.iter().enumerate().any(|(index, left)| {
-            holes[index + 1..].iter().any(|right| {
-                point_distance(left.center, right.center) < left.radius + right.radius - tolerance
-            })
-        })
-    {
-        return None;
-    }
     Some(PlanarTrim {
         frame,
-        outer: outer.clone(),
+        outer: Some(outer),
+        holes,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn planar_hole_trim(
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<PlanarTrim> {
+    let frame = plane_frame(surface)?;
+    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    let face_loops = face
+        .loops
+        .iter()
+        .map(|loop_id| loops.get(loop_id).copied())
+        .collect::<Option<Vec<_>>>()?;
+    if !face_loops.iter().any(|loop_| loop_.coedges.len() > 1) {
+        return None;
+    }
+    let holes = face_loops
+        .iter()
+        .filter(|loop_| {
+            loop_.face == face.id && loop_.coedges.len() == 1 && loop_.vertex_uses.is_empty()
+        })
+        .filter_map(|loop_| {
+            closed_planar_circle(
+                loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
+            )
+        })
+        .collect::<Vec<_>>();
+    (!holes.is_empty()).then_some(PlanarTrim {
+        frame,
+        outer: None,
         holes,
     })
 }
@@ -1044,8 +1225,8 @@ fn cylindrical_trim(
     let SurfaceGeometry::Cylinder {
         origin,
         axis,
+        ref_direction,
         radius,
-        ..
     } = surface
     else {
         return None;
@@ -1110,12 +1291,84 @@ fn cylindrical_trim(
         }
     }
     let (min_axial, max_axial) = axial_bounds?;
+    let angles = loop_
+        .coedges
+        .iter()
+        .map(|coedge_id| {
+            let coedge = coedges.get(coedge_id)?;
+            let edge = edges.get(&coedge.edge)?;
+            [edge.start.clone(), edge.end.clone()]
+                .into_iter()
+                .map(|vertex_id| {
+                    let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+                    cylinder_angle(point, *origin, axis, *ref_direction)
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<Vec<_>>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
         origin: *origin,
         axis,
+        ref_direction: *ref_direction,
+        radius: *radius,
         min_axial,
         max_axial,
+        angular_start,
+        angular_span,
     })
+}
+
+fn cylinder_angle(
+    point: Point3,
+    origin: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+) -> Option<f64> {
+    let axis = axis.unit()?;
+    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
+    let transverse = axis.cross(reference).unit()?;
+    let delta = point.vector_from(origin);
+    let angle = delta.dot(transverse).atan2(delta.dot(reference));
+    angle
+        .is_finite()
+        .then_some(angle.rem_euclid(std::f64::consts::TAU))
+}
+
+fn circular_interval(angles: &[f64]) -> Option<(f64, f64)> {
+    let mut angles = angles
+        .iter()
+        .copied()
+        .filter(|angle| angle.is_finite())
+        .collect::<Vec<_>>();
+    if angles.is_empty() {
+        return None;
+    }
+    angles.sort_by(f64::total_cmp);
+    angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
+    if angles.len() == 1 {
+        return Some((angles[0], std::f64::consts::TAU));
+    }
+    let (largest_gap_index, largest_gap) = (0..angles.len())
+        .map(|index| {
+            let next = angles[(index + 1) % angles.len()];
+            let gap = if index + 1 == angles.len() {
+                next + std::f64::consts::TAU - angles[index]
+            } else {
+                next - angles[index]
+            };
+            (index, gap)
+        })
+        .max_by(|left, right| left.1.total_cmp(&right.1))?;
+    let start = angles[(largest_gap_index + 1) % angles.len()];
+    Some((start, std::f64::consts::TAU - largest_gap))
+}
+
+fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64) -> bool {
+    (angle - start).rem_euclid(std::f64::consts::TAU) <= span + tolerance
 }
 
 // The trim grammars share the same indexed topology maps.
@@ -1134,6 +1387,11 @@ fn analytic_trim(
         SurfaceGeometry::Plane { .. } => planar_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
+        .or_else(|| {
+            planar_hole_trim(
+                face, surface, loops, coedges, edges, vertices, points, curves,
+            )
+        })
         .map(AnalyticTrim::Planar),
         SurfaceGeometry::Cylinder { .. } => cylindrical_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
@@ -1246,18 +1504,151 @@ fn circle_inside_polygon(polygon: &[Point2], hole: CircularHole, tolerance: f64)
         })
 }
 
-fn triangle_crosses_hole(triangle: [Point2; 3], hole: CircularHole, tolerance: f64) -> bool {
-    if convex_polygon_contains(&triangle, hole.center, tolerance) {
+fn circle_inside_circle(outer: CircularHole, inner: CircularHole, tolerance: f64) -> bool {
+    point_distance(outer.center, inner.center) + inner.radius <= outer.radius + tolerance
+}
+
+fn circular_outer_and_holes(
+    circles: &[CircularHole],
+    tolerance: f64,
+) -> Option<(CircularHole, Vec<CircularHole>)> {
+    let enclosing = circles
+        .iter()
+        .enumerate()
+        .filter(|(index, outer)| {
+            circles.iter().enumerate().all(|(inner_index, inner)| {
+                index == &inner_index || circle_inside_circle(**outer, *inner, tolerance)
+            })
+        })
+        .collect::<Vec<_>>();
+    let [(outer_index, outer)] = enclosing.as_slice() else {
+        return None;
+    };
+    let holes = circles
+        .iter()
+        .enumerate()
+        .filter_map(|(index, hole)| (index != *outer_index).then_some(*hole))
+        .collect::<Vec<_>>();
+    if holes.iter().enumerate().any(|(index, left)| {
+        holes[index + 1..].iter().any(|right| {
+            point_distance(left.center, right.center) < left.radius + right.radius - tolerance
+        })
+    }) {
+        return None;
+    }
+    Some((**outer, holes))
+}
+
+fn chordal_hole_constraint(
+    hole: CircularHole,
+    points: &[Point2],
+    tolerance: f64,
+) -> Option<(CircularHole, CircularHole)> {
+    let distances = points
+        .iter()
+        .map(|point| point_distance(*point, hole.center))
+        .collect::<Vec<_>>();
+    let minimum = distances.iter().copied().reduce(f64::min)?;
+    if minimum >= hole.radius - tolerance {
+        return Some((hole, hole));
+    }
+
+    let mut boundary_angles = points
+        .iter()
+        .zip(&distances)
+        .filter_map(|(point, distance)| {
+            ((*distance - hole.radius).abs() <= tolerance)
+                .then_some((point.v - hole.center.v).atan2(point.u - hole.center.u))
+        })
+        .collect::<Vec<_>>();
+    boundary_angles.sort_by(f64::total_cmp);
+    boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);
+    if boundary_angles.len() < 3 {
+        return None;
+    }
+    let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *boundary_angles.last()?;
+    let maximum_gap = boundary_angles
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .chain(std::iter::once(wrap_gap))
+        .reduce(f64::max)?;
+    if maximum_gap > std::f64::consts::PI {
+        return None;
+    }
+    let maximum_sagitta = hole.radius * (1.0 - (maximum_gap / 2.0).cos());
+    let inward_deflection = hole.radius - minimum;
+    if inward_deflection > maximum_sagitta + tolerance {
+        return None;
+    }
+    Some((
+        CircularHole {
+            radius: hole.radius - maximum_sagitta,
+            ..hole
+        },
+        hole,
+    ))
+}
+
+fn triangle_crosses_hole(
+    triangle: [Point2; 3],
+    exclusion: CircularHole,
+    boundary: CircularHole,
+    tolerance: f64,
+) -> bool {
+    if convex_polygon_contains(&triangle, exclusion.center, tolerance) {
         return true;
     }
     (0..3).any(|index| {
         let start = triangle[index];
         let end = triangle[(index + 1) % 3];
-        point_segment_distance(hole.center, start, end) < hole.radius - tolerance
-            && ![start, end]
-                .iter()
-                .all(|point| (point_distance(*point, hole.center) - hole.radius).abs() <= tolerance)
+        point_segment_distance(exclusion.center, start, end) < exclusion.radius - tolerance
+            && ![start, end].iter().all(|point| {
+                (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
+            })
     })
+}
+
+fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<Vector3> {
+    let subtract = |left: Point3, right: Point3| {
+        Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+    };
+    match surface {
+        SurfaceGeometry::Plane { normal, .. } => normal.unit(),
+        SurfaceGeometry::Cylinder { origin, axis, .. } => {
+            let axis = axis.unit()?;
+            let delta = subtract(point, *origin);
+            let radial = delta - axis.scale(delta.dot(axis));
+            radial.unit()
+        }
+        SurfaceGeometry::Sphere { center, .. } => subtract(point, *center).unit(),
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            major_radius,
+            ..
+        } => {
+            let axis = axis.unit()?;
+            let delta = subtract(point, *center);
+            let axial = delta.dot(axis);
+            let radial = delta - axis.scale(axial);
+            let radial_unit = radial.unit()?;
+            (radial_unit.scale(radial.norm() - major_radius) + axis.scale(axial)).unit()
+        }
+        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+            transform
+                .apply_vector(analytic_surface_normal(
+                    basis,
+                    transform.try_inverse_affine()?.apply_point(point),
+                )?)
+                .unit()
+        }
+        SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
 }
 
 fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option<f64> {
