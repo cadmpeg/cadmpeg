@@ -645,7 +645,7 @@ Three header lines precede the records.
 
 The first line holds exactly four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
 
-The second line holds exactly three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
+The second line holds exactly three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
 The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
 

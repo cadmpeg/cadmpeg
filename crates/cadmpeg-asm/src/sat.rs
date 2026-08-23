@@ -258,7 +258,13 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
             offset: at,
             reason: format!("header line has no {what} count"),
         })?;
-    *pos += 1; // one separator byte
+    if line.get(*pos).is_none_or(|byte| !is_ws(*byte)) {
+        return Err(SatError {
+            offset: at,
+            reason: format!("header {what} count has no separator"),
+        });
+    }
+    *pos += 1;
     let end = pos
         .checked_add(len)
         .filter(|end| *end <= line.len())
@@ -1501,6 +1507,24 @@ mod tests {
             }
             assert!(parse(&malformed).is_err(), "header line {line}");
         }
+    }
+
+    #[test]
+    fn counted_header_strings_require_a_separator_after_the_count() {
+        let valid = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let mut malformed = valid.clone();
+        let separator = malformed
+            .windows(b"16 Autodesk".len())
+            .position(|window| window == b"16 Autodesk")
+            .map(|start| start + 2)
+            .expect("product-family separator");
+        malformed.remove(separator);
+
+        let error = parse(&malformed).expect_err("missing counted-string separator must fail");
+        assert_eq!(
+            error.offset,
+            valid.iter().position(|byte| *byte == b'\n').unwrap() + 1
+        );
     }
 
     #[test]
