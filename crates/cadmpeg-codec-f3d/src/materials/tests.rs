@@ -430,6 +430,72 @@ fn appearance_record(
     }
 }
 
+fn texture_record(guid: &str, path: &str) -> cadmpeg_protein::DecodedRecord {
+    cadmpeg_protein::DecodedRecord {
+        ordinal: 0,
+        logical_offset: 0,
+        schema: "UnifiedBitmapSchema".to_owned(),
+        guid: guid.to_owned(),
+        base: "Texture-001".to_owned(),
+        asset_lib_id: String::new(),
+        properties: std::collections::BTreeMap::from([(
+            "unifiedbitmap_Bitmap".to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::TextureUri(vec![path.to_owned()]),
+                connections: Vec::new(),
+            },
+        )]),
+    }
+}
+
+fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord {
+    appearance_record(
+        "GenericSchema",
+        std::collections::BTreeMap::from([(
+            "generic_diffuse".to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
+                connections: vec![texture_guid.to_owned()],
+            },
+        )]),
+    )
+}
+
+#[test]
+fn equivalent_duplicate_texture_guids_bind_once() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let texture = texture_record(guid, "textures/albedo.png");
+    let appearances = super::appearances_from_schema_records(&[
+        appearance_connected_to(guid),
+        texture.clone(),
+        texture,
+    ])
+    .expect("equivalent texture records deduplicate");
+
+    assert_eq!(appearances.len(), 1);
+    assert_eq!(appearances[0].textures.len(), 1);
+    assert_eq!(appearances[0].textures[0].paths, ["textures/albedo.png"]);
+}
+
+#[test]
+fn conflicting_duplicate_texture_guids_reject_in_both_orders() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let first = texture_record(guid, "textures/first.png");
+    let second = texture_record(guid, "textures/second.png");
+    for textures in [[first.clone(), second.clone()], [second, first]] {
+        let error = super::appearances_from_schema_records(&[
+            appearance_connected_to(guid),
+            textures[0].clone(),
+            textures[1].clone(),
+        ])
+        .expect_err("one texture GUID cannot select conflicting payloads");
+
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
 /// A Distance whose tag names a quantity other than length has no
 /// millimetre reading and must not be silently taken as one.
 #[test]

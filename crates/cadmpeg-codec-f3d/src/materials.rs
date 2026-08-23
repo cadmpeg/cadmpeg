@@ -512,7 +512,7 @@ pub fn decode_with_body_bindings<'a>(
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
             let records = cadmpeg_protein::decode(protein.window(), instance.window())?;
-            let mut decoded = appearances_from_schema_records(&records);
+            let mut decoded = appearances_from_schema_records(&records)?;
             let decoded_ids = decoded
                 .iter()
                 .map(|appearance| appearance.id.clone())
@@ -621,13 +621,25 @@ pub fn decode_with_body_bindings<'a>(
     })
 }
 
-fn appearances_from_schema_records(records: &[cadmpeg_protein::DecodedRecord]) -> Vec<Appearance> {
-    let textures = records
-        .iter()
-        .filter_map(texture_asset)
-        .map(|texture| (texture.asset_guid.clone(), texture))
-        .collect::<BTreeMap<_, _>>();
-    records
+fn appearances_from_schema_records(
+    records: &[cadmpeg_protein::DecodedRecord],
+) -> Result<Vec<Appearance>, CodecError> {
+    let mut textures = BTreeMap::new();
+    for texture in records.iter().filter_map(texture_asset) {
+        match textures.entry(texture.asset_guid.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(texture);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &texture => {}
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                return Err(CodecError::Malformed(format!(
+                    "Protein texture asset {} has conflicting payloads",
+                    entry.key()
+                )));
+            }
+        }
+    }
+    Ok(records
         .iter()
         .filter(|record| {
             !matches!(
@@ -670,7 +682,7 @@ fn appearances_from_schema_records(records: &[cadmpeg_protein::DecodedRecord]) -
                 textures: connected,
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Resolve the one schema member that supplies an appearance's neutral base
