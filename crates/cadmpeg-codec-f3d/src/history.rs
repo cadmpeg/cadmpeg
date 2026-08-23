@@ -5235,6 +5235,40 @@ fn edge_recipe_reference_context(
     }
 }
 
+/// Resolve the unique candidate edge shared by the non-null face references
+/// in the first side of a standard edge recipe.
+fn side_one_recipe_edge(
+    structure: Option<&crate::records::DesignEdgeRecipeStructure>,
+    reference_contexts: &[crate::records::DesignEdgeRecipeReferenceContext],
+    candidate_edges: &[i64],
+) -> Option<i64> {
+    let side = structure?.sides.first()?;
+    let mut ordinals = std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+        .map(|value| usize::try_from(value).ok()?.checked_sub(1))
+        .collect::<Option<Vec<_>>>()?;
+    ordinals.sort_unstable();
+    ordinals.dedup();
+    let mut edge_sets = ordinals.into_iter().map(|ordinal| {
+        let context = reference_contexts.get(ordinal)?;
+        (context.reference_ordinal == u32::try_from(ordinal).ok()?)
+            .then_some(context.shared_edge_slots.as_slice())
+    });
+    let mut candidates = edge_sets.next()??.to_vec();
+    for edges in edge_sets {
+        let edges = edges?;
+        candidates.retain(|candidate| edges.contains(candidate));
+    }
+    candidates.retain(|candidate| candidate_edges.contains(candidate));
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
+}
+
 pub(crate) fn bind_edge_operand_history_candidates(
     operands: &mut [crate::records::DesignEdgeOperand],
     scopes: &[crate::records::DesignParameterScope],
@@ -5515,8 +5549,12 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             recipe_selector_candidates(operand.recipe_structure.as_ref(), &changed_edge_contexts);
-        operand.resolved_edge_slot =
-            crate::design::edge_resolve::resolve_edge_operand_candidates(operand);
+        operand.resolved_edge_slot = side_one_recipe_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_reference_contexts,
+            &operand.preceding_boundary_edge_slots,
+        )
+        .or_else(|| crate::design::edge_resolve::resolve_edge_operand_candidates(operand));
         if operand.resolved_edge_slot.is_none()
             && stream.is_some_and(|stream| {
                 scope_operand_counts.get(&(stream.to_owned(), operand.scope_record_index))

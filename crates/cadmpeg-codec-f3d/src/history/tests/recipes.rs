@@ -2020,3 +2020,43 @@ fn projection_caches_end_after_history_consumers() {
     native = crate::native::F3dNative::load(&namespace).expect("load native history");
     assert!(native.asm_histories[0].projection_finalized);
 }
+
+#[test]
+fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
+    let side = |header_value, scalars: Vec<i32>| crate::records::DesignTopologyRecipeSide {
+        field_count: std::num::NonZeroU32::new(3).unwrap(),
+        header_value,
+        scalars,
+        payload_prefix: vec![0],
+        payload_entry_count: 0,
+        entries: Vec::new(),
+    };
+    let structure = crate::records::DesignEdgeRecipeStructure {
+        root: 2,
+        sides: vec![side(1, vec![0, 2]), side(3, vec![0, 0])],
+    };
+    let context =
+        |reference_ordinal, shared_edge_slots| crate::records::DesignEdgeRecipeReferenceContext {
+            reference_ordinal,
+            result_faces: Vec::new(),
+            result_face_boundaries: Vec::new(),
+            result_shared_edge_slots: Vec::new(),
+            preceding_faces: Vec::new(),
+            preceding_face_boundaries: Vec::new(),
+            preceding_support_face_slots: Vec::new(),
+            preceding_support_face_boundaries: Vec::new(),
+            shared_edge_slots,
+            changed_shared_edge_slots: Vec::new(),
+            changed_reference_edge_slots: Vec::new(),
+        };
+    let contexts = vec![
+        context(0, vec![40, 41]),
+        context(1, vec![41, 42]),
+        context(2, vec![99]),
+    ];
+
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &[40, 41, 42]),
+        Some(41)
+    );
+}
