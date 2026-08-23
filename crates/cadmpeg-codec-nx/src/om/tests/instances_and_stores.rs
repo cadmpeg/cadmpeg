@@ -457,6 +457,76 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
 }
 
 #[test]
+fn om_thru_curve_references_require_the_complete_leading_envelope() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "THRU_CURVE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03";
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = super::thru_curve_payload_references(record).expect("complete envelope");
+    assert_eq!(field.discriminator, 0x13);
+    assert_eq!(field.controls, [2, 3, 3, 4, 1, 1, 1, 1, 7]);
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [289, 290, 291, 292, 293, 294, 295, 296, 297]
+    );
+    assert_eq!(field.references[0].offset, 205);
+    assert_eq!(field.references[8].raw_object_index, [0xf1, 0x01, 0x29]);
+    assert_eq!(field.trailing_control, 1);
+    assert_eq!(field.trailing_value, [0x5e, 0x38]);
+
+    let mut alternate = payload.to_vec();
+    alternate[0] = 0x17;
+    alternate[16..24].copy_from_slice(&[7, 3, 3, 4, 1, 2, 4, 1]);
+    alternate[44] = 6;
+    alternate[46..48].copy_from_slice(&[0x5d, 0xfc]);
+    let alternate = super::thru_curve_payload_references(super::OperationRecord {
+        bytes: &alternate,
+        payload: &alternate,
+        ..record
+    })
+    .expect("alternate controls");
+    assert_eq!(alternate.discriminator, 0x17);
+    assert_eq!(alternate.controls, [7, 3, 3, 4, 1, 2, 4, 1, 7]);
+    assert_eq!(alternate.trailing_control, 6);
+    assert_eq!(alternate.trailing_value, [0x5d, 0xfc]);
+
+    let mut malformed = payload.to_vec();
+    malformed[24] = 0x09;
+    assert!(
+        super::thru_curve_payload_references(super::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    assert!(
+        super::thru_curve_payload_references(super::OperationRecord {
+            bytes: &payload[..payload.len() - 2],
+            payload: &payload[..payload.len() - 2],
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_surface_feature_branches_require_one_complete_counted_group() {
     let label = super::OperationLabel {
         header_offset: 100,

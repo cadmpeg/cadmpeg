@@ -2202,6 +2202,21 @@ pub struct SurfaceFeaturePayloadReferenceField {
     pub references: [PayloadObjectReference; 14],
 }
 
+/// Exact leading construction references in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadReferenceField {
+    /// Nonzero construction discriminator at the payload start.
+    pub discriminator: u8,
+    /// Exact opaque controls between the two reference groups.
+    pub controls: [u8; 9],
+    /// Three header references followed by six construction references.
+    pub references: [PayloadObjectReference; 9],
+    /// Nonzero control byte following the reference groups.
+    pub trailing_control: u8,
+    /// Exact two-byte value selected by the `a0` marker.
+    pub trailing_value: [u8; 2],
+}
+
 /// One counted construction branch in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadBranch {
@@ -4704,6 +4719,56 @@ pub fn surface_feature_payload_references(
     (record.payload.get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
     Some(SurfaceFeaturePayloadReferenceField {
         references: references.try_into().ok()?,
+    })
+}
+
+/// Decode the exact leading construction-reference envelope in a bounded
+/// `THRU_CURVE` payload.
+pub fn thru_curve_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<ThruCurvePayloadReferenceField> {
+    const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    (record.label.value == "THRU_CURVE").then_some(())?;
+    let discriminator = *record.payload.first()?;
+    (discriminator != 0).then_some(())?;
+    (record.payload.get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
+
+    let mut at = 1 + HEADER.len();
+    let mut references = Vec::with_capacity(9);
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
+        })
+    };
+    for _ in 0..3 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
+    at += 2;
+    let controls: [u8; 9] = record.payload.get(at..at + 9)?.try_into().ok()?;
+    (controls[8] == 0x07).then_some(())?;
+    at += controls.len();
+    for _ in 0..6 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (*record.payload.get(at)? == 0x04).then_some(())?;
+    let trailing_control = *record.payload.get(at + 1)?;
+    (trailing_control != 0).then_some(())?;
+    (*record.payload.get(at + 2)? == 0xa0).then_some(())?;
+    let trailing_value = record.payload.get(at + 3..at + 5)?.try_into().ok()?;
+    (record.payload.get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
+
+    Some(ThruCurvePayloadReferenceField {
+        discriminator,
+        controls,
+        references: references.try_into().ok()?,
+        trailing_control,
+        trailing_value,
     })
 }
 

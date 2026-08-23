@@ -573,19 +573,20 @@ but no field-role relation assigns faces, plane, pull direction, angle, or
 termination semantics. Shared store identity and serialized order establish
 construction ownership only.
 
-### OM-26. `SKIN` construction roles
+### OM-26. `SKIN` and `THRU_CURVE` construction roles
 
-**Question.** Which ordered `SKIN` references and branch groups select sections, guides, continuity, and terminal controls?
+**Question.** Which ordered `SKIN` and `THRU_CURVE` references and `SKIN` branch groups select sections, guides, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions." and `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, common construction envelope, ordered references, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, ordered references, and the fourteen-block logical payload.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
-**Conflict.** The common envelope preserves fourteen references in order, and
-the branch groups preserve family, mode, members, and terminal references.
-These fields use shared reference grammars and provide no relation assigning
-sections, guides, continuity, or terminal controls. Scalar pairs and strings
-are payload-owned and do not add those roles.
+**Conflict.** The `SKIN` envelope preserves fourteen references in order, the
+`THRU_CURVE` envelope preserves nine references in order, and the `SKIN` branch
+groups preserve family, mode, members, and terminal references. These fields
+use shared reference grammars and provide no relation assigning sections,
+guides, continuity, or terminal controls. Scalar pairs and strings are
+payload-owned and do not add those roles.
 
 ### OM-27. `Studio Surface` construction roles
 

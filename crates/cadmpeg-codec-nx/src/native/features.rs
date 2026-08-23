@@ -2283,7 +2283,7 @@ pub struct FeatureDraftConstructionTerminalLane {
 pub struct FeatureSurfaceConstructionReference {
     /// Globally unique surface-construction-reference identity.
     pub id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
+    /// Owning `SKIN`, `Studio Surface`, or `THRU_CURVE` operation label.
     pub operation_label: String,
     /// Zero-based slot order in the exact common envelope.
     pub ordinal: u32,
@@ -2295,6 +2295,25 @@ pub struct FeatureSurfaceConstructionReference {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
+/// Exact leading construction envelope in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionEnvelope {
+    /// Globally unique envelope identity.
+    pub id: String,
+    /// Owning `THRU_CURVE` operation label.
+    pub operation_label: String,
+    /// Nonzero construction discriminator.
+    pub discriminator: u8,
+    /// Exact opaque controls between the reference groups.
+    pub controls: [u8; 9],
+    /// Nonzero control following the second reference group.
+    pub trailing_control: u8,
+    /// Exact two-byte value selected by the `a0` marker.
+    pub trailing_value: [u8; 2],
+    /// Absolute source offset of the discriminator.
     pub source_offset: u64,
 }
 
@@ -7802,6 +7821,10 @@ pub fn feature_surface_construction_references(
     resolved_feature_payload_references(container, |record| {
         crate::om::surface_feature_payload_references(record)
             .map(|field| field.references.into_iter().collect())
+            .or_else(|| {
+                crate::om::thru_curve_payload_references(record)
+                    .map(|field| field.references.into_iter().collect())
+            })
     })
     .into_iter()
     .map(|reference| {
@@ -7823,6 +7846,32 @@ pub fn feature_surface_construction_references(
         }
     })
     .collect()
+}
+
+/// Decode the exact leading construction envelope in each `THRU_CURVE` payload.
+pub fn feature_thru_curve_construction_envelopes(
+    container: &Container,
+) -> Vec<FeatureThruCurveConstructionEnvelope> {
+    let mut envelopes = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(field) = crate::om::thru_curve_payload_references(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            envelopes.push(FeatureThruCurveConstructionEnvelope {
+                id: format!("nx:feature-history:thru-curve-construction-envelope#{operation_key}"),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                discriminator: field.discriminator,
+                controls: field.controls,
+                trailing_control: field.trailing_control,
+                trailing_value: field.trailing_value,
+                source_offset: entry_offset + record.payload_offset as u64,
+            });
+        },
+    );
+    envelopes
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
