@@ -262,15 +262,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
 
-### PS-31. Fixed-node identifier domain
+### PS-31. Fixed-node frame ownership
 
-**Question.** Which schema field or stream invariant bounds the `node_id` of a fixed Parasolid XT node?
+**Question.** Which stream invariant owns a fixed-node frame when the node does not participate in a complete body-topology graph?
 
-**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field at logical record offset `+4` for node families that carry it. The defined record grammar supplies no upper numerical bound below the u32 domain.
+**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field with no smaller numerical bound. A full-domain interpretation is admitted when it preserves every baseline record and uniquely changes an incomplete body-topology graph into a complete graph. This proof admits mixed low and high node identities in topology families. It does not prove an unreferenced analytic carrier or a carrier whose owning topology is already complete without it.
 
-**Need.** We must derive node admission from the owning schema and complete record framing. A numerical cutoff must not decide whether a framed BODY, SHELL, FACE, geometry, or other fixed node exists.
+**Need.** We must derive carrier and ownership-node admission from a serialized frame owner or from a typed reference closure. The proof must exclude complete-looking fixed records inside opaque payloads.
 
-**Conflict.** The fixed-node scanner rejects several node families when `node_id` is greater than `1,000,000`. This cutoff is not a format invariant and can remove valid topology or geometry from a large identity space.
+**Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph, but it can still reject a valid fixed carrier or ownership node without that graph witness.
 
 ### PS-32. Direct and escaped record-form selection
 

@@ -91,7 +91,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
         stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
     }
 
-    let graph = crate::topology::Graph::parse_schema_owned(&stream);
+    let graph = crate::topology::Graph::parse(&stream);
 
     assert_eq!(graph.body_shape_shells().len(), 1);
     assert_eq!(graph.body_shape_face_count(), 1);
@@ -110,6 +110,24 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     assert_eq!(result.ir().model.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = crate::topology::Graph::parse(&stream);
+    let face = initial_graph.get(14, 4).unwrap();
+    let node_id_offset = face.pos + 4 + face.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = crate::topology::Graph::parse(&stream);
+
+    assert_eq!(
+        graph.get(14, 4).and_then(crate::topology::Node::node_id),
+        Some(u32::MAX)
+    );
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
 }
 
 #[test]
