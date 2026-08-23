@@ -1652,6 +1652,17 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let missing = source.replace("105r vf 0 1\n", "");
         let error = parse_cage(missing.as_bytes()).expect_err("incomplete radial maps");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+
+        let native_id = u64::MAX;
+        let replacement = format!("105r ef {native_id} {native_id}\n");
+        let native = source.replace("105r ef 0 1\n", &replacement);
+        let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
+        let ef = cage.surface.symmetries[0]
+            .radial_maps
+            .iter()
+            .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+            .expect("ef radial map");
+        assert_eq!(ef.pairs, vec![[native_id, native_id]]);
     }
 
     #[test]
