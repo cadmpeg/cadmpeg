@@ -79,6 +79,8 @@ pub(crate) fn cyl_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        matches!(cur.peek(), Some(Token::SubtypeClose)).then_some(())?;
+        (cur.pos() + 1 == span.len()).then_some(())?;
         (
             directrix,
             interval,

@@ -116,9 +116,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
 
-**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. The specification gives no payload after that logical, and the decoder ends the tail there for either value.
+**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. A revision-gated `cyl_spl_sur` ends at that tail and requires the subtype close immediately after it. The decoder retains a cylinder carrying another token as opaque data.
 
-**Need.** A false logical is the only state the decoder can account for. A carrier whose tail is its last field, such as the revision-gated `cyl_spl_sur`, would end its scope at a true logical and drop the bytes after it without a diagnostic, and would then write the record back short. A carrier with its own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, reads those fields at the wrong offset instead and keeps the whole record as opaque bytes. No subtype scope has a full-consumption check that would separate the two outcomes from a correct decode. **Settling specimen:** a document whose shared revision-gated surface tail closes with a true logical shows what follows it.
+**Need.** A false logical is the only state with established semantics. Carriers with their own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, still read those fields immediately after either logical value. **Settling specimen:** a document whose shared revision-gated surface tail closes with a true logical shows whether the logical has semantic effect or gates an additional payload in those nonterminal layouts.
 
 ### GC-26. Position of the `sss_blend_spl_sur` third-side graph
 

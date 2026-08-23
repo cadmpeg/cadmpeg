@@ -83,6 +83,20 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_versioned_cyl_spl_sur_with_tail_smbh(0)
 }
 
+pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let record = &records[9];
+    let subtype_close = record.offset + record.len - 2;
+    assert_eq!(bytes[subtype_close], 0x10);
+    let mut trailing = Vec::new();
+    t_dbl(&mut trailing, 17.0);
+    bytes.splice(subtype_close..subtype_close, trailing);
+    bytes
+}
+
 /// A revision-gated `cyl_spl_sur` closing with the shared surface tail. Its
 /// directrix scope carries a surface block and a trailing scalar of its own, so
 /// a decoder that locates the face cache by scanning the scope rather than by
