@@ -618,19 +618,23 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     )
 }
 
-/// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
-/// block (surface and 2D pcurve blocks in the record are skipped because they do
-/// not parse as a 3D curve block). Returns `None` when none is present.
+/// Decode the unique well-formed 3D curve cache across both integer widths.
+///
+/// This generic entry point has no stream-width or owning-scope witness. It
+/// therefore withholds when more than one `(width, marker)` candidate decodes.
 pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_curve_cache_at(record_bytes, int_width))
-}
-
-pub(crate) fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsCurve> {
-    marker_positions(record_bytes).into_iter().find_map(|pos| {
-        decode_curve_block(record_bytes, pos, int_width).map(|decoded| decoded.curve)
-    })
+    let mut decoded = None;
+    for int_width in INT_WIDTHS {
+        for position in marker_positions(record_bytes) {
+            if let Some(candidate) = decode_curve_block(record_bytes, position, int_width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate.curve);
+            }
+        }
+    }
+    decoded
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block

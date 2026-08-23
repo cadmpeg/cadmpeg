@@ -157,17 +157,23 @@ pub(crate) fn decode_pcurve_block_with_end(
     ))
 }
 
-/// Decode the first well-formed 2D `nubs` block in a pcurve record.
+/// Decode the unique well-formed 2D `nubs` block across both integer widths.
+///
+/// This generic entry point has no stream-width or owning-scope witness. It
+/// therefore withholds when more than one `(width, marker)` candidate decodes.
 pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_pcurve_cache_at(record_bytes, int_width))
-}
-
-fn decode_pcurve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsPcurve> {
-    marker_positions(record_bytes)
-        .into_iter()
-        .find_map(|pos| decode_pcurve_block(record_bytes, pos, int_width))
+    let mut decoded = None;
+    for int_width in INT_WIDTHS {
+        for position in marker_positions(record_bytes) {
+            if let Some(candidate) = decode_pcurve_block(record_bytes, position, int_width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate);
+            }
+        }
+    }
+    decoded
 }
 
 /// Decode a 2D `nubs`/`nurbs` pcurve block at token `marker_pos`, returning
@@ -1237,6 +1243,19 @@ mod width_tests {
             assert_eq!(curve.control_points.len(), 2);
             assert_eq!(curve.control_points[1].x, 10.0); // cm→mm ×10
             assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
+        }
+    }
+
+    #[test]
+    fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
+        for int_width in [4usize, 8] {
+            let mut curves = curve_block(int_width);
+            curves.extend_from_slice(&curve_block(int_width));
+            assert!(decode_curve_cache(&curves).is_none());
+
+            let mut pcurves = pcurve_block(int_width);
+            pcurves.extend_from_slice(&pcurve_block(int_width));
+            assert!(super::decode_pcurve_cache(&pcurves).is_none());
         }
     }
 
