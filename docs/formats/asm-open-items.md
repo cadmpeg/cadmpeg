@@ -144,14 +144,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
 
-### GC-29. Ownership of multiple 3D curve cache blocks
-
-**Question.** Which 3D curve block is the writable cache when a carrier record contains multiple decodable blocks or supports more than one integer width?
-
-**Known.** `first_curve_patch_layout` scans the admitted integer widths and marker positions and accepts the first block that decodes. `final_curve_patch_layout` uses the final decodable block for a different caller. Neither function verifies a record-specific owner, cache role, or relationship between the selected block and the carrier subtype.
-
-**Need.** A record with more than one decodable 3D curve can make the writer patch a support or pcurve instead of the writable cache. We need an owner reference, subtype rule, or full-consumption invariant before the first-block selection can be used for writing.
-
 ### GC-32. Unadmitted rolling-ball branches
 
 **Question.** Does an `rb_blend_spl_sur` record outside the complete and compact grammars carry another defined layout?
@@ -208,7 +200,7 @@ If the discarded Boolean is the support reversal, every reversed blend support i
 
 If a nested support cache precedes an owning cache, a raw scan can return the support. If a wrapper has a source curve before its solved cache, a first-block caller returns the source; a last-block caller applied to a non-wrapper returns a later nested curve. A second valid block is accepted without an owner reference, and a wrong-width parse is accepted without a stream-width witness. The resulting face, edge, pcurve, or patch can therefore use a different carrier while remaining numerically valid.
 
-**Need.** Every remaining read and patch path must use the owning construction scope and the stream's known integer width, and must withhold when two blocks remain valid. GC-29 covers the separate writer helper; this item covers the read paths.
+**Need.** Every remaining read path must use the owning construction scope and the stream's known integer width, and must withhold when two blocks remain valid.
 
 **Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
 
