@@ -1425,6 +1425,120 @@ mod width_tests {
     }
 
     #[test]
+    fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
+        let variants = [
+            ("taper_spl_sur", 0u8),
+            ("ortho_spl_sur", 1),
+            ("orthosur", 1),
+            ("edge_tpr_spl_sur", 2),
+            ("shadow_tpr_spl_sur", 3),
+            ("shadowtapersur", 3),
+            ("ruled_tpr_spl_sur", 4),
+            ("ruledtapersur", 4),
+            ("swept_tpr_spl_sur", 5),
+            ("swepttapersur", 5),
+        ];
+        for int_width in [4usize, 8] {
+            for (name, kind) in variants {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, name);
+                push_ident(&mut bytes, "plane");
+                push_position(&mut bytes, [0.0, 0.0, 0.0]);
+                push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+                push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+                bytes.push(0x0b);
+                bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
+                push_ident(&mut bytes, "nullbs");
+                push_f64(&mut bytes, 0.25);
+                bytes.extend_from_slice(&surface_block(int_width));
+                push_f64(&mut bytes, 0.001);
+                if kind == 1 {
+                    bytes.push(0x0a);
+                }
+                if kind >= 2 {
+                    push_vector(&mut bytes, [1.0, 2.0, 3.0]);
+                }
+                if matches!(kind, 3..=5) {
+                    push_f64(&mut bytes, 0.6);
+                    push_f64(&mut bytes, 0.8);
+                }
+                if kind == 4 {
+                    push_f64(&mut bytes, 1.5);
+                }
+                bytes.push(0x10);
+
+                let tokens = lex_test_span(&bytes, int_width);
+                let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
+                let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+                let DecodedProceduralSurfaceDefinition::Taper {
+                    reference,
+                    pcurve,
+                    parameter,
+                    taper,
+                    revision_form: None,
+                    ..
+                } = decoded.definition
+                else {
+                    panic!("expected legacy taper surface");
+                };
+
+                assert!((reference.control_points[1].x - 40.0).abs() < f64::EPSILON);
+                assert!(pcurve.is_none());
+                assert!((parameter - 0.25).abs() < f64::EPSILON);
+                assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
+                assert!(matches!(
+                    (kind, taper),
+                    (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard)
+                        | (
+                            1,
+                            cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
+                        )
+                        | (2, cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. })
+                        | (3, cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. })
+                        | (4, cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. })
+                        | (5, cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn taper_surface_rejects_nested_cache_substitution() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "taper_spl_sur");
+            push_ident(&mut bytes, "plane");
+            push_position(&mut bytes, [0.0, 0.0, 0.0]);
+            push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+            push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+            bytes.push(0x0b);
+            bytes.extend_from_slice(&curve_block(int_width));
+            push_ident(&mut bytes, "nullbs");
+            push_f64(&mut bytes, 0.25);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&surface_block(int_width));
+            bytes.push(0x10);
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn ruled_surface_uses_two_direct_profiles_then_cache() {
         for int_width in [4usize, 8] {
             let mut bytes = vec![0x0f];

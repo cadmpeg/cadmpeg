@@ -3146,15 +3146,9 @@ fn taper_spl_sur(
         Some(pcurve)
     };
     let parameter = cur.take_f64()?;
-    let (_, cache_end) = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| surface_block(span, at))
-        .next_back()?;
-    let cache_fit_tolerance = match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    };
-    cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let take_draft = |cur: &mut Cur<'_>| {
         let draft = cur.take_vector3()?;
         Some(Vector3::new(draft[0], draft[1], draft[2]))
@@ -3185,6 +3179,7 @@ fn taper_spl_sur(
         },
         _ => return None,
     };
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Taper {
             support,
