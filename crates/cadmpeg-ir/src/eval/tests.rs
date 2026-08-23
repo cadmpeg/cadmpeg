@@ -766,8 +766,12 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
     assert_eq!(differential.derivative, 2.0);
 }
 
-#[test]
-fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
+fn variable_blend_eval_fixture(
+    second_origin: Point3,
+    pcurves: [(Point2, Point2); 2],
+    radii: [f64; 2],
+    cross_section: Option<VariableBlendCrossSection>,
+) -> (CadIr, SurfaceId) {
     let first_surface = SurfaceId("first-support".into());
     let second_surface = SurfaceId("second-support".into());
     let blend_surface = SurfaceId("cacheless-variable-blend".into());
@@ -794,7 +798,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         Surface {
             id: second_surface.clone(),
             geometry: SurfaceGeometry::Plane {
-                origin: Point3::new(10.0, 0.0, 0.0),
+                origin: second_origin,
                 normal: Vector3::new(1.0, 0.0, 0.0),
                 u_axis: Vector3::new(0.0, 1.0, 0.0),
             },
@@ -827,7 +831,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         calibrated: 0,
         payload: VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
-            radii: [2.0, 2.0],
+            radii,
         },
     };
     ir.model.procedural_surfaces.push(ProceduralSurface {
@@ -838,8 +842,8 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
                 subtype: VariableBlendSurfaceSubtype::VariableBlend,
                 revision: 23100,
                 sides: Box::new([
-                    side(first_surface, Point2::new(1.0, 2.0), Point2::new(2.0, 3.0)),
-                    side(second_surface, Point2::new(4.0, 5.0), Point2::new(6.0, 7.0)),
+                    side(first_surface, pcurves[0].0, pcurves[0].1),
+                    side(second_surface, pcurves[1].0, pcurves[1].1),
                 ]),
                 slice,
                 slice_range: [Some(0.0), Some(1.0)],
@@ -847,7 +851,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
                 radius_kind: VariableBlendRadiusKind::SingleRadius,
                 first_value: radius,
                 second_value: None,
-                cross_section: Some(VariableBlendCrossSection::RoundedChamfer { radius: None }),
+                cross_section,
                 u_range: [Some(0.0), Some(1.0)],
                 v_range: [Some(0.0), Some(1.0)],
                 shape_prefix: 1,
@@ -875,6 +879,20 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
+    (ir, blend_surface)
+}
+
+#[test]
+fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(10.0, 0.0, 0.0),
+        [
+            (Point2::new(1.0, 2.0), Point2::new(2.0, 3.0)),
+            (Point2::new(4.0, 5.0), Point2::new(6.0, 7.0)),
+        ],
+        [2.0, 2.0],
+        Some(VariableBlendCrossSection::RoundedChamfer { radius: None }),
+    );
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -894,6 +912,65 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(partials.point, Point3::new(4.0, 4.375, 2.125));
     assert_eq!(partials.du, Vector3::new(8.0, 3.5, 8.5));
     assert_eq!(partials.dv, Vector3::new(1.5, 3.75, 1.75));
+
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &mut ir.model.procedural_surfaces[0].definition
+    else {
+        unreachable!()
+    };
+    construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
+    construction.second_value = Some(construction.first_value.clone());
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        Some(Point3::new(4.0, 4.375, 2.125))
+    );
+}
+
+#[test]
+fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
+    let (ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(2.0, 0.0), Point2::new(2.0, 1.0)),
+            (Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)),
+        ],
+        [2.0, 4.0],
+        Some(VariableBlendCrossSection::Circular),
+    );
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5),
+        Some(Point3::new(3.0, 0.5, 0.0))
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5),
+        Some(Point3::new(0.0, 0.5, 3.0))
+    );
+    let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless circular variable blend");
+    let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
+    let tolerance = 64.0 * f64::EPSILON;
+    assert!((point.x - expected).abs() <= tolerance);
+    assert!((point.y - 0.5).abs() <= tolerance);
+    assert!((point.z - expected).abs() <= tolerance);
+}
+
+#[test]
+fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
+    let value = VariableBlendValue {
+        name: "two_ends".into(),
+        modern_flag: false,
+        discriminator: 0,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::TwoEnds {
+            parameters: [2.0, 4.0],
+            radii: [5.0, 9.0],
+        },
+    };
+    assert_eq!(variable_blend_radius(&value, 2.0), Some(5.0));
+    assert_eq!(variable_blend_radius(&value, 3.0), Some(7.0));
+    assert_eq!(variable_blend_radius(&value, 5.0), Some(11.0));
 }
 
 #[test]

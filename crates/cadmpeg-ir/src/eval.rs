@@ -3914,8 +3914,7 @@ pub fn model_surface_point(
             native: Some(construction),
         } => cacheless_law_sweep_point(&index, profile, spine, construction, u, v),
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
-            cacheless_ruled_variable_blend_partials(&index, construction, u, v)
-                .map(|partials| partials.point)
+            cacheless_variable_blend_point(&index, construction, u, v)
         }
         _ => None,
     }
@@ -4193,6 +4192,7 @@ fn cacheless_law_sweep_partials(
 struct ContactTrackDifferential {
     point: Point3,
     tangent: Vector3,
+    normal: Vector3,
 }
 
 fn variable_blend_contact_track_differential(
@@ -4208,7 +4208,26 @@ fn variable_blend_contact_track_differential(
     Some(ContactTrackDifferential {
         point: support.point,
         tangent: vector_sum(&[(uv_tangent.u, support.du), (uv_tangent.v, support.dv)]),
+        normal: support.du.cross(support.dv).unit()?,
     })
+}
+
+fn cacheless_variable_blend_domain_contains(
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> bool {
+    let exact_construction = construction.tail_enum == 2 || construction.shape_prefix == 0;
+    exact_construction
+        && (0.0..=1.0).contains(&u)
+        && sweep_tail_interval_contains(construction.slice_range, v)
+        && construction
+            .tail_parameterization
+            .as_ref()
+            .is_none_or(|tail| {
+                sweep_tail_interval_contains(tail.u_interval, u)
+                    && sweep_tail_interval_contains(tail.v_interval, v)
+            })
 }
 
 fn cacheless_ruled_variable_blend_partials(
@@ -4217,18 +4236,11 @@ fn cacheless_ruled_variable_blend_partials(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
-    if construction.tail_enum != 2
-        || !(0.0..=1.0).contains(&u)
+    if !cacheless_variable_blend_domain_contains(construction, u, v)
         || !matches!(
             construction.cross_section,
             Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius: None })
         )
-    {
-        return None;
-    }
-    let parameterization = construction.tail_parameterization.as_ref()?;
-    if !sweep_tail_interval_contains(parameterization.u_interval, u)
-        || !sweep_tail_interval_contains(parameterization.v_interval, v)
     {
         return None;
     }
@@ -4244,6 +4256,136 @@ fn cacheless_ruled_variable_blend_partials(
         du: chord,
         dv: vector_sum(&[(1.0 - u, first.tangent), (u, second.tangent)]),
     })
+}
+
+fn variable_blend_radius(
+    value: &crate::geometry::VariableBlendValue,
+    parameter: f64,
+) -> Option<f64> {
+    match &value.payload {
+        crate::geometry::VariableBlendValuePayload::TwoEnds {
+            parameters: [first_parameter, second_parameter],
+            radii: [first_radius, second_radius],
+        } => {
+            let width = second_parameter - first_parameter;
+            if width == 0.0 {
+                return None;
+            }
+            let fraction = (parameter - first_parameter) / width;
+            let radius = first_radius + fraction * (second_radius - first_radius);
+            radius.is_finite().then_some(radius)
+        }
+        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
+            variable_blend_radius(nested, parameter)
+        }
+        _ => None,
+    }
+}
+
+fn cacheless_circular_variable_blend_point(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    if !cacheless_variable_blend_domain_contains(construction, u, v)
+        || construction.radius_kind != crate::geometry::VariableBlendRadiusKind::SingleRadius
+        || !matches!(
+            construction.cross_section,
+            None | Some(crate::geometry::VariableBlendCrossSection::Circular)
+        )
+    {
+        return None;
+    }
+    let radius = variable_blend_radius(&construction.first_value, v)?.abs();
+    if radius <= f64::EPSILON {
+        return None;
+    }
+    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
+    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
+    if u == 0.0 {
+        return Some(first.point);
+    }
+    if u == 1.0 {
+        return Some(second.point);
+    }
+
+    let mut best = None;
+    let mut second_best_residual = f64::INFINITY;
+    for first_sign in [-1.0, 1.0] {
+        for second_sign in [-1.0, 1.0] {
+            let first_center = offset(first.point, &[(first_sign * radius, first.normal)]);
+            let second_center = offset(second.point, &[(second_sign * radius, second.normal)]);
+            let separation = Vector3::new(
+                second_center.x - first_center.x,
+                second_center.y - first_center.y,
+                second_center.z - first_center.z,
+            );
+            let residual = separation.norm();
+            if best.is_none_or(|(_, best_residual)| residual < best_residual) {
+                if let Some((_, best_residual)) = best {
+                    second_best_residual = best_residual;
+                }
+                best = Some((
+                    Point3::new(
+                        (first_center.x + second_center.x) * 0.5,
+                        (first_center.y + second_center.y) * 0.5,
+                        (first_center.z + second_center.z) * 0.5,
+                    ),
+                    residual,
+                ));
+            } else if residual < second_best_residual {
+                second_best_residual = residual;
+            }
+        }
+    }
+    let (center, residual) = best?;
+    let scale = radius
+        .max(first.point.x.abs())
+        .max(first.point.y.abs())
+        .max(first.point.z.abs())
+        .max(second.point.x.abs())
+        .max(second.point.y.abs())
+        .max(second.point.z.abs());
+    let tolerance = index
+        .ir()
+        .tolerances
+        .linear
+        .max(256.0 * f64::EPSILON * scale.max(1.0));
+    if residual > tolerance || second_best_residual <= tolerance {
+        return None;
+    }
+    let first_radius = Vector3::new(
+        first.point.x - center.x,
+        first.point.y - center.y,
+        first.point.z - center.z,
+    )
+    .unit()?;
+    let second_radius = Vector3::new(
+        second.point.x - center.x,
+        second.point.y - center.y,
+        second.point.z - center.z,
+    )
+    .unit()?;
+    let axis = first_radius.cross(second_radius).unit()?;
+    let angle = first_radius.dot(second_radius).clamp(-1.0, 1.0).acos();
+    let section_angle = u * angle;
+    let radial = vector_sum(&[
+        (section_angle.cos(), first_radius),
+        (section_angle.sin(), axis.cross(first_radius)),
+    ]);
+    Some(offset(center, &[(radius, radial)]))
+}
+
+fn cacheless_variable_blend_point(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    cacheless_ruled_variable_blend_partials(index, construction, u, v)
+        .map(|partials| partials.point)
+        .or_else(|| cacheless_circular_variable_blend_point(index, construction, u, v))
 }
 
 /// Evaluate a surface carrier selected by arena id.
@@ -4345,9 +4487,9 @@ pub fn model_surface_point_by_id(
                 })
             }
             Some(ProceduralSurfaceDefinition::VariableBlend { construction }) => {
-                cacheless_ruled_variable_blend_partials(index, construction, u, v).map(|partials| {
+                cacheless_variable_blend_point(index, construction, u, v).map(|point| {
                     SurfaceEvaluation {
-                        point: partials.point,
+                        point,
                         oriented_normal: None,
                     }
                 })
