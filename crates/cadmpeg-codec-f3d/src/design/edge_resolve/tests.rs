@@ -458,15 +458,19 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
 }
 
 #[test]
-fn grouped_surface_patch_recipe_uses_first_exact_singleton_per_member() {
+fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     let mut first = recipe_edge_operand(10, &[], &[]);
-    first.recipe_references = vec![recipe_reference(&[]), recipe_reference(&[17])];
+    first.recipe_references = vec![
+        recipe_reference(&[]),
+        recipe_reference(&[17]),
+        recipe_reference(&[17]),
+    ];
     let mut second = recipe_edge_operand(11, &[], &[]);
-    second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[19])];
+    second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
 
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&first, &second]),
-        Some(vec![
+        SurfacePatchRecipeEdges::Resolved(vec![
             EdgeId("f3d:edge#17".into()),
             EdgeId("f3d:edge#18".into())
         ])
@@ -477,11 +481,28 @@ fn grouped_surface_patch_recipe_uses_first_exact_singleton_per_member() {
 fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
     let mut ambiguous = recipe_edge_operand(10, &[], &[]);
     ambiguous.recipe_references = vec![recipe_reference(&[17, 18])];
+    let mut contradictory = recipe_edge_operand(11, &[], &[]);
+    contradictory.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[19])];
+    let absent = recipe_edge_operand(12, &[], &[]);
     let mut repeated = recipe_edge_operand(11, &[], &[]);
     repeated.recipe_references = vec![recipe_reference(&[17])];
 
-    assert!(surface_patch_grouped_recipe_edges(&[&ambiguous]).is_none());
-    assert!(surface_patch_grouped_recipe_edges(&[&repeated, &repeated]).is_none());
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&ambiguous]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&contradictory]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&absent, &contradictory]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&repeated, &repeated]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
 }
 
 #[test]
@@ -516,6 +537,31 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
                 crate::ids::history_input_edge_id(&prefix, 17),
                 crate::ids::history_input_edge_id(&prefix, 18),
             ]
+    ));
+}
+
+#[test]
+fn contradictory_surface_patch_references_suppress_generic_resolution() {
+    let group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.recipe_references = vec![recipe_reference(&[17]), recipe_reference(&[18])];
+    operand.resolved_edge_slot = Some(17);
+    operand.recipe_structure = Some(crate::records::DesignEdgeRecipeStructure {
+        root: 1,
+        sides: Vec::new(),
+    });
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into());
+
+    assert!(matches!(
+        resolved_surface_patch_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            Some(7),
+            &feature_id,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
 

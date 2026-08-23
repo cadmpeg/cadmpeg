@@ -27,15 +27,13 @@ pub(crate) fn resolved_edge_group(
     )
 }
 
-/// Resolve a modern grouped `SurfacePatch` edge group from its ordered exact
+/// Resolve a modern grouped `SurfacePatch` edge group from its exact
 /// recipe references.
 ///
-/// The first reference with an exact edge candidate identifies the member edge.
-/// The proof is admitted only when that reference has one candidate and the
-/// complete group maps to distinct edges. Auxiliary clause structures on
-/// individual operands do not override this group-level relation. This keeps
-/// the member-to-edge mapping tied to serialized reference order instead of
-/// choosing an arbitrary assignment from overlapping candidate sets.
+/// Every nonempty exact reference of one member must identify the same sole
+/// edge, and the complete group must map to distinct edges. Conflicting exact
+/// references suppress generic reconstruction because their serialized
+/// member identity is unresolved.
 pub(crate) fn resolved_surface_patch_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -79,8 +77,12 @@ pub(crate) fn resolved_surface_patch_edge_group(
     let Some(matched_operands) = matched_operands else {
         return fallback();
     };
-    let Some(edges) = surface_patch_grouped_recipe_edges(&matched_operands) else {
-        return fallback();
+    let edges = match surface_patch_grouped_recipe_edges(&matched_operands) {
+        SurfacePatchRecipeEdges::Absent => return fallback(),
+        SurfacePatchRecipeEdges::Inconclusive => {
+            return cadmpeg_ir::features::EdgeSelection::Native(group.id.clone());
+        }
+        SurfacePatchRecipeEdges::Resolved(edges) => edges,
     };
     let state_id = previous_state_id.or_else(|| {
         let mut states = matched_operands
@@ -122,29 +124,47 @@ pub(crate) fn resolved_surface_patch_edge_group(
     }
 }
 
-fn surface_patch_grouped_recipe_edges(
-    operands: &[&DesignEdgeOperand],
-) -> Option<Vec<cadmpeg_ir::ids::EdgeId>> {
+#[derive(Debug, PartialEq)]
+enum SurfacePatchRecipeEdges {
+    Absent,
+    Inconclusive,
+    Resolved(Vec<cadmpeg_ir::ids::EdgeId>),
+}
+
+fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> SurfacePatchRecipeEdges {
     if operands.is_empty() {
-        return None;
+        return SurfacePatchRecipeEdges::Absent;
     }
-    let edges = operands
-        .iter()
-        .map(|operand| {
-            let reference = operand
-                .recipe_references
-                .iter()
-                .find(|reference| !reference.candidate_edges.is_empty())?;
-            let [edge] = reference.candidate_edges.as_slice() else {
-                return None;
-            };
-            Some(edge.clone())
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut edges = Vec::with_capacity(operands.len());
+    let mut has_absent_member = false;
+    for operand in operands {
+        let mut exact = operand
+            .recipe_references
+            .iter()
+            .filter(|reference| !reference.candidate_edges.is_empty());
+        let Some(first) = exact.next() else {
+            has_absent_member = true;
+            continue;
+        };
+        let [edge] = first.candidate_edges.as_slice() else {
+            return SurfacePatchRecipeEdges::Inconclusive;
+        };
+        if exact.any(|reference| reference.candidate_edges.as_slice() != std::slice::from_ref(edge))
+        {
+            return SurfacePatchRecipeEdges::Inconclusive;
+        }
+        edges.push(edge.clone());
+    }
+    if has_absent_member {
+        return SurfacePatchRecipeEdges::Absent;
+    }
     let mut distinct = edges.clone();
     distinct.sort_by(|left, right| left.0.cmp(&right.0));
     distinct.dedup();
-    (distinct.len() == edges.len()).then_some(edges)
+    if distinct.len() != edges.len() {
+        return SurfacePatchRecipeEdges::Inconclusive;
+    }
+    SurfacePatchRecipeEdges::Resolved(edges)
 }
 
 fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {

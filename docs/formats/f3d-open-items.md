@@ -183,16 +183,14 @@ nonempty exact edge-candidate set?
 
 **Known.** Each recipe reference retains its selector, token, Design references,
 source order, and complete exact and alternate candidate sets. Source order does
-not establish that an earlier reference overrides a later reference.
+not establish that an earlier reference overrides a later reference. The
+decoder projects a grouped member only when all of its nonempty exact reference
+sets contain the same sole edge and the complete group maps to distinct edges.
+An ambiguous or contradictory exact reference retains the native group and does
+not fall through to generic edge reconstruction.
 
 **Need.** We must decode the reference role or selector relation that binds one
 edge to each group member and rejects contradictory references.
-
-**Conflict.** `surface_patch_grouped_recipe_edges` in
-`src/design/edge_resolve.rs` selects the first recipe reference with a nonempty
-exact edge-candidate set. It does not require later nonempty references to select
-the same edge. Two individually unique but contradictory references therefore
-project the edge selected by record order.
 
 ### DR-69. Single-member edge-treatment identity
 
