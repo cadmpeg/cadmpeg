@@ -1628,6 +1628,94 @@ mod width_tests {
     }
 
     #[test]
+    fn loft_surface_walks_bridge_to_direct_cache() {
+        for int_width in [4usize, 8] {
+            for name in ["loft_spl_sur", "loftsur"] {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, name);
+                push_int(&mut bytes, 0x04, 0, int_width);
+                push_int(&mut bytes, 0x04, 0, int_width);
+                for value in [-1.0, 2.0, -3.0, 4.0] {
+                    push_f64(&mut bytes, value);
+                }
+                for value in [1, 2, 3, 4] {
+                    push_int(&mut bytes, 0x15, value, int_width);
+                }
+                push_int(&mut bytes, 0x04, 7, int_width);
+                bytes.push(0x0a);
+                push_int(&mut bytes, 0x04, 11, int_width);
+                push_f64(&mut bytes, 0.25);
+                push_int(&mut bytes, 0x15, 12, int_width);
+                push_string(&mut bytes, "bridge");
+                bytes.extend_from_slice(&surface_block(int_width));
+                push_f64(&mut bytes, 0.001);
+                bytes.push(0x10);
+
+                let tokens = lex_test_span(&bytes, int_width);
+                let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
+                let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+                let DecodedProceduralSurfaceDefinition::Loft(loft) = decoded.definition else {
+                    panic!("expected legacy loft surface");
+                };
+
+                assert!(loft.sections.iter().all(Vec::is_empty));
+                assert_eq!(loft.closures, [1, 2]);
+                assert_eq!(loft.singularities, [3, 4]);
+                assert_eq!(loft.mode, 7);
+                assert_eq!(loft.bridge.len(), 5);
+                assert!(matches!(
+                    loft.bridge.as_slice(),
+                    [
+                        cadmpeg_ir::geometry::LoftBridgeToken::Boolean(true),
+                        cadmpeg_ir::geometry::LoftBridgeToken::Integer(11),
+                        cadmpeg_ir::geometry::LoftBridgeToken::Double(value),
+                        cadmpeg_ir::geometry::LoftBridgeToken::Enum(12),
+                        cadmpeg_ir::geometry::LoftBridgeToken::Text(text),
+                    ] if (*value - 0.25).abs() < f64::EPSILON && text == "bridge"
+                ));
+                assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
+            }
+        }
+    }
+
+    #[test]
+    fn loft_surface_rejects_nested_cache_substitution() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "loftsur");
+            push_int(&mut bytes, 0x04, 0, int_width);
+            push_int(&mut bytes, 0x04, 0, int_width);
+            for value in [-1.0, 2.0, -3.0, 4.0] {
+                push_f64(&mut bytes, value);
+            }
+            for value in [0, 0, 0, 0] {
+                push_int(&mut bytes, 0x15, value, int_width);
+            }
+            push_int(&mut bytes, 0x04, 0, int_width);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&surface_block(int_width));
+            bytes.push(0x10);
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn ruled_surface_uses_two_direct_profiles_then_cache() {
         for int_width in [4usize, 8] {
             let mut bytes = vec![0x0f];

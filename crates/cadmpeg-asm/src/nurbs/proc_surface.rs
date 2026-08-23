@@ -1860,12 +1860,8 @@ fn loft_spl_sur(
     let closures = [cur.take_enum()?, cur.take_enum()?];
     let singularities = [cur.take_enum()?, cur.take_enum()?];
     let mode = cur.take_long()?;
-    let (cache_at, cache_end) = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| surface_block(span, at).map(|(_, end)| (at, end)))
-        .next_back()?;
     let mut bridge = Vec::new();
-    while cur.pos() < cache_at {
+    while toks::marker_at(span, cur.pos()).is_none() {
         match cur.peek()? {
             Token::True | Token::False => {
                 bridge.push(LoftBridgeToken::Boolean(cur.take_bool()?));
@@ -1877,10 +1873,10 @@ fn loft_spl_sur(
             _ => return None,
         }
     }
-    let cache_fit_tolerance = match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    };
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
