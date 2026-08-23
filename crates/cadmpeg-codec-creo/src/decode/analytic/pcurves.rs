@@ -80,6 +80,61 @@ pub fn canonicalized_pcurve_endpoints(
     ]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TwoChartEndpointSets {
+    pub paths: [Option<[[f64; 2]; 2]>; 2],
+    pub complete: bool,
+}
+
+pub(crate) fn mapped_two_chart_endpoint_sets(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    pcurve: &crate::curve::TwoChartPcurveSamples,
+) -> Option<TwoChartEndpointSets> {
+    let surfaces = pcurve
+        .faces
+        .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
+    let mapped_samples: [Option<Vec<[f64; 3]>>; 2] = std::array::from_fn(|face_index| {
+        let surface = surfaces[face_index]?;
+        pcurve
+            .samples
+            .iter()
+            .map(|sample| {
+                let point = cadmpeg_ir::eval::surface_point(
+                    &surface.geometry,
+                    sample[face_index][0],
+                    sample[face_index][1],
+                )?;
+                Some([point.x, point.y, point.z])
+            })
+            .collect::<Option<Vec<_>>>()
+    });
+    if let (Some(first), Some(second)) = (&mapped_samples[0], &mapped_samples[1]) {
+        first
+            .iter()
+            .zip(second)
+            .all(|(first, second)| model_points_agree(*first, *second))
+            .then_some(())?;
+    }
+    let [first, last] = [pcurve.samples.first()?, pcurve.samples.last()?];
+    let canonical = canonicalized_pcurve_endpoints(
+        scan,
+        pcurve.faces,
+        [first[0], last[0]],
+        [first[1], last[1]],
+    );
+    let endpoint_sets =
+        std::array::from_fn(|index| mapped_samples[index].as_ref().map(|_| canonical[index]));
+    let complete = endpoint_sets.iter().all(Option::is_some);
+    endpoint_sets
+        .iter()
+        .any(Option::is_some)
+        .then_some(TwoChartEndpointSets {
+            paths: endpoint_sets,
+            complete,
+        })
+}
+
 #[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,
@@ -542,6 +597,34 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             .collect::<Vec<_>>();
         process_paths(curve_id, faces, paths, false);
     }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        diagnostics.records += 1;
+        let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
+            process_paths(pcurve.curve_id, pcurve.faces, Vec::new(), true);
+            continue;
+        };
+        if let Some(active) = path_activity.selected_paths(pcurve.curve_id, pcurve.faces, false) {
+            let active_count = active.into_iter().filter(|is_active| *is_active).count();
+            diagnostics.inactive_paths += 2 - active_count;
+            match active_count {
+                0 => diagnostics.inactive_records += 1,
+                1 => diagnostics.partial_records += 1,
+                _ => {}
+            }
+        } else {
+            diagnostics.topology_mismatch_records += 1;
+        }
+        let paths = pcurve
+            .faces
+            .into_iter()
+            .zip(endpoint_sets.paths)
+            .enumerate()
+            .filter_map(|(index, (face_id, endpoints))| {
+                (!ignored_surface_ids.contains(&face_id)).then_some((index, (face_id, endpoints?)))
+            })
+            .collect::<Vec<_>>();
+        process_paths(pcurve.curve_id, pcurve.faces, paths, endpoint_sets.complete);
+    }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
         &scan.curves.parameters,
         &scan.curves.topology_rows,
@@ -879,6 +962,16 @@ pub fn transfer_analytic_pcurve_carriers(
             );
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
                 retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
+            }
+        }
+        for pcurve in &scan.curves.two_chart_pcurves {
+            let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
+                continue;
+            };
+            for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+                if let Some(endpoints) = endpoints {
+                    retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
+                }
             }
         }
         for pcurve in crate::curve::fc02_short_pcurve_endpoints(
@@ -1387,6 +1480,7 @@ pub fn planar_curve_pcurve(
 mod tests {
     use super::super::equations::PlaneEquation;
     use super::*;
+    use cadmpeg_ir::geometry::NurbsSurface;
     use cadmpeg_ir::units::Units;
     use std::collections::BTreeSet;
 
@@ -1452,6 +1546,81 @@ mod tests {
             [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [1.0, 0.0]]],
         )
         .is_none());
+    }
+
+    #[test]
+    fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
+        let scan = crate::container::scan_bytes(Vec::new());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                    u_degree: 1,
+                    v_degree: 1,
+                    u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                    v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                    u_count: 2,
+                    v_count: 2,
+                    control_points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    weights: None,
+                    u_periodic: false,
+                    v_periodic: false,
+                }),
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#8".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+        let mut pcurve = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            samples: vec![
+                [[-0.01, 0.25], [-0.01, 0.25]],
+                [[0.5, 0.5], [0.5, 0.5]],
+                [[1.01, 0.75], [1.01, 0.75]],
+            ],
+            offset: 0,
+        };
+
+        assert_eq!(
+            mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            Some(TwoChartEndpointSets {
+                paths: [
+                    Some([[-0.01, 0.25], [1.01, 0.75]]),
+                    Some([[-0.01, 0.25], [1.01, 0.75]]),
+                ],
+                complete: true,
+            })
+        );
+
+        pcurve.samples[1][1][0] = 0.6;
+        assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
+
+        pcurve.samples[1][1][0] = 0.5;
+        let SurfaceGeometry::Nurbs(nurbs) = &mut ir.model.surfaces[0].geometry else {
+            panic!("first test surface must remain NURBS");
+        };
+        nurbs.u_knots.clear();
+        assert_eq!(
+            mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            Some(TwoChartEndpointSets {
+                paths: [None, Some([[-0.01, 0.25], [1.01, 0.75]])],
+                complete: false,
+            })
+        );
     }
 
     #[test]

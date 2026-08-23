@@ -1903,6 +1903,38 @@ same `F0`/`F1` faces as the topology row. A complete legacy curve namespace
 uses the same half-edge successor, vertex-orbit, face-loop, and carrier
 admission rules as the binary `crv_array` namespace.
 
+A binary canonical two-chart body opens `fc <count>`, where `<count>` is a
+compact integer of at least two. Exactly `count` sample rows follow. Each row
+contains four finite scalars in this order:
+
+| Slots  | Meaning                                  |
+| ------ | ---------------------------------------- |
+| `0..1` | Sample coordinates in face `F0`'s chart |
+| `2..3` | Sample coordinates in face `F1`'s chart |
+
+The first and last rows are the edge endpoints. Intermediate rows are ordered,
+pointwise-corresponding pcurve samples. A later row in the same `crv_array`
+namespace with the same nonzero `feat_id` and raw `type_byte` replays the unique
+canonical sample count without the `fc <count>` prefix. The canonical or
+replay body is complete only when exactly `4 * count` scalar slots consume its
+bounded parameter body. Multiple canonical counts for one feature and raw type
+make an unprefixed replay ambiguous.
+
+Each chart's first coordinate uses the first tabulated-cylinder directrix
+coordinate lane. Its second coordinate uses the second directrix coordinate
+lane. A bare `18` occupies one zero slot in either coordinate. The chart pair
+for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
+its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
+by sweep coordinate. Other surface families use their stored surface chart.
+
+Every available face chart is evaluated at every sample. When both face
+surfaces are available, corresponding model-space points must agree. A missing
+face surface does not erase a complete path in the available face chart; that
+path supplies one-sided, non-authoritative endpoint evidence. Two agreeing
+complete paths supply authoritative endpoint evidence. A nonperiodic spline
+sample marginally outside its stored parameter interval is evaluated with the
+polynomial of the adjacent boundary knot span. It is not clamped or rejected.
+
 ### 4.1.2 Pcurve operand join
 
 An endpoint path in one face parameter space maps to model space through that
@@ -1922,7 +1954,9 @@ face paths and require their mapped endpoint pairs to agree.
 
 ### 4.2 `fc` curve bodies
 
-Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class.
+An `fc` prefix is resolved by exact body grammar. A complete two-chart body
+uses the byte after `fc` as its sample count. Other complete forms use it as a
+body-family subtype. A partial token match does not select either meaning.
 
 | Subtype | Body family                              |
 | ------- | ---------------------------------------- |

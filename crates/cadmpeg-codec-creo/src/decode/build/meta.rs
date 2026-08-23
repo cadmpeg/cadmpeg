@@ -475,6 +475,10 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
         scan.curves.pcurves.len(),
     );
     coverage.insert(
+        "decoded_two_chart_pcurve_count".to_string(),
+        scan.curves.two_chart_pcurves.len(),
+    );
+    coverage.insert(
         "decoded_fc_curve_coordinate_record_count".to_string(),
         scan.curves.fc_coordinates.len(),
     );

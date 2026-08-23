@@ -70,6 +70,46 @@ fn pcurve_endpoint_slots_must_be_finite() {
 }
 
 #[test]
+fn decodes_canonical_and_positional_two_chart_sample_rows() {
+    let samples = [
+        0x0f, 0xe4, 0x0d, 0x18, // point 0
+        0xe4, 0x0f, 0x18, 0x0d, // point 1
+        0x0d, 0x18, 0xe4, 0x0f, // point 2
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
+    payload.extend_from_slice(&[8, 0, 4, 0xf6, 1]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(decoded[0].curve_id, 7);
+    assert_eq!(decoded[0].faces, [10, 11]);
+    assert_eq!(decoded[0].samples.len(), 3);
+    assert_eq!(decoded[0].samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
+    assert_eq!(decoded[1].curve_id, 8);
+    assert_eq!(decoded[1].samples, decoded[0].samples);
+}
+
+#[test]
+fn two_chart_sample_rows_require_exact_counted_consumption() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        7, 0, 4, 1, 0xf6, 0xfc, 2, 0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d,
+        0xff, // unclaimed body byte
+        10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+    ]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+}
+
+#[test]
 fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     let token_specs = [
         (-14.5, vec![0x48, 0x45, 0x00]),

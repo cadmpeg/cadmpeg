@@ -24,7 +24,7 @@ use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
     CurvePrototype, CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow,
     ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
-    PrototypePcurveEndpoints,
+    PrototypePcurveEndpoints, TwoChartPcurveSamples,
 };
 use crate::datum::{self, DatumCylinder, DatumPlane};
 use crate::feature::{
@@ -383,6 +383,8 @@ pub struct CurveScan {
     pub nonvisible_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
     pub pcurves: Vec<PcurveEndpoints>,
+    /// Ordered, pointwise-corresponding samples in both incident-face charts.
+    pub two_chart_pcurves: Vec<TwoChartPcurveSamples>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
     pub fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
@@ -1509,6 +1511,32 @@ fn curve_parameters(
     records
 }
 
+fn two_chart_pcurves(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<TwoChartPcurveSamples> {
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::two_chart_pcurve_samples(&data[section.offset..end], Some(face_ids))
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    let mut counts = BTreeMap::new();
+    for record in &records {
+        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+    }
+    records.retain(|record| counts.get(&record.curve_id) == Some(&1));
+    records
+}
+
 fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEndpoints> {
     let mut records = Vec::new();
     for section in sections {
@@ -2445,6 +2473,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     curve_topology_rows.dedup_by_key(|row| row.offset);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids);
     if layout == Layout::LegacyAscii {
         curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
         pcurves.extend(legacy_geometry.pcurves.iter().cloned());
@@ -2643,6 +2672,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             parameters: curve_parameters,
             nonvisible_parameters: nonvisible_curve_parameters,
             pcurves,
+            two_chart_pcurves,
             fc_coordinates: fc_curve_coordinates,
             fc05_circles,
             fc05_cylinder_cap_pairs,

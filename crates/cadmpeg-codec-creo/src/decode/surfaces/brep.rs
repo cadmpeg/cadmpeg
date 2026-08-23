@@ -958,6 +958,21 @@ pub(in super::super) fn transfer_native_brep(
             .or_default()
             .push((face_1_endpoints, offset));
     }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let Some(endpoint_sets) =
+            super::super::analytic::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
+        else {
+            continue;
+        };
+        for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths) {
+            if let Some(endpoints) = endpoints {
+                native_pcurves
+                    .entry((pcurve.curve_id, face_id))
+                    .or_default()
+                    .push((endpoints, pcurve.offset));
+            }
+        }
+    }
     for pcurve in crate::curve::fc02_short_pcurve_endpoints(
         &scan.curves.parameters,
         &scan.curves.topology_rows,

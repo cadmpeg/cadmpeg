@@ -465,6 +465,19 @@ pub struct PcurveEndpoints {
     pub offset: usize,
 }
 
+/// Ordered samples of one curve represented in both incident-face charts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TwoChartPcurveSamples {
+    /// Owning curve identifier.
+    pub curve_id: u32,
+    /// Adjacent face identifiers in sample-chart order.
+    pub faces: [u32; 2],
+    /// Pointwise-corresponding `[F0(u, v), F1(u, v)]` chart samples.
+    pub samples: Vec<[[f64; 2]; 2]>,
+    /// Byte offset of the source positional curve row.
+    pub offset: usize,
+}
+
 /// One-sided endpoint path from the complete short fc 02 curve body.
 ///
 /// The body carries one path in the first topology face's parameter chart;
@@ -5615,6 +5628,7 @@ fn parse_depdb_curve_segment(
 
 #[derive(Debug, Clone, Copy)]
 struct FramedRow {
+    namespace_start: usize,
     start: usize,
     end: usize,
     suffix_start: usize,
@@ -5706,6 +5720,7 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         for &(start, end, boundary_anchored) in &segments {
             if let Some(row) = framed_segment_with_face_ids(
                 payload,
+                namespace_start,
                 start,
                 end,
                 boundary_anchored,
@@ -5723,6 +5738,7 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
 
 fn framed_segment_with_face_ids(
     payload: &[u8],
+    namespace_start: usize,
     start: usize,
     end: usize,
     boundary_anchored: bool,
@@ -5755,6 +5771,7 @@ fn framed_segment_with_face_ids(
             && topology_prefix_fields(segment, 0).is_some_and(|prefix| prefix.end <= suffix_start)
         {
             return Some(FramedRow {
+                namespace_start,
                 start,
                 end: start + row_end,
                 suffix_start,
@@ -5764,6 +5781,7 @@ fn framed_segment_with_face_ids(
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
         if eligible == 1 {
             return Some(FramedRow {
+                namespace_start,
                 start: start + prefixes[0].0,
                 end: start + row_end,
                 suffix_start: suffix_start - prefixes[0].0,
@@ -5975,6 +5993,125 @@ pub fn pcurve_endpoints(
         })
         .collect::<Vec<_>>();
     result.sort_by_key(|record| record.offset);
+    result
+}
+
+fn decode_two_chart_scalar(
+    body: &[u8],
+    cursor: usize,
+    first_coordinate: bool,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    if body.get(cursor) == Some(&0x18) {
+        return Some((0.0, cursor + 1));
+    }
+    if first_coordinate {
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+    } else {
+        scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+    }
+}
+
+fn complete_two_chart_samples(
+    body: &[u8],
+    start: usize,
+    count: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<[[f64; 2]; 2]>> {
+    let sample_count = bounded_len(u64::from(count), 4, body.len().saturating_sub(start))?;
+    (sample_count >= 2).then_some(())?;
+    let mut cursor = start;
+    let mut samples = Vec::with_capacity(sample_count);
+    for _ in 0..sample_count {
+        let mut sample = [[0.0; 2]; 2];
+        for (slot, value) in sample.iter_mut().flatten().enumerate() {
+            let (decoded, next) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)?;
+            (next > cursor && decoded.is_finite()).then_some(())?;
+            *value = decoded;
+            cursor = next;
+        }
+        samples.push(sample);
+    }
+    (cursor == body.len()).then_some(samples)
+}
+
+/// Decode byte-complete two-chart sample bodies from one curve namespace.
+///
+/// A canonical body supplies `fc <count>`. Later rows in the same feature and
+/// raw curve family replay the canonical sample extent without the prefix.
+/// Every admitted row consumes exactly four finite scalars per sample.
+pub fn two_chart_pcurve_samples(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<TwoChartPcurveSamples> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let framed = framed_rows_with_face_ids(payload, face_ids);
+    let mut canonical_counts = BTreeMap::<(usize, u32, u8), BTreeSet<u32>>::new();
+    for row in &framed {
+        let bytes = &payload[row.start..row.end];
+        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else {
+            continue;
+        };
+        let body = &bytes[prefix.end..row.suffix_start];
+        if body.first() != Some(&0xfc) {
+            continue;
+        }
+        let (count, start) = compact_int(body, 1);
+        if prefix.feature_id != 0
+            && start > 1
+            && complete_two_chart_samples(body, start, count, &cache).is_some()
+        {
+            canonical_counts
+                .entry((row.namespace_start, prefix.feature_id, prefix.type_byte))
+                .or_default()
+                .insert(count);
+        }
+    }
+
+    let mut result = Vec::new();
+    for row in framed {
+        let bytes = &payload[row.start..row.end];
+        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else {
+            continue;
+        };
+        let body = &bytes[prefix.end..row.suffix_start];
+        let samples = if body.first() == Some(&0xfc) {
+            let (count, start) = compact_int(body, 1);
+            (start > 1)
+                .then(|| complete_two_chart_samples(body, start, count, &cache))
+                .flatten()
+        } else {
+            let Some(counts) =
+                canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte))
+            else {
+                continue;
+            };
+            let mut candidates = counts
+                .iter()
+                .filter_map(|count| complete_two_chart_samples(body, 0, *count, &cache));
+            let candidate = candidates.next();
+            if candidates.next().is_some() {
+                None
+            } else {
+                candidate
+            }
+        };
+        let Some(samples) = samples else {
+            continue;
+        };
+        result.push(TwoChartPcurveSamples {
+            curve_id: prefix.id,
+            faces: [row.suffix[0], row.suffix[1]],
+            samples,
+            offset: row.start,
+        });
+    }
+    result.sort_by_key(|record| record.offset);
+    let mut counts = BTreeMap::new();
+    for record in &result {
+        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+    }
+    result.retain(|record| counts.get(&record.curve_id) == Some(&1));
     result
 }
 

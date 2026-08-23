@@ -51,9 +51,10 @@ pub(super) use pcurves::solve_pcurve_vertex_domains;
 #[allow(unused_imports)]
 pub(super) use pcurves::{
     canonicalized_pcurve_endpoints, directed_pcurve_points, linear_pcurve_carrier,
-    mapped_pcurve_endpoints, native_pcurve_midpoint, oriented_native_pcurve_endpoints,
-    pcurve_backed_periodic_conic_parameter_range, pcurve_edge_endpoint_evidence,
-    pcurve_edge_endpoint_evidence_with_diagnostics, pcurve_edge_endpoints, planar_curve_pcurve,
+    mapped_pcurve_endpoints, mapped_two_chart_endpoint_sets, native_pcurve_midpoint,
+    oriented_native_pcurve_endpoints, pcurve_backed_periodic_conic_parameter_range,
+    pcurve_edge_endpoint_evidence, pcurve_edge_endpoint_evidence_with_diagnostics,
+    pcurve_edge_endpoints, planar_curve_pcurve,
     solve_pcurve_vertex_domains_with_authoritative_points, transfer_analytic_pcurve_carriers,
     unique_oriented_native_pcurve, NativePcurveCandidates, PcurveEndpointDiagnostics,
     PcurveEndpointEvidence, PcurveMismatchDetail, PcurveVertexConstraint,

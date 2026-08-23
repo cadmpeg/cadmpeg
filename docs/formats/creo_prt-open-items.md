@@ -156,21 +156,13 @@ length unit.
 
 **Need.** We must know the override to construct the torus or sphere carrier.
 
-### GS-03. Later spline prototype joins
+### GS-04. Curve parameter-bound trailer
 
-**Question.** Which field joins a later positional spline row to its prototype?
+**Question.** How are the two curve parameter bounds and following reference trailer framed outside a bounded `fc <count>` two-chart parameter body?
 
-**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Cylinder and cone prototype local systems are parameter templates" define named surface prototypes and the positional replay forms that have a proven join.
+**Known.** `creo_prt.md` §4.1 defines the canonical and positional two-chart sample bodies, their incident-face order, the spline `(u, v)` join, exact sample-body consumption, and pointwise chart admission. The bounded parameter body ends before the four-reference topology suffix and its `00 00 e3` close.
 
-**Need.** We must know the join to apply the correct spline degree, knots, control points, and weights.
-
-### GS-04. Spline intersection-curve joins
-
-**Question.** Which field joins a spline surface to each surface-intersection curve on that surface?
-
-**Known.** `creo_prt.md` §5 "An analytic" defines intersection-curve transfer when a surface pair and its endpoint witnesses select one candidate.
-
-**Need.** We must know the join to bind the trim curve to the spline surface.
+**Need.** We must identify the outer row-trailer boundary and the exact scalar and reference token lanes to retain the two curve bounds and reference trailer without conflating them with the topology suffix.
 
 ### GS-05. Prototype-adjacent `tab_cyl` points
 
@@ -220,7 +212,7 @@ construct their curves and endpoints.
 
 **Question.** What is the complete body grammar for `fc 08`?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
 
 **Need.** We must know the grammar to construct the control polyline.
 
@@ -228,7 +220,7 @@ construct their curves and endpoints.
 
 **Question.** What role does each field in a full `fc 13` sample group have?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 13` as a held-cap-ordinate control polyline.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." identifies `fc 13` as a held-cap-ordinate control polyline.
 
 **Need.** We must know the roles to construct the control polyline.
 
@@ -244,7 +236,7 @@ construct their curves and endpoints.
 
 **Question.** What body grammar does each `fc 04`, `fc 07`, `fc 09`, and `fc 0a` subtype use?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." defines the common `fc <subtype>` opener and the recognized subtype families.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." defines the common `fc <subtype>` opener and the recognized subtype families.
 
 **Need.** We must know each grammar to construct its curve family.
 
