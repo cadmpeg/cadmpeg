@@ -203,6 +203,63 @@ pub(crate) fn signal_string_geometry_target(entity_type: i64, form: i64) -> bool
     )
 }
 
+pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
+    target.entity_type == 408
+        || (target.status.use_flag == 0
+            && !matches!(
+                target.entity_type,
+                0 | 132
+                    | 134
+                    | 136
+                    | 138
+                    | 146
+                    | 148
+                    | 180
+                    | 182
+                    | 184
+                    | 202
+                    | 204
+                    | 206
+                    | 208
+                    | 210
+                    | 212
+                    | 213
+                    | 214
+                    | 216
+                    | 218
+                    | 220
+                    | 222
+                    | 228
+                    | 230
+                    | 302
+                    | 304
+                    | 306
+                    | 308
+                    | 310
+                    | 312
+                    | 314
+                    | 316
+                    | 320
+                    | 322
+                    | 402
+                    | 404
+                    | 406
+                    | 410
+                    | 412
+                    | 414
+                    | 416
+                    | 418
+                    | 420
+                    | 422
+                    | 430
+                    | 502
+                    | 504
+                    | 508
+                    | 510
+                    | 514
+            ))
+}
+
 fn array_mask_valid(
     record: &ParameterRecord,
     count_index: usize,
@@ -1481,7 +1538,7 @@ fn flow_associativity(
             }))
             && entries
                 .get(sequence)
-                .is_some_and(|target| target.entity_type != 402 || target.form == 7)
+                .is_some_and(|target| flow_join_target_valid(target))
     });
     let displays_valid = displays.iter().all(|sequence| {
         entries.get(sequence).is_some_and(|target| {

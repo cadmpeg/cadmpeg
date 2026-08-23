@@ -9,14 +9,15 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::directory::{DirectoryEntry, Status};
 use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{
-    functional_level_identifier_valid, line_font_property_code_valid, network_connectivity_valid,
-    signal_string_geometry_target,
+    flow_join_target_valid, functional_level_identifier_valid, line_font_property_code_valid,
+    network_connectivity_valid, signal_string_geometry_target,
 };
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
@@ -40,6 +41,40 @@ fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
     for (entity_type, form) in [(106, 10), (130, 1), (134, 0), (402, 11)] {
         assert!(!signal_string_geometry_target(entity_type, form));
     }
+}
+
+#[test]
+fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
+    let target = |entity_type, use_flag| DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+
+    assert!(flow_join_target_valid(&target(110, 0)));
+    assert!(flow_join_target_valid(&target(408, 2)));
+    assert!(!flow_join_target_valid(&target(410, 1)));
+    assert!(!flow_join_target_valid(&target(406, 0)));
 }
 
 #[test]
@@ -1456,6 +1491,49 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_a_non_geometry_flow_join_target() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 132,
+                    form: 0,
+                    label: "PIPEPT".into(),
+                    status: "00000400",
+                    parameters: "132,0,0,0,0,101,1,2HP1,0,4HPIPE,0,1,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 410,
+                    form: 0,
+                    label: "VIEW".into(),
+                    status: "00000100",
+                    parameters: "410,1,1,0,0,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 20,
+                    label: "PIPEFLOW".into(),
+                    status: "00000200",
+                    parameters: "402,1,0,1,1,0,0,2,1,3,4HPIPE;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    let flow = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["kind"] == "flow")
+        .unwrap();
+    assert!(flow.fields()["joins"][0].is_null());
 }
 
 #[test]

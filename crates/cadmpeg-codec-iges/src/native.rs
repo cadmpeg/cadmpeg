@@ -4,7 +4,9 @@
 use crate::card::CardScan;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::entities::geometry::{resolve_transform, Affine};
-use crate::entities::structure::{array_base_type, signal_string_geometry_target};
+use crate::entities::structure::{
+    array_base_type, flow_join_target_valid, signal_string_geometry_target,
+};
 use crate::global::{RealPrecision, ResolvedGlobal};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
@@ -3475,7 +3477,7 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             "non-associativity-or-type-402-form-7",
-                                            |target| target.entity_type != 402 || target.form == 7,
+                                            flow_join_target_valid,
                                         )
                                     })
                                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
