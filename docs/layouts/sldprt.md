@@ -175,8 +175,8 @@ Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 6 | 8 | `refs` | `u16[4]` | big | spec | four references at body +6 |
-| 14 | 24 | `xyz` | `f64[3]` | big | spec | stores xyz as three f64 BE at body +14, in metres |
+| 6 | 8 | `refs` | `u16[4]` | big | spec | `00 1d` record has four references at body +6 |
+| 14 | 24 | `xyz` | `f64[3]` | big | spec | stores xyz as three f64 BE at body +14 |
 
 Unstated regions:
 
@@ -186,7 +186,7 @@ Unstated regions:
 
 Spec §5 · layout: byte offsets · size: 12 B
 
-Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5.
+Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -199,13 +199,13 @@ Body-relative, after the two-byte family tag. An optional `ff` byte can occur be
 
 Spec §5 · layout: byte offsets · size: 14 B
 
-Body-relative. Node references follow from body +14 until the next record tag. The +0..+6 region is the common-header `flags` and `attr` of the same record.
+Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 6 | 2 | `zero_selector` | `u16` | big | spec | whose u16 at body +6 is zero |
-| 10 | 2 | `definition_node_id` | `u16` | big | spec | carries the u16 definition node id at body +10 |
-| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | and, at body +12, the attribute id of the entity it hangs on |
+| 10 | 2 | `definition_node_id` | `u16` | big | spec | definition node id at body +10 |
+| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | owner attribute at body +12 |
 
 Unstated regions:
 
@@ -2489,7 +2489,7 @@ Unstated regions:
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile, sketch-input, and reference-plane forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
-| Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
-| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table. |
+| Body records (§6) | §6 | The typed BODY, SHELL, REGION, and FACE nodes use variable-length pointer fields; no fixed-offset table describes their complete records. |
+| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*(5 + flo)` for a bare ATTRIBUTE. Specification section 5 gives the stored value-count rule. |
 | SWIFT semantic PMI object graph (§2.1) | §2.1 | Token-framed variable-length grammar. Every entity and section is delimited by Pascal-string tokens and counted key/value or relation rosters; no field has a fixed offset from the stream or entity start. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |

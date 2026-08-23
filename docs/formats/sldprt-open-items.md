@@ -50,37 +50,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
 
-### BC-05. Extended topology reference encoding
-
-**Question.** How does a SolidWorks Parasolid topology stream encode an identity greater than `65535`?
-
-**Known.** The defined fixed topology-record forms store references as big-endian `u16` values at fixed strides.
-
-**Need.** We must determine whether larger identities are forbidden, select a different record form, or use an extended-reference production. Any extended production needs its discriminator, width, signedness, and effect on following field offsets.
-
-### BC-06. Keyed forward chain layout identity
-
-**Question.** Which stored field identifies the layout of a keyed forward chain, so that a chain does not need an enumerated `disc` and `flo` sequence?
-
-**Known.** `sldprt.md` §6 "The disc22-disc20-disc1a-disc18-disc10-face layout" is one of 124 documented chain layouts. Each of those paragraphs states the same structural rule: the root record has a slot-1 sentinel, every chain record repeats the root key in slot 0, each successor names its predecessor in slot 1, and the terminal record has a slot-2 sentinel. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:9099-9136` walks a chain from those rules alone and needs no `disc` sequence. Nine call sites, among them `:8740-8756`, then reject each walked chain unless its length and its ordered `disc` and `flo` values are equal to a constant list. `:633-1280` holds 161 layout functions in source order and keeps the bodies of the first function that gives a result.
-
-**Need.** We must know the stored layout discriminator to decode a chain whose `disc` sequence is not in the constant lists, and to keep one layout function from hiding the bodies that a different site in the same stream supplies.
-
-**Conflict.** The specification gives a structural chain rule that the walk satisfies without a `disc` sequence. The decoder adds a constant `disc` sequence that the specification does not require.
-
-### BC-07. Keyed chain shell position and body kind
-
-**Question.** Which stored field identifies the shell record of a keyed forward chain, and which stored field gives the kind of the body that chain supplies?
-
-**Known.** `sldprt.md` §6 "The disc22-disc20-disc1a-disc18-disc10-face layout" names the shell root by its `disc` value. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:7370`, `:8628`, `:8956`, and `:9264` instead take the shell from a constant position in the walked chain. That position is a per-layout literal at 82 sites. The same constructors set the body kind to solid at 65 sites. `sldprt.md` §6 "In schema 33103, solid ownership follows" gives `0x1d/flo1` as the sheet-region discriminator, and `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:633-712` uses that record to separate a sheet body from a solid body on the explicit class-root route. No documented chain layout gives a body kind, and the chain constructors read no region record.
-
-**Need.** We must know the shell field and the kind field, because a sheet body that reaches the keyed chain route becomes a solid body with no recorded loss, and a chain whose shell is not at the expected position binds every face to the wrong shell.
-
 ### BC-08. Truncated persistent face identity
 
 **Question.** Which consumers must compare the optional path tail of an `ATOM_ID_2001` persistent face identity, and when does that tail separate two faces of one producer?
 
-**Known.** `sldprt.md` §5 "`ATOM_ID_2001` is the persistent face-identity family" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
+**Known.** `sldprt.md` §5 "`ATOM_ID_2001` instances hang on face bridge records" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
 
 **Need.** We must know whether the tail separates faces, because a truncated comparison binds no face where the complete identity binds one, and the hole-axis projection collects every face with the truncated pair.
 
@@ -170,18 +144,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fill semantics to validate and write the tail directory.
 
-### CM-05. Other inline entity families
-
-**Question.** What fixed slot count does each bare inline entity family outside the canonical face families use in each Parasolid schema?
-
-**Known.** `sldprt.md` §5 "Top-level entity families include" defines the common entity header. `sldprt.md` §5 "Bare entity framing is defined for schema revisions" defines the supported schema revisions, disc families, and six-, seven-, and nine-slot forms. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
-
-**Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
-
-The decoder uses the schema revision and an explicit `(disc, flo) -> slot count` table for the bare entity families consumed by its body-layout recognizers. An unlisted schema revision or family remains unresolved. Prefixed records do not use the table because their zero terminator frames the reference run.
-
-The attribute scanner accepts only the exact supported family names followed immediately by a `00 50` definition. It accepts only the list widths that the supported family grammars define: one, or five through seven. A name or list must fit in the remaining stream bytes. Name, definition, and list nodes must be nonsentinel. Duplicate definition and list identities must be byte-equivalent; the decoder withholds a conflicting identity. An instance becomes a relation only when its target survives as an emitted face or an explicit body.
-
 ### CM-06. Partition and deltas precedence
 
 **Question.** Which topology record is authoritative when partition and deltas streams describe the same site with different valid records?
@@ -230,7 +192,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a B-rep face attribute select its triangle range in a DisplayLists block?
 
-**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §5 "Face records use these families:" defines B-rep face identities. `sldprt.md` §8 defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic face support and from complete convex planar trims with circular inner loops. Other coincident trims, non-analytic supports, and tables without a complete matching identity do not supply the stored face-range mapping.
+**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §4 "Primary ownership chain:" defines the B-rep face topology. `sldprt.md` §8 defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic face support and from complete convex planar trims with circular inner loops. Other coincident trims, non-analytic supports, and tables without a complete matching identity do not supply the stored face-range mapping.
 
 **Need.** We must know the stored mapping to attach tables whose support is ambiguous or non-analytic and carry no complete matching persistent identity.
 
@@ -416,7 +378,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What is the disposition of a feature-local face identity when no surviving face carries that identity?
 
-**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §5 "Face records" defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
+**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §4.1 "The fourth FACE reference is the owning SHELL." defines the typed face relation, and §5 defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
@@ -440,7 +402,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
 
-**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
+**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
@@ -448,7 +410,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does an `moDeleteBody_c` regeneration-input-local body identity map to a body in the final B-rep?
 
-**Known.** The compact record retains the regeneration-input-local identity. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership.
+**Known.** The compact record retains the regeneration-input-local identity. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership.
 
 **Need.** We must know the mapping to delete the selected final body.
 

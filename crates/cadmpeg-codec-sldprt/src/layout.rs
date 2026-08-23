@@ -235,7 +235,7 @@ pub(crate) mod world_point {
 /// Spec §5. Record length 12 B.
 ///
 /// ```text
-/// Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5.
+/// Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`.
 /// ```
 pub(crate) mod entity_common_header {
     /// Record length in bytes. Spec §5.
@@ -255,7 +255,7 @@ pub(crate) mod entity_common_header {
 /// Spec §5. Record length 14 B.
 ///
 /// ```text
-/// Body-relative. Node references follow from body +14 until the next record tag. The +0..+6 region is the common-header `flags` and `attr` of the same record.
+/// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 /// ```
 pub(crate) mod attribute_instance_00_51 {
     /// Record length in bytes. Spec §5.

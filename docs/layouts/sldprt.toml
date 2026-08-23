@@ -427,7 +427,7 @@ anchor = "`00 1d` | world point | 38 | none"
 name = "world_point"
 kind = "byte"
 section = "4"
-anchor = "a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres"
+anchor = "`00 1d` | world point | 38 | none"
 size = 38
 endianness = "big"
 note = "Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points."
@@ -437,14 +437,14 @@ name = "refs"
 offset = 6
 type = "u16[4]"
 source = "spec"
-anchor = "four references at body +6"
+anchor = "`00 1d` record has four references at body +6"
 
 [[record.field]]
 name = "xyz"
 offset = 14
 type = "f64[3]"
 source = "spec"
-anchor = "stores xyz as three f64 BE at body +14, in metres"
+anchor = "stores xyz as three f64 BE at body +14"
 
 [[record.gap]]
 offset = 0
@@ -460,7 +460,7 @@ section = "5"
 anchor = "A `00 51` header is `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`."
 size = 12
 endianness = "big"
-note = "Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5."
+note = "Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`."
 
 [[record.field]]
 name = "flags"
@@ -495,10 +495,10 @@ anchor = "`disc u16 BE`"
 name = "attribute_instance_00_51"
 kind = "byte"
 section = "5"
-anchor = "A `00 51` attribute instance whose u16 at body +6 is zero carries the u16 definition node id at body +10 and, at body +12, the attribute id of the entity it hangs on."
+anchor = "A `00 51` ATTRIBUTE instance whose u16 at body +6 is zero carries its"
 size = 14
 endianness = "big"
-note = "Body-relative. Node references follow from body +14 until the next record tag. The +0..+6 region is the common-header `flags` and `attr` of the same record."
+note = "Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record."
 
 [[record.field]]
 name = "zero_selector"
@@ -512,14 +512,14 @@ name = "definition_node_id"
 offset = 10
 type = "u16"
 source = "spec"
-anchor = "carries the u16 definition node id at body +10"
+anchor = "definition node id at body +10"
 
 [[record.field]]
 name = "owner_attribute_id"
 offset = 12
 type = "u16"
 source = "spec"
-anchor = "and, at body +12, the attribute id of the entity it hangs on"
+anchor = "owner attribute at body +12"
 
 [[record.gap]]
 offset = 0
@@ -535,7 +535,7 @@ note = "§5 states no field between the +6 selector and the +10 definition node 
 name = "class_root_directory_prefix"
 kind = "byte"
 section = "6"
-anchor = "The class-root directory has this fixed prefix and variable root vector"
+anchor = "A class-root directory is an auxiliary index of entity roots."
 size = 44
 endianness = "big"
 note = "Fixed prefix only. The root vector contains root_count u16 BE attributes from +44."
@@ -9661,13 +9661,13 @@ anchor = "Each prefix is followed by eight `ff` bytes and the little-endian f32 
 
 [[not_applicable]]
 area = "Body records (§6)"
-reason = "Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic."
+reason = "The typed BODY, SHELL, REGION, and FACE nodes use variable-length pointer fields; no fixed-offset table describes their complete records."
 section = "6"
-anchor = "Slot values `0` and `1` are sentinels."
+anchor = "Body membership is the typed XT ownership graph."
 
 [[not_applicable]]
 area = "Inline record framing (§10)"
-reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table."
+reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*(5 + flo)` for a bare ATTRIBUTE. Specification section 5 gives the stored value-count rule."
 section = "10"
 anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`"
 
