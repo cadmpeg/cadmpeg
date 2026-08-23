@@ -2328,10 +2328,12 @@ pub struct SurfaceFeaturePayloadBranches {
 /// Ordered extrusion profile-reference field and its redundant witness state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtrudeProfileReferenceField {
+    /// Serialized field tag between the relation marker and list marker.
+    pub field_tag: u8,
     /// Ordered profile object indices.
     pub references: Vec<PayloadObjectReference>,
-    /// Whether a second field repeats the encoded reference list exactly once.
-    pub witnessed: bool,
+    /// Ordered duplicate-list references when exactly one complete witness exists.
+    pub witness_references: Option<Vec<PayloadObjectReference>>,
 }
 
 /// Fixed ordered construction-reference lane in a datum coordinate-system payload.
@@ -5303,7 +5305,9 @@ pub fn extrude_profile_references(
     }
     unique_candidate(
         (0..record.payload.len().saturating_sub(6)).filter_map(|start| {
-            if record.payload.get(start..start + 4) != Some(&[0x01, 0x02, 0x16, 0x01]) {
+            if record.payload.get(start..start + 2) != Some(&[0x01, 0x02])
+                || record.payload.get(start + 3) != Some(&0x01)
+            {
                 return None;
             }
             extrude_profile_reference_field(record, start)
@@ -6840,18 +6844,43 @@ fn extrude_profile_reference_field(
     }
     let encoded_references = record.payload.get(references_start..at)?;
     let witness_len = 2 + encoded_references.len() + 2;
-    let witness_count = record
+    let witness_starts = record
         .payload
         .windows(witness_len)
-        .filter(|candidate| {
-            candidate.starts_with(&[0x01, count])
+        .enumerate()
+        .filter_map(|(witness_start, candidate)| {
+            (candidate.starts_with(&[0x01, count])
                 && candidate.get(2..2 + encoded_references.len()) == Some(encoded_references)
-                && candidate.ends_with(&[0x00, 0x00])
+                && candidate.ends_with(&[0x00, 0x00]))
+            .then_some(witness_start)
         })
-        .count();
+        .collect::<Vec<_>>();
+    let witness_references = match witness_starts.as_slice() {
+        [witness_start] => {
+            let mut witness_at = witness_start + 2;
+            Some(
+                references
+                    .iter()
+                    .map(|reference| {
+                        let (_, width) = payload_object_index(record.payload.get(witness_at..)?)?;
+                        let witness = PayloadObjectReference {
+                            offset: record.payload_offset + witness_at,
+                            object_index: reference.object_index,
+                            raw_object_index: record.payload[witness_at..witness_at + width]
+                                .to_vec(),
+                        };
+                        witness_at += width;
+                        Some(witness)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            )
+        }
+        _ => None,
+    };
     Some(ExtrudeProfileReferenceField {
+        field_tag: record.payload[start + 2],
         references,
-        witnessed: witness_count == 1,
+        witness_references,
     })
 }
 

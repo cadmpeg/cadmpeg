@@ -3845,6 +3845,7 @@
             ],
             "feature_extrude_profile_references": [
               {
+                "field_tag": 22,
                 "id": "nx:feature-history:extrude-profile-reference#0000000000-0000000009-0000000000",
                 "object_index": 255,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
@@ -3854,9 +3855,10 @@
                   255
                 ],
                 "source_offset": 1049,
-                "witnessed": true
+                "witness_source_offset": 1060
               },
               {
+                "field_tag": 22,
                 "id": "nx:feature-history:extrude-profile-reference#0000000000-0000000009-0000000001",
                 "object_index": 256,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
@@ -3867,7 +3869,7 @@
                   0
                 ],
                 "source_offset": 1051,
-                "witnessed": true
+                "witness_source_offset": 1062
               }
             ],
             "feature_input_block_identity_groups": [

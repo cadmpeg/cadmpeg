@@ -1240,68 +1240,37 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
 
 #[test]
 fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
-    use super::{
-        FeatureExtrudeProfileReference, FeatureOperationBodyReferenceLane,
-        FeatureOperationBodyReferenceLaneEncoding,
-    };
+    use super::FeatureExtrudeProfileReference;
 
     let references = [10, 11].map(|ordinal| FeatureExtrudeProfileReference {
         id: format!("profile-{ordinal}"),
         operation_label: "operation".to_string(),
         ordinal: ordinal - 10,
-        witnessed: true,
+        field_tag: 0x16,
+        witness_source_offset: Some(u64::from(ordinal + 20)),
         object_index: ordinal + 90,
         raw_object_index: vec![(ordinal + 90) as u8],
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
-    let lane = FeatureOperationBodyReferenceLane {
-        id: "lane".to_string(),
-        operation_label: "operation".to_string(),
-        body_reference_ordinal: 0,
-        body_object_index: 42,
-        branch: 0x11,
-        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
-        object_indices: vec![100, 101],
-        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
-        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
-        source_offsets: vec![20, 21],
-    };
-    let profiles =
-        super::feature_extrude_construction_profiles(&references, std::slice::from_ref(&lane));
+    let profiles = super::feature_extrude_construction_profiles(&references);
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].body_object_index, 42);
     assert_eq!(profiles[0].object_indices, [100, 101]);
     assert_eq!(profiles[0].data_blocks, ["block-10", "block-11"]);
+    assert_eq!(profiles[0].witness_source_offsets, [30, 31]);
 
     for ordinal in [0, 2] {
         let mut malformed = references.clone();
         malformed[1].ordinal = ordinal;
-        assert!(super::feature_extrude_construction_profiles(
-            &malformed,
-            std::slice::from_ref(&lane),
-        )
-        .is_empty());
+        assert!(super::feature_extrude_construction_profiles(&malformed).is_empty());
     }
 
-    let mut mismatched = lane.clone();
-    mismatched.object_indices[1] = 102;
-    assert!(super::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty());
-
-    let mut unresolved = FeatureOperationBodyReferenceLane {
-        id: "lane".to_string(),
-        operation_label: "operation".to_string(),
-        body_reference_ordinal: 0,
-        body_object_index: 42,
-        branch: 0x11,
-        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
-        object_indices: vec![100, 101],
-        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
-        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
-        source_offsets: vec![20, 21],
-    };
-    unresolved.data_blocks[1] = None;
-    assert!(super::feature_extrude_construction_profiles(&references, &[unresolved]).is_empty());
+    let mut unwitnessed = references.clone();
+    unwitnessed[1].witness_source_offset = None;
+    assert!(super::feature_extrude_construction_profiles(&unwitnessed).is_empty());
+    let mut unresolved = references;
+    unresolved[1].data_block = None;
+    assert!(super::feature_extrude_construction_profiles(&unresolved).is_empty());
 }
 
 #[test]
@@ -1459,7 +1428,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         id: "profile#0".to_string(),
         operation_label: "operation".to_string(),
         ordinal: 0,
-        witnessed: false,
+        field_tag: 0x16,
+        witness_source_offset: None,
         object_index: 100,
         raw_object_index: vec![100],
         data_block: Some("block#100".to_string()),
@@ -1519,7 +1489,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             id: "profile#0".to_string(),
             operation_label: "operation".to_string(),
             ordinal: 0,
-            witnessed: false,
+            field_tag: 0x16,
+            witness_source_offset: None,
             object_index: 100,
             raw_object_index: vec![100],
             data_block: Some("block#100".to_string()),

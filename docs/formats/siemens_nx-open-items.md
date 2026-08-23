@@ -381,14 +381,15 @@ equal the target and exclude every tool. A closed GROUP chain resolves current
 members by topology family and kernel node identity and transfers current FACE,
 EDGE, and VERTEX identities to the feature result state.
 
-**Need.** We must identify the extrusion profile-body lane that independently
-repeats the body-write image and the blend construction relation that assigns
-the created-face subset.
+**Need.** We must identify the blend construction relation that assigns the
+created-face subset.
 
-**Conflict.** An extrusion profile reference resolves to a construction data
-block but does not assign that block a profile-body-image role. GROUP membership
-assigns topology to the producing feature but does not by itself identify which
-member faces carry a particular blend-surface construction.
+**Conflict.** Extrusion profile references resolve to construction data blocks
+whose identities differ from the operation body-write image. The direct
+body-reference field inside a body-write frame is the frame's body-image field,
+not an independent profile-body witness. GROUP membership assigns topology to
+the producing feature but does not by itself identify which member faces carry
+a particular blend-surface construction.
 
 ### OM-10. Operation suppression fields
 

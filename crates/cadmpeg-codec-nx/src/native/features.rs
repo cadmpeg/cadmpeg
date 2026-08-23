@@ -2597,8 +2597,11 @@ pub struct FeatureExtrudeProfileReference {
     pub operation_label: String,
     /// Zero-based profile-reference order.
     pub ordinal: u32,
-    /// Whether the payload repeats the complete encoded profile list exactly once.
-    pub witnessed: bool,
+    /// Field tag serialized before the counted reference list.
+    pub field_tag: u8,
+    /// Absolute source offset of the matching duplicate-list index marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witness_source_offset: Option<u64>,
     /// Serialized object index.
     pub object_index: u32,
     /// Exact serialized payload object-index token.
@@ -2809,16 +2812,14 @@ pub struct FeatureExtrudeConstructionProfile {
     pub id: String,
     /// Owning `EXTRUDE` operation label.
     pub operation_label: String,
-    /// Body object anchoring the branch-`11` construction clause.
-    pub body_object_index: u32,
     /// Ordered serialized profile object indices.
     pub object_indices: Vec<u32>,
     /// Ordered uniquely resolved profile data blocks.
     pub data_blocks: Vec<String>,
     /// Source offsets from the independently encoded profile field.
     pub profile_source_offsets: Vec<u64>,
-    /// Source offsets from the body-clause reference lane.
-    pub body_lane_source_offsets: Vec<u64>,
+    /// Source offsets from the independently encoded duplicate list.
+    pub witness_source_offsets: Vec<u64>,
 }
 
 /// Structured `32` branch following an extrusion body-reference field.
@@ -8607,7 +8608,12 @@ pub fn feature_extrude_profile_references(
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let witnessed = decoded.witnessed;
+            let witness_offsets = decoded.witness_references.as_ref().map(|witnesses| {
+                witnesses
+                    .iter()
+                    .map(|witness| entry_offset + witness.offset as u64)
+                    .collect::<Vec<_>>()
+            });
             references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
                 FeatureExtrudeProfileReference {
                     id: format!(
@@ -8615,7 +8621,10 @@ pub fn feature_extrude_profile_references(
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
-                    witnessed,
+                    field_tag: decoded.field_tag,
+                    witness_source_offset: witness_offsets
+                        .as_ref()
+                        .and_then(|offsets| offsets.get(ordinal).copied()),
                     object_index: reference.object_index,
                     raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
@@ -8962,7 +8971,6 @@ pub fn feature_operation_body_reference_lanes(
 /// Join the two exact encodings of an extrusion construction profile.
 pub fn feature_extrude_construction_profiles(
     references: &[FeatureExtrudeProfileReference],
-    lanes: &[FeatureOperationBodyReferenceLane],
 ) -> Vec<FeatureExtrudeConstructionProfile> {
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudeProfileReference>>::new();
     for reference in references {
@@ -8979,7 +8987,7 @@ pub fn feature_extrude_construction_profiles(
                 .iter()
                 .enumerate()
                 .any(|(ordinal, reference)| {
-                    reference.ordinal != ordinal as u32 || !reference.witnessed
+                    reference.ordinal != ordinal as u32 || reference.witness_source_offset.is_none()
                 })
         {
             continue;
@@ -8988,19 +8996,6 @@ pub fn feature_extrude_construction_profiles(
             .iter()
             .map(|reference| reference.object_index)
             .collect::<Vec<_>>();
-        let matching_lanes = lanes
-            .iter()
-            .filter(|lane| {
-                lane.operation_label == operation_label
-                    && lane.branch == 0x11
-                    && lane.encoding
-                        == FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
-                    && lane.object_indices == object_indices
-            })
-            .collect::<Vec<_>>();
-        let [lane] = matching_lanes.as_slice() else {
-            continue;
-        };
         let Some(data_blocks) = operation_references
             .iter()
             .map(|reference| reference.data_block.clone())
@@ -9008,24 +9003,23 @@ pub fn feature_extrude_construction_profiles(
         else {
             continue;
         };
-        let Some(lane_data_blocks) = lane.data_blocks.iter().cloned().collect::<Option<Vec<_>>>()
+        let Some(witness_source_offsets) = operation_references
+            .iter()
+            .map(|reference| reference.witness_source_offset)
+            .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        if lane_data_blocks != data_blocks {
-            continue;
-        }
         profiles.push(FeatureExtrudeConstructionProfile {
             id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
             operation_label: operation_label.to_string(),
-            body_object_index: lane.body_object_index,
             object_indices,
             data_blocks,
             profile_source_offsets: operation_references
                 .iter()
                 .map(|reference| reference.source_offset)
                 .collect(),
-            body_lane_source_offsets: lane.source_offsets.clone(),
+            witness_source_offsets,
         });
     }
     profiles

@@ -830,10 +830,8 @@ impl NativeModel {
             feature_operation_body_11_continuations(container);
         let feature_operation_body_reference_lanes =
             feature_operation_body_reference_lanes(container);
-        let feature_extrude_construction_profiles = feature_extrude_construction_profiles(
-            &feature_extrude_profile_references,
-            &feature_operation_body_reference_lanes,
-        );
+        let feature_extrude_construction_profiles =
+            feature_extrude_construction_profiles(&feature_extrude_profile_references);
         let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(container);
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
             &feature_extrude_profile_references,

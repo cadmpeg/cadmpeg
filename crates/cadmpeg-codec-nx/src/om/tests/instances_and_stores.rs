@@ -748,7 +748,10 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         label,
     };
     let field = super::extrude_profile_references(record).unwrap();
-    assert!(field.witnessed);
+    assert_eq!(field.field_tag, 0x16);
+    let witnesses = field.witness_references.as_ref().unwrap();
+    assert_eq!(witnesses[0].offset, 216);
+    assert_eq!(witnesses[1].offset, 218);
     let references = field.references;
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].object_index, 255);
@@ -765,8 +768,25 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         ..record
     })
     .unwrap();
-    assert!(!field.witnessed);
+    assert!(field.witness_references.is_none());
     assert_eq!(field.references.len(), 2);
+    let mut alternate_tag = payload.to_vec();
+    alternate_tag[2] = 0x5d;
+    let field = super::extrude_profile_references(super::OperationRecord {
+        payload: &alternate_tag,
+        bytes: &alternate_tag,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(field.field_tag, 0x5d);
+    let mut ambiguous = payload.to_vec();
+    ambiguous.extend_from_slice(&alternate_tag);
+    assert!(super::extrude_profile_references(super::OperationRecord {
+        payload: &ambiguous,
+        bytes: &ambiguous,
+        ..record
+    })
+    .is_none());
     assert!(super::extrude_profile_references(super::OperationRecord {
         label: super::OperationLabel {
             value: "SKETCH",
