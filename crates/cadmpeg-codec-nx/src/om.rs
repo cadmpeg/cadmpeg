@@ -6907,6 +6907,8 @@ fn operation_state_block_before_boundary(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateBlock<'_>> {
+    const MAX_STATE_BLOCK_TAIL_BYTES: usize = 64 * 1024;
+
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -6922,55 +6924,82 @@ fn operation_state_block_before_boundary(
     }
 
     let mut status_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
+    let mut status_ends = std::iter::repeat_n(usize::MAX, span + 1).collect::<Vec<usize>>();
     let mut message_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
+    let mut message_ends = std::iter::repeat_n(usize::MAX, span + 1).collect::<Vec<usize>>();
     for at in (start..end).rev() {
         let relative = at - start;
         if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
             let next = message.end_offset.checked_sub(base_offset)?;
-            if next >= start && next <= end && (next == end || message_lengths[next - start] > 0) {
-                let length = if next == end {
-                    1
+            if next > at && next <= end {
+                let continuation = if next < end {
+                    message_lengths[next - start]
                 } else {
-                    1 + message_lengths[next - start]
+                    0
                 };
-                message_lengths[relative] = length;
+                message_lengths[relative] = 1 + continuation;
+                message_ends[relative] = if continuation > 0 {
+                    message_ends[next - start]
+                } else {
+                    next
+                };
             }
         }
 
-        let status_length =
+        let (status_length, status_end) =
             operation_state_status_end_at(bytes, at, end, base_offset, Some((&opaque_ends, start)))
-                .filter(|next| {
-                    *next >= start
-                        && *next <= end
-                        && (*next == end || status_lengths[*next - start] > 0)
-                })
-                .map_or(0, |next| {
-                    if next == end {
-                        1
+                .filter(|next| *next > at && *next <= end)
+                .map_or((0, usize::MAX), |next| {
+                    let continuation = if next < end {
+                        status_lengths[next - start]
                     } else {
-                        1 + status_lengths[next - start]
-                    }
+                        0
+                    };
+                    let path_end = if continuation > 0 {
+                        status_ends[next - start]
+                    } else {
+                        next
+                    };
+                    (1 + continuation, path_end)
                 });
-        status_lengths[relative] = status_length.max(message_lengths[relative]);
+        if status_length >= message_lengths[relative] && status_length > 0 {
+            status_lengths[relative] = status_length;
+            status_ends[relative] = status_end;
+        } else {
+            status_lengths[relative] = message_lengths[relative];
+            status_ends[relative] = message_ends[relative];
+        }
     }
 
-    let (offset, _) = (start..end)
-        .map(|at| (at, status_lengths[at - start]))
-        .filter(|(_, length)| *length > 0)
-        .max_by_key(|(at, length)| (*length, std::cmp::Reverse(*at)))?;
-
+    let has_exact_boundary_path =
+        (start..end).any(|at| status_lengths[at - start] > 0 && status_ends[at - start] == end);
+    let (offset, path_end, _) = (start..end)
+        .filter_map(|at| {
+            let relative = at - start;
+            let length = status_lengths[relative];
+            let path_end = status_ends[relative];
+            let admissible = if has_exact_boundary_path {
+                path_end == end
+            } else {
+                length > 0
+                    && path_end != usize::MAX
+                    && path_end >= at
+                    && end.saturating_sub(path_end) <= MAX_STATE_BLOCK_TAIL_BYTES
+            };
+            (admissible && length > 0).then_some((at, path_end, length))
+        })
+        .max_by_key(|(at, _, length)| (*length, std::cmp::Reverse(*at)))?;
     let mut rows = Vec::new();
     let mut slot_lanes = Vec::new();
     let mut messages = Vec::new();
     let mut status_end_offset = base_offset.checked_add(offset)?;
     let mut at = offset;
     let mut in_messages = false;
-    while at < end {
+    while at < path_end {
         if in_messages {
             let message = operation_state_message_at(bytes, at, base_offset)?;
             let next = message.end_offset.checked_sub(base_offset)?;
-            (next >= start && next <= end && (next == end || message_lengths[next - start] > 0))
-                .then_some(())?;
+            (next > at && next <= path_end).then_some(())?;
             messages.push(message);
             at = next;
             continue;
@@ -6980,12 +7009,13 @@ fn operation_state_block_before_boundary(
             operation_state_status_end_at(bytes, at, end, base_offset, Some((&opaque_ends, start)));
         let status_length = status_next
             .filter(|next| {
-                *next >= start
-                    && *next <= end
-                    && (*next == end || status_lengths[*next - start] > 0)
+                *next > at
+                    && *next <= path_end
+                    && (*next == path_end
+                        || (*next < end && status_ends[*next - start] == path_end))
             })
             .map_or(0, |next| {
-                if next == end {
+                if next == path_end {
                     1
                 } else {
                     1 + status_lengths[next - start]
@@ -6995,11 +7025,12 @@ fn operation_state_block_before_boundary(
         let message_next = message
             .as_ref()
             .and_then(|message| message.end_offset.checked_sub(base_offset));
-        let message_length = if message_lengths[at - start] > 0 {
-            message_lengths[at - start]
-        } else {
-            0
-        };
+        let message_length =
+            if message_lengths[at - start] > 0 && message_ends[at - start] == path_end {
+                message_lengths[at - start]
+            } else {
+                0
+            };
 
         if status_length >= message_length && status_length > 0 {
             let next = status_next?;
@@ -7028,7 +7059,7 @@ fn operation_state_block_before_boundary(
         } else {
             let message = message?;
             let next = message_next?;
-            (next >= start && next <= end && message_length > 0).then_some(())?;
+            (next > at && next <= path_end && message_length > 0).then_some(())?;
             messages.push(message);
             at = next;
             in_messages = true;

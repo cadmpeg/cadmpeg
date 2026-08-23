@@ -228,6 +228,40 @@ fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
 }
 
 #[test]
+fn operation_state_block_stops_before_untyped_tail() {
+    let mut bytes = vec![
+        0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+    ];
+    let status_end = bytes.len();
+    bytes.extend([0x31, 0x80, 0x01, 0x01, 0x02, 0x55, 0x99]);
+
+    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+        .expect("status chain before bounded tail");
+    assert_eq!(block.offset, 500);
+    assert_eq!(block.rows.len(), 2);
+    assert!(block.messages.is_empty());
+    assert_eq!(block.status_end_offset, 500 + status_end);
+}
+
+#[test]
+fn operation_state_block_prefers_boundary_closed_path() {
+    let mut bytes = vec![
+        0x41, 0x80, 0x01, 0x3f, 0x41, 0x80, 0x02, 0x3f, 0x41, 0x80, 0x03, 0x3f, 0x31, 0x80, 0x04,
+        0x01,
+    ];
+    let closed_path_start = bytes.len();
+    bytes.extend([0x44, 0x80, 0x05, 0x3f]);
+    bytes.extend(message_bytes(b"closed", &[0xaa, 0x01, 0x02], [0, 1]));
+
+    let block = super::operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+        .expect("boundary-closed state path");
+    assert_eq!(block.offset, 500 + closed_path_start);
+    assert_eq!(block.rows.len(), 1);
+    assert_eq!(block.messages.len(), 1);
+    assert_eq!(block.messages[0].text, "closed");
+}
+
+#[test]
 fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     let bytes = [
         0x01, 0x00, 0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01,
