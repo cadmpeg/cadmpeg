@@ -320,6 +320,7 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
         | Constraint::Midpoint { .. }
         | Constraint::Tangent { .. }
         | Constraint::PointDistance { .. }
+        | Constraint::PointLineDistance { .. }
         | Constraint::LineLength { .. }
         | Constraint::RepeatedLineLength { .. }
         | Constraint::ParallelLineDistance { .. }
