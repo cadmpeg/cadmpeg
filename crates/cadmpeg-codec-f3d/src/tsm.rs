@@ -9,8 +9,8 @@ use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
-    SubdVertexGripLayout, SubdVertexTag,
+    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
+    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -185,6 +185,7 @@ struct SymmetryBlock {
     plane: Option<[f64; 12]>,
     radial_segments: Option<u32>,
     radial_sweep: Option<f64>,
+    radial_maps: Vec<SubdRadialSymmetryMap>,
     record_kinds: BTreeSet<String>,
     face_forward: BTreeMap<usize, usize>,
     face_reverse: BTreeMap<usize, usize>,
@@ -201,6 +202,7 @@ impl SymmetryBlock {
             plane: None,
             radial_segments: None,
             radial_sweep: None,
+            radial_maps: Vec::new(),
             record_kinds: BTreeSet::new(),
             face_forward: BTreeMap::new(),
             face_reverse: BTreeMap::new(),
@@ -228,6 +230,34 @@ fn parse_pairs<'a>(
         if pairs.insert(pair[0], pair[1]).is_some() {
             return Err(malformed(name, format!("{record} repeats a source index")));
         }
+    }
+    Ok(pairs)
+}
+
+fn parse_radial_pairs<'a>(
+    name: &str,
+    fields: impl Iterator<Item = &'a str>,
+) -> Result<Vec<[u64; 2]>, CodecError> {
+    let values = fields
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| malformed(name, "invalid radial symmetry map index"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.len() % 2 != 0 {
+        return Err(malformed(name, "radial symmetry map has an unpaired index"));
+    }
+    let mut sources = BTreeSet::new();
+    let mut pairs = Vec::with_capacity(values.len() / 2);
+    for pair in values.chunks_exact(2) {
+        if !sources.insert(pair[0]) {
+            return Err(malformed(
+                name,
+                "radial symmetry map repeats a source index",
+            ));
+        }
+        pairs.push([pair[0], pair[1]]);
     }
     Ok(pairs)
 }
@@ -948,9 +978,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                             Some(parse_f64(name, fields.next(), "radial symmetry sweep")?);
                         require_end(name, fields, "radial symmetry sweep")?;
                     }
-                    "ef" | "er" | "ff" | "fr" | "vf" | "vr" => {
-                        parse_pairs(name, fields, "radial symmetry map")?;
-                        unknown_records += 1;
+                    kind @ ("ef" | "er" | "ff" | "fr" | "vf" | "vr") => {
+                        let selector = match kind {
+                            "ef" => SubdRadialMapSelector::Ef,
+                            "er" => SubdRadialMapSelector::Er,
+                            "ff" => SubdRadialMapSelector::Ff,
+                            "fr" => SubdRadialMapSelector::Fr,
+                            "vf" => SubdRadialMapSelector::Vf,
+                            "vr" => SubdRadialMapSelector::Vr,
+                            _ => unreachable!("radial selector is matched above"),
+                        };
+                        let pairs = parse_radial_pairs(name, fields)?;
+                        block
+                            .radial_maps
+                            .push(SubdRadialSymmetryMap { selector, pairs });
                     }
                     _ => {
                         return Err(malformed(
@@ -1129,13 +1170,19 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
                 },
             };
-            let (face_pairs, edge_pairs, vertex_pairs) = match block.mode {
+            let (face_pairs, edge_pairs, vertex_pairs, radial_maps) = match block.mode {
                 SymmetryMode::Correspondence => (
                     remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
                     remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
                     remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
+                    Vec::new(),
                 ),
-                SymmetryMode::Radial => (Vec::new(), Vec::new(), Vec::new()),
+                SymmetryMode::Radial => (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    block.radial_maps.clone(),
+                ),
             };
             Ok(SubdSymmetry {
                 kind,
@@ -1143,6 +1190,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 face_pairs,
                 edge_pairs,
                 vertex_pairs,
+                radial_maps,
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1529,7 +1577,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
-        assert_eq!(cage.unknown_records, 6);
+        assert_eq!(cage.unknown_records, 0);
         assert_quad(&cage.surface);
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
@@ -1555,6 +1603,35 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert!(symmetry.face_pairs.is_empty());
         assert!(symmetry.edge_pairs.is_empty());
         assert!(symmetry.vertex_pairs.is_empty());
+        assert_eq!(
+            symmetry.radial_maps,
+            vec![
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Ef,
+                    pairs: vec![[0, 1]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Er,
+                    pairs: vec![[1, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Ff,
+                    pairs: vec![[0, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Fr,
+                    pairs: vec![[0, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Vf,
+                    pairs: vec![[0, 1]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Vr,
+                    pairs: vec![[1, 0]],
+                },
+            ]
+        );
 
         let unsupported = source.replace("105sym 1", "105sym 2");
         let error = parse_cage(unsupported.as_bytes()).expect_err("unsupported symmetry mode");

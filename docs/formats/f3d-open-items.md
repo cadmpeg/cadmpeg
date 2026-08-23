@@ -292,8 +292,10 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Known.** The `105r` selectors `ef`, `er`, `ff`, `fr`, `vf`, and `vr` carry even-length index runs. Their records occur with the positive `segments` count and finite `sweep` value of a `105sym 1` block. The operands do not consistently address the populated `f`, `e`, or `v` topology slots.
 
-**Need.** A neutral radial symmetry carrier needs typed face, edge, and vertex correspondences or an explicit native-domain representation before a writer can invert the block.
+**Need.** A neutral radial symmetry carrier still needs a proven mapping from the native map identifiers to cage faces, edges, and vertices before a writer can generate the block from edited topology. The typed native-map carrier preserves source values but does not assert that mapping.
 
 **Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
+
+**Note.** The six selector-specific pair runs are retained as native radial maps. Their identifiers remain opaque until the native element namespace is settled.
 
 ## 5. Test evidence

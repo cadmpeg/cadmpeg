@@ -44,6 +44,36 @@ fn check_symmetry_pairs(
     }
 }
 
+fn check_radial_maps(
+    id: &str,
+    symmetry_index: usize,
+    maps: &[crate::subd::SubdRadialSymmetryMap],
+    findings: &mut Vec<Finding>,
+) {
+    let mut selectors = BTreeSet::new();
+    for (map_index, map) in maps.iter().enumerate() {
+        if !selectors.insert(map.selector) {
+            bounds_err(
+                findings,
+                id,
+                &format!("SubD symmetry {symmetry_index} radial map selector {map_index} repeats"),
+            );
+        }
+        let mut sources = BTreeSet::new();
+        for (pair_index, [source, _]) in map.pairs.iter().copied().enumerate() {
+            if !sources.insert(source) {
+                bounds_err(
+                    findings,
+                    id,
+                    &format!(
+                        "SubD symmetry {symmetry_index} radial map {map_index} pair {pair_index} repeats a source"
+                    ),
+                );
+            }
+        }
+    }
+}
+
 fn check_symmetries(
     subd: &SubdSurface,
     vertex_count: usize,
@@ -99,6 +129,15 @@ fn check_symmetries(
             vertex_count,
             findings,
         );
+        if let SubdSymmetryKind::Radial { .. } = symmetry.kind {
+            check_radial_maps(&subd.id.0, symmetry_index, &symmetry.radial_maps, findings);
+        } else if !symmetry.radial_maps.is_empty() {
+            bounds_err(
+                findings,
+                &subd.id.0,
+                &format!("SubD symmetry {symmetry_index} has radial maps in correspondence mode"),
+            );
+        }
     }
 }
 

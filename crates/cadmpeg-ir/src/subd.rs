@@ -58,6 +58,35 @@ pub enum SubdSymmetryKind {
     },
 }
 
+/// Selector of one native radial-symmetry map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SubdRadialMapSelector {
+    /// Native `ef` map.
+    Ef,
+    /// Native `er` map.
+    Er,
+    /// Native `ff` map.
+    Ff,
+    /// Native `fr` map.
+    Fr,
+    /// Native `vf` map.
+    Vf,
+    /// Native `vr` map.
+    Vr,
+}
+
+/// One selector-preserving native radial-symmetry map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdRadialSymmetryMap {
+    /// Native map selector. Its element namespace is format-native.
+    pub selector: SubdRadialMapSelector,
+    /// Native source/target identifier pairs.
+    pub pairs: Vec<[u64; 2]>,
+}
+
 /// Typed editor symmetry state for one subdivision cage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -75,6 +104,9 @@ pub struct SubdSymmetry {
     /// Forward vertex correspondences for a topology-addressed symmetry block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vertex_pairs: Vec<[u32; 2]>,
+    /// Selector-preserving native maps for radial symmetry blocks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
 /// Subdivision scheme used by a control cage.
