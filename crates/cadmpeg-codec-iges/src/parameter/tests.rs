@@ -5309,6 +5309,165 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 }
 
 #[test]
+fn type208_and_210_table_boundaries_precede_valid_generic_alternatives() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property_5 = directory_target(5, 406);
+    let property_7 = directory_target(7, 406);
+    let source_208 = directory_target(9, 208);
+    let source_210 = directory_target(11, 210);
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property_5),
+        (7, &property_7),
+        (9, &source_208),
+        (11, &source_210),
+    ]);
+
+    for (source, values, expected_start) in [
+        (
+            &source_208,
+            vec![
+                208.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            7_usize,
+        ),
+        (
+            &source_210,
+            vec![
+                210.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                2.into(),
+                5.into(),
+                7.into(),
+            ],
+            4,
+        ),
+    ] {
+        let record = token_parameter_record(source.sequence, values);
+        let valid_generic_starts = structural_pointer_group_candidates(&record)
+            .into_iter()
+            .filter(|candidate| {
+                groups_for_candidate(&record, &directory, *candidate)
+                    .is_some_and(|groups| groups.fully_valid)
+            })
+            .map(|candidate| candidate.token_start)
+            .collect::<Vec<_>>();
+        assert!(
+            valid_generic_starts.contains(&expected_start),
+            "Type {} generic starts {valid_generic_starts:?}",
+            source.entity_type
+        );
+        assert!(
+            valid_generic_starts.contains(&(expected_start + 1)),
+            "Type {} generic starts {valid_generic_starts:?}",
+            source.entity_type
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "Type {}", source.entity_type);
+        assert_eq!(
+            analysis.valid_candidate_count, 1,
+            "Type {}",
+            source.entity_type
+        );
+        let groups = analysis
+            .groups
+            .expect("count-defined annotation table boundary");
+        assert_eq!(
+            groups.token_start, expected_start,
+            "Type {}",
+            source.entity_type
+        );
+        assert_eq!(
+            groups.associations,
+            vec![1, 3],
+            "Type {}",
+            source.entity_type
+        );
+        assert_eq!(groups.properties, vec![5, 7], "Type {}", source.entity_type);
+    }
+}
+
+#[test]
+fn type208_and_210_malformed_leader_counts_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(3, 406);
+    let source_208 = directory_target(9, 208);
+    let source_210 = directory_target(11, 210);
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &property),
+        (9, &source_208),
+        (11, &source_210),
+    ]);
+
+    let mut cases = Vec::new();
+    for count in [TokenValue::Real(0.0), TokenValue::Omitted, (-1_i64).into()] {
+        let mut values: Vec<TokenValue> = vec![
+            208.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            2.into(),
+            1.into(),
+            3.into(),
+            1.into(),
+            3.into(),
+        ];
+        values[6] = count;
+        cases.push((source_208.sequence, values));
+    }
+    let mut truncated: Vec<TokenValue> = vec![210.into(), 1.into(), 1.into(), 3.into()];
+    truncated.truncate(3);
+    cases.push((source_210.sequence, truncated));
+    for count in [0.into(), TokenValue::Omitted, (-1_i64).into()] {
+        let mut values: Vec<TokenValue> = vec![
+            210.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+        ];
+        values[2] = count;
+        cases.push((source_210.sequence, values));
+    }
+
+    for (sequence, values) in cases {
+        let record = token_parameter_record(sequence, values);
+        assert_eq!(
+            entity_primary_end(&record, &directory),
+            Some(record.tokens.len())
+        );
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0, "sequence {sequence}");
+        assert_eq!(analysis.valid_candidate_count, 0, "sequence {sequence}");
+        assert!(analysis.groups.is_none(), "sequence {sequence}");
+    }
+}
+
+#[test]
 fn type214_forms_share_count_driven_boundary() {
     let association = directory_target(3, 212);
     let n1 = vec![
