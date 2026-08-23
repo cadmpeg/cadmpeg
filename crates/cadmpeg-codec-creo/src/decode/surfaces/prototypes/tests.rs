@@ -47,6 +47,73 @@ fn first_instance_cone_prototype_requires_a_model_space_placement() {
 }
 
 #[test]
+fn later_positional_spline_replay_transfers_as_a_nurbs_surface() {
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 8, 0xe3]);
+    payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0");
+    payload.extend_from_slice(b"\xe0\x01tan_cond\0\xf8\x02\x03\xe4");
+    let mut push_vectors = |name: &str, values: &[u8]| {
+        payload.extend_from_slice(&[0xe0, 0x02]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf9\x04\x03");
+        payload.extend_from_slice(values);
+    };
+    push_vectors(
+        "i_points",
+        &[
+            0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f,
+        ],
+    );
+    push_vectors(
+        "end_u_tangts",
+        &[
+            0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f,
+        ],
+    );
+    push_vectors(
+        "end_v_tangts",
+        &[
+            0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f,
+        ],
+    );
+    push_vectors("end_uv_deriv", &[0x0f; 12]);
+    for name in ["u_params", "v_params"] {
+        payload.extend_from_slice(&[0xe0, 0x01]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf8\x02\x0f\xe4");
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x28, 4, 0x01, 0, 0, 0xe3, 0x03, 0xe4]);
+    payload.extend_from_slice(&[
+        0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f,
+    ]);
+    payload.extend_from_slice(&[
+        0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f,
+    ]);
+    payload.extend_from_slice(&[
+        0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0x0f,
+    ]);
+    payload.extend_from_slice(&[0x0f; 12]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let data = build_prt("spline-replay", &[("ND:0:VisibGeom:0", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    for surface_id in [7, 8] {
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{surface_id}"))
+            .expect("spline surface");
+        assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+    }
+}
+
+#[test]
 fn first_instance_type26_radius_override_replaces_prototype_radii() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

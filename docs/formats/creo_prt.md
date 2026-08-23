@@ -594,6 +594,25 @@ different family, or when the prototype occurs before the first row header, the
 following same-family row is the first instance. Positional row bodies carry
 the per-instance values for subsequent instances.
 
+A later positional `geom_type = 0x28` row replays its `splsrf` prototype
+positionally. The row and prototype must be in one complete counted `srf_array`
+frame, the frame must contain exactly one spline prototype, and the later row
+must have the first instance's `feat_id`. The prototype supplies the field
+order and all array extents; the row carries no field names, array headers, or
+counts. Its body contains the leading envelope and outline, closed by `e3`,
+then the two bare `tan_cond` compact integers, followed by `U * V` u-major
+interpolation-point triples, `2 * V` u-boundary derivative triples, `2 * U`
+v-boundary derivative triples, four mixed-derivative triples, `U` u-parameter
+scalars, and `V` v-parameter scalars. The row's trailing frames use the
+existing positional-row grammar. Every scalar is consumed in the spline
+prototype's corresponding scalar lane; no byte is skipped between fields. The
+replay body must end at its second structural `e3`, and the echoed tangent
+conditions must equal the prototype values. A missing, duplicate, incomplete,
+ambiguous, or byte-inexact replay remains native. A complete replay feeds the
+same non-rational, non-periodic clamped bicubic interpolation constructor as
+the first instance. It does not by itself bind a pcurve, trim, face, or neutral
+B-rep component.
+
 In the ND layout, a complete plane, cylinder, or torus prototype `local_sys` and family parameters define the first instance carrier. Slots 0 through 2 contain the first support direction. Slots 6 through 8 contain the second support direction. A torus prototype also admits slots 3 through 5 as a candidate second support direction. Exactly one admitted candidate has the same scale as the first direction and is orthogonal to it. Slots 9 through 11 contain the origin. The bounded scalar body encodes its declared slots sequentially; no byte may be skipped between slot encodings. Each positional plane origin slot uses its row-lane scalar form when the prefix defines one. Other slot-9 prefixes use the signed first-coordinate lane defined for tabulated-cylinder directrix points; other slot-10 and slot-11 prefixes use the corresponding second-coordinate lane. The first-coordinate lane's `4a` form stores a negative coordinate in seven bytes: `c0` is the implicit first IEEE-754 byte, the six bytes after `4a` are bytes one through six, and the low byte is zero. The normalized cross product of the two orthogonal, equal-scale support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. Terminal `00 0c 98` in a positional plane support frame also occupies one zero origin slot. The same byte triple separates the two bound pairs in a cylinder outline; its meaning is fixed by the enclosing record grammar. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder uses that axis and reference direction and requires one positive finite `radius`. A zero torus `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin. A complete tagged radius trailer on the first associated type-26 row overrides the prototype `radius1` and `radius2` for that instance; the prototype local system remains the placement source, and an overridden `radius1 = 0` selects a sphere.
 Within a named prototype `local_sys`, `e7 <count>` advances over `count`
 inherited scalar slots. The count is a positive compact integer, must not cross

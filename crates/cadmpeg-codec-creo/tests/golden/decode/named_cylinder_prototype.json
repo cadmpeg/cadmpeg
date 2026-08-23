@@ -847,6 +847,7 @@
       "transferred_positional_cone_count": 0,
       "transferred_positional_cylinder_count": 0,
       "transferred_positional_line_extrusion_plane_count": 0,
+      "transferred_positional_spline_replay_count": 0,
       "transferred_positional_torus_count": 0,
       "transferred_reference_ellipse_count": 0,
       "transferred_revolve_feature_count": 0,

@@ -387,6 +387,271 @@ pub struct SurfaceParameterRecord {
     pub body_offset: usize,
 }
 
+/// Complete interpolation data replayed by a later positional spline row.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PositionalSplineReplay {
+    /// U-major interpolation points.
+    pub(crate) points: Vec<[f64; 3]>,
+    /// Ordered U parameters.
+    pub(crate) u_parameters: Vec<f64>,
+    /// Ordered V parameters.
+    pub(crate) v_parameters: Vec<f64>,
+    /// Lower-U and upper-U boundary derivatives.
+    pub(crate) u_derivatives: Vec<[f64; 3]>,
+    /// Lower-V and upper-V boundary derivatives.
+    pub(crate) v_derivatives: Vec<[f64; 3]>,
+    /// Mixed derivatives in lower-U/lower-V, upper-U/lower-V,
+    /// lower-U/upper-V, upper-U/upper-V order.
+    pub(crate) mixed_derivatives: Vec<[f64; 3]>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SplineReplayShape {
+    tangent_conditions: [u32; 2],
+    u_count: usize,
+    v_count: usize,
+    point_count: usize,
+    u_derivative_count: usize,
+    v_derivative_count: usize,
+}
+
+fn complete_spline_vector_count(prototype: &SurfacePrototypeRecord, name: &str) -> Option<usize> {
+    let SurfaceNamedValue::ScalarArray {
+        dimensions,
+        count: 3,
+        values,
+        ..
+    } = &prototype.field(name)?.value
+    else {
+        return None;
+    };
+    let dimensions = usize::try_from(*dimensions).ok()?;
+    (values.len() == dimensions.checked_mul(3)?
+        && values.iter().all(|value| value.is_some_and(f64::is_finite)))
+    .then_some(dimensions)
+}
+
+fn complete_spline_parameter_count(
+    prototype: &SurfacePrototypeRecord,
+    name: &str,
+) -> Option<usize> {
+    let SurfaceNamedValue::CountedScalarArray { count, values, .. } = &prototype.field(name)?.value
+    else {
+        return None;
+    };
+    let count = usize::try_from(*count).ok()?;
+    (values.len() == count
+        && values.iter().all(|value| value.is_some_and(f64::is_finite))
+        && values
+            .iter()
+            .copied()
+            .collect::<Option<Vec<_>>>()?
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]))
+    .then_some(count)
+}
+
+fn spline_replay_shape(prototype: &SurfacePrototypeRecord) -> Option<SplineReplayShape> {
+    (prototype.family == SurfacePrototypeFamily::Spline).then_some(())?;
+    let SurfaceNamedValue::CompactIntArray(tangent_conditions) =
+        &prototype.field("tan_cond")?.value
+    else {
+        return None;
+    };
+    let tangent_conditions: [u32; 2] = tangent_conditions.as_slice().try_into().ok()?;
+    let u_count = complete_spline_parameter_count(prototype, "u_params")?;
+    let v_count = complete_spline_parameter_count(prototype, "v_params")?;
+    let point_count = u_count.checked_mul(v_count)?;
+    let u_derivative_count = v_count.checked_mul(2)?;
+    let v_derivative_count = u_count.checked_mul(2)?;
+    (u_count >= 2
+        && v_count >= 2
+        && complete_spline_vector_count(prototype, "i_points")? == point_count
+        && complete_spline_vector_count(prototype, "end_u_tangts")? == u_derivative_count
+        && complete_spline_vector_count(prototype, "end_v_tangts")? == v_derivative_count
+        && complete_spline_vector_count(prototype, "end_uv_deriv")? == 4)
+        .then_some(SplineReplayShape {
+            tangent_conditions,
+            u_count,
+            v_count,
+            point_count,
+            u_derivative_count,
+            v_derivative_count,
+        })
+}
+
+fn associated_spline_replay_prototype(
+    payload: &[u8],
+    rows: &[SurfaceRow],
+    row: &SurfaceRow,
+) -> Option<SurfacePrototypeRecord> {
+    (row.kind == SurfaceKind::Spline).then_some(())?;
+    let mut bounds = complete_surface_array_bounds(payload)
+        .into_iter()
+        .filter(|(start, end)| row.offset >= *start && row.offset < *end);
+    let (frame_start, frame_end) = bounds.next()?;
+    bounds.next().is_none().then_some(())?;
+
+    let mut prototypes = named_prototype_records(payload)
+        .into_iter()
+        .filter(|prototype| {
+            prototype.family == SurfacePrototypeFamily::Spline
+                && prototype.offset >= frame_start
+                && prototype.offset < frame_end
+        });
+    let prototype = prototypes.next()?;
+    prototypes.next().is_none().then_some(())?;
+    (row.offset > prototype.offset).then_some(())?;
+
+    let frame_rows = rows
+        .iter()
+        .filter(|candidate| candidate.offset >= frame_start && candidate.offset < frame_end)
+        .collect::<Vec<_>>();
+    let previous = frame_rows
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.offset < prototype.offset)
+        .max_by_key(|candidate| candidate.offset);
+    let first = if previous.is_some_and(|candidate| candidate.kind == SurfaceKind::Spline) {
+        previous
+    } else {
+        frame_rows
+            .iter()
+            .copied()
+            .filter(|candidate| {
+                candidate.offset > prototype.offset && candidate.kind == SurfaceKind::Spline
+            })
+            .min_by_key(|candidate| candidate.offset)
+    }?;
+    (first.feature_id == row.feature_id && first.offset != row.offset).then_some(prototype)
+}
+
+/// Return the unique spline prototype that owns a later positional replay.
+pub(crate) fn positional_spline_replay_prototype(
+    payload: &[u8],
+    rows: &[SurfaceRow],
+    row: &SurfaceRow,
+) -> Option<SurfacePrototypeRecord> {
+    associated_spline_replay_prototype(payload, rows, row)
+}
+
+fn take_spline_scalars(
+    body: &[u8],
+    cursor: &mut usize,
+    count: usize,
+    name: &str,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<f64>> {
+    (count <= body.len().saturating_sub(*cursor)).then_some(())?;
+    let mut values = Vec::new();
+    for _ in 0..count {
+        let (value, next) =
+            named_spline_scalar_slot(&SurfacePrototypeFamily::Spline, name, body, *cursor, cache)?;
+        let value = value?;
+        (next > *cursor && value.is_finite()).then_some(())?;
+        values.push(value);
+        *cursor = next;
+    }
+    Some(values)
+}
+
+fn spline_vectors(values: &[f64]) -> Option<Vec<[f64; 3]>> {
+    let mut vectors = Vec::new();
+    let mut chunks = values.chunks_exact(3);
+    for chunk in &mut chunks {
+        vectors.push([chunk[0], chunk[1], chunk[2]]);
+    }
+    chunks.remainder().is_empty().then_some(vectors)
+}
+
+fn parse_positional_spline_replay(
+    body: &[u8],
+    prototype: &SurfacePrototypeRecord,
+    cache: &scalar::ScalarCache,
+) -> Option<(PositionalSplineReplay, usize)> {
+    let shape = spline_replay_shape(prototype)?;
+    let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
+    let mut cursor = envelope_close.checked_add(1)?;
+
+    let mut replay_tangent_conditions = [0; 2];
+    for condition in &mut replay_tangent_conditions {
+        let (value, next) = compact_int(body, cursor);
+        (next > cursor).then_some(())?;
+        *condition = value;
+        cursor = next;
+    }
+    (replay_tangent_conditions == shape.tangent_conditions).then_some(())?;
+
+    let points = spline_vectors(&take_spline_scalars(
+        body,
+        &mut cursor,
+        shape.point_count.checked_mul(3)?,
+        "i_points",
+        cache,
+    )?)?;
+    let u_derivatives = spline_vectors(&take_spline_scalars(
+        body,
+        &mut cursor,
+        shape.u_derivative_count.checked_mul(3)?,
+        "end_u_tangts",
+        cache,
+    )?)?;
+    let v_derivatives = spline_vectors(&take_spline_scalars(
+        body,
+        &mut cursor,
+        shape.v_derivative_count.checked_mul(3)?,
+        "end_v_tangts",
+        cache,
+    )?)?;
+    let mixed_derivatives = spline_vectors(&take_spline_scalars(
+        body,
+        &mut cursor,
+        4usize.checked_mul(3)?,
+        "end_uv_deriv",
+        cache,
+    )?)?;
+    let u_parameters = take_spline_scalars(body, &mut cursor, shape.u_count, "u_params", cache)?;
+    let v_parameters = take_spline_scalars(body, &mut cursor, shape.v_count, "v_params", cache)?;
+    Some((
+        PositionalSplineReplay {
+            points,
+            u_parameters,
+            v_parameters,
+            u_derivatives,
+            v_derivatives,
+            mixed_derivatives,
+        },
+        cursor,
+    ))
+}
+
+/// Return the final structural close of a complete positional spline replay.
+pub(crate) fn positional_spline_replay_body_end(
+    payload: &[u8],
+    rows: &[SurfaceRow],
+    row: &SurfaceRow,
+    body_start: usize,
+    body_limit: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    let prototype = associated_spline_replay_prototype(payload, rows, row)?;
+    let body = payload.get(body_start..body_limit)?;
+    let (_, consumed) = parse_positional_spline_replay(body, &prototype, cache)?;
+    (body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
+        .then(|| body_start.checked_add(consumed))
+        .flatten()
+}
+
+/// Decode a positional spline replay body after its final close was removed.
+pub(crate) fn decode_positional_spline_replay(
+    body: &[u8],
+    prototype: &SurfacePrototypeRecord,
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalSplineReplay> {
+    let (replay, consumed) = parse_positional_spline_replay(body, prototype, cache)?;
+    (consumed == body.len()).then_some(replay)
+}
+
 /// One complete contour-chain entry following a positional `srf_array` row's
 /// envelope and local-system bodies.
 #[derive(Debug, Clone, PartialEq)]
@@ -3990,8 +4255,20 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        let inline = inline_surface_body(row.kind, &payload[*body_start..body_end], &cache);
-        if let Some(layout) = inline {
+        let positional_spline_close = (row.kind == SurfaceKind::Spline)
+            .then(|| {
+                positional_spline_replay_body_end(payload, rows, row, *body_start, body_end, &cache)
+            })
+            .flatten();
+        let inline = if positional_spline_close.is_none() {
+            inline_surface_body(row.kind, &payload[*body_start..body_end], &cache)
+        } else {
+            None
+        };
+        if let Some(close) = positional_spline_close {
+            body_end = close;
+            boundary = SurfaceBodyBoundary::CompoundClose;
+        } else if let Some(layout) = inline {
             body_end = body_start + layout.terminal_close;
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else {
@@ -4100,7 +4377,14 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
         if body_start >= row_end {
             continue;
         }
-        let contour_start = if let Some(layout) =
+        let positional_spline_close = (row.kind == SurfaceKind::Spline)
+            .then(|| {
+                positional_spline_replay_body_end(payload, rows, row, body_start, row_end, &cache)
+            })
+            .flatten();
+        let contour_start = if let Some(close) = positional_spline_close {
+            close.checked_add(1)
+        } else if let Some(layout) =
             inline_surface_body(row.kind, &payload[body_start..row_end], &cache)
         {
             let Some(contour_start) = body_start
@@ -4109,7 +4393,7 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
             else {
                 continue;
             };
-            contour_start
+            Some(contour_start)
         } else {
             let Some(envelope_close) =
                 surface_body_compound_close(row.kind, &payload[body_start..row_end], &cache)
@@ -4128,7 +4412,10 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
             let Some(contour_start) = local_system_close.checked_add(1) else {
                 continue;
             };
-            contour_start
+            Some(contour_start)
+        };
+        let Some(contour_start) = contour_start else {
+            continue;
         };
         let Some(chain) = parse_surface_contour_chain(payload, contour_start, row_end, row, &cache)
         else {
@@ -6371,7 +6658,7 @@ fn named_spline_scalar_slot(
         return scalar::decode_in_lane(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(name, "end_v_tangts" | "end_tangts") {
+    if matches!(name, "end_v_tangts" | "end_uv_deriv" | "end_tangts") {
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }

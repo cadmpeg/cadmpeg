@@ -31,9 +31,9 @@ use super::super::surfaces::{
     transfer_legacy_ascii_surface_carriers, transfer_native_brep, transfer_nurbs_boundary_curves,
     transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
     transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
-    transfer_positional_tori, transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
-    transfer_tabulated_cylinder_spline_extrusions, BrepTransferDiagnostics,
-    NativeBrepTransferSummary,
+    transfer_positional_spline_replays, transfer_positional_tori, transfer_rowless_round_cylinders,
+    transfer_split_outline_cylinders, transfer_tabulated_cylinder_spline_extrusions,
+    BrepTransferDiagnostics, NativeBrepTransferSummary,
 };
 use super::super::sweep::{
     transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
@@ -52,6 +52,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations);
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, ir, annotations);
+    let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations);
     let legacy_ascii_surface_carrier_count =
         transfer_legacy_ascii_surface_carriers(scan, ir, annotations);
     let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
@@ -309,6 +310,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.insert(
             "transferred_first_instance_prototype_surface_count".to_string(),
             first_instance_prototype_surface_count,
+        );
+        coverage.insert(
+            "transferred_positional_spline_replay_count".to_string(),
+            positional_spline_replay_count,
         );
         if legacy_ascii_surface_carrier_count != 0 {
             coverage.insert(

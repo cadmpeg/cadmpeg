@@ -350,6 +350,121 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     transferred
 }
 
+pub(in super::super) fn transfer_positional_spline_replays(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.framing.layout != crate::container::Layout::Nd {
+        return 0;
+    }
+    let mut transferred = 0;
+    for parameter in &scan.surfaces.parameters {
+        if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
+            continue;
+        }
+        let Some(row) =
+            crate::surface::unique_surface_row(&scan.surfaces.rows, parameter.surface_id)
+        else {
+            continue;
+        };
+        if row.kind != crate::surface::SurfaceKind::Spline || row.offset != parameter.offset {
+            continue;
+        }
+        let sections = scan
+            .framing
+            .sections
+            .iter()
+            .filter(|section| {
+                row.offset >= section.offset
+                    && row.offset < section.offset.saturating_add(section.length)
+            })
+            .collect::<Vec<_>>();
+        let [section] = sections.as_slice() else {
+            continue;
+        };
+        let section_end = section
+            .offset
+            .saturating_add(section.length)
+            .min(scan.framing.data.len());
+        let Some(payload) = scan.framing.data.get(section.offset..section_end) else {
+            continue;
+        };
+        let Some(relative_row_offset) = row.offset.checked_sub(section.offset) else {
+            continue;
+        };
+        let relative_row = {
+            let mut row = row.clone();
+            row.offset = relative_row_offset;
+            row
+        };
+        let relative_rows = scan
+            .surfaces
+            .rows
+            .iter()
+            .filter(|candidate| {
+                candidate.offset >= section.offset
+                    && candidate.offset < section.offset.saturating_add(section.length)
+            })
+            .filter_map(|candidate| {
+                let mut candidate = candidate.clone();
+                candidate.offset = candidate.offset.checked_sub(section.offset)?;
+                Some(candidate)
+            })
+            .collect::<Vec<_>>();
+        let Some(prototype) = crate::surface::positional_spline_replay_prototype(
+            payload,
+            &relative_rows,
+            &relative_row,
+        ) else {
+            continue;
+        };
+        let cache = crate::scalar::ScalarCache::from_section(payload);
+        let Some(replay) =
+            crate::surface::decode_positional_spline_replay(&parameter.body, &prototype, &cache)
+        else {
+            continue;
+        };
+        let Some(nurbs) = interpolation_spline_surface(
+            &replay.points,
+            &replay.u_parameters,
+            &replay.v_parameters,
+            &replay.u_derivatives,
+            &replay.v_derivatives,
+            &replay.mixed_derivatives,
+        ) else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            &section.name,
+            parameter.body_offset as u64,
+            "positional_spline_prototype_replay",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Nurbs(nurbs),
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("{}:{}", section.name, row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
