@@ -298,4 +298,12 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Note.** The six selector-specific pair runs are retained as native radial maps. Their identifiers remain opaque until the native element namespace is settled.
 
+### TS-07. `106ek` edge-slot values
+
+**Question.** What edge state does each signed `106ek` value carry?
+
+**Known.** A `106ek value` run follows a `105sym 0` correspondence block. It has exactly one record per `e` slot in edge-record order, including deleted slots. The value is the signed integer `-1`, `0`, or `1`. A deleted edge slot carries `-1`, but populated slots also carry `-1`. The values do not equal crease state, boundary state, symmetry-plane side, or the edge's knot interval. The complete run is retained in the source T-spline program and is reported by opcode when it has no typed neutral carrier.
+
+**Need.** A cage with one controlled editor operation that changes `106ek` while topology, symmetry, crease tags, knot intervals, and selection stay fixed must identify the state. The reader can then bind each value to its positional neutral edge, and the writer can regenerate the run after an edit.
+
 ## 5. Test evidence

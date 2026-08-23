@@ -67,10 +67,16 @@ pub(crate) fn decode(
     }) {
         match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
-                if parsed.unknown_records != 0 {
+                if !parsed.unknown_record_kinds.is_empty() {
+                    let count = parsed.unknown_record_kinds.values().sum::<usize>();
+                    let kinds = parsed
+                        .unknown_record_kinds
+                        .iter()
+                        .map(|(kind, count)| format!("{kind}={count}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     losses.push(F3dLossCode::TsplineRecordUntyped.note(format!(
-                        "{} T-spline record(s) were retained without typed semantics.",
-                        parsed.unknown_records
+                        "{count} T-spline record(s) were retained without typed semantics: {kinds}."
                     )));
                 }
                 cages.push(parsed.surface);
@@ -145,7 +151,7 @@ fn require_end<'a>(
 #[derive(Debug)]
 struct ParsedCage {
     surface: SubdSurface,
-    unknown_records: usize,
+    unknown_record_kinds: BTreeMap<String, usize>,
 }
 
 #[derive(Debug)]
@@ -712,7 +718,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut symmetry_blocks = Vec::new();
     let mut current_symmetry: Option<SymmetryBlock> = None;
     let mut terminal_declarations = BTreeSet::new();
-    let mut unknown_records = 0usize;
+    let mut unknown_record_kinds = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
         match fields.next() {
@@ -1020,7 +1026,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     return Err(malformed(name, format!("duplicate {declaration}")));
                 }
             }
-            _ => unknown_records += 1,
+            Some(kind) => *unknown_record_kinds.entry(kind.to_owned()).or_default() += 1,
+            None => {}
         }
     }
     if let Some(block) = current_symmetry {
@@ -1384,7 +1391,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 instance_path: Vec::new(),
             }),
         },
-        unknown_records,
+        unknown_record_kinds,
     })
 }
 
@@ -1445,7 +1452,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("quad cage");
-        assert_eq!(cage.unknown_records, 1);
+        assert_eq!(
+            cage.unknown_record_kinds,
+            std::collections::BTreeMap::from([("vendor-extension".to_string(), 1)])
+        );
         assert_quad(&cage.surface);
     }
 
@@ -1463,7 +1473,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
-        assert_eq!(cage.unknown_records, 0);
+        assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
         let layout = cage.surface.vertices[0]
             .secondary_grips
@@ -1605,7 +1615,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
-        assert_eq!(cage.unknown_records, 0);
+        assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
