@@ -273,7 +273,7 @@ Native edge records and the vertex roster may cover only a subset of the physica
 
 An uncovered row in a body without an indexed visualization-point table has no separate serialized row-to-coordinate discriminator. Its logical vertices bind to `05 08 01` rows only through the joint carrier predicates, trim-boundary occurrences, endpoint-port equations, and closed face-cycle incidence. The positional coordinate roster remains creation order; its order does not select a trim-motif column permutation or bind a physical endpoint pair.
 
-After exact object-id bindings consume their native edge records, a remaining native edge may bind an unmatched standard row by endpoint incidence. Map its two native vertex identities through the positional roster, require both coordinate rows to belong to that standard row's surface-constrained endpoint domain, and compare unordered pairs. The row binds only when all matching unused native edges reduce to one distinct unordered coordinate-row pair. Zero or multiple distinct pairs leave the row unresolved.
+A native edge or support carrier binds a standard row only by equality between the standard row tag and the native object id. A native object with no equal standard tag remains unbound; endpoint incidence does not substitute it for another row.
 
 When an exact native support pcurve evaluates to the endpoints of a row, its two coordinate rows corroborate the native endpoint identity as an unordered pair. The support-pcurve wrapper order does not replace an already selected native identity direction; a reversed wrapper order is the same endpoint identity, while a different unordered pair conflicts.
 

@@ -3324,7 +3324,6 @@ fn attach_standard_topology(
         &supports,
         &native_edges,
         &ir.model.points,
-        &endpoint_candidates,
     );
     let native_port_options = supports
         .iter()
@@ -3346,13 +3345,7 @@ fn attach_standard_topology(
         .as_ref()
         .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
     let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
-    let native_support_edge_ids = standard_native_support_edge_ids(
-        &supports,
-        &native_edges,
-        &native_support_ids,
-        vertex_roster.as_deref(),
-        &endpoint_candidates,
-    );
+    let native_support_edge_ids = standard_native_support_edge_ids(&supports, &native_support_ids);
     let native_supports_by_row = native_support_edge_ids
         .iter()
         .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
@@ -5018,19 +5011,13 @@ pub(crate) fn standard_circle_endpoint_candidates(
         .collect()
 }
 
-/// Resolve standard-row endpoints from native edge identities. Exact local-tag
-/// matches take precedence; otherwise an unused native edge may contribute
-/// only when its logical point pair is unique inside the row's geometric domain.
+/// Resolve standard-row endpoints from equal standard and native edge identities.
 pub(crate) fn standard_native_graph_endpoint_pairs(
     graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
-    endpoint_candidates: &[Vec<usize>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
-    if supports.len() != endpoint_candidates.len() {
-        return None;
-    }
     let graph = graph?;
     let identity_points = unique_native_identity_points(
         &graph.logical_vertex_refs,
@@ -5039,38 +5026,15 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
         &graph.vertex_tolerances,
         points,
     );
-    let directly_bound_edges = supports
-        .iter()
-        .filter_map(|support| {
-            native_edges
-                .contains_key(&support.tag)
-                .then_some(support.tag)
-        })
-        .collect::<HashSet<_>>();
-    let unbound_edge_points = native_edges
-        .iter()
-        .filter(|(edge, _)| !directly_bound_edges.contains(edge))
-        .filter_map(|(_, [start_identity, end_identity])| {
-            let mut pair = [
-                *identity_points.get(start_identity)?,
-                *identity_points.get(end_identity)?,
-            ];
-            pair.sort_unstable();
-            Some(pair)
-        })
-        .collect::<Vec<_>>();
     Some(
         supports
             .iter()
-            .zip(endpoint_candidates)
-            .map(|(support, candidates)| {
-                if let Some([start_identity, end_identity]) = native_edges.get(&support.tag) {
-                    return Some([
-                        *identity_points.get(start_identity)?,
-                        *identity_points.get(end_identity)?,
-                    ]);
-                }
-                unique_unbound_native_endpoint_pair(candidates, &unbound_edge_points)
+            .map(|support| {
+                let [start_identity, end_identity] = native_edges.get(&support.tag)?;
+                Some([
+                    *identity_points.get(start_identity)?,
+                    *identity_points.get(end_identity)?,
+                ])
             })
             .collect(),
     )
@@ -5117,117 +5081,26 @@ pub(crate) fn merge_standard_edge_vertex_references(
     true
 }
 
-/// Resolve native two-sided edge carriers for standard rows. An exact native
-/// edge identity wins. Without that identity, endpoint-roster incidence may
-/// bind a carrier only when it leaves one unused native edge identity; a
-/// repeated endpoint pair remains unresolved because it does not select a
-/// physical carrier.
+/// Resolve native two-sided edge carriers by equal standard and native identities.
 pub(crate) fn standard_native_support_edge_ids(
     supports: &[crate::families::standard::records::StandardCurveSupport],
-    native_edges: &BTreeMap<u32, [u32; 2]>,
     native_support_ids: &HashSet<u32>,
-    vertex_roster: Option<&[u32]>,
-    endpoint_candidates: &[Vec<usize>],
 ) -> Vec<Option<u32>> {
-    if supports.len() != endpoint_candidates.len() {
-        return vec![None; supports.len()];
-    }
-
-    let exact_edge_ids = supports
-        .iter()
-        .filter_map(|support| {
-            (native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag))
-                .then_some(support.tag)
-        })
-        .collect::<HashSet<_>>();
     let mut exact_row_counts = HashMap::<u32, usize>::new();
     for support in supports {
-        if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag) {
+        if native_support_ids.contains(&support.tag) {
             *exact_row_counts.entry(support.tag).or_default() += 1;
         }
     }
 
-    let mut bindings = supports
+    supports
         .iter()
         .map(|support| {
             (native_support_ids.contains(&support.tag)
                 && exact_row_counts.get(&support.tag) == Some(&1))
             .then_some(support.tag)
         })
-        .collect::<Vec<_>>();
-    let mut fallback_candidates = vec![Vec::<u32>::new(); supports.len()];
-
-    if let Some(vertex_roster) = vertex_roster {
-        let point_by_identity = vertex_roster
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(point, identity)| (identity, point))
-            .collect::<HashMap<_, _>>();
-        for (row, (support, candidates)) in supports.iter().zip(endpoint_candidates).enumerate() {
-            if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag)
-            {
-                continue;
-            }
-            for (&edge, [start_identity, end_identity]) in native_edges {
-                if exact_edge_ids.contains(&edge) || !native_support_ids.contains(&edge) {
-                    continue;
-                }
-                let Some(&start) = point_by_identity.get(start_identity) else {
-                    continue;
-                };
-                let Some(&end) = point_by_identity.get(end_identity) else {
-                    continue;
-                };
-                if candidates.contains(&start) && candidates.contains(&end) {
-                    fallback_candidates[row].push(edge);
-                }
-            }
-        }
-    }
-
-    let mut used = exact_edge_ids;
-    loop {
-        let mut changed = false;
-        for row in 0..bindings.len() {
-            if bindings[row].is_some() {
-                continue;
-            }
-            let available = fallback_candidates[row]
-                .iter()
-                .copied()
-                .filter(|edge| !used.contains(edge))
-                .collect::<Vec<_>>();
-            if let [edge] = available.as_slice() {
-                bindings[row] = Some(*edge);
-                used.insert(*edge);
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    bindings
-}
-
-/// Return the sole distinct unordered native pair contained in a geometric
-/// endpoint domain.
-pub(crate) fn unique_unbound_native_endpoint_pair(
-    candidates: &[usize],
-    native_edge_points: &[[usize; 2]],
-) -> Option<[usize; 2]> {
-    let mut pairs = native_edge_points
-        .iter()
-        .copied()
-        .filter(|pair| candidates.contains(&pair[0]) && candidates.contains(&pair[1]))
-        .collect::<Vec<_>>();
-    for pair in &mut pairs {
-        pair.sort_unstable();
-    }
-    pairs.sort_unstable();
-    pairs.dedup();
-    <[[usize; 2]; 1]>::try_from(pairs).ok().map(|[pair]| pair)
+        .collect()
 }
 
 pub(crate) fn include_native_endpoint_pairs(

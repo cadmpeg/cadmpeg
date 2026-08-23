@@ -102,25 +102,7 @@ fn partial_endpoint_ports_propagate_known_components_only() {
 }
 
 #[test]
-fn unbound_native_edge_pair_must_be_unique_in_the_geometric_domain() {
-    use crate::families::standard::decode::unique_unbound_native_endpoint_pair;
-
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 7], [1, 4]]),
-        Some([2, 7])
-    );
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 4]]),
-        None
-    );
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[1, 4], [2, 9]]),
-        None
-    );
-}
-
-#[test]
-fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
+fn native_edge_carrier_binding_requires_equal_object_identity() {
     use crate::families::standard::decode::standard_native_support_edge_ids;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
 
@@ -138,41 +120,14 @@ fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
             geometry: StandardCurveGeometry::Line,
         },
     ];
-    let native_edges = BTreeMap::from([(70, [10, 11]), (71, [12, 13])]);
     let native_support_ids = HashSet::from([70, 71]);
-    let vertex_roster = [10, 11, 12, 13];
     assert_eq!(
-        standard_native_support_edge_ids(
-            &supports,
-            &native_edges,
-            &native_support_ids,
-            Some(&vertex_roster),
-            &[vec![0, 1], vec![2, 3]],
-        ),
-        vec![Some(70), Some(71)]
-    );
-
-    let ambiguous_edges = BTreeMap::from([(71, [10, 11]), (72, [10, 11])]);
-    let ambiguous_support_ids = HashSet::from([71, 72]);
-    assert_eq!(
-        standard_native_support_edge_ids(
-            &supports[1..],
-            &ambiguous_edges,
-            &ambiguous_support_ids,
-            Some(&vertex_roster),
-            &[vec![0, 1]],
-        ),
-        vec![None]
+        standard_native_support_edge_ids(&supports, &native_support_ids),
+        vec![Some(70), None]
     );
 
     assert_eq!(
-        standard_native_support_edge_ids(
-            &supports[1..],
-            &BTreeMap::new(),
-            &HashSet::from([900]),
-            None,
-            &[vec![2, 3]],
-        ),
+        standard_native_support_edge_ids(&supports[1..], &HashSet::from([900])),
         vec![Some(900)]
     );
 }
