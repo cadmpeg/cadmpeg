@@ -390,6 +390,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
         }
         // Payload fields until the `#` terminator.
         let mut prims = Vec::new();
+        let mut subtype_depth = 0usize;
         loop {
             let Some((at, field)) = reader.next_field() else {
                 return Err(SatError {
@@ -398,9 +399,27 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
                 });
             };
             if field == "#" {
+                if subtype_depth != 0 {
+                    return Err(SatError {
+                        offset: at,
+                        reason: format!("record `{name}` terminates inside a subtype scope"),
+                    });
+                }
                 break;
             }
-            prims.push(lex_prim(&mut reader, at, field)?);
+            let prim = lex_prim(&mut reader, at, field)?;
+            match prim {
+                Prim::Open => subtype_depth += 1,
+                Prim::Close if subtype_depth == 0 => {
+                    return Err(SatError {
+                        offset: at,
+                        reason: format!("record `{name}` closes an unopened subtype scope"),
+                    });
+                }
+                Prim::Close => subtype_depth -= 1,
+                _ => {}
+            }
+            prims.push(prim);
         }
         let head = name.split('-').next().unwrap_or_default().to_owned();
         let tokens = type_record(&head, &prims, len_factor);
@@ -1605,6 +1624,20 @@ mod tests {
 
             let error = parse(&stream).expect_err("malformed prefixed field must fail");
             assert_eq!(error.offset, field_offset);
+        }
+    }
+
+    #[test]
+    fn subtype_scope_delimiters_must_balance() {
+        for (body, error_field) in [("mystery { scope #\n", "#"), ("mystery } #\n", "}")] {
+            let stream = asm_stream(body);
+            let error_offset = stream
+                .iter()
+                .position(|byte| *byte == error_field.as_bytes()[0])
+                .expect("delimiter offset");
+
+            let error = parse(&stream).expect_err("unbalanced subtype scope must fail");
+            assert_eq!(error.offset, error_offset);
         }
     }
 
