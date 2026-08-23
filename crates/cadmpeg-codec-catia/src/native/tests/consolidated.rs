@@ -1119,6 +1119,78 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
 }
 
 #[test]
+fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
+    fn replace_node(mut stream: Vec<u8>, payload: &[u8]) -> Vec<u8> {
+        let node = stream
+            .windows(3)
+            .position(|window| window == [0xb2, 0x03, 0x5e])
+            .expect("edge node frame");
+        stream.truncate(node);
+        stream.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x5e,
+            u8::try_from(payload.len()).expect("bounded edge payload"),
+            0x05,
+        ]);
+        stream.extend_from_slice(payload);
+        stream
+    }
+
+    let mut bytes = a5_native_edge_run_stream(6, 14, 15);
+    let tagged_u16 = replace_node(
+        a5_native_edge_run_stream(9, 15, 16),
+        &[37, 0x0a, 15, 0, 0x0a, 16, 0, 9, 5, 0x21],
+    );
+    bytes.extend_from_slice(&tagged_u16);
+    let selector2 = replace_node(
+        a5_native_edge_run_stream(12, 16, 17),
+        &[49, 4 * 16 + 2, 4 * 17 + 2, 9, 5, 0x21],
+    );
+    bytes.extend_from_slice(&selector2);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(native.consolidated_edge_runs.len(), 3);
+    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert_eq!(
+        native.consolidated_edge_nodes[0]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices[1],
+        native.consolidated_edge_nodes[1].vertices[0]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[2]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::Selector2,
+            crate::native::CatiaAllocationReferenceEncoding::Selector2,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].vertices[1],
+        native.consolidated_edge_nodes[2].vertices[0]
+    );
+}
+
+#[test]
 fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     let bytes = b2_edge_node_stream();
     let native = crate::native::CatiaNative::decode(&bytes);

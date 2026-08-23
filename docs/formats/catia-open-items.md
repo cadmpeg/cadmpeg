@@ -463,14 +463,6 @@ population can displace the required face population.
 
 **Need.** We must resolve the remaining state where neither edge-table grammar admits, and establish the source rule if both grammars admit the same byte region. The variant fixes the decode route: `StandardNested` uses the complete standard spine, `FbbOnly` uses the partial-spine route, and `E5Stream` uses the coherent E5 graph.
 
-### SN-39. Compact edge explicit endpoint selectors
-
-**Question.** Which identity namespace do the `4n+2`, `06 <u8>`, and `0a <u16le>` endpoint selector forms in a width-coded class-`0x5e` edge node address?
-
-**Known.** `catia.md` §6 defines the explicit forms as distinct from the local child and backward allocation walk. Paired `4w` middle references are forward distances in the complete consolidated framed-record sequence; both must land on B-family class-`0x18` endpoint records before their target-record offsets become ordered vertex identities. The decoder retains the other forms and their numeric operands without joining them to an endpoint record. A complete adjacent edge-use run types the middle pair as endpoints and the final pair as side selectors. A standalone five-reference record does not establish those roles. Explicit-reference populations contain complete repeated-value relations in both pairs, so numeric repetition alone does not select the endpoint pair.
-
-**Need.** We must define the target namespace and scope of each remaining explicit form, including whether different forms can name one endpoint record.
-
 ### DI-24. PMI dimension quantity and suffix framing
 
 **Question.** Which field gives the physical quantity of a transferred `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, and `DC` suffix framings select?
