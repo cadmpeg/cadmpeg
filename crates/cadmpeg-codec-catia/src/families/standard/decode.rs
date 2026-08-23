@@ -3341,7 +3341,7 @@ fn attach_standard_topology(
         })
         .collect::<Vec<_>>();
     if let Some(pairs) = missing_edge::standard_edge_rows(spine).and_then(|rows| {
-        missing_edge::raw_visualization_endpoint_pairs(source, &rows, &point_coordinates)
+        missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
     }) {
         if pairs.len() != ordered_endpoint_pairs.len() {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);

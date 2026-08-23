@@ -13,7 +13,7 @@ fn handles(values: &[u32]) -> HashSet<u32> {
 }
 
 fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
-    let mut bytes = RAW_VISUALIZATION_POINT_MARKER.to_vec();
+    let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
     let count = u32::try_from(triples.len()).expect("synthetic table count");
     bytes.extend_from_slice(&count.to_le_bytes());
     bytes.push(0xff);
@@ -34,22 +34,69 @@ fn raw_visualization_points_bind_terminal_handles_by_direct_index() {
     let rows = [row(&[0, 40, 1]), row(&[1, 41, 2])];
 
     assert_eq!(
-        raw_visualization_endpoint_pairs(&bytes, &rows, &points),
+        visualization_endpoint_pairs(&bytes, &rows, &points),
         Some(vec![[0, 1], [1, 0]])
     );
 }
 
 #[test]
-fn raw_visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
+fn compressed_visualization_points_reuse_coordinate_prefixes() {
+    let points = [[1.0, 2.0, 3.0], [1.0, 2.0, 4.0], [1.0, 5.0, 6.0]];
+    let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.push(0xff);
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xe4, 0xff, 0xff, 0xff]);
+    bytes.extend_from_slice(&6u32.to_le_bytes());
+    for scalar in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        bytes.extend_from_slice(&scalar.to_le_bytes());
+    }
+    let rows = [row(&[0, 20, 2]), row(&[2, 21, 3])];
+
+    assert_eq!(
+        visualization_endpoint_pairs(&bytes, &rows, &points),
+        Some(vec![[0, 1], [1, 2]])
+    );
+}
+
+#[test]
+fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() {
+    let points = [[1.0, 2.0, 3.0], [1.0, 2.0, 4.0]];
+    let rows = [row(&[0, 1])];
+    let mut bytes = INDEXED_VISUALIZATION_POINT_MARKER.to_vec();
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.push(0xff);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0x08, 0xff, 0xff, 0xff]);
+    bytes.extend_from_slice(&4u32.to_le_bytes());
+    for scalar in [1.0f32, 2.0, 3.0, 4.0] {
+        bytes.extend_from_slice(&scalar.to_le_bytes());
+    }
+
+    let mut missing_scalar = bytes.clone();
+    missing_scalar[23..27].copy_from_slice(&5u32.to_le_bytes());
+    assert_eq!(
+        visualization_endpoint_pairs(&missing_scalar, &rows, &points),
+        None
+    );
+
+    bytes[19] |= 1;
+    assert_eq!(visualization_endpoint_pairs(&bytes, &rows, &points), None);
+}
+
+#[test]
+fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
     let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
     let rows = [row(&[0, 1])];
 
     assert_eq!(
-        raw_visualization_endpoint_pairs(&raw_visualization_table(0, &points), &rows, &points,),
+        visualization_endpoint_pairs(&raw_visualization_table(2, &points), &rows, &points,),
         None
     );
     assert_eq!(
-        raw_visualization_endpoint_pairs(
+        visualization_endpoint_pairs(
             &raw_visualization_table(1, &[points[0], points[0]]),
             &rows,
             &points,

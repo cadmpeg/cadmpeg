@@ -298,21 +298,37 @@ Regular-motif bodies serialize vertex allocation as a walk over the ordered trim
 
 The walk is complete when its first-occurrence population equals the vertex-table count. Each edge-row endpoint port maps through this allocation. The mapping is valid only when every circle row having exactly two on-circle vertex rows maps to that same unordered pair. Face-local edge incidence then comes from the two `0x60` face references; each face decomposes into closed degree-two endpoint cycles.
 
-#### 5.4.2 Raw indexed visualization-point allocation
+#### 5.4.2 Indexed visualization-point allocation
 
-The visualization lane can store a direct trim-handle coordinate table:
+The visualization lane can store a trim-handle-indexed coordinate table:
 
 ```text
 ff ff 02 00 01 ff
 entry_count:u32le
 ff secondary_count:u32le
 00 00 00 mode:u8
-coordinate:f32le[entry_count][3]
 ```
 
-For mode `1`, table entry `h` is the world-space XYZ coordinate of trim handle `h`. The first and last handles of an edge-table row therefore select that row's ordered endpoint coordinates. Multiple unequal handles can select bit-identical coordinates and thereby identify one logical vertex. `secondary_count` is no greater than `entry_count` and differs from it by at most one.
+For mode `1`, `coordinate:f32le[entry_count][3]` follows the header directly. Table entry `h` is the world-space XYZ coordinate of trim handle `h`. `secondary_count` is no greater than `entry_count` and differs from it by at most one.
 
-The relation is complete only when the marker is unique, the declared coordinate extent is present, every terminal handle is less than `entry_count`, every selected coordinate equals one `05 08 01` row bit-for-bit as f32, and every coordinate row is selected. Modes other than `1` use a different coordinate coding.
+Mode `0` compresses repeated coordinate prefixes:
+
+```text
+control:u8[align4(ceil(entry_count / 4))]
+scalar_count:u32le
+scalar:f32le[scalar_count]
+```
+
+Each control byte contains four two-bit codes from least-significant to most-significant bits. Codes reconstruct each table row from the preceding row:
+
+- `0`: read X, Y, and Z;
+- `1`: repeat X, Y, and Z;
+- `2`: repeat X and Y, then read Z;
+- `3`: repeat X, then read Y and Z.
+
+The first row uses code `0`. The decoder must consume exactly `scalar_count` values after reconstructing `entry_count` rows.
+
+In both modes, the first and last handles of an edge-table row select that row's ordered endpoint coordinates. Multiple unequal handles can select bit-identical coordinates and thereby identify one logical vertex. The relation is complete only when the marker is unique, every declared extent is present, every terminal handle is less than `entry_count`, every selected coordinate equals one `05 08 01` row bit-for-bit as f32, and every coordinate row is selected. Other modes use a different coordinate coding.
 
 Each closed face cycle initially has an independent whole-cycle reversal gauge, including each outer and inner boundary of a multiply connected face. A closed edge is a one-coedge boundary whose start and end vertex are identical. Across a shell, the gauges are fixed by requiring the two coedge uses of every shared physical edge to have opposite traversal senses. The resulting Boolean parity system must be consistent across every connected boundary component; reversing a boundary reverses its coedge order, toggles every edge-use sense, and swaps each use's endpoints.
 

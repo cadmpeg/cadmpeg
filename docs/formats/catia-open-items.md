@@ -304,11 +304,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-10. Logical vertex to `05 08 01` allocation
 
-**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row when the raw indexed visualization-point mode is absent?
+**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row when indexed visualization modes `0` and `1` are absent?
 
-**Known.** `catia.md` §5.4.2 defines mode `1` as a direct trim-handle-indexed f32 coordinate table and binds it exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation in the other visualization modes.
+**Known.** `catia.md` §5.4.2 defines modes `0` and `1` as compressed and raw trim-handle-indexed f32 coordinate tables and binds them exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation in the other visualization modes.
 
-**Need.** We must decode the coordinate coding used by visualization modes other than `1` and identify the serialized discriminator for regular-motif allocation permutations.
+**Need.** We must decode the coordinate coding used by the remaining visualization modes and identify the serialized discriminator for regular-motif allocation permutations.
 
 **Conflict.** Vertex-count agreement and circle-endpoint agreement do not distinguish the regular-motif column permutations from other emission orders.
 
