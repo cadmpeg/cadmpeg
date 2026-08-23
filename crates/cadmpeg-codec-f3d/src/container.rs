@@ -6,10 +6,9 @@
 //! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
 //! history boundaries. Model geometry is selected from Design body-to-blob
 //! bindings by [`crate::decode`]. [`select_history_brep`] independently locates
-//! the stream whose header declares a history partition. When Design bindings
-//! are absent, [`legacy_design_model_breps`] and [`select_fallback_brep`]
-//! supply explicit compatibility fallbacks without asserting that one
-//! extension is the document model.
+//! the stream whose header declares a history partition. Compatibility helpers
+//! expose unique or legacy carrier sets for metadata reporting; model decode
+//! uses the typed Design body-map catalog.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -543,10 +542,7 @@ pub fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFa
     candidates.next().is_none().then_some(candidate)
 }
 
-/// Compatibility fallback used only when Design body-to-blob bindings are
-/// absent. It returns a BREP only when the available evidence identifies one
-/// unambiguously: exactly one history-bearing stream, or exactly one BREP in
-/// total. Ambiguous archives do not acquire an archive-order guess.
+/// Return one unambiguous BREP for compatibility metadata and reporting.
 pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
     if let Some(history) = select_history_brep(scan) {
         return Some(history);

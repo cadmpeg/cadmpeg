@@ -351,8 +351,8 @@ pub(crate) struct BodyBinding {
     pub entity_suffix_offset: usize,
 }
 
-/// One record of the sibling Design carrier that binds an `.smb` snapshot.
-pub(crate) struct SnapshotBodyMapRecord {
+/// One exactly framed Design body-map record.
+pub(crate) struct BodyMapRecord {
     pub blob_name: String,
     pub bindings: Vec<BodyBinding>,
 }
@@ -415,7 +415,7 @@ fn reference_has_type(
 pub(crate) fn snapshot_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<Vec<SnapshotBodyMapRecord>, CodecError> {
+) -> Result<Vec<BodyMapRecord>, CodecError> {
     let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let primary_by_entity = frames
         .iter()
@@ -443,9 +443,8 @@ pub(crate) fn snapshot_body_map_records(
                 base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
             })
         {
-            return Err(CodecError::Malformed(
-                "F3D Design snapshot body-map carrier has incompatible registration metadata"
-                    .into(),
+            return Err(crate::error::malformed(
+                "F3D Design snapshot body-map carrier has incompatible registration metadata",
             ));
         }
         let class_tag = u32::try_from(type_ordinal)
@@ -453,14 +452,14 @@ pub(crate) fn snapshot_body_map_records(
             .and_then(|ordinal| ordinal.checked_add(256))
             .filter(|tag| *tag <= 999)
             .ok_or_else(|| {
-                CodecError::Malformed(
-                    "F3D Design snapshot body-map class tag is not three digits".into(),
+                crate::error::malformed(
+                    "F3D Design snapshot body-map class tag is not three digits",
                 )
             })?
             .to_string();
         for &entity in &design_type.entity_ids {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
-                return Err(CodecError::Malformed(format!(
+                return Err(crate::error::malformed(format!(
                     "F3D Design snapshot body-map entity {entity} has no primary record"
                 )));
             };
@@ -470,15 +469,18 @@ pub(crate) fn snapshot_body_map_records(
                 || View::u64_le_at(bytes, frame.start + 7) != Some(entity)
                 || bytes.get(frame.start + 15..frame.start + 21) != Some(&[0; 6])
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(crate::error::malformed(format!(
                     "F3D Design snapshot body-map entity {entity} has an invalid entity header"
                 )));
             }
-            if let Some(record) =
+            let record =
                 parse_snapshot_body_map_frame(bytes, meta, frame.start, frame.end, entity)?
-            {
-                out.push(record);
-            }
+                    .ok_or_else(|| {
+                        crate::error::malformed(format!(
+                            "F3D Design snapshot body-map entity {entity} has an invalid frame"
+                        ))
+                    })?;
+            out.push(record);
         }
     }
     Ok(out)
@@ -490,7 +492,7 @@ fn parse_snapshot_body_map_frame(
     start: usize,
     end: usize,
     entity: u64,
-) -> Result<Option<SnapshotBodyMapRecord>, CodecError> {
+) -> Result<Option<BodyMapRecord>, CodecError> {
     let Some(companion_entity) = entity.checked_add(1) else {
         return Ok(None);
     };
@@ -515,9 +517,8 @@ fn parse_snapshot_body_map_frame(
         let Some(pair_count) = View::u32_le_at(bytes, count_at) else {
             continue;
         };
-        let count = usize::try_from(pair_count).map_err(|_| {
-            CodecError::Malformed("F3D snapshot body-map count exceeds usize".into())
-        })?;
+        let count = usize::try_from(pair_count)
+            .map_err(|_| crate::error::malformed("F3D snapshot body-map count exceeds usize"))?;
         let Some(pairs_start) = count_at.checked_add(4) else {
             continue;
         };
@@ -574,7 +575,7 @@ fn parse_snapshot_body_map_frame(
             }
             let mut bindings = Vec::new();
             bindings.try_reserve(count).map_err(|_| {
-                CodecError::Malformed("F3D snapshot body-map count exceeds capacity".into())
+                crate::error::malformed("F3D snapshot body-map count exceeds capacity")
             })?;
             for pair in 0..count {
                 let at = pairs_start + pair * 16;
@@ -589,7 +590,7 @@ fn parse_snapshot_body_map_frame(
                     entity_suffix_offset: at + 8,
                 });
             }
-            return Ok(Some(SnapshotBodyMapRecord {
+            return Ok(Some(BodyMapRecord {
                 blob_name,
                 bindings,
             }));
@@ -604,10 +605,10 @@ fn parse_snapshot_body_map_frame(
 /// `MetaStream` entity list and primary record index select exact candidate
 /// extents. A candidate is a body map only when one supported reserved-zero
 /// width makes its count, pair run, tail, and basename consume that extent.
-pub(crate) fn body_bindings(
+fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<Vec<BodyBinding>, CodecError> {
+) -> Result<Vec<BodyMapRecord>, CodecError> {
     let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
@@ -704,11 +705,101 @@ pub(crate) fn body_bindings(
                 }
             }
             if let Some(bindings) = matched {
-                out.extend(bindings);
+                let blob_name = bindings
+                    .first()
+                    .map(|binding| binding.blob_name.clone())
+                    .unwrap_or_default();
+                out.push(BodyMapRecord {
+                    blob_name,
+                    bindings,
+                });
             }
         }
     }
     Ok(out)
+}
+
+pub(crate) fn body_bindings(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<BodyBinding>, CodecError> {
+    Ok(body_map_records(bytes, meta)?
+        .into_iter()
+        .flat_map(|record| record.bindings)
+        .collect())
+}
+
+fn selected_body_map_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<BodyMapRecord>, CodecError> {
+    let modern = body_map_records(bytes, meta)?;
+    if modern.is_empty() {
+        snapshot_body_map_records(bytes, meta)
+    } else {
+        Ok(modern)
+    }
+}
+
+/// Return the typed model-blob set selected independently in each Design
+/// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
+pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+    let mut model_names = Vec::new();
+    let mut carrier_counts = HashMap::<String, usize>::new();
+    let mut saw_design_stream = false;
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
+        saw_design_stream = true;
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let modern = body_map_records(bytes, &metadata)?;
+        let snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        for record in modern.iter().chain(&snapshots) {
+            if !record.blob_name.is_empty() {
+                *carrier_counts.entry(record.blob_name.clone()).or_default() += 1;
+            }
+        }
+        let selected = if modern.is_empty() {
+            &snapshots
+        } else {
+            &modern
+        };
+        model_names.extend(
+            selected
+                .iter()
+                .filter(|record| !record.blob_name.is_empty())
+                .map(|record| record.blob_name.clone()),
+        );
+    }
+
+    let mut archive_counts = HashMap::<String, usize>::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.belongs_to_design_asset(&entry.name)
+            && matches!(entry.role.as_str(), role::BREP_SMB | role::BREP_SMBH)
+    }) {
+        let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
+        *archive_counts.entry(basename.to_owned()).or_default() += 1;
+    }
+    if !saw_design_stream || carrier_counts.is_empty() {
+        let mut names = archive_counts.into_keys().collect::<Vec<_>>();
+        names.sort();
+        return Ok(names);
+    }
+    if carrier_counts != archive_counts {
+        return Err(crate::error::malformed(
+            "Design body-map carriers do not classify every binary BREP entry exactly once",
+        ));
+    }
+    model_names.sort();
+    model_names.dedup();
+    Ok(model_names)
 }
 
 fn parse_body_map_frame(
@@ -765,7 +856,7 @@ fn parse_body_map_frame(
         lp_utf16_bounded(bytes, name_at, 0..=max_name_chars).filter(|(name, name_end)| {
             *name_end == end
                 && ((pair_count == 0 && name.is_empty())
-                    || (pair_count > 0 && is_brep_blob_basename(name)))
+                    || (pair_count > 0 && is_brep_blob_basename(name) && name.ends_with(".smbh")))
         })
     else {
         return Ok(None);
@@ -827,7 +918,10 @@ pub fn decode_design_body_bindings(
         else {
             continue;
         };
-        for binding in body_bindings(bytes, &metadata)? {
+        for binding in selected_body_map_records(bytes, &metadata)?
+            .into_iter()
+            .flat_map(|record| record.bindings)
+        {
             let source_bodies = body_keys
                 .iter()
                 .filter(|key| {
@@ -912,7 +1006,10 @@ pub(crate) fn decode_all_body_visibility(
             continue;
         };
         let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
-        for binding in body_bindings(bytes, &metadata)? {
+        for binding in selected_body_map_records(bytes, &metadata)?
+            .into_iter()
+            .flat_map(|record| record.bindings)
+        {
             if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
                 out.insert(
                     (binding.blob_name, binding.asm_key),
@@ -1265,11 +1362,7 @@ mod tests {
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
         metadata.types[2].entity_ids.clear();
-        assert!(
-            snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
-                .expect("typed carrier")
-                .is_empty()
-        );
+        assert!(snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata).is_err());
     }
 
     #[test]
@@ -1310,11 +1403,7 @@ mod tests {
             "BREP.snapshot.smb",
             crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
         );
-        assert!(
-            snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
-                .expect("typed carrier")
-                .is_empty()
-        );
+        assert!(snapshot_body_map_records(&bytes, &snapshot_body_map_metadata()).is_err());
     }
 
     #[test]

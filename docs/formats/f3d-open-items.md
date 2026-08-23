@@ -233,23 +233,6 @@ unstructured recipe. These are candidate-reconstruction policies. They do not
 decode the recipe program and can assign a topology-consistent edge that the
 stored operand did not select.
 
-### DR-71. BREP selection without Design body binding
-
-**Question.** Which container or Design relation selects model geometry when no
-decoded Design body-to-BREP binding is present?
-
-**Known.** Binary ASM headers identify history-partition streams. The archive
-can contain several Design BREP streams, and stream uniqueness does not state
-body ownership or active-model selection.
-
-**Need.** We must decode the model-to-stream binding before treating one
-available BREP as the document's selected model geometry.
-
-**Conflict.** `select_fallback_brep` in `src/container.rs` selects the unique
-history-bearing Design BREP, or otherwise the sole Design BREP, when explicit
-body bindings are absent. This compatibility fallback substitutes archive
-cardinality and a history flag for the missing semantic model binding.
-
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

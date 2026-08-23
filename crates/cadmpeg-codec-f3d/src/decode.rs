@@ -2011,47 +2011,27 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
 
 fn model_brep_candidates(
     scan: &ContainerScan,
-    bindings: &[crate::records::DesignBodyBinding],
+    blob_names: &[String],
 ) -> Result<Vec<BrepFacts>, CodecError> {
     let mut candidates = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for binding in bindings {
-        if !seen.insert(binding.blob_name.as_str()) {
-            continue;
-        }
+    for blob_name in blob_names {
         let matches = container::design_breps(scan)
-            .filter(|brep| brep.name.rsplit('/').next() == Some(binding.blob_name.as_str()))
+            .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()))
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [brep] => candidates.push((**brep).clone()),
             [] => {
                 return Err(CodecError::Malformed(format!(
                     "Design body map references missing BREP entry {}",
-                    binding.blob_name
+                    blob_name
                 )))
             }
             _ => {
                 return Err(CodecError::Malformed(format!(
                     "Design body map BREP basename is ambiguous: {}",
-                    binding.blob_name
+                    blob_name
                 )))
             }
-        }
-    }
-    if candidates.is_empty() {
-        let legacy = if bindings.is_empty() {
-            container::legacy_design_model_breps(scan)
-        } else {
-            None
-        };
-        if let Some(legacy) = legacy {
-            candidates.extend(legacy.into_iter().cloned());
-        } else if let Some(fallback) = container::select_fallback_brep(scan) {
-            candidates.push((*fallback).clone());
-        } else if container::design_breps(scan).next().is_some() {
-            return Err(CodecError::Malformed(
-                "Design body map is absent and BREP selection is ambiguous".to_string(),
-            ));
         }
     }
     Ok(candidates)
@@ -2394,7 +2374,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
                     scan,
-                    container::select_fallback_brep(scan).map(|entry| entry.name.as_str()),
+                    None,
                     &self.native.body_native_keys,
                 )?;
         }
@@ -2964,9 +2944,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         );
     }
 
+    let model_blob_names = crate::design::decode::body::design_model_blob_names(&scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(&scan, None, &[])?;
-    let model_breps = model_brep_candidates(&scan, &unbound_body_bindings)?;
+    let model_breps = model_brep_candidates(&scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
