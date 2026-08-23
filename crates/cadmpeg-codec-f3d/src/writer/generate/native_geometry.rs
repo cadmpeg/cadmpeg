@@ -3343,6 +3343,35 @@ fn native_optional_pcurve(
     }
 }
 
+fn native_radius_function_pcurve_block(
+    bytes: &mut Vec<u8>,
+    function: &PcurveGeometry,
+) -> Result<(), CodecError> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = function
+    else {
+        return Err(CodecError::NotImplemented(
+            "variable-blend radius function must be a NURBS pcurve".into(),
+        ));
+    };
+    let native = PcurveGeometry::Nurbs {
+        degree: *degree,
+        knots: knots.clone(),
+        control_points: control_points
+            .iter()
+            .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
+            .collect(),
+        weights: weights.clone(),
+        periodic: *periodic,
+    };
+    native_nurbs_pcurve_block(bytes, &native)
+}
+
 fn native_variable_blend_value(
     bytes: &mut Vec<u8>,
     value: &cadmpeg_ir::geometry::VariableBlendValue,
@@ -3395,7 +3424,7 @@ fn native_variable_blend_value(
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / LEN_TO_MM);
-            native_nurbs_pcurve_block(bytes, function)?;
+            native_radius_function_pcurve_block(bytes, function)?;
             match terminal {
                 LoftBridgeToken::Double(value) => native_f64(bytes, *value),
                 LoftBridgeToken::Text(value) => native_string(bytes, value)?,
@@ -3431,7 +3460,7 @@ fn native_variable_blend_value(
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / LEN_TO_MM);
-            native_nurbs_pcurve_block(bytes, function)?;
+            native_radius_function_pcurve_block(bytes, function)?;
             if *enum_tagged {
                 native_enum(bytes, *enum_count);
             } else {

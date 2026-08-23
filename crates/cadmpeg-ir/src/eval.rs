@@ -4278,6 +4278,11 @@ fn variable_blend_radius(
         crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
             variable_blend_radius(nested, parameter)
         }
+        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
+        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+            let radius = pcurve_uv(function, parameter)?.u;
+            radius.is_finite().then_some(radius)
+        }
         _ => None,
     }
 }

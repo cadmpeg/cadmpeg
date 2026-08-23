@@ -1717,7 +1717,7 @@ pub enum VariableBlendValuePayload {
         parameter: f64,
         /// Leading length in document units.
         radius: f64,
-        /// Parametric `(u, radius)` function.
+        /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Numeric or symbolic terminal value.
         terminal: LoftBridgeToken,
@@ -1741,7 +1741,7 @@ pub enum VariableBlendValuePayload {
         parameter: f64,
         /// Leading radius in document length units.
         radius: f64,
-        /// Parametric support curve.
+        /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Native extension enum, stored ahead of the radius-point count. It
         /// gates nothing; the payload ends at the last radius point.

@@ -7,7 +7,7 @@ use crate::nurbs::core::{
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
     decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
 };
-use crate::nurbs::pcurve::pcurve_block_with_end;
+use crate::nurbs::pcurve::{pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
@@ -634,6 +634,19 @@ fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
     cur.take_ident().map(str::to_string)
 }
 
+fn radius_function_geometry(mut function: NurbsPcurve) -> PcurveGeometry {
+    for point in &mut function.control_points {
+        point.u *= LEN_TO_MM;
+    }
+    PcurveGeometry::Nurbs {
+        degree: function.degree,
+        knots: function.knots,
+        control_points: function.control_points,
+        weights: function.weights,
+        periodic: function.periodic,
+    }
+}
+
 fn variable_blend_value(
     cur: &mut Cur<'_>,
     modern: bool,
@@ -684,13 +697,7 @@ fn variable_blend_value(
             VariableBlendValuePayload::Functional {
                 parameter,
                 radius,
-                function: PcurveGeometry::Nurbs {
-                    degree: function.degree,
-                    knots: function.knots,
-                    control_points: function.control_points,
-                    weights: function.weights,
-                    periodic: function.periodic,
-                },
+                function: radius_function_geometry(function),
                 terminal,
             }
         }
@@ -743,13 +750,7 @@ fn variable_blend_value(
             VariableBlendValuePayload::Interpolated {
                 parameter,
                 radius,
-                function: PcurveGeometry::Nurbs {
-                    degree: function.degree,
-                    knots: function.knots,
-                    control_points: function.control_points,
-                    weights: function.weights,
-                    periodic: function.periodic,
-                },
+                function: radius_function_geometry(function),
                 enum_count,
                 enum_tagged,
                 points,
@@ -908,6 +909,7 @@ mod variable_blend_value_tests {
         let VariableBlendValuePayload::Interpolated {
             enum_count,
             enum_tagged,
+            function,
             points,
             ..
         } = decoded.payload
@@ -917,6 +919,11 @@ mod variable_blend_value_tests {
         assert_eq!(enum_count, 2);
         assert!(enum_tagged);
         assert_eq!(points.len(), 1);
+        let PcurveGeometry::Nurbs { control_points, .. } = function else {
+            panic!("expected NURBS radius function")
+        };
+        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 0.0));
+        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(10.0, 1.0));
     }
 
     #[test]

@@ -974,6 +974,26 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
 }
 
 #[test]
+fn variable_blend_function_uses_its_first_coordinate_as_radius() {
+    let value = VariableBlendValue {
+        name: "functional".into(),
+        modern_flag: false,
+        discriminator: 0,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::Functional {
+            parameter: 0.0,
+            radius: 0.0,
+            function: PcurveGeometry::Line {
+                origin: Point2::new(2.0, 100.0),
+                direction: Point2::new(3.0, 200.0),
+            },
+            terminal: crate::geometry::LoftBridgeToken::Double(0.0),
+        },
+    };
+    assert_eq!(variable_blend_radius(&value, 0.5), Some(3.5));
+}
+
+#[test]
 fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let directrix_id = CurveId("profile".into());
     let surface_id = SurfaceId("revolution".into());

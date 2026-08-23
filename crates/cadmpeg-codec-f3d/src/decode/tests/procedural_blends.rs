@@ -600,12 +600,18 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
         else {
             panic!("expected variable blend")
         };
-        let VariableBlendValuePayload::Interpolated { points, .. } =
-            &construction.first_value.payload
+        let VariableBlendValuePayload::Interpolated {
+            function, points, ..
+        } = &construction.first_value.payload
         else {
             panic!("expected interpolated radius law")
         };
         assert_eq!(points.len(), 1);
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = function else {
+            panic!("expected NURBS radius function")
+        };
+        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(2.5, 0.5));
+        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(7.5, 1.5));
         assert_eq!(construction.cross_section, expected);
 
         assert_revision_surface_round_trip(smbh, "variable_blend");

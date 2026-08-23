@@ -196,6 +196,29 @@ If a nested support cache precedes an owning cache, a raw scan can return the su
 
 **Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
 
+### GC-37. Procedural construction identity with auxiliary outer definitions
+
+**Question.** Which directly owned non-`ref` subtype definition identifies the procedural
+construction when one record contains an auxiliary outer definition before the cache-bearing
+construction?
+
+**Known.** `asm.md` §6.3 "**Construction-cache ownership**" assigns the solved cache to the outer
+non-`ref` construction that owns it. A record can contain auxiliary directly owned subtype
+definitions before that construction. Cache selection admits the unique directly owned
+cache-bearing scope. Construction-kind selection instead takes the first directly owned non-`ref`
+subtype definition.
+
+**Need.** Define the structural relation that identifies the record's procedural construction and
+separates it from auxiliary outer definitions. The construction kind, construction scope, solved
+cache, parameter domain, and native family must come from the same owner.
+
+**Conflict.** An auxiliary definition that occurs first can supply `native_kind` while geometry comes
+from a later unique cache-bearing construction. Family-specific interpretation can then use an
+identity that does not own the admitted carrier.
+
+**Note.** Do not use first-definition order as construction identity. Reject an ambiguous owner when
+the record grammar does not identify one construction.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution
@@ -247,6 +270,27 @@ If a chain contains `truecolor` before `rgb_color`, the first record supplies th
 **Need.** A source rule or a specimen with multiple colour classes must establish precedence, channel units, and the treatment of an invalid first candidate.
 
 **Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/attributes.rs:132-193`. Chain order is counter-evidence only if the format explicitly defines it as precedence.
+
+### AT-02. Precedence of multiple display-name attributes
+
+**Question.** Which display name applies when one entity attribute chain contains more than one
+nonempty `string_attrib-name_attrib-gen-attrib` record whose attribute name is `name`?
+
+**Known.** `asm.md` §5.6 "`string_attrib-name_attrib-gen-attrib` stores" defines each `name` record as a body
+or face display-name carrier. Attribute records have explicit forward and backward chain links. The
+format model does not state whether chain order, migration flags, attribute ownership, or another
+field selects among multiple nonempty name carriers.
+
+**Need.** Define display-name precedence, including the roles of empty values, nested attribute
+ownership, and the four keep/copy/ignore/copy flags. State whether multiple applicable name carriers
+are valid and, if they are, which one supplies the neutral display name.
+
+**Conflict.** The current neutral projection returns the first nonempty `name` value encountered in
+the forward attribute chain. A different chain order can therefore change the neutral display name
+without changing the set of name attributes.
+
+**Note.** Preserve every native name attribute independently of the single neutral display-name
+projection.
 
 ## 4. Text encoding
 
