@@ -75,6 +75,7 @@ pub(crate) fn cyl_spl_sur(
         let RevisionSurfaceTail {
             enumeration: tail_enum,
             fit_tolerance,
+            solved_cache_domains: _,
             parameterization,
             discontinuities,
             tail_flag,
@@ -1074,6 +1075,7 @@ pub(crate) fn var_blend_spl_sur(
     let RevisionSurfaceTail {
         enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
+        solved_cache_domains: _,
         parameterization: tail_parameterization,
         discontinuities,
         tail_flag,
@@ -1448,6 +1450,7 @@ pub(crate) fn full_rb_blend_spl_sur(
     let RevisionSurfaceTail {
         enumeration: tail_enum,
         fit_tolerance: cache_fit_tolerance,
+        solved_cache_domains: _,
         parameterization: tail_parameterization,
         discontinuities,
         tail_flag,

@@ -2001,6 +2001,48 @@ mod width_tests {
     }
 
     #[test]
+    fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "rot_spl_sur");
+            push_int(&mut bytes, 0x04, 23_100, int_width);
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
+            bytes.extend_from_slice(&[0x0b, 0x0b]);
+            push_position(&mut bytes, [0.5, 1.0, 1.5]);
+            push_vector(&mut bytes, [0.0, 0.0, 2.0]);
+            push_int(&mut bytes, 0x15, 0, int_width);
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.001);
+            for _ in 0..6 {
+                push_int(&mut bytes, 0x04, 0, int_width);
+            }
+            bytes.push(0x0b);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &tokens,
+                &test_table(&bytes, int_width),
+            )
+            .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
+            let DecodedProceduralSurfaceDefinition::Revolution {
+                angular_interval,
+                parameter_interval,
+                revision_form: Some(_),
+                ..
+            } = decoded.definition
+            else {
+                panic!("expected revision revolution surface");
+            };
+
+            assert!((angular_interval[0] - 0.0).abs() < f64::EPSILON);
+            assert!((angular_interval[1] - 1.0).abs() < f64::EPSILON);
+            assert!((parameter_interval[0] - 0.0).abs() < f64::EPSILON);
+            assert!((parameter_interval[1] - 1.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
     fn surface_cache_resolves_width4_subtype_ref() {
         // Active slice: one named subtype span holding the surface cache.
         let mut active = vec![0x0f, 0x0d, 0x07];
