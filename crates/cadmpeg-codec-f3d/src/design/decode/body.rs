@@ -368,6 +368,7 @@ struct LocalReferenceCandidate {
     target: u64,
     end: usize,
     inline_type_guid: Option<String>,
+    trailing_zeros: usize,
 }
 
 fn local_reference_candidates(bytes: &[u8], at: usize) -> Vec<LocalReferenceCandidate> {
@@ -380,6 +381,7 @@ fn local_reference_candidates(bytes: &[u8], at: usize) -> Vec<LocalReferenceCand
                     target,
                     end,
                     inline_type_guid: reference.inline_type_guid,
+                    trailing_zeros: 2,
                 });
             }
         }
@@ -391,6 +393,7 @@ fn local_reference_candidates(bytes: &[u8], at: usize) -> Vec<LocalReferenceCand
                     target,
                     end,
                     inline_type_guid: None,
+                    trailing_zeros: 0,
                 });
             }
         }
@@ -473,14 +476,11 @@ pub(crate) fn snapshot_body_map_records(
                     "F3D Design snapshot body-map entity {entity} has an invalid entity header"
                 )));
             }
-            let record =
+            if let Some(record) =
                 parse_snapshot_body_map_frame(bytes, meta, frame.start, frame.end, entity)?
-                    .ok_or_else(|| {
-                        crate::error::malformed(format!(
-                            "F3D Design snapshot body-map entity {entity} has an invalid frame"
-                        ))
-                    })?;
-            out.push(record);
+            {
+                out.push(record);
+            }
         }
     }
     Ok(out)
@@ -500,7 +500,10 @@ fn parse_snapshot_body_map_frame(
         return Ok(None);
     };
     for companion in local_reference_candidates(bytes, companion_at) {
-        let Some(reserved_end) = companion.end.checked_add(2) else {
+        let Some(reserved_count) = 2usize.checked_sub(companion.trailing_zeros) else {
+            continue;
+        };
+        let Some(reserved_end) = companion.end.checked_add(reserved_count) else {
             continue;
         };
         if companion.target != companion_entity
@@ -509,7 +512,9 @@ fn parse_snapshot_body_map_frame(
                 &companion,
                 crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
             )
-            || bytes.get(companion.end..reserved_end) != Some(&[0, 0])
+            || !bytes
+                .get(companion.end..reserved_end)
+                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
         {
             continue;
         }
@@ -543,14 +548,19 @@ fn parse_snapshot_body_map_frame(
             continue;
         }
         for container in local_reference_candidates(bytes, pairs_end) {
-            let Some(reserved_end) = container.end.checked_add(3) else {
+            let Some(reserved_count) = 3usize.checked_sub(container.trailing_zeros) else {
+                continue;
+            };
+            let Some(reserved_end) = container.end.checked_add(reserved_count) else {
                 continue;
             };
             if !reference_has_type(
                 meta,
                 &container,
                 crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
-            ) || bytes.get(container.end..reserved_end) != Some(&[0, 0, 0])
+            ) || !bytes
+                .get(container.end..reserved_end)
+                .is_some_and(|reserved| reserved.iter().all(|byte| *byte == 0))
             {
                 continue;
             }
@@ -1279,7 +1289,9 @@ mod tests {
         out.extend_from_slice(&entity.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
         push_snapshot_reference(&mut out, entity + 1, companion_type, form);
-        out.extend_from_slice(&[0, 0]);
+        if form == 2 {
+            out.extend_from_slice(&[0, 0]);
+        }
         out.extend_from_slice(&pair_count.to_le_bytes());
         if pair_count != 0 {
             out.extend_from_slice(&7u64.to_le_bytes());
@@ -1291,7 +1303,11 @@ mod tests {
             crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
             form,
         );
-        out.extend_from_slice(&[0, 0, 0]);
+        if form == 2 {
+            out.extend_from_slice(&[0, 0, 0]);
+        } else {
+            out.push(0);
+        }
         out.extend(lp_utf16_bytes(blob_name));
         out
     }
@@ -1362,7 +1378,11 @@ mod tests {
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
         metadata.types[2].entity_ids.clear();
-        assert!(snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata).is_err());
+        assert!(
+            snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
+                .expect("mixed carrier family")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1403,7 +1423,11 @@ mod tests {
             "BREP.snapshot.smb",
             crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
         );
-        assert!(snapshot_body_map_records(&bytes, &snapshot_body_map_metadata()).is_err());
+        assert!(
+            snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+                .expect("mixed carrier family")
+                .is_empty()
+        );
     }
 
     #[test]
