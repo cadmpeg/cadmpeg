@@ -2415,8 +2415,8 @@ pub(super) fn project(
         let type_flag_valid = record
             .integer(4 + member_count)
             .is_some_and(|value| matches!(value, 0..=2));
-        let designator_valid = record.string(5 + member_count).is_some();
-        let display_valid = record.integer(6 + member_count).is_some_and(|value| {
+        let designator_valid = record.string_or_empty(5 + member_count).is_some();
+        let display_valid = record.integer_or(6 + member_count, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     entries
@@ -2487,8 +2487,8 @@ pub(super) fn project(
         let type_flag_valid = record
             .integer_or(8, 0)
             .is_some_and(|value| matches!(value, 0..=2));
-        let designator_valid = record.string(9).is_some();
-        let display_valid = record.integer(10).is_some_and(|value| {
+        let designator_valid = record.string_or_empty(9).is_some();
+        let display_valid = record.integer_or(10, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     entries

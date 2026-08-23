@@ -2482,8 +2482,10 @@ pub(crate) fn store(
                 let display_template = type_flag + 2;
                 let connect_count = type_flag + 3;
                 (record.integer(type_flag).is_some()
-                    && record.string(primary_reference_designator).is_some()
-                    && record.integer(display_template).is_some()
+                    && record
+                        .string_or_empty(primary_reference_designator)
+                        .is_some()
+                    && record.integer_or(display_template, 0).is_some()
                     && record.integer(connect_count).is_some())
                 .then_some(count)
             });
@@ -2524,13 +2526,14 @@ pub(crate) fn store(
                 }),
                 primary_reference_designator: member_count
                     .and_then(|member_count| {
-                        record.and_then(|record| record.string(5 + member_count))
+                        record.and_then(|record| record.string_or_empty(5 + member_count))
                     })
+                    .filter(|value| !value.is_empty())
                     .map(<[u8]>::to_vec),
                 display_template: member_count
                     .and_then(|member_count| {
                         let sequence =
-                            record.and_then(|record| record.integer(6 + member_count))?;
+                            record.and_then(|record| record.integer_or(6 + member_count, 0))?;
                         (sequence != 0).then_some(sequence).and_then(|sequence| {
                             parameter_resolver.resolve_type(
                                 entry.sequence,
@@ -2599,10 +2602,11 @@ pub(crate) fn store(
                 ],
                 type_flag: record.and_then(|record| record.integer(8)),
                 primary_reference_designator: record
-                    .and_then(|record| record.string(9))
+                    .and_then(|record| record.string_or_empty(9))
+                    .filter(|value| !value.is_empty())
                     .map(<[u8]>::to_vec),
                 display_template: record
-                    .and_then(|record| record.integer(10))
+                    .and_then(|record| record.integer_or(10, 0))
                     .filter(|sequence| *sequence != 0)
                     .and_then(|sequence| {
                         parameter_resolver.resolve_type(entry.sequence, 10, sequence, 312, &[0, 1])

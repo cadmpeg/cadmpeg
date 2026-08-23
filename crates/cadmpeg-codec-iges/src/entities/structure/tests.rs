@@ -15,7 +15,7 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{network_connectivity_valid, signal_string_geometry_target};
-
+mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
 
 #[test]
