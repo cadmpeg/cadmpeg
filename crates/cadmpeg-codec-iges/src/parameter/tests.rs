@@ -9805,6 +9805,94 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type402_view_visibility_forms_follow_counted_view_blocks() {
+    let cases = [
+        (3, vec![402.into(), 1.into(), 0.into(), 3.into()], 4),
+        (
+            3,
+            vec![402.into(), 1.into(), 2.into(), 3.into(), 5.into(), 7.into()],
+            6,
+        ),
+        (
+            4,
+            vec![
+                402.into(),
+                1.into(),
+                0.into(),
+                3.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+            ],
+            8,
+        ),
+        (
+            4,
+            vec![
+                402.into(),
+                2.into(),
+                1.into(),
+                3.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                5.into(),
+                7.into(),
+                1.into(),
+                0.into(),
+                7.into(),
+            ],
+            14,
+        ),
+    ];
+    for (form, values, expected_end) in cases {
+        let mut source = directory_target(9, 402);
+        source.form = form;
+        let directory = BTreeMap::from([(9, &source)]);
+        let record = token_parameter_record(9, values);
+        assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
+    }
+}
+
+#[test]
+fn type402_view_visibility_malformed_counts_do_not_enable_generic_recovery() {
+    let mut source = directory_target(9, 402);
+    source.form = 4;
+    let directory = BTreeMap::from([(9, &source)]);
+    for values in [
+        vec![
+            402.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            (-1_i64).into(),
+            1.into(),
+            1.into(),
+            1.into(),
+            1.into(),
+        ],
+        vec![402.into(), 1.into(), 1.into(), 1.into(), 1.into()],
+    ] {
+        let record = token_parameter_record(9, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type402_external_reference_index_entity_table_boundary_follows_entry_pairs() {
     for form in [2, 12] {
         for (entry_count, expected_start) in [(1_usize, 4_usize), (2, 6)] {

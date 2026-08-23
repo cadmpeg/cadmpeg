@@ -490,7 +490,7 @@ fn decode_dimensioned_geometry_uses_counted_geometry_pointers() {
 }
 
 #[test]
-fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
+fn decode_view_visibility_counts_use_the_table_boundary() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 402,
@@ -527,19 +527,22 @@ fn decode_view_visibility_counts_stop_at_the_next_list_boundary() {
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas["entities"][0];
     let visibility = &native.arenas["view_visibility"][0];
+    let fields = visibility.fields();
 
-    assert_eq!(
-        entity.fields()["property_links"][0],
-        "iges:entity:directory#7"
-    );
-    assert!(visibility.fields()["displays"]
+    assert!(entity.fields()["property_links"]
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(visibility.fields()["entities"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert_eq!(fields["declared_view_count"], 2);
+    assert_eq!(fields["declared_entity_count"], 3);
+    let displays = fields["displays"].as_array().unwrap();
+    assert_eq!(displays.len(), 2);
+    assert!(displays.iter().all(|display| display["view"].is_null()));
+    let entities = fields["entities"].as_array().unwrap();
+    assert_eq!(entities.len(), 3);
+    assert!(entities[0].is_null());
+    assert_eq!(entities[1], "iges:entity:directory#1");
+    assert_eq!(entities[2], "iges:entity:directory#7");
 }
 
 #[test]

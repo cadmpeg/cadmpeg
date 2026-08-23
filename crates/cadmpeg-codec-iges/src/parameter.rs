@@ -387,6 +387,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 6 fixes index 1 to one, puts the visible-entity count `N1` at
 /// index 2, and lists the view plus `N1` entities, so its groups start at
 /// token `4 + N1`.
+/// Type 402 Form 3 puts positive `N1` and nonnegative `N2` at indexes 1 and 2,
+/// followed by `N1` view pointers and `N2` entity pointers, so its groups start
+/// at token `3 + N1 + N2`. Form 4 uses five fields per view block, so its groups
+/// start at token `3 + 5*N1 + N2`.
 /// Type 402 Forms 2 and 12 put the positive entry count `N` at index 1 and
 /// store a name/pointer pair per entry, so their groups start at token
 /// `2 + 2*N`.
@@ -719,6 +723,8 @@ pub(crate) fn entity_primary_end(
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
+        (402, 3) => Some(view_visibility_primary_end(record, 1)),
+        (402, 4) => Some(view_visibility_primary_end(record, 5)),
         (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
         (402, 8) => Some(signal_string_primary_end(record)),
         (402, 10) => Some(text_node_primary_end(record)),
@@ -1023,6 +1029,26 @@ fn view_list_primary_end(record: &ParameterRecord) -> usize {
         .integer(2)
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(4))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn view_visibility_primary_end(record: &ParameterRecord, block_width: usize) -> usize {
+    let view_count = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0);
+    let entity_count = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok());
+    view_count
+        .zip(entity_count)
+        .and_then(|(view_count, entity_count)| {
+            view_count
+                .checked_mul(block_width)?
+                .checked_add(3)?
+                .checked_add(entity_count)
+        })
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
