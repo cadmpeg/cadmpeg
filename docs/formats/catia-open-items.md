@@ -310,16 +310,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the coding to reconstruct and write the cached curve.
 
-### SN-10. Logical vertex to `05 08 01` allocation
-
-**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row when the indexed visualization-point table is absent?
-
-**Known.** `catia.md` §5.4.2 defines modes `0` and `1` as compressed and raw trim-handle-indexed f32 coordinate tables and binds them exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. A standard row covered by a `b5 03 5e` object has ordered vertex identities that bind directly through positional roster rows to `05 08 01` coordinate rows. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation for uncovered rows in the other visualization modes.
-
-**Need.** We must identify the coordinate-row allocation relation for uncovered rows in bodies without an indexed visualization-point table.
-
-**Conflict.** Vertex-count agreement and circle-endpoint agreement do not distinguish the regular-motif column permutations from other emission orders.
-
 ### SN-11. Standard 3D spline cache
 
 **Question.** How does the separate standard 3D spline cache encode its poles and knots?
@@ -490,14 +480,6 @@ population can displace the required face population.
 **Need.** We must know whether the compact root declares a class, because the family node it makes is a neutral feature with a history ordinal.
 
 **Conflict.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" states that in compact groups the selected record is an identity anchor and not a class declaration, and that owner class and storage stay unset. `crates/cadmpeg-codec-catia/src/design_feature.rs:728-740` reads the owner class name and class entry from that record.
-
-### SN-35. Same-incidence row endpoint assignment
-
-**Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
-
-**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. A row covered by the indexed visualization-point allocation receives its endpoint pair from the first and last trim handles in occurrence order. The object-stream and visualization relations must select the same unordered pair; object-stream order gives physical edge direction. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for rows uncovered by both relations. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
-
-**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every same-incidence line or spline group without object-stream or indexed visualization endpoint identity.
 
 ## 4. Object stream
 
