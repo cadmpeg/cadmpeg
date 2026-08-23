@@ -782,6 +782,7 @@ pub(crate) fn entity_primary_end(
         (402, 10) => Some(text_node_primary_end(record)),
         (402, 11) => Some(connect_node_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
+        (402, 16) => Some(planar_associativity_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 19) => Some(segmented_visibility_primary_end(record)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
@@ -1111,6 +1112,13 @@ fn view_list_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|count| count.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn planar_associativity_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    positive_counted_primary_end(record, 2, 4, 1)
 }
 
 fn view_visibility_primary_end(record: &ParameterRecord, block_width: usize) -> usize {

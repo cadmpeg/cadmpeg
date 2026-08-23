@@ -10495,6 +10495,176 @@ fn type402_form6_malformed_fields_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type402_form16_entity_table_boundary_follows_entity_count() {
+    for (entity_count, expected_start) in [(1_i64, 5_usize), (2, 6)] {
+        let association = directory_target(1, 212);
+        let transform = directory_target(3, 124);
+        let entity_1 = directory_target(7, 116);
+        let entity_2 = directory_target(9, 116);
+        let mut source = directory_target(5, 402);
+        source.form = 16;
+        let directory = BTreeMap::from([
+            (1, &association),
+            (3, &transform),
+            (5, &source),
+            (7, &entity_1),
+            (9, &entity_2),
+        ]);
+        let entity_count = usize::try_from(entity_count).unwrap();
+        let mut values = vec![0_i64; expected_start + 3];
+        values[0] = 402;
+        values[1] = 1;
+        values[2] = i64::try_from(entity_count).unwrap();
+        values[3] = 3;
+        for (offset, sequence) in [7_i64, 9].into_iter().take(entity_count).enumerate() {
+            values[4 + offset] = sequence;
+        }
+        values[expected_start] = 1;
+        values[expected_start + 1] = 1;
+        values[expected_start + 2] = 0;
+        let record = ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            parameter_end: values.len(),
+            tokens: values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::Integer(value),
+                    span: 0..0,
+                })
+                .collect(),
+            comment: Vec::new(),
+        };
+
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 1, "N={entity_count}");
+        assert_eq!(analysis.valid_candidate_count, 1, "N={entity_count}");
+        let groups = analysis.groups.expect("Type 402 Form 16 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type402_form16_table_boundary_precedes_valid_generic_alternative() {
+    let association = directory_target(1, 212);
+    let transform = directory_target(3, 124);
+    let mut source = directory_target(5, 402);
+    source.form = 16;
+    let directory = BTreeMap::from([(1, &association), (3, &transform), (5, &source)]);
+    let values = [402, 1, 1, 3, 2, 1, 1, 0];
+    let record = ParameterRecord {
+        directory_sequence: 5,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        parameter_end: values.len(),
+        tokens: values
+            .into_iter()
+            .map(|value| Token {
+                value: TokenValue::Integer(value),
+                span: 0..0,
+            })
+            .collect(),
+        comment: Vec::new(),
+    };
+    let generic = structural_pointer_group_candidates(&record);
+    assert!(generic.iter().any(|candidate| candidate.token_start == 4));
+    assert!(generic.iter().any(|candidate| candidate.token_start == 5));
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 402 Form 16 table boundary");
+    assert_eq!(groups.token_start, 5);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type402_form16_malformed_count_or_span_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let transform = directory_target(3, 124);
+    let mut source = directory_target(5, 402);
+    source.form = 16;
+    let directory = BTreeMap::from([(1, &association), (3, &transform), (5, &source)]);
+    let cases = [
+        vec![
+            402.into(),
+            0.into(),
+            1.into(),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            0.into(),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            (-1).into(),
+            1.into(),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            (-1).into(),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            i64::MAX.into(),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            TokenValue::Real(1.0),
+            3.into(),
+            7.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![402.into(), 1.into()],
+        vec![402.into(), 1.into(), 1.into(), 3.into()],
+        vec![402.into(), 1.into(), 1.into(), 3.into(), 7.into(), 1.into()],
+    ];
+
+    for values in cases {
+        let record = token_parameter_record(5, values);
+        let analysis = analyze_trailing_pointer_groups(&record, &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type402_view_visibility_forms_follow_counted_view_blocks() {
     let cases = [
         (3, vec![402.into(), 1.into(), 0.into(), 3.into()], 4),
