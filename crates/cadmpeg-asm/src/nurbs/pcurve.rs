@@ -1330,6 +1330,101 @@ mod width_tests {
     }
 
     #[test]
+    fn offset_surface_uses_direct_support_fields_then_cache() {
+        for int_width in [4usize, 8] {
+            for name in ["off_spl_sur", "offsur"] {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, name);
+                push_ident(&mut bytes, "plane");
+                push_position(&mut bytes, [0.5, 1.0, 1.5]);
+                push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+                push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+                bytes.push(0x0b);
+                push_f64(&mut bytes, -0.25);
+                push_int(&mut bytes, 0x15, 2, int_width);
+                push_int(&mut bytes, 0x15, 3, int_width);
+                if name == "off_spl_sur" {
+                    bytes.push(0x0b);
+                }
+                bytes.extend_from_slice(&surface_block(int_width));
+                push_f64(&mut bytes, 0.001);
+                bytes.push(0x10);
+
+                let tokens = lex_test_span(&bytes, int_width);
+                let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
+                let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+                let DecodedProceduralSurfaceDefinition::Offset {
+                    support,
+                    distance,
+                    u_sense,
+                    v_sense,
+                    extension_flags,
+                    revision_form: None,
+                } = decoded.definition
+                else {
+                    panic!("expected legacy offset surface");
+                };
+
+                assert!(matches!(
+                    support,
+                    SurfaceGeometry::Plane { origin, .. }
+                        if (origin.x - 5.0).abs() < f64::EPSILON
+                            && (origin.y - 10.0).abs() < f64::EPSILON
+                            && (origin.z - 15.0).abs() < f64::EPSILON
+                ));
+                assert!((distance - -2.5).abs() < f64::EPSILON);
+                assert_eq!(u_sense, Some(2));
+                assert_eq!(v_sense, Some(3));
+                assert_eq!(
+                    extension_flags,
+                    if name == "off_spl_sur" {
+                        vec![false]
+                    } else {
+                        vec![]
+                    }
+                );
+                assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
+            }
+        }
+    }
+
+    #[test]
+    fn offset_surface_rejects_nested_cache_substitution() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "offsur");
+            push_ident(&mut bytes, "plane");
+            push_position(&mut bytes, [0.0, 0.0, 0.0]);
+            push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+            push_vector(&mut bytes, [1.0, 0.0, 0.0]);
+            bytes.push(0x0b);
+            push_f64(&mut bytes, 0.25);
+            push_int(&mut bytes, 0x15, 0, int_width);
+            push_int(&mut bytes, 0x15, 0, int_width);
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&surface_block(int_width));
+            bytes.push(0x10);
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn ruled_surface_uses_two_direct_profiles_then_cache() {
         for int_width in [4usize, 8] {
             let mut bytes = vec![0x0f];
