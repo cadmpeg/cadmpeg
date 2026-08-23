@@ -3454,24 +3454,9 @@ fn attach_standard_topology(
     let allocation_endpoint_points = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_points(&supports, roster));
-    let roster_endpoint_pairs = vertex_roster.as_ref().map(|roster| {
-        let point_by_identity = roster
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(point, identity)| (identity, point))
-            .collect::<HashMap<_, _>>();
-        supports
-            .iter()
-            .map(|support| {
-                let identities = native_edges.get(&support.tag)?;
-                Some([
-                    *point_by_identity.get(&identities[0])?,
-                    *point_by_identity.get(&identities[1])?,
-                ])
-            })
-            .collect::<Vec<_>>()
-    });
+    let roster_endpoint_pairs = vertex_roster
+        .as_ref()
+        .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
     let allocation_endpoint_pairs = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
@@ -6163,6 +6148,31 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
                     ]);
                 }
                 unique_unbound_native_endpoint_pair(candidates, &unbound_edge_points)
+            })
+            .collect(),
+    )
+}
+
+/// Bind standard rows to ordered coordinate rows through the file-global
+/// object journal: `0x60.tag` selects the `b5 03 5e` object id, whose ordered
+/// vertex identities select positions in the standard vertex roster.
+pub(crate) fn standard_serialized_endpoint_pairs(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    vertex_roster: &[u32],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let mut point_by_identity = HashMap::with_capacity(vertex_roster.len());
+    for (point, identity) in vertex_roster.iter().copied().enumerate() {
+        if point_by_identity.insert(identity, point).is_some() {
+            return None;
+        }
+    }
+    Some(
+        supports
+            .iter()
+            .map(|support| {
+                let [start, end] = native_edges.get(&support.tag)?;
+                Some([*point_by_identity.get(start)?, *point_by_identity.get(end)?])
             })
             .collect(),
     )

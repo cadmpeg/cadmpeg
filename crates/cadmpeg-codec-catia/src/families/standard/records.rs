@@ -537,7 +537,7 @@ pub enum StandardCurveGeometry {
 pub struct StandardCurveSupport {
     /// Offset of the `0x60` row marker in the BREP stream.
     pub pos: usize,
-    /// Little-endian u24 local allocation tag for this row.
+    /// Little-endian u24 object id in the file-global allocation journal.
     pub tag: u32,
     /// The two adjacent standard face ordinals forming this edge's
     /// edge-to-face incidence.

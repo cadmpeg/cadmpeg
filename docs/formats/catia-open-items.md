@@ -306,9 +306,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row when the indexed visualization-point table is absent?
 
-**Known.** `catia.md` §5.4.2 defines modes `0` and `1` as compressed and raw trim-handle-indexed f32 coordinate tables and binds them exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation in the other visualization modes.
+**Known.** `catia.md` §5.4.2 defines modes `0` and `1` as compressed and raw trim-handle-indexed f32 coordinate tables and binds them exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. A standard row covered by a `b5 03 5e` object has ordered vertex identities that bind directly through positional roster rows to `05 08 01` coordinate rows. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation for uncovered rows in the other visualization modes.
 
-**Need.** We must identify the serialized discriminator for regular-motif allocation permutations and the allocation relation for bodies without an indexed visualization-point table.
+**Need.** We must identify the coordinate-row allocation relation for uncovered rows in bodies without an indexed visualization-point table.
 
 **Conflict.** Vertex-count agreement and circle-endpoint agreement do not distinguish the regular-motif column permutations from other emission orders.
 
@@ -327,14 +327,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding and the unique embedded type-`3` cylinder binding. The decoder retains other persistent identities.
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
-
-### SN-13. Standard `0x60` local tag binding
-
-**Question.** How does a standard `0x60` row local allocation tag bind to its native edge record when no edge node has the same curve identity?
-
-**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback. An evaluated exact support pcurve corroborates the row's unordered endpoint pair. Its wrapper order does not override the direction selected by a native endpoint identity source; a distinct unordered pair remains a conflict.
-
-**Need.** We must define the allocation namespace and relation that map the local tag to one native edge when curve identity does not supply the mapping.
 
 ### SN-14. Multiple FBB face groups
 
@@ -488,9 +480,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
 
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. The production decoder passes the complete endpoint domains to the mesh solver. `standard_curve_branch_assignment_is_ranked` checks the rank rule only while validating a complete mesh candidate; it does not replace the solver's domains with rank-selected pairs. The rank stages run only for a line or spline family, a matching sorted face pair, an identical normalized relation, a complete bipartite relation, and a matching boundary frontier.
+**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for uncovered rows.
 
-**Need.** A complete bipartite relation over `n` rows admits `n!` matchings, and the vertex rows are distinct points, so the matchings are not equivalent. A wrong matching gives a wrong line origin, a wrong direction, wrong edge endpoints, and a wrong parameter range. We must know the relation to bind the row.
+**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every uncovered same-incidence group.
 
 ### SN-36. Allocation-rank binding rule
 

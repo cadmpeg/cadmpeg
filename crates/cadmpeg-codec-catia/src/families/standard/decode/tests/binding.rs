@@ -1,4 +1,26 @@
 use super::*;
+use std::collections::BTreeMap;
+
+#[test]
+fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position() {
+    let supports = [70, 90, 110].map(|tag| StandardCurveSupport {
+        pos: usize::try_from(tag).expect("fixture tag"),
+        tag,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    });
+    let native_edges = BTreeMap::from([(70, [500, 300]), (90, [100, 500])]);
+    let roster = [100, 300, 500];
+
+    assert_eq!(
+        standard_serialized_endpoint_pairs(&supports, &native_edges, &roster),
+        Some(vec![Some([2, 1]), Some([0, 2]), None])
+    );
+
+    assert!(
+        standard_serialized_endpoint_pairs(&supports, &native_edges, &[100, 300, 100]).is_none()
+    );
+}
 
 #[test]
 fn standard_spline_rows_bind_the_unordered_prebound_side_by_opposite_rank() {
