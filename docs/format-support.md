@@ -114,7 +114,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 ### Envelopes
 
-- **IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the declared geometry, topology, product, presentation, annotation, drawing, associativity, and property entity matrix; and no extension entity outside that matrix. Unchanged documents replay their retained source image. Semantic regeneration is bounded to the documented writer profile and refuses unsupported model or native content.
+- **IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the declared geometry, topology, product, presentation, annotation, drawing, associativity, and property entity matrix; and implementor-defined Type 406 property forms retained as opaque native records. Unchanged documents replay their retained source image. Semantic regeneration is bounded to the documented writer profile and refuses unsupported model or native content.
 - **Other Fixed ASCII versions.** Version-specific legacy or later envelope. Detection and exact version reporting establish identity. Semantic decode admits every declared version, interprets it with the 5.1/5.2/5.3 profile semantics, and reports `iges/source.dialect-unverified`; strict mode refuses that loss.
 - **Compressed ASCII.** Distinct representation envelope.
 - **Binary.** Distinct representation envelope.

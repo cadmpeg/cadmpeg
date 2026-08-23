@@ -10,28 +10,36 @@ use crate::global::Dialect;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+fn matrix_admits(forms: &(Vec<i64>, bool), form: i64) -> bool {
+    forms.0.contains(&form) || (forms.1 && matches!(form, 5001..=9999))
+}
+
 #[test]
 fn envelope_admission_exactly_matches_the_machine_matrix() {
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
     let source = std::fs::read_to_string(matrix_path).unwrap();
     let matrix = toml::from_str::<toml::Value>(&source).unwrap();
-    let mut admitted = BTreeMap::<i64, Option<Vec<i64>>>::new();
+    let mut admitted = BTreeMap::<i64, (Vec<i64>, bool)>::new();
     for entity in matrix["entity"].as_array().unwrap() {
         let entity_type = entity["type"].as_integer().unwrap();
-        let forms = if entity["forms"].as_str() == Some("implementor-defined") {
-            None
-        } else {
-            Some(
-                entity["forms"]
-                    .as_array()
-                    .unwrap()
+        let forms = entity["forms"]
+            .as_array()
+            .map(|forms| {
+                forms
                     .iter()
                     .map(|form| form.as_integer().unwrap())
-                    .collect(),
-            )
-        };
-        assert!(admitted.insert(entity_type, forms).is_none());
+                    .collect()
+            })
+            .unwrap_or_default();
+        let implementor_defined = entity["forms"].as_str() == Some("implementor-defined")
+            || entity
+                .get("implementor_defined")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false);
+        assert!(admitted
+            .insert(entity_type, (forms, implementor_defined))
+            .is_none());
         for required in ["name", "domain", "decoder", "destination"] {
             assert!(entity[required]
                 .as_str()
@@ -45,11 +53,9 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
     }
     for entity_type in 0..=600 {
         for form in -1..=100 {
-            let expected = admitted.get(&entity_type).is_some_and(|forms| {
-                forms
-                    .as_ref()
-                    .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form))
-            });
+            let expected = admitted
+                .get(&entity_type)
+                .is_some_and(|forms| matrix_admits(forms, form));
             assert_eq!(
                 crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
@@ -59,9 +65,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
     }
     for (&entity_type, forms) in &admitted {
         for form in [101, 5000, 5001, 9999, 10000, i64::MAX] {
-            let expected = forms
-                .as_ref()
-                .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form));
+            let expected = matrix_admits(forms, form);
             assert_eq!(
                 crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
@@ -132,6 +136,9 @@ fn v4_admission_matches_its_entity_and_form_table() {
         (406, 18, true),
         (406, 19, false),
         (406, 36, false),
+        (406, 5001, true),
+        (406, 9999, true),
+        (406, 10000, false),
         (410, 0, true),
         (410, 1, false),
         (416, 2, true),
@@ -146,6 +153,22 @@ fn v4_admission_matches_its_entity_and_form_table() {
             expected,
             "entity type {entity_type} form {form}"
         );
+    }
+}
+
+#[test]
+fn implementor_defined_property_forms_are_admitted_in_each_fixed_ascii_dialect() {
+    for dialect in [
+        Dialect::V4_0,
+        Dialect::V5_0,
+        Dialect::V5_1,
+        Dialect::V5_2,
+        Dialect::V5_3,
+    ] {
+        assert!(crate::profile::envelope_a_admits(406, 5001, dialect));
+        assert!(crate::profile::envelope_a_admits(406, 9999, dialect));
+        assert!(!crate::profile::envelope_a_admits(406, 5000, dialect));
+        assert!(!crate::profile::envelope_a_admits(406, 10000, dialect));
     }
 }
 

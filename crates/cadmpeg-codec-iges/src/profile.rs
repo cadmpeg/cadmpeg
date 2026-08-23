@@ -30,7 +30,7 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
         302 => matches!(form, 5001..=9999),
         322 => matches!(form, 0..=2),
         402 => matches!(form, 1 | 2 | 3..=8 | 9..=16 | 18..=21),
-        406 => matches!(form, 1..=36),
+        406 => property_form_admitted(form),
         416 => matches!(form, 0..=4),
         502 | 504 | 508 | 510 => form == 1,
         514 => matches!(form, 1..=2),
@@ -50,12 +50,20 @@ fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
         218 => form == 0,
         402 => matches!(form, 1..=5 | 7 | 9 | 12..=16 | 18),
         404 => form == 0,
-        406 => matches!(form, 1..=3 | 5..=18),
+        406 => matches!(form, 1..=3 | 5..=18) || implementor_defined_form(form),
         410 => form == 0,
         416 => matches!(form, 0..=2),
         430 => form == 0,
         _ => true,
     }
+}
+
+fn property_form_admitted(form: i64) -> bool {
+    matches!(form, 1..=36) || implementor_defined_form(form)
+}
+
+fn implementor_defined_form(form: i64) -> bool {
+    matches!(form, 5001..=9999)
 }
 
 pub(crate) fn general_note_form_admitted(form: i64) -> bool {

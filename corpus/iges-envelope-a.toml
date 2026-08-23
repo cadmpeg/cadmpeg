@@ -4,7 +4,9 @@ representation = "fixed-ascii"
 specification_version = "5.3"
 
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
-# list is closed and admits only those forms. Obsolete, finite-element,
+# list is closed and admits only those forms unless `implementor_defined = true`
+# is present. That field adds the same 5001 through 9999 range to the explicit
+# list. Obsolete, finite-element,
 # electrical/artwork/schematic, and macro/extension branches are adjacent
 # envelopes and are not part of this mechanical/document envelope. Type 125
 # is admitted as a geometry location carrier; its artwork shape is retained
@@ -749,6 +751,7 @@ forms = [
   35,
   36,
 ]
+implementor_defined = true
 domain = "structure"
 decoder = "entities::structure::project"
 destination = "native.iges.properties"

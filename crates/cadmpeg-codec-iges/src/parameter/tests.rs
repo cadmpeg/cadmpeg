@@ -16,6 +16,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+mod implementor_defined;
 mod lexical;
 
 impl From<i64> for TokenValue {

@@ -642,6 +642,8 @@ Type 402 Form 21 is settled. The official table is [IGES 5.3 §4.95](https://pau
 
 ## 2. Global metadata
 
+Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) and [IGES 5.3 §4.97](https://paulbourke.net/dataformats/iges/IGES.pdf), each property has `NP` at Parameter index 1, `NP` variable values, and any additional pointer groups. `parameter.rs::entity_primary_end` applies the common boundary before generic recovery. The owner tests `type406_implementor_defined_forms_use_common_count_boundary` and `type406_implementor_defined_malformed_count_or_span_suppresses_generic_recovery` cover Forms 5557, 6007, and 9999 and malformed count or span input. The neutral model has no standard meaning for these forms, so the decoder retains their complete native entity records without semantic projection.
+
 ### GL-07. Conservative constants for the fields 9, 11, and 19 fallbacks
 
 **Question.** Do the narrow fallback constants `17` for fields 9 and 11 and `0.0` millimetres for field 19 remove geometry that a wider constant transfers correctly?

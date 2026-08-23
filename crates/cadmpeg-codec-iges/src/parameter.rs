@@ -817,6 +817,7 @@ pub(crate) fn entity_primary_end(
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
+        (406, 5001..=9999) => Some(counted_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0) => Some(sectioned_area_primary_end(record)),
         (228, 0) => Some(general_symbol_primary_end(record)),
