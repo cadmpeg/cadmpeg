@@ -385,10 +385,11 @@ pub fn decode_tabulated_cylinder_first_coordinate(
 /// Decode one scalar in a type-24 round-edge envelope.
 ///
 /// Round-edge envelopes use the tabulated-cylinder first-coordinate lane for
-/// their two edge parameters. Their positive DICT lattice starts at `0x4b`,
-/// rather than at the narrower range used by the general tabulated-cylinder
-/// parser. The enclosing envelope grammar supplies the field boundaries, so
-/// this function does not classify a prefix outside that lane by itself.
+/// their two edge parameters and six endpoint coordinates. Their positive
+/// DICT lattice starts at `0x4b`, rather than at the narrower range used by the
+/// general tabulated-cylinder parser. The enclosing envelope grammar supplies
+/// the field boundaries, so this function does not classify a prefix outside
+/// that lane by itself.
 pub fn decode_round_edge_coordinate(
     data: &[u8],
     offset: usize,

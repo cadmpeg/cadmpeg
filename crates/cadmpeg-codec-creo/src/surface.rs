@@ -1365,7 +1365,7 @@ impl SurfaceParameterRecord {
         cursor = next;
         let mut values = [0.0; 6];
         for value in &mut values {
-            let (decoded, next) = scalar::decode_in_surface_row_lane(&self.body, cursor, &cache)?;
+            let (decoded, next) = scalar::decode_round_edge_coordinate(&self.body, cursor, &cache)?;
             *value = decoded;
             cursor = next;
         }

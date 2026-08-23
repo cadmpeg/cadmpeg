@@ -1519,6 +1519,41 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
 }
 
 #[test]
+fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
+    let mut body = vec![0x18, 0x0f, 0x12, 0xe4];
+    body.extend_from_slice(&[0x2d, 0x00, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    body.push(0x0f);
+    body.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
+    body.push(0xe4);
+
+    let parameter = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+    let envelope = parameter
+        .type24_round_edge_envelope(0x24)
+        .expect("complete directrix-lane endpoint envelope");
+
+    assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
+    assert_eq!(envelope.vertices, [[2.0, -3.0, 0.0], [4.0, -5.0, 1.0]]);
+}
+
+#[test]
 fn decodes_terminal_square_radial_type24_round_envelope() {
     let body = [
         0x32, 0x90, 0x32, 0x70, 0x63, 0x1c, 0x71, 0xa7, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad, 0x2a,

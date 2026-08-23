@@ -935,15 +935,16 @@ separator after the first parameter is one byte in `11..14`, or three bytes
 beginning with `00` or `34`; separator payload bytes are not scalar fields.
 The second parameter follows the separator.
 
-The six endpoint coordinates use the positional surface-row scalar lane in
-XYZ order. A complete endpoint sequence may end at the body boundary or at
-`f7 <reference-id>`; a compound close may follow that sequence when another
-bounded body is present. The reference identifies the generated entity and
-does not supply a coordinate. The two triples are samples on the generated
-round-edge carrier, not a carrier by themselves. A class-913 replay supplies
-the constant rolling radius. The generated-entity and topology join supplies
-the two incident support planes. Normalize their normals and form every
-intersection of the two planes offset by `+radius` or `-radius`. Keep a
+The six endpoint coordinates use the same first tabulated-cylinder
+directrix-coordinate lane in XYZ order. A complete endpoint sequence may end
+at the body boundary or at `f7 <reference-id>`; a compound close may follow
+that sequence when another bounded body is present. The reference identifies
+the generated entity and does not supply a coordinate. The two triples are
+samples on the generated round-edge carrier, not a carrier by themselves. A
+class-913 replay supplies the constant rolling radius. The generated-entity
+and topology join supplies the two incident support planes. Normalize their
+normals and form every intersection of the two planes offset by `+radius` or
+`-radius`. Keep a
 candidate only when the endpoints bind one-to-one to the two unoffset support
 planes and both endpoint distances from the candidate line equal the replay
 radius. Coincident candidate lines are one carrier; admit the row only when
