@@ -465,7 +465,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
     for supported in [(141, 0), (143, 0)] {
         assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
     }
-    for unsupported in [(104, 0), (186, 0), (190, 1)] {
+    for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
             Err(CodecError::NotImplemented(_))
