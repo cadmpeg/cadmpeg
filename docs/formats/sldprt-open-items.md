@@ -134,22 +134,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:814-960` parses generic `00 7c` NURBS surface carriers, but does not identify a variable-radius blend. The variable-radius Keywords feature in `history.rs` carries history data only. The test `src/tests.rs:13308-13383` uses a synthetic Keywords feature and does not contain a native B-rep result carrier. If multiple generic `00 7c` surfaces exist, the decoder emits generic NURBS without a radius-law identity or a native history binding. The specification promotes an unverified association.
 
-### GC-06. Surface-intersection surface carriers
-
-**Question.** Which record carries surface-intersection surface geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," defines curve carriers for the intersection of two surfaces. It does not define a surface carrier for this geometry family.
-
-**Need.** We must know the carrier to construct the exact surface.
-
-### GC-07. Spline-on-surface carriers
-
-**Question.** Which record carries spline-on-surface surface geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §7.1 "Stream-scope" defines B-spline surface and curve carriers. It does not define the relation that makes a spline a curve on a support surface.
-
-**Need.** We must know the carrier and relation to construct the exact surface geometry.
-
 ### GC-08. Duplicate geometry carrier identities
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid geometry carriers with the same stream-local attribute?

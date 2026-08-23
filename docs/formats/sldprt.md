@@ -1715,6 +1715,8 @@ The line direction is unit length. Every axis, normal, and reference direction i
 
 Tags `00 43` and `00 44` use the same compact header. The orientation marker is followed by a nonzero big-endian u16 profile-curve attribute. Tag `00 43` then stores a unit translation direction as three f64 values. It defines the ruled surface `R(u,v) = C(u) + v·D`, where `C` is the selected profile curve and `D` is the stored direction. Tag `00 44` instead stores an axis point and unit axis direction as six f64 values. It defines the complete surface obtained by revolving `C` through `2π` about that axis. A circle or ellipse profile is an exact rational quadratic curve; a NURBS profile retains its degree, knots, poles, weights, and closure in the surface profile direction.
 
+Surface support for an intersection curve or a spline-on-surface edge uses the same bridge-referenced carrier grammar. The bridge's `refs[4]` selects the ordinary compact analytic or B-spline surface carrier; neither relation introduces a separate surface-record family. The relation describes the edge curve and its pcurve, not a replacement surface carrier.
+
 Compact records omit trim intervals, loop membership, edge orientation, and vertex points. Typed topology records contain those relations.
 
 ### 7.2 B-spline and list carriers
