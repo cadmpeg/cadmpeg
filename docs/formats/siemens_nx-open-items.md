@@ -218,17 +218,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the name to give the node one stable schema identity.
 
-**Note.** The closure added `INTERSECTION_DATA` as the canonical name and introduced the exact schema header used to recognize it. The tests construct that header from the same implementation constant. The global schema-anchor flag then authorizes later `0x5a` bytes without proving that they remain in the same schema scope. An independent serialized record is required before the name and anchor scope are settled.
+### PS-26. Boundary pcurve relation without a chart
 
-### PS-26. Boundary pcurve completion without a chart
-
-**Question.** Which serialized witness establishes the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
+**Question.** Which serialized relation defines the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
 
 **Known.** `siemens_nx.md` §5.3 "An EDGE may carry null curve reference `1` with a finite tolerance. With a null" defines chart-certified transfer for a null carrier and states that transfer does not synthesize a model-space line between the vertices. `siemens_nx.md` §5.3 "A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN" defines the FIN-carrier case. Neither defines a boundary pcurve for a plane or quadric support that has no chart.
 
-**Need.** We must know the witness to construct the boundary pcurve from the file. Endpoint inversion alone fixes only the two ends, so the interior of the interval carries no evidence, and a straight parameter-space chart on a plane asserts a straight model-space edge.
-
-**Note.** The implementation now derives an affine candidate and checks it at carrier and support breakpoints. The candidate is not a serialized witness, and the test cases build the carrier and surface directly in IR. Breakpoint agreement does not establish the complete interior rule for an arbitrary serialized boundary. The closure is therefore a conservative gate, not evidence of the NX boundary-pcurve rule.
+**Need.** We must define the relation that fixes the complete parameter-space interior. Endpoint inversion fixes only the interval ends; it does not determine the curve between them.
 
 ### PS-27. Unresolved EDGE end vertex
 
@@ -238,17 +234,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. Without that rule, the decoder retains neither the edge nor its dependent loop when the end vertex has no decoded POINT.
 
-**Note.** The closure changes the decoder to drop unresolved edges except for one explicit closed-null-FIN case. The regression input is hand-built and malformed; it proves that the new path withholds an ambiguous edge, not that NX defines omission as the serialized rule. A valid implicit or omitted endpoint would be discarded by the current policy.
-
 ### PS-28. Compact tombstone boundary condition
 
 **Question.** Which condition ends a compact tombstone, and does a following byte pair constrain it?
 
 **Known.** `siemens_nx.md` §4.2 "**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies" defines the tombstone as a self-delimiting six-byte form with two identity encodings. `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary," defines the runs. Neither states a condition on the bytes after a tombstone.
 
-**Need.** We must know the boundary condition to admit every deletion. The deltas walk resynchronizes byte by byte, so it needs some end condition, and it currently requires the following two bytes to decode as a known node kind. A deletion whose successor bytes open a family that this condition does not name is discarded, the entity survives the merge, and no loss records the discard.
-
-**Note.** The closure removes the successor check and relies on the six-byte form. Its opaque-suffix regression is synthetic and does not show that the six-byte pattern cannot occur inside another bounded payload or that every such occurrence is a deletion. The fixed-length interpretation remains unverified against an independent stream.
+**Need.** We must define the enclosing grammar or discriminator that distinguishes a six-byte tombstone from the same byte pattern inside another bounded payload. The following record family must not participate in tombstone identity.
 
 ### PS-29. Interleaved body revision sequences
 
@@ -260,8 +252,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
 
-**Note.** The closure selects monotonic runs with `revision_direction`, which chooses the direction with fewer violations and uses the opposite transitions as resets. This is an order heuristic with no serialized sequence identity. An interleaved sequence such as alternating body revisions can be grouped as one run and lose a current revision. The synthetic tests do not establish the ownership rule.
-
 ### PS-30. Fixed-record field shift selection
 
 **Question.** Which field establishes the escape and large-index shift of a fixed analytic record, and what bounds a record that the ownership graph does not own?
@@ -271,8 +261,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the shift field so that recovery does not need a magnitude test. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run can enter the model as an analytic carrier.
 
 **Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
-
-**Note.** The closure replaces the shift scan with direct and escaped frame candidates and a parser-derived boundary check. No serialized field establishes the choice, and the successor boundary is itself recognized by the same candidate parser. If both candidates end at recognized tags, or neither does because of a trailer, a valid record is omitted; a false recognized successor can select the wrong reading.
 
 ## 2. Object model and body composition
 
@@ -292,16 +280,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct neutral sketch geometry and constraints.
 
-**Note.** A complete coordinate-pair record is retained as one native sketch
-geometry record by its operation and pair identity when the sketch has no
-stronger typed sketch entity graph. The retention does not assign a point,
-curve, constraint, unit, coordinate frame, or profile role; the neutral sketch
-placement remains unresolved. A separate named-point graph does not merge with
-coordinate-pair records without an explicit pair-to-entity relation. Complete
-scalar-vector lanes are retained by operation and payload identity with the
-same role-free rule; their scalar order does not establish an entity or
-constraint relation.
-
 ### OM-03. `DATUM_PLANE` scalar-pair geometry
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_PLANE` construction payload represent?
@@ -318,11 +296,6 @@ and label; scalar-pair frames carry two values. Equal descriptor identities
 between `DATUM_PLANE` and `DATUM_CSYS` records do not assign either operation
 as the source of an origin, axis, or normal.
 
-**Note.** A `DatumPlane` definition requires one unique finite origin, normal,
-and in-plane axis with the frame invariants established. Until that relation is
-serialized, the operation remains `DatumPlaneUnresolved` while every admitted
-branch, block, descriptor, and scalar-pair record remains native data.
-
 ### OM-04. `DATUM_CSYS` scalar-pair geometry
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_CSYS` construction payload represent?
@@ -338,11 +311,6 @@ pairs, fixed pairs, and descriptor lanes have separate frames and no serialized
 role relation. Column-row reuse and equal descriptor identity establish block
 or history relations only; they do not assign an origin or axis.
 
-**Note.** A coordinate-system definition requires one unique finite origin and
-three orthonormal model-space axes with their handedness established. Until
-those roles are serialized, the operation remains
-`DatumCoordinateSystemUnresolved` while all complete lanes remain native data.
-
 ### OM-05. OM declaration trailing code
 
 **Question.** What does the trailing byte in an OM class or member declaration mean?
@@ -357,10 +325,6 @@ single byte after the printable `UGS::` or `m_` name and before the bounded
 registry suffix. The name and suffix delimit the declaration but do not assign
 a type, ownership, visibility, or field-role meaning to that byte.
 
-**Note.** The trailing byte remains an exact declaration field for classes and
-members. No semantic classification is assigned until its code domain and
-owner relation are serialized.
-
 ### OM-06. OM registry suffix fields
 
 **Question.** What does each byte in a bounded OM field-registry suffix mean?
@@ -374,10 +338,6 @@ prefix, schema fingerprint, and terminal byte.
 eight-byte fingerprint, and one terminal byte for both class and member
 declarations. The decomposition does not assign a member type, cardinality,
 ownership, or access role.
-
-**Note.** The decoder retains the raw suffix and its exact three components for
-each declaration. No OM field schema is constructed from those bytes until a
-semantic role relation is serialized.
 
 ### OM-08. Other feature-history object relations
 
@@ -396,10 +356,6 @@ header slot contributes only when its offset-store block has one unique
 content-backed identity; all-null, unresolved, and duplicate tuples remain
 without an identity witness.
 
-**Note.** The decoder retains every complete object-relation and direct
-reference frame as native data. No feature dependency or selection is emitted
-until one unique endpoint-role relation is serialized.
-
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?
@@ -409,8 +365,6 @@ until one unique endpoint-role relation is serialized.
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
 **Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two object endpoints, but the operation identity, state-object identity, and typed state value require separate unique joins. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
-
-**Note.** A suppression assignment requires a unique relation from an operation feature identity to a serialized state object and a second relation from that object to a typed state value. A status code other than `41`, including a code with diagnostic text, remains a typed but unnamed state until a ground-truth suppression transition identifies its value. An empty object-state collection is retained as an empty value and is not converted into per-operation `suppressed=false` assignments. A common-frame field, resolved data-block target, toggle entry, OM declaration, status code, roll-forward endpoint, or Parasolid topology attribute without both joins does not assign `suppressed`. The native primary-body closure witness assigns `suppressed=false` only to its relation roots and their exact dependency closure; operations outside that closure remain unresolved.
 
 ### OM-11. `DELETE` nullable-reference roles
 
@@ -426,11 +380,6 @@ schema tag, or independent relation that assigns an object family or semantic
 role. Slot order and five-block concatenation preserve construction order only;
 the separate primary-body field does not label any of these slots.
 
-**Note.** The five slots and any complete logical payload remain native
-records. A slot-specific neutral projection requires one independent relation
-for its object family, role, and payload schema; the body-deletion projection
-does not supply that relation.
-
 ### OM-12. Inactive-arrangement body state
 
 **Question.** Which bodies belong to each inactive arrangement, and what per-body state does that arrangement select?
@@ -445,10 +394,6 @@ active attribute join identifies only the selected configuration. Feature
 closure also describes the current body set, not an alternate arrangement's
 membership or per-body state.
 
-**Note.** Inactive configurations retain their identities and unresolved body
-sets. The active body set must not be copied to an inactive configuration
-without a body-membership and state relation owned by that configuration.
-
 ### OM-13. Inactive-arrangement parameter state
 
 **Question.** Which parameter values does each inactive arrangement select?
@@ -462,10 +407,6 @@ and dependencies contain no arrangement identity or per-arrangement override
 selector. The complete parameter map is derived only for the unique active
 configuration after the global parameter graph passes its ownership and order
 checks.
-
-**Note.** Inactive configurations retain empty unresolved parameter maps. The
-active map must not be copied to another configuration without a
-configuration-owned value or override relation.
 
 ### OM-14. Operation terminal discriminators
 
@@ -482,10 +423,6 @@ direction, draft, or other semantic control. A link to an immediately
 preceding common frame establishes byte ownership only; it does not assign
 field roles.
 
-**Note.** The complete terminal discriminator remains native data with its
-exact indices, flags, order, and offsets. A neutral control requires a unique
-field-role relation and a decoded value domain for that operation family.
-
 ### OM-15. `CPROJ` construction-reference roles
 
 **Question.** Which `CPROJ` construction references select the source curve, target surface, direction, and combination controls?
@@ -500,10 +437,6 @@ but do not identify a source curve, target surface, direction, or combination
 control. Reconstructed strings remain payload-owned and have no independent
 role relation.
 
-**Note.** Preserve the ordered references, logical payload, and strings as
-native projected-curve data. A neutral source or target requires a unique
-object-family and field-role relation.
-
 ### OM-16. `CPROJ_CMB` construction-reference roles
 
 **Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
@@ -516,10 +449,6 @@ object-family and field-role relation.
 branch order, while the tail preserves two additional references. All eight
 non-repeated references still resolve only to offset-store blocks; no field
 marker assigns curve, surface, direction, or combination semantics.
-
-**Note.** Preserve the complete graph, branch-anchor relations, logical
-payload, and strings as native data. Combined neutral projection requires an
-independent relation for every source and control role.
 
 ### OM-17. `FSET` selection roles
 
@@ -535,10 +464,6 @@ Every reference uses the same object-index form and resolves only to an
 offset-store block. No selector vocabulary, target schema, or relation to a
 face or feature set assigns either group a selection role.
 
-**Note.** Preserve the selector, group order, resolved references, and both
-logical payloads as native data. A neutral selection requires a unique
-selector domain and object-family relation for each group.
-
 ### OM-18. Pattern construction-reference roles
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
@@ -553,10 +478,6 @@ anchors, terminal slots, and the `Geometry Instance` one-reference form do not
 identify a seed, transform, or control family. No relation joins a graph slot
 to a transform row or an operation input with that role.
 
-**Note.** Preserve pattern references, construction payloads, and transform
-lanes as native data. A neutral pattern dependency or transform requires an
-independent seed and control-role relation.
-
 ### OM-19. Pattern-row scalar roles
 
 **Question.** What does each scalar in a counted pattern row mean?
@@ -570,10 +491,6 @@ width, not physical meaning. The Q1.55 and binary scalar lanes retain finite
 values, order, selectors, and row ordinals, but provide no units, axis or
 spacing labels, or relation to a seed/reference role.
 
-**Note.** Preserve every row scalar with its encoding and offsets. Do not map
-the values to coordinates, spacing, angles, or other neutral controls until a
-pattern-family schema assigns those roles.
-
 ### OM-20. Pattern-row selector roles
 
 **Question.** What does each compact selector in a counted pattern row select?
@@ -586,10 +503,6 @@ pattern-family schema assigns those roles.
 row ordinal and token offset. The counted reference lane has its own ordered
 object indices, but no serialized equality or ownership field joins either
 lane to a construction-graph reference, seed, or transform operand.
-
-**Note.** Preserve selectors and counted references as separate native lanes.
-Selector equality or ordinal proximity alone does not establish a seed or
-transform binding.
 
 ### OM-21. `Multi Instance Output` roles
 
@@ -605,10 +518,6 @@ bound only by row order and count invariants; no relation identifies a
 selector target, an output-body namespace, or the geometry represented by a
 trailing reference.
 
-**Note.** Preserve the complete lane as native instance-output data. Do not
-create output bodies or geometry bindings without an independent target and
-instance relation.
-
 ### OM-22. Equal pattern and profile labels
 
 **Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
@@ -622,10 +531,6 @@ object identity. Pattern and profile construction blocks retain separate
 operation-owned block identities; only an exact shared input block or another
 unique serialized relation can join them. Equal text labels do not provide
 that relation.
-
-**Note.** Keep equal-label blocks separate and preserve each operation's
-native references. A pattern seed join requires one unique block or explicit
-cross-record identity relation.
 
 ### OM-23. `POINT` header fields
 
@@ -641,10 +546,6 @@ family or construction method. The header-to-lane boundary proves ownership
 only; it does not assign the lane to a model point, support, or other datum
 construction role.
 
-**Note.** Preserve the header, mode, selected lane, and exact cross-block
-ownership as native point data. A neutral point construction requires a
-mode-domain and operand-role relation.
-
 ### OM-24. `POINT` scalar triples
 
 **Question.** What coordinate spaces and construction roles do the two ordered scalar triples in the selected six-scalar `POINT` lane use?
@@ -657,10 +558,6 @@ mode-domain and operand-role relation.
 values and no coordinate-space, axis, unit, or role discriminator. Byte
 continuity across the preceding and selected blocks establishes one lane, not
 which triple is the authored point or how the other triple participates.
-
-**Note.** Retain both triples with their exact scalar encodings and offsets.
-Do not project either triple to model-space geometry without a unique role and
-coordinate-frame relation.
 
 ### OM-25. `DRAFT` construction roles
 
@@ -676,10 +573,6 @@ but no field-role relation assigns faces, plane, pull direction, angle, or
 termination semantics. Shared store identity and serialized order establish
 construction ownership only.
 
-**Note.** Preserve every complete draft lane and graph as native data. Neutral
-draft projection requires independent relations for the drafted selection,
-reference plane, direction, angle, and result controls.
-
 ### OM-26. `SKIN` construction roles
 
 **Question.** Which ordered `SKIN` references and branch groups select sections, guides, continuity, and terminal controls?
@@ -694,10 +587,6 @@ These fields use shared reference grammars and provide no relation assigning
 sections, guides, continuity, or terminal controls. Scalar pairs and strings
 are payload-owned and do not add those roles.
 
-**Note.** Preserve the envelope, reconstructed payload, scalar pairs, strings,
-and branch groups as native loft data. Neutral surface construction requires
-independent section, guide, and control-role relations.
-
 ### OM-27. `Studio Surface` construction roles
 
 **Question.** Which ordered `Studio Surface` references and branch groups select control geometry, continuity, and terminal controls?
@@ -710,10 +599,6 @@ independent section, guide, and control-role relations.
 counted branch grammar with `SKIN`; the operation label selects the family but
 does not label individual references or branch members. No serialized field
 assigns control geometry, continuity, or terminal semantics.
-
-**Note.** Preserve the complete surface envelope and branch payload as native
-freeform-surface data. Neutral projection requires a unique role relation for
-each control-geometry and continuity field.
 
 ### OM-28. Plain cached-body ownership
 
@@ -730,12 +615,6 @@ establish the latest writer and consumer for that alias component. Neither
 the tuple nor its role word identifies the feature that authored a plain
 cached-body image when no unique primary or operand relation exists. Stream
 order and alias equality do not assign feature ownership.
-
-**Note.** Preserve every plain cached-body binding and each unique
-primary/operand relation independently. Use terminal lineage only after the
-complete status relation resolves. Do not assign a cached stream to a feature
-result or tool without a unique feature-field relation; retain ownership as
-unresolved.
 
 ### OM-29. `RMFastLoad` class records
 
@@ -822,14 +701,6 @@ field joins an external-reference record or handle to one FastLoad occurrence
 ordinal. Equal child names, repeated handles, and equal UUID groups do not
 establish that instance-level relation.
 
-**Note.** A complete FastLoad roster produces a nonempty native occurrence
-lane; an empty neutral occurrence arena therefore does not mean that the
-occurrence bytes were skipped. Preserve the complete child binding and the
-FastLoad occurrence lane as separate native relations. A UUID group with equal
-cardinality preserves two ordered sets but does not pair their members. Do not
-construct neutral occurrences or assign placements until a unique
-child-to-occurrence join and a transform owner are decoded.
-
 ### AM-08. Residual `EXTREFSTREAM` tail fields
 
 **Question.** What are the field boundaries and roles of the residual bytes in an indexed `EXTREFSTREAM` record tail?
@@ -846,8 +717,6 @@ child-to-occurrence join and a transform owner are decoded.
 
 **Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
 
-**Note.** This item was closed by an assignment for one class. The question covers every class, and `SDL/TYSA_BLEND_ID` is named in the item itself and remains unassigned. A per-class table with one entry does not answer a per-class question, so the item is open again.
-
 The closure test only exercises already-populated `ParasolidAttributeFieldUse` values; it does not show the raw SDL/TYSA records assigning those values. The ordinal/code fallback in the production mapper remains unsupported by an independent serialized witness, so this item stays open.
 
 ### AM-10. Physical material bindings
@@ -857,13 +726,3 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 **Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
 
 **Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
-
-## 4. Test evidence
-
-### TE-01. Golden coverage of the native arenas named by open items
-
-**Question.** Which native arenas does the golden fixture set populate, and which fields therefore have no snapshot witness?
-
-**Known.** `crates/cadmpeg-codec-nx/src/golden_tests.rs` names two hundred and thirty-three arenas and asserts that the fixture set populates at least one hundred and twenty-two of them. The golden documents serialize the complete decoded document, so a changed field of a populated arena moves a golden. The fixture set populates one hundred and twenty-six arenas. One hundred and seven arenas are populated by no fixture.
-
-**Need.** We must have a snapshot witness for the fields that carry open items. `feature_operation_tagged_references`, `feature_operation_data_block_references`, and `feature_pattern_counted_reference_lanes` received new §7.1 grammars, and no fixture populates them. `feature_body_data_block_uses`, `feature_body_segment_uses`, `feature_operation_body_members`, and `feature_operation_body_operands` carry unresolved feature-history relations and have no fixture witness. `feature_hole_package_construction_group_lanes` and `feature_simple_hole_construction_groups` also have no fixture witness. `saved_toggle_streams` carries AM-03 and the `fast_load_component_*` arenas carry AM-01 and AM-07. A change to any of these fields moves no golden, so the unit tests written with each change are the only evidence.
