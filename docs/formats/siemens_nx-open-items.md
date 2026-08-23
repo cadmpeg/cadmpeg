@@ -262,6 +262,36 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
 
+### PS-31. Fixed-node identifier domain
+
+**Question.** Which schema field or stream invariant bounds the `node_id` of a fixed Parasolid XT node?
+
+**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field at logical record offset `+4` for node families that carry it. The defined record grammar supplies no upper numerical bound below the u32 domain.
+
+**Need.** We must derive node admission from the owning schema and complete record framing. A numerical cutoff must not decide whether a framed BODY, SHELL, FACE, geometry, or other fixed node exists.
+
+**Conflict.** The fixed-node scanner rejects several node families when `node_id` is greater than `1,000,000`. This cutoff is not a format invariant and can remove valid topology or geometry from a large identity space.
+
+### PS-32. Direct and escaped record-form selection
+
+**Question.** Which serialized condition selects the direct or escaped reading of a Parasolid deltas record when both readings are structurally possible?
+
+**Known.** `siemens_nx.md` §3.1 defines compact and extended XMT references and the `0xff` envelope ambiguity. Section 4.2 defines deltas records as self-delimiting typed productions. Bytes belonging to the following record do not define the current record's form.
+
+**Need.** We must select the form from the current record's schema, field sequence, and enclosing boundary. The identity of the following record family must not participate in this selection.
+
+**Conflict.** Several admitted deltas families choose between direct and escaped candidates by requiring the candidate end to precede a recognized next record kind. An unrecognized but valid successor can therefore suppress the correct reading, and marker-shaped payload bytes can favor the wrong reading.
+
+### PS-33. Unindexed stream and value-record framing
+
+**Question.** Which container relation bounds an unindexed Parasolid stream, and which enclosing production bounds each type-82 through type-89 value record?
+
+**Known.** A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Neither grammar defines a minimum stream length or permits an interior record to acquire ownership solely because its bytes resemble a record start.
+
+**Need.** We must identify unindexed stream ranges from their container relation and parse value records sequentially from a schema-owned root or record boundary.
+
+**Conflict.** Unindexed extraction rejects an inflated candidate shorter than 64 bytes, while value recovery searches byte by byte for independently plausible frames. The minimum length can reject a valid small stream, and an unowned marker-shaped payload can enter the decoded value set.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
