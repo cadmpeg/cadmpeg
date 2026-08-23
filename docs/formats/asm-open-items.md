@@ -128,14 +128,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A form-`2` record that stores no curve block anywhere gives the context no parameter domain, so the decoder retains the record verbatim and the neutral model loses the curve. To read such a record the shared context and every carrier that builds it must accept a record with no solved curve. Whether the record then takes its domain from the interval the form stores, from the support surfaces, or from a curve outside the record is not established. **Settling specimen:** a document holding a form-`2` record whose construction stores no curve block settles which of the three the domain comes from.
 
-### GC-28. Parameter chart of a procedural spline support cache
-
-**Question.** How does a pcurve in a procedural spline support's construction chart map to the parameter chart of that support's solved NURBS cache?
-
-**Known.** A cache-first intcurve support can store `spline`, a subtype-table reference to a procedural spline-surface construction, and four optional bounds. The referenced construction supplies a solved NURBS cache. The intcurve pcurve uses the procedural construction's parameter chart. That chart is not necessarily the solved cache's chart. A `cl_loft_spl_sur` support can map one construction-chart isoline to a nonlinear curve in the solved cache chart. The intcurve and the cache therefore do not establish a direct pcurve-on-surface relation without a chart map.
-
-**Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
-
 ### GC-32. Unadmitted rolling-ball branches
 
 **Question.** Does an `rb_blend_spl_sur` record outside the complete and compact grammars carry another defined layout?

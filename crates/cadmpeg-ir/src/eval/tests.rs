@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
+#![allow(clippy::unwrap_used, unused_imports)]
 
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
     LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, RevisionSurfaceParameterization, RollingBallConstruction,
-    RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis,
-    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
-    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadiusKind,
-    VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
-    VariableBlendValue, VariableBlendValuePayload,
+    ProceduralSurfaceDefinition, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    RollingBallConstruction, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
+    SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
+    VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
+    VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -39,6 +38,18 @@ fn bilinear_surface() -> NurbsSurface {
         u_periodic: false,
         v_periodic: false,
     }
+}
+
+#[test]
+fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
+    let mut surface = bilinear_surface();
+    surface.u_periodic = true;
+    let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
+    assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
+    assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
+
+    surface.u_periodic = false;
+    assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
 #[test]
@@ -648,6 +659,63 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     assert_eq!(second_partials.duu, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second_partials.dvv, Vector3::new(0.0, 0.0, 0.0));
+}
+
+#[test]
+fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
+    let directrix_id = CurveId("reversed-directrix".into());
+    let surface_id = SurfaceId("cacheless-extrusion".into());
+    let construction_id = ProceduralSurfaceId("cacheless-extrusion-construction".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 2.0, 2.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction_id,
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Extrusion {
+            directrix: directrix_id,
+            parameter_interval: Some([-2.0, 0.0]),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            native_position: Some(Point3::new(0.0, 0.0, 0.0)),
+            revision_form: Some(RevisionSurfaceForm {
+                revision: 1,
+                support_bounds: [None; 4],
+                reference_endpoints: [None; 2],
+                second_endpoints: [None; 2],
+                flags: vec![true],
+                tail_enum: 2,
+                tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                discontinuities: Default::default(),
+                tail_flag: false,
+                trailing_flags: Vec::new(),
+            }),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let partials = model_surface_partials_by_id(&index, &surface_id, -0.5, 3.0)
+        .expect("cacheless reversed extrusion point");
+    assert_eq!(partials.point, Point3::new(0.5, 0.0, 3.0));
+    assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
 }
 
 #[test]

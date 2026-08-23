@@ -2838,6 +2838,7 @@ fn construction_curve_parameter(
     directrix: &crate::ids::CurveId,
     parameter: f64,
     surface_interval: Option<[f64; 2]>,
+    reversed: bool,
 ) -> Option<(f64, f64)> {
     if !parameter.is_finite() {
         return None;
@@ -2856,7 +2857,11 @@ fn construction_curve_parameter(
     }
     let curve = index.curves(&directrix.0)?;
     if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
-        return Some((parameter, 1.0));
+        return if reversed {
+            Some((-parameter, -1.0))
+        } else {
+            Some((parameter, 1.0))
+        };
     }
 
     let mut ranges = index
@@ -2874,8 +2879,16 @@ fn construction_curve_parameter(
         return None;
     }
     let curve_width = curve_end - curve_start;
-    let derivative = curve_width / surface_width;
-    let fraction = (parameter - surface_start) / surface_width;
+    let derivative = if reversed {
+        -curve_width / surface_width
+    } else {
+        curve_width / surface_width
+    };
+    let fraction = if reversed {
+        (surface_end - parameter) / surface_width
+    } else {
+        (parameter - surface_start) / surface_width
+    };
     Some((curve_start + fraction * curve_width, derivative))
 }
 
@@ -2884,6 +2897,7 @@ fn model_native_extrusion_partials(
     directrix: &crate::ids::CurveId,
     direction: Vector3,
     parameter_interval: Option<[f64; 2]>,
+    directrix_reversed: bool,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
@@ -2891,7 +2905,7 @@ fn model_native_extrusion_partials(
         return None;
     }
     let (parameter, derivative) =
-        construction_curve_parameter(index, directrix, u, parameter_interval)?;
+        construction_curve_parameter(index, directrix, u, parameter_interval, directrix_reversed)?;
     let differential = model_curve_differential_by_id(index, directrix, parameter)?;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     Some(SurfaceSecondPartials {
@@ -2902,6 +2916,15 @@ fn model_native_extrusion_partials(
         duv: zero,
         dvv: zero,
     })
+}
+
+fn extrusion_directrix_reversed(
+    revision_form: Option<&crate::geometry::RevisionSurfaceForm>,
+) -> bool {
+    revision_form
+        .and_then(|form| form.flags.first())
+        .copied()
+        .unwrap_or(false)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2921,8 +2944,13 @@ fn model_native_revolution_partials(
         return None;
     }
     let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
-    let (directrix_parameter, derivative) =
-        construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let (directrix_parameter, derivative) = construction_curve_parameter(
+        index,
+        directrix,
+        directrix_parameter,
+        parameter_interval,
+        false,
+    )?;
     let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
         || Some((angular_parameter, 1.0)),
         |parameter_interval| {
@@ -3866,12 +3894,14 @@ pub fn model_surface_point(
             directrix,
             direction,
             parameter_interval,
+            revision_form,
             ..
         } => model_native_extrusion_partials(
             &index,
             directrix,
             *direction,
             *parameter_interval,
+            extrusion_directrix_reversed(revision_form.as_ref()),
             u,
             v,
         )
@@ -4647,12 +4677,14 @@ pub fn model_surface_point_by_id(
                 directrix,
                 direction,
                 parameter_interval,
+                revision_form,
                 ..
             }) => model_native_extrusion_partials(
                 index,
                 directrix,
                 *direction,
                 *parameter_interval,
+                extrusion_directrix_reversed(revision_form.as_ref()),
                 u,
                 v,
             )
@@ -4965,6 +4997,7 @@ fn model_surface_mapping(
             directrix,
             direction,
             parameter_interval,
+            revision_form,
             ..
         }) => Some(SurfaceMapping {
             base: model_native_extrusion_partials(
@@ -4972,6 +5005,7 @@ fn model_surface_mapping(
                 directrix,
                 *direction,
                 *parameter_interval,
+                extrusion_directrix_reversed(revision_form.as_ref()),
                 u,
                 v,
             )?,
