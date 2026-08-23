@@ -646,7 +646,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     edge_operand.resolved_edge_slot = Some(17);
     assert_eq!(
         crate::design::edge_resolve::resolved_edge_operand(&edge_operand),
-        Some(17)
+        None
     );
     edge_operand.resolved_edge_slot = None;
     edge_operand.changed_boundary_edge_slots = vec![17, 18];
@@ -777,10 +777,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert!(matches!(
         recovered,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges == [cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#6:fillet:8:17".into()
-            )]
+        cadmpeg_ir::features::EdgeSelection::Unresolved
     ));
     let mut terminal_group = recovered_group.clone();
     terminal_group.lost_edge_references.clear();
@@ -812,16 +809,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
     );
     assert!(
-        matches!(
-        terminal,
-        cadmpeg_ir::features::EdgeSelection::HistoricalPartial {
-            ref edges,
-            ref unresolved,
-            ..
-        } if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
-            "f3d:history-input:edge#6:fillet:8:17".into()
-        )] && unresolved == &["f3d:Design/BulkStream.dat:edge-operand#104"]
-        ),
+        matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
         "{terminal:?}"
     );
     let identity = |record_index, ordinal, edge| DesignEdgeIdentityOperand {
@@ -862,13 +850,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert!(matches!(
         merged,
-        cadmpeg_ir::features::EdgeSelection::HistoricalPartial {
-            ref edges,
-            ref unresolved,
-            ..
-        } if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
-            "f3d:history-input:edge#6:fillet:8:17".into()
-        )] && unresolved == &["f3d:Design/BulkStream.dat:edge-operand#104"]
+        cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     let complete = crate::design::edge_resolve::resolved_edge_group(
         &terminal_group,
@@ -880,15 +862,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert!(matches!(
         complete,
-        cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:18".into()
-                ),
-            ]
+        cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     let mut first_rule = identity(100, 0, None);
     first_rule.resolved_edge_slots = vec![17, 18];
@@ -934,15 +908,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert!(matches!(
         chain,
-        cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:18".into()
-                ),
-            ]
+        cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     assert_eq!(
         edge_operand.recipe_program_offset,

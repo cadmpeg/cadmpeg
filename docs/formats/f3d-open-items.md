@@ -216,17 +216,13 @@ admit the standard structured tail select?
 selectors, topology triplets, history transition, and before-and-after topology.
 These sources independently constrain candidate edges but do not establish that
 geometric or topology-delta reconstruction is the stored recipe semantics.
+Generic topology reconstruction does not assign edge identity to an operand
+whose non-empty program does not admit the structured grammar. The operand
+remains native, or unresolved when its group declares lost references.
 
 **Need.** We must decode the program fields that bind each operand to its
 persistent edge selection and distinguish identity fields from validation or
 topology context.
-
-**Conflict.** The history projection uses reference-set intersections,
-incidence and boundary-count matches, positional triplet combinations, deleted
-edge intersections, perfect assignments, and group cardinality to resolve an
-unstructured recipe. These are candidate-reconstruction policies. They do not
-decode the recipe program and can assign a topology-consistent edge that the
-stored operand did not select.
 
 ## 2. External references
 

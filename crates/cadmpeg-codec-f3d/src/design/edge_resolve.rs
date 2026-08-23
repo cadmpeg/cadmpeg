@@ -612,6 +612,18 @@ fn resolved_edge_group_with_transition_chain(
             .collect::<Vec<_>>();
         matches.len() == 1
     });
+    let has_unstructured_recipe_operand = group.members.iter().any(|member| {
+        operands.iter().any(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *member
+                && !operand.recipe_program.is_empty()
+                && operand.recipe_structure.is_none()
+        })
+    });
+    if has_recipe_operands && has_unstructured_recipe_operand {
+        return unmatched_selection(previous_state_id);
+    }
     let has_standard_recipe_operands = group.members.iter().any(|member| {
         operands.iter().any(|operand| {
             native_stream(&operand.id) == stream
@@ -1913,55 +1925,12 @@ pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
 }
 
 pub(crate) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
-    if operand.recipe_structure.is_some() {
-        return operand
-            .resolved_edge_slot
-            .or_else(|| primary_terminal_reference_shared_edge(operand));
+    if !operand.recipe_program.is_empty() && operand.recipe_structure.is_none() {
+        return None;
     }
     operand
         .resolved_edge_slot
-        .or_else(|| resolve_edge_operand_candidates(operand))
-        .or_else(|| common_local_reference_shared_edge(operand))
         .or_else(|| primary_terminal_reference_shared_edge(operand))
-}
-
-/// Resolve an unchanged edge selected as the unique boundary intersection of
-/// two or more locally referenced support faces.
-fn common_local_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64> {
-    let local_references = operand.local_topology_references.as_ref()?;
-    let mut reference_ordinals = local_references
-        .iter()
-        .filter_map(|ordinal| usize::try_from(ordinal.get()).ok()?.checked_sub(1))
-        .collect::<Vec<_>>();
-    reference_ordinals.sort_unstable();
-    reference_ordinals.dedup();
-
-    let mut shared_sets = reference_ordinals.into_iter().filter_map(|ordinal| {
-        let shared = operand
-            .recipe_reference_contexts
-            .get(ordinal)?
-            .shared_edge_slots
-            .as_slice();
-        (!shared.is_empty()).then_some(shared)
-    });
-    let mut candidates = shared_sets.next()?.to_vec();
-    let mut support_count = 1usize;
-    for shared in shared_sets {
-        support_count += 1;
-        candidates.retain(|candidate| shared.contains(candidate));
-    }
-    candidates.sort_unstable();
-    candidates.dedup();
-
-    if support_count < 2 {
-        return None;
-    }
-    match candidates.as_slice() {
-        [candidate] if operand.preceding_boundary_edge_slots.contains(candidate) => {
-            Some(*candidate)
-        }
-        _ => None,
-    }
 }
 
 /// Resolve the selected edge of a zero-payload terminal recipe from the two
@@ -2040,20 +2009,6 @@ pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> V
     } else {
         reference_edge_slots
     }
-}
-
-pub(crate) fn resolve_edge_operand_candidates(operand: &DesignEdgeOperand) -> Option<i64> {
-    let deleted_reference = corroborated_deleted_reference_candidate(
-        &operand.recipe_selectors,
-        edge_operand_reference_edge_sets(operand),
-        &operand.deleted_boundary_edge_slots,
-    );
-    resolved_edge_candidate_intersection_with_deleted_proofs(
-        &operand.recipe_selectors,
-        edge_operand_reference_edge_sets(operand),
-        &operand.deleted_boundary_edge_slots,
-        deleted_reference,
-    )
 }
 
 pub(crate) fn unique_deleted_triplet_candidate(

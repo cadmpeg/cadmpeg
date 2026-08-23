@@ -5697,10 +5697,6 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.recipe_selectors,
             &operand.preceding_boundary_edge_slots,
         );
-        if operand.recipe_structure.is_none() {
-            operand.resolved_edge_slot =
-                crate::design::edge_resolve::resolve_edge_operand_candidates(operand);
-        }
     }
 }
 

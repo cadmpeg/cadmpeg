@@ -324,6 +324,30 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
 }
 
 #[test]
+fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
+    let selection_group = group(2, 10);
+    let mut operand = recipe_edge_operand(10, &[17], &[17]);
+    operand.recipe_program = vec![1];
+    operand.recipe_state_id = Some(7);
+    let mut persistent_identity = identity(10, &[(17, 0.0)]);
+    persistent_identity.resolved_edge_slot = Some(17);
+    let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&operand),
+            std::slice::from_ref(&persistent_identity),
+            Some(7),
+            &feature_id,
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+}
+
+#[test]
 fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repeats() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
@@ -566,7 +590,7 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
 }
 
 #[test]
-fn local_support_face_references_resolve_one_unchanged_shared_edge() {
+fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     let context = |reference_ordinal, shared_edge_slots: &[i64]| {
         serde_json::from_value(serde_json::json!({
             "reference_ordinal": reference_ordinal,
@@ -579,6 +603,8 @@ fn local_support_face_references_resolve_one_unchanged_shared_edge() {
         .expect("edge recipe reference context")
     };
     let mut operand = recipe_edge_operand(10, &[63, 106, 109, 164], &[]);
+    operand.recipe_program = vec![1];
+    operand.resolved_edge_slot = Some(180);
     operand.local_topology_references = Some(
         [2, 1, 3, 1]
             .into_iter()
@@ -594,16 +620,6 @@ fn local_support_face_references_resolve_one_unchanged_shared_edge() {
     operand.preceding_boundary_edge_slots =
         vec![63, 106, 109, 139, 142, 164, 168, 180, 183, 195, 197, 210];
 
-    assert_eq!(resolved_edge_operand(&operand), Some(180));
-
-    operand.recipe_reference_contexts[1].shared_edge_slots = vec![164, 180, 181];
-    operand.recipe_reference_contexts[2].shared_edge_slots = vec![106, 180, 181];
-    assert_eq!(resolved_edge_operand(&operand), None);
-
-    operand.recipe_reference_contexts[2].shared_edge_slots = vec![106];
-    assert_eq!(resolved_edge_operand(&operand), None);
-
-    operand.local_topology_references = Some(vec![std::num::NonZeroU32::new(2).unwrap()]);
     assert_eq!(resolved_edge_operand(&operand), None);
 }
 
