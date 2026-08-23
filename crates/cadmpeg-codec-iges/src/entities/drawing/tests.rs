@@ -13,9 +13,203 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{
-    clipping_plane_valid, depth_clipping_valid, display_flag_valid, has_in_plane_component,
-    standard_color_valid, standard_line_font_valid,
+    clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
+    has_in_plane_component, standard_color_valid, standard_line_font_valid, view_directory_valid,
+    views_visible_directory_valid,
 };
+
+fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 1,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    }
+}
+
+#[test]
+fn drawing_presentation_directory_rules_match_the_iges_tables() {
+    let mut drawing = directory_entry(404, 0);
+    assert!(drawing_directory_valid(&drawing));
+    drawing.status.subordinate = 1;
+    assert!(!drawing_directory_valid(&drawing));
+    drawing.status.subordinate = 0;
+    drawing.status.use_flag = 2;
+    assert!(!drawing_directory_valid(&drawing));
+    drawing.status.use_flag = 1;
+    drawing.status.blank = 1;
+    drawing.status.hierarchy = 3;
+    assert!(drawing_directory_valid(&drawing));
+
+    for field in 0..4 {
+        let mut candidate = directory_entry(404, 1);
+        match field {
+            0 => candidate.structure = 1,
+            1 => candidate.line_font = 1,
+            2 => candidate.line_weight = 1,
+            _ => candidate.color = 1,
+        }
+        assert!(!drawing_directory_valid(&candidate));
+    }
+
+    let mut view = directory_entry(410, 0);
+    assert!(view_directory_valid(&view));
+    view.status.subordinate = 2;
+    assert!(view_directory_valid(&view));
+    view.status.subordinate = 0;
+    view.status.use_flag = 2;
+    assert!(!view_directory_valid(&view));
+    view.status.use_flag = 1;
+    view.status.blank = 1;
+    view.status.hierarchy = 3;
+    assert!(view_directory_valid(&view));
+    for field in 0..4 {
+        let mut candidate = directory_entry(410, 1);
+        match field {
+            0 => candidate.structure = 1,
+            1 => candidate.line_font = 1,
+            2 => candidate.line_weight = 1,
+            _ => candidate.color = 1,
+        }
+        assert!(!view_directory_valid(&candidate));
+    }
+
+    for form in [3, 4, 19] {
+        let mut visible = directory_entry(402, form);
+        assert!(views_visible_directory_valid(&visible));
+        visible.status.subordinate = 1;
+        assert!(!views_visible_directory_valid(&visible));
+        visible.status.subordinate = 0;
+        visible.status.use_flag = 2;
+        assert!(!views_visible_directory_valid(&visible));
+        visible.status.use_flag = 1;
+        visible.status.blank = 1;
+        visible.status.hierarchy = 3;
+        assert!(views_visible_directory_valid(&visible));
+        for field in 0..4 {
+            let mut candidate = directory_entry(402, form);
+            match field {
+                0 => candidate.structure = 1,
+                1 => candidate.line_font = 1,
+                2 => candidate.line_weight = 1,
+                _ => candidate.color = 1,
+            }
+            assert!(!views_visible_directory_valid(&candidate));
+        }
+    }
+}
+
+#[test]
+fn decode_quarantines_presentation_entities_with_invalid_directory_contracts() {
+    let cases = [
+        (
+            "drawing",
+            vec![OwnedTestEntity {
+                entity_type: 404,
+                form: 1,
+                label: "DRAWING".into(),
+                status: "00000000",
+                parameters: "404,1,1,0,0,0;".into(),
+            }],
+            "directory_entry:D1",
+        ),
+        (
+            "view",
+            vec![OwnedTestEntity {
+                entity_type: 410,
+                form: 0,
+                label: "VIEW".into(),
+                status: "00000000",
+                parameters: "410,1,1,0,0,0,0,0,0;".into(),
+            }],
+            "directory_entry:D1",
+        ),
+        (
+            "segmented visibility",
+            vec![
+                OwnedTestEntity {
+                    entity_type: 410,
+                    form: 0,
+                    label: "VIEW".into(),
+                    status: "00000100",
+                    parameters: "410,1,1,0,0,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 19,
+                    label: "SEGMENTS".into(),
+                    status: "00000000",
+                    parameters: "402,1,1,0.5,0,,,1;".into(),
+                },
+            ],
+            "directory_entry:D3",
+        ),
+        (
+            "view visibility",
+            vec![
+                OwnedTestEntity {
+                    entity_type: 410,
+                    form: 0,
+                    label: "VIEW".into(),
+                    status: "00000100",
+                    parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 3,
+                    label: "VISIBLE".into(),
+                    status: "00000000",
+                    parameters: "402,1,0,1;".into(),
+                },
+            ],
+            "directory_entry:D3",
+        ),
+    ];
+
+    for (kind, entities, expected_tag) in cases {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&entities)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let losses = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .collect::<Vec<_>>();
+        assert_eq!(losses.len(), 1, "{kind}: {:#?}", result.report().losses);
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some(expected_tag),
+            "{kind}: {:#?}",
+            result.report().losses
+        );
+    }
+}
 
 #[test]
 fn view_up_component_test_is_scale_invariant() {
@@ -291,14 +485,14 @@ fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
                 entity_type: 410,
                 form: 0,
                 label: "VIEW".into(),
-                status: "00000000",
+                status: "00000100",
                 parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
             },
             OwnedTestEntity {
                 entity_type: 402,
                 form,
                 label: "VISIBLE".into(),
-                status: "00000000",
+                status: "00000100",
                 parameters: parameters.into(),
             },
         ]);
@@ -339,14 +533,14 @@ fn decode_view_visibility_entity_count_requirement_follows_dialect() {
                             entity_type: 410,
                             form: 0,
                             label: "VIEW".into(),
-                            status: "00000000",
+                            status: "00000100",
                             parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
                         },
                         OwnedTestEntity {
                             entity_type: 402,
                             form: 3,
                             label: "VISIBLE".into(),
-                            status: "00000000",
+                            status: "00000100",
                             parameters: visible_parameters.into(),
                         },
                     ],

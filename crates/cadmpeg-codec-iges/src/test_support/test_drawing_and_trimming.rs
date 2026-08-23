@@ -343,7 +343,7 @@ pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec
                 entity_type: 410,
                 form: 0,
                 label: "VIEW".into(),
-                status: "00000000",
+                status: "00000100",
                 parameters: "410,1,1,0,0,0,0,0,0;".into(),
             },
             OwnedTestEntity {
@@ -527,7 +527,7 @@ pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -554,7 +554,7 @@ pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: format!("410,1,1,0,0,0,0,0,0{suffix};"),
         },
         OwnedTestEntity {

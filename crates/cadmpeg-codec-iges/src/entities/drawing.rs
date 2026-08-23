@@ -54,6 +54,38 @@ fn standard_color_valid(value: i64) -> bool {
     matches!(value, 0..=8)
 }
 
+fn drawing_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.entity_type == 404
+        && matches!(entry.form, 0 | 1)
+        && entry.status.subordinate == 0
+        && entry.status.use_flag == 1
+        && entry.structure == 0
+        && entry.line_font == 0
+        && entry.line_weight == 0
+        && entry.color == 0
+}
+
+fn view_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.entity_type == 410
+        && matches!(entry.form, 0 | 1)
+        && entry.status.use_flag == 1
+        && entry.structure == 0
+        && entry.line_font == 0
+        && entry.line_weight == 0
+        && entry.color == 0
+}
+
+fn views_visible_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.entity_type == 402
+        && matches!(entry.form, 3 | 4 | 19)
+        && entry.status.subordinate == 0
+        && entry.status.use_flag == 1
+        && entry.structure == 0
+        && entry.line_font == 0
+        && entry.line_weight == 0
+        && entry.color == 0
+}
+
 fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
     entry.entity_type == 108 && (matches!(dialect, Dialect::V4_0) || entry.status.use_flag == 1)
 }
@@ -232,7 +264,7 @@ pub(super) fn project(
                     })
             })
         });
-        if views_valid && annotations_valid {
+        if drawing_directory_valid(entry) && views_valid && annotations_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -322,7 +354,7 @@ pub(super) fn project(
                 && depth.is_some()
                 && depth_values_valid
         };
-        if view_number_valid && scale_valid && form_valid {
+        if view_directory_valid(entry) && view_number_valid && scale_valid && form_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -413,7 +445,7 @@ pub(super) fn project(
                     && weight_valid
             })
         });
-        if blocks_valid {
+        if views_visible_directory_valid(entry) && blocks_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -496,7 +528,7 @@ pub(super) fn project(
                     .is_some_and(|sequence| entries.contains_key(&sequence))
             })
         });
-        if views_valid && entities_valid {
+        if views_visible_directory_valid(entry) && views_valid && entities_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(

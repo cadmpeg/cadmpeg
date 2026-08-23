@@ -7703,7 +7703,23 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "entity.not-projected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
+        "provenance": {
+          "format": "iges",
+          "offset": 243,
+          "stream": "iges",
+          "tag": "directory_entry:D1"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=13",
       "entity.116.form.0=3",
@@ -7725,7 +7741,7 @@
       "entries": [
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D1",
           "target": "iges:entity:directory#1"
         },

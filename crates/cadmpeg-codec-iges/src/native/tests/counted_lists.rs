@@ -322,7 +322,7 @@ fn decode_view_list_uses_form6_class_entry_and_visible_count() {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000200",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
         },
         OwnedTestEntity {
@@ -496,14 +496,14 @@ fn decode_view_visibility_counts_use_the_table_boundary() {
             entity_type: 402,
             form: 3,
             label: "VIEWS".into(),
-            status: "00000200",
+            status: "00000100",
             parameters: "402,2,3,1,5,0,1,7;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000200",
+            status: "00000100",
             parameters: "410,1;".into(),
         },
         OwnedTestEntity {
@@ -921,7 +921,7 @@ fn decode_view_list_visible_entities_stop_at_the_view_pointer() {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000200",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
         },
         OwnedTestEntity {
