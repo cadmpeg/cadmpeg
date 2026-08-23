@@ -281,15 +281,3 @@ If a chain contains `truecolor` before `rgb_color`, the first record supplies th
 **Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
-
-### TE-03. Invalid text-header scale handling
-
-**Question.** What scale values are valid in the SAT/SMT text header, and what must a reader do for zero, negative, or non-finite values?
-
-**Known.** `asm.md` §7.1 defines `scale` as millimetres per model-space unit. `parse_header` accepts any value that `f64::parse` accepts and does not require finiteness, positivity, or an exact three-field line. `parse` converts positive values with `scale / 10.0` but substitutes `1.0` for every non-positive value; `NaN` also takes that branch because its comparison with zero is false. No loss is recorded.
-
-If a stream carries zero, a negative value, or `NaN`, every length-bearing text field is decoded with the fallback factor instead of being rejected or retained. A malformed header can therefore produce plausible but wrongly scaled geometry and tolerances.
-
-**Need.** An authoritative valid-domain rule or a specimen with an invalid header must settle whether the stream is malformed, uses a special unit convention, or requires a different conversion. The reader must not fabricate a scale while this is open.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/sat.rs:274-324,331-341`. The settled unit rule and existing valid positive headers are counter-evidence against treating the fallback as a valid convention.

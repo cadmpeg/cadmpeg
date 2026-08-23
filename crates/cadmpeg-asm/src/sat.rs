@@ -308,6 +308,12 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
             })
     };
     let scale = float(line3.first(), "scale")?;
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(SatError {
+            offset: at,
+            reason: "header scale must be finite and positive".to_string(),
+        });
+    }
     let resabs = float(line3.get(1), "resabs")?;
     let resnor = float(line3.get(2), "resnor")?;
     Ok(TextHeader {
@@ -334,11 +340,7 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
     let header = parse_header(bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let len_factor = if header.scale > 0.0 {
-        header.scale / 10.0
-    } else {
-        1.0
-    };
+    let len_factor = header.scale / 10.0;
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
@@ -1442,6 +1444,22 @@ mod tests {
         assert_eq!(header.flags, Some(2));
         // The token values were converted; the reported unit is centimetres.
         assert_eq!(header.scale, Some(10.0));
+    }
+
+    #[test]
+    fn invalid_header_scales_are_rejected() {
+        for scale in ["0", "-1", "NaN", "inf"] {
+            let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+            let scale_start = stream
+                .windows(b"1 1e-06 1e-10".len())
+                .position(|window| window == b"1 1e-06 1e-10")
+                .expect("tolerance line");
+            stream.splice(scale_start..scale_start + 1, scale.bytes());
+
+            let error = parse(&stream).expect_err("invalid scale must fail");
+            assert_eq!(error.offset, scale_start);
+            assert_eq!(error.reason, "header scale must be finite and positive");
+        }
     }
 
     #[test]

@@ -649,7 +649,7 @@ The second line holds the three product strings — product family, product vers
 
 The third line holds the three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
 
-**Unit rule.** In the text encoding, `scale` is the stream's length unit in millimetres per unit. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
+**Unit rule.** In the text encoding, `scale` is a finite positive number and is the stream's length unit in millimetres per unit. Zero, a negative number, infinity, or NaN makes the stream malformed. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
 
 ### 7.2 Record grammar
 
