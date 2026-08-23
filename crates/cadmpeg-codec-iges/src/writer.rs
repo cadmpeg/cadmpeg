@@ -342,7 +342,7 @@ impl TargetProfile {
         match self.version {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
-                (100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
+                (100 | 102 | 110 | 116 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
             ),
             crate::IgesVersion::V5_0 => matches!(
                 (entity.type_code, entity.form),

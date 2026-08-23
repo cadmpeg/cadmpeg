@@ -49,11 +49,11 @@ from a conformant file.
 
 **Question.** Which version-specific physical, Global, Directory, Parameter Data, entity, and transfer rules must be implemented and verified before Global version flag `6` joins the verified set?
 
-**Known.** `iges.md` admits a flag `6` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `GL-11` records the remaining 4.0 Global version-flag difference. Full version-specific decode and strict admission are not established.
+**Known.** `iges.md` admits a flag `6` file in salvage mode, applies the 4.0 Global and Directory rules and the 4.0 entity/form read envelope, and reports `iges/source.dialect-unverified`. `GL-11` records the remaining 4.0 Global version-flag difference. Full version-specific decode and strict admission are not established.
 
 **Need.** Compare the complete IGES 4.0 document with the settled 5.1/5.2/5.3 model, implement each material difference, and add independent probes for Global defaults, version handling, entity ranges, pointer targets, constraints, and geometry projection. Remove the dialect loss and strict refusal only after valid 4.0 files have full semantic and transfer verification.
 
-**Conflict.** The current read profile describes 4.0 salvage as semantic decode, but its output uses later-version semantics where the 4.0 rules differ. That is recovery, not full 4.0 support.
+**Conflict.** The current read profile applies the 4.0 envelope but still uses later-version semantics for 4.0 physical, Parameter Data, entity, and transfer rules that are not yet verified. That is recovery, not full 4.0 support.
 
 **Note.** Keep 4.0 salvage available while this item is open. Closing this item requires updating `iges.md`, `docs/format-support.md`, and the decoder together.
 

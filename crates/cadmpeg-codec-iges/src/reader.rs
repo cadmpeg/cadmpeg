@@ -414,6 +414,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         ));
     }
+    let dialect = parse.global.dialect();
     if !options.container_only {
         let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = parse
@@ -421,7 +422,7 @@ fn decode_with_occurrence_limits(
             .iter()
             .filter(|entry| entry.entity_type != 0)
             .filter(|entry| {
-                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
                     return true;
                 }
                 !projection.decoded.contains(&entry.sequence)
@@ -429,7 +430,8 @@ fn decode_with_occurrence_limits(
                     && !attributed_before_generic.contains(&entry.sequence)
             })
             .map(|entry| {
-                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+                {
                     IgesLossCode::EntityRetainedUnprojected.note(format!(
                         "IGES entity type {} form {} retained without neutral projection",
                         entry.entity_type, entry.form
@@ -465,7 +467,7 @@ fn decode_with_occurrence_limits(
         let attributed_loss = attributed.contains(&entry.sequence);
         let note = if options.container_only {
             "native record retained; semantic projection was not requested"
-        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect) {
             "native record retained; entity is outside the declared read envelope"
         } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
             "native record retained; semantic projection emitted with an attributed loss"

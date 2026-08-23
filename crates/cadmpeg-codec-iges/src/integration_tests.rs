@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized IGES 5.3 card streams.
+//! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
 use super::*;
@@ -375,6 +375,40 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
             ExpectedArena::Native("units_data"),
         ),
     ]);
+}
+
+#[test]
+fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = decode(owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 1,
+                label: "LATER-LN".into(),
+                status: "00000000",
+                parameters: "110,0,0,0,1,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "V4-POINT".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+        ],
+        global_v4,
+    ));
+
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.points.len(), 1);
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert_eq!(native.arenas["entities"].len(), 2);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
+            && loss.message
+                == "IGES entity type 110 form 1 is outside the Fixed ASCII mechanical/document envelope"
+    }));
 }
 
 #[test]

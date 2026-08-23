@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::global::Dialect;
 use crate::test_support::*;
 use crate::IgesCodec;
 
@@ -50,7 +51,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
                     .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form))
             });
             assert_eq!(
-                crate::profile::envelope_a_admits(entity_type, form),
+                crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
                 "entity type {entity_type} form {form}"
             );
@@ -62,14 +63,87 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
                 .as_ref()
                 .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form));
             assert_eq!(
-                crate::profile::envelope_a_admits(entity_type, form),
+                crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
                 "high-form probe: entity type {entity_type} form {form}"
             );
         }
     }
-    assert!(!crate::profile::envelope_a_admits(601, 5001));
-    assert!(!crate::profile::envelope_a_admits(i64::MAX, i64::MAX));
+    assert!(!crate::profile::envelope_a_admits(601, 5001, Dialect::V5_3));
+    assert!(!crate::profile::envelope_a_admits(
+        i64::MAX,
+        i64::MAX,
+        Dialect::V5_3
+    ));
+}
+
+#[test]
+fn v4_admission_matches_its_entity_and_form_table() {
+    let cases = [
+        (123, 0, false),
+        (141, 0, false),
+        (143, 0, false),
+        (182, 0, false),
+        (186, 0, false),
+        (190, 0, false),
+        (192, 0, false),
+        (194, 0, false),
+        (196, 0, false),
+        (198, 0, false),
+        (204, 0, false),
+        (213, 0, false),
+        (316, 0, false),
+        (502, 1, false),
+        (504, 1, false),
+        (508, 1, false),
+        (510, 1, false),
+        (514, 1, false),
+        (110, 0, true),
+        (110, 1, false),
+        (110, 2, false),
+        (118, 0, true),
+        (118, 1, true),
+        (214, 11, true),
+        (214, 12, false),
+        (216, 0, true),
+        (216, 1, false),
+        (218, 0, true),
+        (218, 1, false),
+        (402, 5, true),
+        (402, 6, false),
+        (402, 7, true),
+        (402, 8, false),
+        (402, 9, true),
+        (402, 10, false),
+        (402, 11, false),
+        (402, 12, true),
+        (402, 16, true),
+        (402, 17, false),
+        (402, 18, true),
+        (402, 19, false),
+        (402, 21, false),
+        (404, 0, true),
+        (404, 1, false),
+        (406, 3, true),
+        (406, 4, false),
+        (406, 18, true),
+        (406, 19, false),
+        (406, 36, false),
+        (410, 0, true),
+        (410, 1, false),
+        (416, 2, true),
+        (416, 3, false),
+        (416, 4, false),
+        (430, 0, true),
+        (430, 1, false),
+    ];
+    for (entity_type, form, expected) in cases {
+        assert_eq!(
+            crate::profile::envelope_a_admits(entity_type, form, Dialect::V4_0),
+            expected,
+            "entity type {entity_type} form {form}"
+        );
+    }
 }
 
 #[test]

@@ -747,9 +747,14 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
+    let dialect = global.dialect();
+    let admitted = |entry: &DirectoryEntry| {
+        entry.status.is_use_flag_valid(dialect)
+            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+    };
     let mut losses = directory
         .iter()
-        .filter(|entry| !entry.status.is_use_flag_valid(global.dialect()))
+        .filter(|entry| !entry.status.is_use_flag_valid(dialect))
         .map(|entry| {
             entity_loss(
                 entry,
@@ -760,16 +765,13 @@ pub(crate) fn project_geometry(
             )
         })
         .collect::<Vec<_>>();
-    let admitted_directory = directory
-        .iter()
-        .any(|entry| !entry.status.is_use_flag_valid(global.dialect()))
-        .then(|| {
-            directory
-                .iter()
-                .filter(|entry| entry.status.is_use_flag_valid(global.dialect()))
-                .cloned()
-                .collect::<Vec<_>>()
-        });
+    let admitted_directory = directory.iter().any(|entry| !admitted(entry)).then(|| {
+        directory
+            .iter()
+            .filter(|entry| admitted(entry))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
     let directory = admitted_directory.as_deref().unwrap_or(directory);
     let records = parameters
         .iter()
