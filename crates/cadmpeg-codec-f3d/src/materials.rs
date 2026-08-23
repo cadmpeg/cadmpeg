@@ -506,9 +506,9 @@ pub fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let Some(record_frames) = cadmpeg_protein::record_frames(instance.window()) else {
-            continue;
-        };
+        let record_frames = cadmpeg_protein::record_frames(instance.window()).ok_or_else(|| {
+            CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
+        })?;
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
             let records = cadmpeg_protein::decode(protein.window(), instance.window())?;

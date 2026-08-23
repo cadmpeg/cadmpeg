@@ -929,6 +929,19 @@ fn decode_transfers_generated_protein_appearance() {
 }
 
 #[test]
+fn decode_rejects_invalid_instance_property_page_framing() {
+    let mut properties = generated_instance_properties_for("11111111-2222-3333-4444-555555555555");
+    properties[STREAM_HEADER_LEN + 4] ^= 1;
+    let f3d = f3d_with_smbh_and_instance_properties(&synthetic_geometry_smbh(), &[properties]);
+
+    let error = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .expect_err("invalid Protein page framing must reject material decode");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn generated_act_native_validation_rejects_structural_drift() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
