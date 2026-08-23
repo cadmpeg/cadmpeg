@@ -3588,7 +3588,11 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     if let Some(options) = &mut endpoint_options {
-        let allowed_faces = supports
+        let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
+            spine,
+            &serialized_edge_faces,
+        );
+        let mut allowed_faces = supports
             .iter()
             .enumerate()
             .map(|(edge, support)| {
@@ -3623,6 +3627,24 @@ fn attach_standard_topology(
                     .collect()
             })
             .collect::<Vec<_>>();
+        if let Some(handle_face_candidates) = handle_face_candidates {
+            for (allowed, handle_candidates) in allowed_faces.iter_mut().zip(handle_face_candidates)
+            {
+                if handle_candidates.is_empty() {
+                    continue;
+                }
+                let intersection = allowed
+                    .iter()
+                    .copied()
+                    .filter(|face| handle_candidates.contains(face))
+                    .collect::<Vec<_>>();
+                *allowed = if intersection.is_empty() {
+                    handle_candidates
+                } else {
+                    intersection
+                };
+            }
+        }
         // A non-empty alternate domain remains a wildcard until the joint mesh
         // quotient evaluates it. Face-local endpoint closure is incomplete:
         // an unmatched row can occupy a face boundary only in that quotient.
@@ -4115,7 +4137,7 @@ fn attach_standard_topology(
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
              selected_edge_classes: &[usize],
              solve_budget: &WorkBudget<'_>| {
-                // FBB-only rows are complete boundary runs. Their table-scoped
+                // FBB-only rows are complete boundary runs. Their global
                 // handle quotient, not allocation rank, is the incidence source.
                 let mut solver_options = standard_endpoint_options_for_selected_faces(
                     ir,
@@ -4197,6 +4219,7 @@ fn attach_standard_topology(
                     selected_edge_classes,
                     &edge_geometry,
                     &edge_identity_evidence,
+                    has_open_face_domains,
                     &partial_constraint_edges,
                     &branch_preferred_edges,
                     Some(&partial_constraint_edges),
@@ -4246,6 +4269,7 @@ fn attach_standard_topology(
                         selected_edge_classes,
                         &edge_geometry,
                         &edge_identity_evidence,
+                        has_open_face_domains,
                         &partial_constraint_edges,
                         &branch_preferred_edges,
                         Some(&partial_constraint_edges),

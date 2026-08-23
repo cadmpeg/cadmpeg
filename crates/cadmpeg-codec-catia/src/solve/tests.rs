@@ -8,8 +8,8 @@ use crate::test_support::{
 };
 
 #[test]
-fn compact_standard_ports_reuse_handles_within_the_table_scope() {
-    let ports = crate::solve::missing_edge::standard_edge_port_identities(
+fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
+    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(
         &compact_standard_triangle_topology_stream(),
     )
     .expect("compact standard ports");
@@ -18,7 +18,7 @@ fn compact_standard_ports_reuse_handles_within_the_table_scope() {
 }
 
 #[test]
-fn standard_full_table_scopes_complete_rows_and_isolates_interior_rows() {
+fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
     let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
     bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
     for handles in [&[10u16, 11][..], &[11, 12, 13][..], &[11, 12][..]] {
@@ -31,13 +31,13 @@ fn standard_full_table_scopes_complete_rows_and_isolates_interior_rows() {
         0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00,
     ]);
 
-    let ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
+    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
         .expect("standard full-table ports");
-    assert_eq!(ports, vec![[0, 1], [2, 3], [1, 4]]);
+    assert_eq!(ports, vec![[0, 1], [1, 2], [1, 3]]);
 }
 
 #[test]
-fn standard_mesh_ports_bridge_table_local_endpoint_names() {
+fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -54,16 +54,16 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 
     let ports =
         crate::solve::missing_edge::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
-    let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
-        .expect("table-local ports");
-    assert_ne!(table_ports[1][1], table_ports[2][0]);
+    let table_ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
+        .expect("global terminal-handle ports");
+    assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(
         table_ports
             .iter()
             .flatten()
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        8
+        4
     );
     assert_eq!(ports[0][1], ports[1][0]);
     assert_eq!(ports[1][1], ports[2][0]);
@@ -71,12 +71,13 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
     assert_eq!(ports[3][1], ports[0][0]);
     assert_eq!(
         ports
-            .into_iter()
+            .iter()
             .flatten()
             .collect::<std::collections::HashSet<_>>()
             .len(),
         4
     );
+    assert_eq!(table_ports, ports);
 }
 
 #[test]

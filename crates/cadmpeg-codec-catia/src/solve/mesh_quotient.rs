@@ -9433,10 +9433,8 @@ fn resolve_standard_mesh_endpoint_candidates(
 }
 
 /// Resolve geometric endpoint alternatives through face incidence before
-/// applying the exact trim-mesh endpoint quotient. Parsed face domains are
-/// shared with the exact ordered-domain fallback. Endpoint graphs must close
-/// every face; all surviving graphs must produce one topology modulo logical
-/// vertex labels, intrinsic edge direction, and boundary-cycle start.
+/// applying the exact trim-mesh endpoint quotient. Endpoint graphs must close every
+/// face and produce one topology modulo vertex labels, edge direction, and cycle start.
 /// `partial_solution_valid` receives partial assignments during search. It must
 /// be monotone: once it rejects a selected subset, assigning more edges cannot
 /// make that subset valid. `partial_constraint_edges` identifies every edge
@@ -9444,7 +9442,6 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// incidence component. `preferred_assignment_edges` identifies additional
 /// variables that should be selected before unrelated incidence variables;
 /// those variables do not require a single incidence component.
-///
 /// `complete_solution_valid` is evaluated only after every endpoint pair has
 /// been assigned. Use it for global preferences whose result cannot be known
 /// from a partial assignment.
@@ -9457,6 +9454,7 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
     edge_classes: &[usize],
     edge_geometry: &[MeshEdgeGeometry],
     edge_identity_evidence: &[bool],
+    global_handle_ports: bool,
     partial_constraint_edges: &[bool],
     preferred_assignment_edges: &[bool],
     priority_edges: Option<&[bool]>,
@@ -9481,15 +9479,15 @@ where
         let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
         let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
         let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-        let boundary_context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
+        let boundary_context =
+            StandardMeshBoundaryContext::parse_ports(bytes, edge_faces, global_handle_ports)?;
         let mesh_domains = standard_mesh_boundary_domains_from_context(
             &boundary_context,
             Some(edge_candidates),
             true,
         )?;
-        // Do not pre-apply raw trim-run direction: standard-row endpoints are
-        // oriented only when a complete face-boundary quotient is selected.
-        let port_identities = crate::solve::missing_edge::edge_port_identities(bytes)?;
+        // Standard-row endpoints are oriented by the complete face quotient.
+        let port_identities = crate::solve::missing_edge::solver_ports(bytes, global_handle_ports)?;
         Some((
             face_count,
             edge_rows,
@@ -9932,6 +9930,7 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
             &[],
             &[],
             &[],
+            false,
             &[],
             &[],
             None,

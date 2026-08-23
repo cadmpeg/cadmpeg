@@ -27,7 +27,10 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
 }
 
-pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn standard_edge_port_identities_with_namespace(
+    bytes: &[u8],
+    global: bool,
+) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = selected_standard_run(bytes)?;
     let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
@@ -37,34 +40,33 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
         .zip(scopes)
         .map(|(row, scope)| {
             row.handles.first().zip(row.handles.last())?;
-            if row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun {
-                let mut pair = [0; 2];
-                for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let identity = if let Some(identity) = identity_by_handle.get(&(scope, handle))
-                    {
-                        *identity
-                    } else {
-                        let identity = next_identity;
-                        next_identity = next_identity.checked_add(1)?;
-                        identity_by_handle.insert((scope, handle), identity);
-                        identity
-                    };
-                    pair[port] = identity;
-                }
-                Some(pair)
-            } else {
+            if !global && row.boundary_layout != EdgeBoundaryLayout::CompleteBoundaryRun {
                 let start = next_identity;
                 next_identity = next_identity.checked_add(2)?;
-                Some([start, start.checked_add(1)?])
+                return Some([start, start.checked_add(1)?]);
             }
+            let mut pair = [0; 2];
+            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let key = (if global { 0 } else { scope }, handle);
+                let identity = if let Some(identity) = identity_by_handle.get(&key) {
+                    *identity
+                } else {
+                    let identity = next_identity;
+                    next_identity = next_identity.checked_add(1)?;
+                    identity_by_handle.insert(key, identity);
+                    identity
+                };
+                pair[port] = identity;
+            }
+            Some(pair)
         })
         .collect()
 }
 
-pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
@@ -78,18 +80,47 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
                 .enumerate()
             {
                 let next = u32::try_from(identity_by_handle.len()).ok()?;
-                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+                let key = (if global { 0 } else { scope }, handle);
+                pair[port] = *identity_by_handle.entry(key).or_insert(next);
             }
             Some(pair)
         })
         .collect()
 }
 
-/// Select endpoint identities from each parsed row's boundary layout. A
-/// complete-boundary row uses table-scoped endpoint handles; an interior row
-/// uses two occurrence-local endpoint ports for its flanking corners.
+pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities_with_namespace(bytes, false)
+}
+
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    fbb_edge_port_identities_with_namespace(bytes, false)
+}
+
+pub(crate) fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities_with_namespace(bytes, true)
+}
+
+pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    fbb_edge_port_identities_with_namespace(bytes, true)
+}
+
+/// Select conservative endpoint identities for the bounded topology solver.
 pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+}
+
+/// Select endpoint identities from every row's terminal handles in the
+/// file-global trim-handle namespace.
+pub(crate) fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_global_edge_port_identities(bytes).or_else(|| fbb_global_edge_port_identities(bytes))
+}
+
+pub(crate) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+    if global {
+        global_edge_port_identities(bytes)
+    } else {
+        edge_port_identities(bytes)
+    }
 }
 
 /// Extend deferred rows to the complete connected components of the supplied
@@ -133,7 +164,7 @@ pub(crate) fn expand_deferred_edge_port_components(
 #[must_use]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = edge_port_identities(bytes)?;
+    let local_ports = global_edge_port_identities(bytes)?;
     mesh_edge_ports(&analysis, &local_ports)
 }
 
@@ -361,6 +392,85 @@ pub(crate) fn resolve_standard_edge_faces(
         return Some(serialized.to_vec());
     };
     resolve_edge_faces_from_runs(serialized, &runs)
+}
+
+fn repeated_edge_face_handle_candidates_from_sets(
+    edge_rows: &[EdgeRow],
+    face_handles: &[HashSet<u32>],
+    serialized: &[[usize; 2]],
+) -> Option<Vec<Vec<usize>>> {
+    if edge_rows.len() != serialized.len()
+        || serialized
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_handles.len())
+    {
+        return None;
+    }
+    for (row, faces) in edge_rows.iter().zip(serialized) {
+        if !row
+            .handles
+            .iter()
+            .all(|handle| face_handles[faces[0]].contains(handle))
+        {
+            return None;
+        }
+    }
+    let mut candidates = alloc_filled(
+        edge_rows.len(),
+        Vec::new(),
+        "catia_repeated_edge_handle_face_candidates",
+    )
+    .ok()?;
+    for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
+        if faces[0] != faces[1] || row.handles.len() < 2 {
+            continue;
+        }
+        let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
+        let mut matching = face_handles
+            .iter()
+            .enumerate()
+            .filter(|(face, _)| *face != faces[0])
+            .filter_map(|(face, handles)| {
+                let shared = unique_handles
+                    .iter()
+                    .filter(|handle| handles.contains(handle))
+                    .count();
+                let qualifies = if unique_handles.len() >= 4 {
+                    shared >= 3 && shared >= unique_handles.len().div_ceil(2)
+                } else {
+                    shared == unique_handles.len()
+                };
+                qualifies.then_some(face)
+            })
+            .collect::<Vec<_>>();
+        if unique_handles.len() >= 4 && matching.len() != 1 {
+            matching.clear();
+        }
+        candidates[edge] = matching;
+    }
+    Some(candidates)
+}
+
+/// Return positive second-face candidates from the global trim-handle
+/// namespace. The relation abstains for the complete file unless every edge
+/// row is contained by its first serialized face packet.
+pub(crate) fn standard_repeated_edge_face_handle_candidates(
+    bytes: &[u8],
+    serialized: &[[usize; 2]],
+) -> Option<Vec<Vec<usize>>> {
+    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
+    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
+        .map(|(rows, _, width)| (rows, width))
+        .or_else(|| {
+            parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
+        })?;
+    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+    let face_handles = trims
+        .into_iter()
+        .map(|trim| trim.handles.into_iter().collect::<HashSet<_>>())
+        .collect::<Vec<_>>();
+    repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
 }
 
 pub(crate) fn unique_duplicate_face_assignment<F>(
@@ -675,12 +785,20 @@ pub(crate) struct StandardMeshBoundaryContext {
 
 impl StandardMeshBoundaryContext {
     pub(crate) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
+        Self::parse_ports(bytes, edge_faces, false)
+    }
+
+    pub(crate) fn parse_ports(
+        bytes: &[u8],
+        edge_faces: &[[usize; 2]],
+        global_handle_ports: bool,
+    ) -> Option<Self> {
         let analysis = Arc::new(standard_mesh_analysis(bytes)?);
         if analysis.edge_rows.len() != edge_faces.len() {
             return None;
         }
         let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = edge_port_identities(bytes)?;
+        let local_ports = solver_ports(bytes, global_handle_ports)?;
         let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
         let edge_runs = mesh_edge_runs(&analysis)?;
         let cycle_lengths = analysis
@@ -3214,3 +3332,6 @@ pub(crate) fn motif_port_points(
         && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
         .then_some(seen)
 }
+
+#[cfg(test)]
+mod tests;

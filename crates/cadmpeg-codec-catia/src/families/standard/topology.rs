@@ -276,7 +276,7 @@ impl StandardTopology {
 /// The boundary meaning of an edge-row handle sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EdgeBoundaryLayout {
-    /// The first and last handles are endpoint ports outside the trim-handle
+    /// The first and last handles are endpoint ports in the global trim-handle
     /// namespace; the handles between them match the boundary.
     InteriorWithFlankingCorners,
     /// Every handle belongs to the trim boundary, including both endpoints.

@@ -306,7 +306,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
 
-**Known.** `catia.md` §5.4 "Full-form standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation. The same section defines evidence-free topology automorphisms that can jointly permute unbound edge rows and coordinate-row labels without assigning a byte-level coordinate allocation.
+**Known.** `catia.md` §5.4 "One trim-handle namespace spans the complete width-selected trim chain" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation. The same section defines evidence-free topology automorphisms that can jointly permute unbound edge rows and coordinate-row labels without assigning a byte-level coordinate allocation.
 
 **Need.** We must know the allocation relation for byte-faithful writing.
 
@@ -556,70 +556,6 @@ binding remains open pending the allocation-group relation.
 **Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row because it is not a serialized endpoint identity, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `catia.md` §5.6 "Same-incidence spline or line rows of one curve family" gives rank-binding stages in the same section. The production decoder retains every endpoint pair through mesh search and applies the rank rule only to a complete candidate; rank does not supply a source endpoint identity.
 
 **Need.** We must establish the native relation, or a format-defined gauge invariant, that distinguishes a physical row from another row in the same complete relation. Allocation rank alone does not establish a serialized endpoint identity.
-
-### SN-37. Repeated edge-face slot assignment
-
-**Question.** Which admitted relation selects the second face for a repeated standard edge row when more than one alternate face remains after trim occurrence and endpoint closure pruning?
-
-**Known.** `catia.md` §5.5 retains the repeated slot as a face domain. The production solver carries each non-empty alternate set into a bounded joint assignment phase, applies each concrete face pair to trim coverage and endpoint incidence, and preserves multiple complete assignments as ambiguity. An empty alternate set retains the serialized same-face wildcard. Before quotient preparation, a concrete assignment must also have trim-domain support for every edge on both selected incident faces; this is a necessary branch rejection, not a second-face selector.
-
-The owner extractor also retains positive face-to-loop-to-edge membership from structurally complete `b5 03 5f` and `b5 03 62` records when a referenced surface or p-curve prevents full object-stream topology transfer. This evidence can fill the second slot only for one distinct alternate carrier; an incomplete graph does not prove that no other owner exists.
-
-For a concrete candidate pair of distinct NURBS carriers, `catia.md` §5.6 supplies a positive shared-boundary witness for an identity-free Bspline row and narrows its endpoint-pair domain when both endpoints lie on that boundary. The rule is candidate-specific and does not select the candidate face pair.
-
-The shared-boundary narrowing is now group-guarded for repeated identity-free Bspline rows with the same unordered face pair. Every row must have a non-empty witness relation, and the union of retained witness pairs must be at least as large as the row group; otherwise the decoder preserves every original endpoint domain. This keeps carrier-boundary evidence from selecting a trimmed row occurrence.
-
-**Need.** A native owner or other admitted relation that selects one concrete second face when the joint topology constraints admit more than one assignment.
-
-**Conflict.** None.
-
-The all-compact owner-box witness does not close the repeated-slot question.
-In the 187-face topology, its unique face candidates are `56`, `58`, `63`,
-`64`, `67`, `76`, `77`, `79`, `82`, `85`, `87`, `90`, `92`, and `95`; the
-residual seam components use face pairs `[37,36]`, `[39,38]`, and `[41,40]`.
-No all-compact packet or adjacent face-node relation names those six faces,
-and the owner reference lanes do not name a standard edge-row ordinal. The
-boxes can corroborate a face candidate when a separate edge relation exists,
-but they do not select a second face for these repeated rows.
-
-The fixed-nine reference lanes do not close this gap. In the inspected
-population, the four reference positions produce 183 singleton values, 46
-double uses, 15 triple uses, and one quadruple use across 81 packets in source
-extent `15`; the allocation scope is absent. No face-domain assignment is
-derived from those values. Verdict: repeated edge-face slot assignment
-remains open.
-
-A second FBB-only stream has 84 face rows and 166 standard supports. Its
-`0x02` edge row at ordinal `12` serializes the repeated face pair `[0,0]` and
-has the alternate face domain `[1,2,3,76,79]`. The stream has no parseable B5
-object graph, so it supplies no native edge owner for that row. The `05 08 01`
-vertex lane and the FBB endpoint rows provide endpoint candidates but no
-face-owner relation. Its trim walk finds exactly one occurrence for edge `12`,
-on face `0`, so `resolve_edge_faces_from_runs` correctly retains `[0,0]`; a
-single trim occurrence does not assign the second face. The endpoint domain is
-the ten unordered pairs over points `0..4`, and the face domain remains the
-five alternatives `[1,2,3,76,79]`. A concrete-branch walk still rejects at
-quotient preparation on an independent closed Bspline row at ordinal `22`:
-its only endpoint pair is `[6,7]`, while both roots in its settled port
-component have domain `{6}`. Forcing either concrete surviving face branch
-does not change that rejection. The narrow rule in `catia.md` §5.5 now
-withholds placement and boundary-pruned endpoint domains from the open row
-before joint assignment, and the solver rejects a concrete face branch when
-either selected face has no trim-domain assignment containing the row. This
-narrows the candidate set without selecting its second face. The surviving
-branch still has two non-equivalent endpoint assignments under the admitted
-evidence, so the evidence does not select its second face. Verdict: repeated
-edge-face slot assignment remains open.
-
-A third FBB-only stream has 321 face rows and 928 standard supports. Its
-`0x60` support row at BREP-stream offset `1129551` (ordinal `109`, tag
-`139216`) serializes `[39,39]` and retains alternate face domain `[44]`. The
-admitted B5 edge object `139216` has one loop occurrence only: face object
-`139333`, loop object `139334`, member position `4`. That occurrence names the
-serialized face and supplies no second-face occurrence. The native owner
-relation is therefore partial; `apply_standard_native_edge_faces` correctly
-leaves `[39,39]`, and the joint solver must retain `[44]` as the unresolved
-second-face domain. Verdict: repeated edge-face slot assignment remains open.
 
 ## 4. Object stream
 
