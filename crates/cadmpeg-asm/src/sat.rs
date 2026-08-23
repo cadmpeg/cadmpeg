@@ -274,6 +274,12 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
 fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
+    if line1.len() != 4 {
+        return Err(SatError {
+            offset: at,
+            reason: "save-format header line must contain four fields".to_string(),
+        });
+    }
     let save_format_version = header_int(line1.first(), at, "save format")?;
     let record_count = header_int(line1.get(1), at, "record count")?;
     let entity_count = header_int(line1.get(2), at, "entity count")?;
@@ -295,9 +301,21 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let product_family = counted_string(line2, &mut cursor, at, "product family")?;
     let product_version = counted_string(line2, &mut cursor, at, "product version")?;
     let save_date = counted_string(line2, &mut cursor, at, "save date")?;
+    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
+        return Err(SatError {
+            offset: at,
+            reason: "product header line must contain three counted strings".to_string(),
+        });
+    }
 
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
+    if line3.len() != 3 {
+        return Err(SatError {
+            offset: at,
+            reason: "tolerance header line must contain three fields".to_string(),
+        });
+    }
     let float = |field: Option<&&[u8]>, what: &str| -> Result<f64, SatError> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
@@ -1459,6 +1477,29 @@ mod tests {
             let error = parse(&stream).expect_err("invalid scale must fail");
             assert_eq!(error.offset, scale_start);
             assert_eq!(error.reason, "header scale must be finite and positive");
+        }
+    }
+
+    #[test]
+    fn header_lines_reject_extra_fields() {
+        let valid = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let lines = valid
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        assert!(lines.len() >= 3);
+
+        for (line, extra) in [(0, b" 9".as_slice()), (1, b" extra"), (2, b" 9")] {
+            let mut malformed = Vec::new();
+            for (ordinal, bytes) in lines.iter().enumerate() {
+                if ordinal == line {
+                    malformed.extend_from_slice(&bytes[..bytes.len() - 1]);
+                    malformed.extend_from_slice(extra);
+                    malformed.push(b'\n');
+                } else {
+                    malformed.extend_from_slice(bytes);
+                }
+            }
+            assert!(parse(&malformed).is_err(), "header line {line}");
         }
     }
 

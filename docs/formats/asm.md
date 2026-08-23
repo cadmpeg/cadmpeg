@@ -643,11 +643,11 @@ A `.sat` or `.smt` stream carries the same entity model as a binary stream in a 
 
 Three header lines precede the records.
 
-The first line holds the four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
+The first line holds exactly four binary header words as ASCII integers in the binary order: the save-format version, the record-count word (`0` when unwritten), the entity-count word, and the flags word. The words keep their binary semantics (§1): the entity-count word is the RecordTable index of the first referenced record, flag bit 0 marks a history partition, and flag bits 1 to 7 hold the revision. Trailing spaces after the flags word are padding.
 
-The second line holds the three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix.
+The second line holds exactly three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
-The third line holds the three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
+The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
 
 **Unit rule.** In the text encoding, `scale` is a finite positive number and is the stream's length unit in millimetres per unit. Zero, a negative number, infinity, or NaN makes the stream malformed. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
 
