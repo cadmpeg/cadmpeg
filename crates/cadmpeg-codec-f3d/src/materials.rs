@@ -14,7 +14,7 @@ use std::io::{Cursor, Write};
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
@@ -115,14 +115,21 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     }
     let instance = page_logical(&logical)?;
     let mut catalog = RECORD_MARKER.to_vec();
-    for value in [
-        schema,
-        name,
-        "Default",
+    push_lp(&mut catalog, schema)?;
+    catalog.push(0);
+    push_lp(&mut catalog, name)?;
+    push_lp(&mut catalog, name)?;
+    catalog.extend_from_slice(&2_u32.to_le_bytes());
+    push_lp(
+        &mut catalog,
         appearance.category.as_deref().unwrap_or("Generated"),
-    ] {
-        push_lp(&mut catalog, value)?;
-    }
+    )?;
+    push_lp(&mut catalog, "Default")?;
+    push_lp(&mut catalog, "")?;
+    catalog.extend_from_slice(&0_u32.to_le_bytes());
+    catalog.extend_from_slice(&1_u32.to_le_bytes());
+    push_lp(&mut catalog, "")?;
+    let catalog = page_logical(&catalog)?;
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("AssetData/InstanceProperties.bin", options)
@@ -1726,45 +1733,79 @@ fn definition_catalog<'a>(
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let bytes = entry.window();
-    let marker = b"\x80\x00\x01\x00";
-    let starts: Vec<usize> = bytes
-        .windows(marker.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == marker).then_some(offset))
-        .collect();
+    let frames = cadmpeg_protein::record_frames(entry.window()).ok_or_else(|| {
+        CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
+    })?;
     let mut out = std::collections::HashMap::new();
-    for (index, start) in starts.iter().enumerate() {
-        let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
-        let mut strings = Vec::new();
-        let mut position = *start + marker.len();
-        while position + 4 <= end && strings.len() < 8 {
-            let length = View::u32_le_at(bytes, position)
-                .expect("invariant: position + 4 <= end <= bytes.len()")
-                as usize;
-            if (1..=200).contains(&length) && position + 4 + length <= end {
-                let raw = &bytes[position + 4..position + 4 + length];
-                if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
-                    strings.push(String::from_utf8_lossy(raw).into_owned());
-                    position += 4 + length;
-                    continue;
-                }
-            }
-            position += 1;
-        }
-        if strings
-            .first()
-            .is_some_and(|schema| schema.ends_with("Schema"))
+    for frame in frames {
+        let definition = decode_definition_catalog_record(&frame.bytes)?;
+        if out
+            .insert(
+                definition.asset_id.clone(),
+                (definition.schema, Some(definition.category)),
+            )
+            .is_some()
         {
-            if let Some(asset_id) = strings.get(1) {
-                out.insert(
-                    asset_id.clone(),
-                    (strings[0].clone(), strings.get(3).cloned()),
-                );
-            }
+            return Err(CodecError::Malformed(format!(
+                "Protein definition catalog repeats asset {}",
+                definition.asset_id
+            )));
         }
     }
     Ok(out)
+}
+
+struct DefinitionCatalogRecord {
+    schema: String,
+    asset_id: String,
+    category: String,
+}
+
+fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
+    let malformed =
+        || CodecError::Malformed("Protein definition catalog record is malformed".into());
+    if !record.starts_with(RECORD_MARKER) {
+        return Err(malformed());
+    }
+    let mut position = RECORD_MARKER.len();
+    let schema = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    if record.get(position) != Some(&0) {
+        return Err(malformed());
+    }
+    position += 1;
+    let asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let _base_asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let version = View::u32_le_at(record, position).ok_or_else(&malformed)?;
+    position += 4;
+    if version != 2 {
+        return Err(malformed());
+    }
+    let category = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let _group = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let _description = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    skip_catalog_strings(record, &mut position)?;
+    skip_catalog_strings(record, &mut position)?;
+    if position != record.len() {
+        return Err(malformed());
+    }
+    Ok(DefinitionCatalogRecord {
+        schema,
+        asset_id,
+        category,
+    })
+}
+
+fn skip_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), CodecError> {
+    let malformed =
+        || CodecError::Malformed("Protein definition catalog record is malformed".into());
+    let count = View::u32_le_at(record, *position).ok_or_else(&malformed)?;
+    *position += 4;
+    let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
+        .ok_or_else(&malformed)?;
+    for _ in 0..count {
+        take_lp_utf8(record, position).ok_or_else(&malformed)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn nested_entry<'a>(

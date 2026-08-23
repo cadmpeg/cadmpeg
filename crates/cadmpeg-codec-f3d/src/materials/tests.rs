@@ -67,6 +67,39 @@ fn resolved_body_binding(
 }
 
 #[test]
+fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let category: String = std::iter::repeat_n('x', 0x1_0080).collect();
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "GenericSchema");
+    logical.push(0);
+    lp(&mut logical, "Prism-001");
+    lp(&mut logical, "Prism-001");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, &category);
+    lp(&mut logical, "Default");
+    lp(&mut logical, "Generated appearance");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "");
+
+    let paged = super::page_logical(&logical).expect("page catalog record");
+    let frames = cadmpeg_protein::record_frames(&paged).expect("frame catalog pages");
+    let [frame] = frames.as_slice() else {
+        panic!("marker-shaped length prefix must remain inside one logical record")
+    };
+    let decoded = super::decode_definition_catalog_record(&frame.bytes)
+        .expect("decode framed definition record");
+    assert_eq!(decoded.schema, "GenericSchema");
+    assert_eq!(decoded.asset_id, "Prism-001");
+    assert_eq!(decoded.category, category);
+}
+
+#[test]
 fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
     let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
     let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {

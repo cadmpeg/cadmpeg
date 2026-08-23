@@ -36,6 +36,21 @@ A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as 
 
 A new start page, continuation page, or terminal page without the required current-record state is invalid. A stream ending with an open record is valid: the last open record is complete. A record-start page also ends the record before it.
 
-## 4. Logical record
+## 4. Instance logical record
 
 A valid logical record begins with four length-prefixed UTF-8 strings: schema identifier, asset GUID, base asset identifier, and `AssetLibID`. The value block that follows is the remaining members of the schema inheritance closure. Property order, carriers, connection blocks, and omitted inherited members are schema-driven and have no fixed byte offsets.
+
+## 5. Definition-iterator logical record
+
+A `DefinitionIteratorProperties.bin` logical record has this sequence:
+
+1. record marker `80 00 01 00`;
+2. length-prefixed UTF-8 schema identifier, followed by one zero byte;
+3. length-prefixed UTF-8 asset identifier;
+4. length-prefixed UTF-8 base asset identifier;
+5. little-endian u32 format version, equal to `2`;
+6. length-prefixed UTF-8 category, group, and description;
+7. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
+8. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
+
+The record ends after the last preview path. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and category.
