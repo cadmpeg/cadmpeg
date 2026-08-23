@@ -786,6 +786,7 @@ pub(crate) fn entity_primary_end(
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 19) => Some(segmented_visibility_primary_end(record)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
+        (402, 21) => Some(new_dimensioned_geometry_primary_end(record)),
         (404, 0 | 1) => Some(drawing_primary_end(record, entry.form)),
         (406, 1 | 14) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
@@ -1327,6 +1328,13 @@ fn dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|count| count.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn new_dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    positive_counted_primary_end(record, 2, 6, 5)
 }
 
 fn flow_associativity_primary_end(record: &ParameterRecord, context_count: i64) -> usize {

@@ -11048,6 +11048,213 @@ fn type402_form13_malformed_fields_do_not_enable_generic_recovery() {
 }
 
 #[test]
+fn type402_form21_entity_table_boundary_follows_geometry_blocks() {
+    for (geometry_count, expected_start) in [(1_usize, 11_usize), (2, 16)] {
+        let association = directory_target(1, 212);
+        let dimension = directory_target(5, 216);
+        let geometry_1 = directory_target(7, 116);
+        let geometry_2 = directory_target(9, 110);
+        let mut source = directory_target(3, 402);
+        source.form = 21;
+        let directory = BTreeMap::from([
+            (1, &association),
+            (3, &source),
+            (5, &dimension),
+            (7, &geometry_1),
+            (9, &geometry_2),
+        ]);
+        let mut values = vec![TokenValue::Integer(0); expected_start + 3];
+        values[0] = 402.into();
+        values[1] = 1.into();
+        values[2] = i64::try_from(geometry_count).unwrap().into();
+        values[3] = 5.into();
+        values[4] = 4.into();
+        values[5] = TokenValue::Real(0.25);
+        for (offset, sequence) in [7_i64, 9].into_iter().take(geometry_count).enumerate() {
+            let start = 6 + offset * 5;
+            values[start] = sequence.into();
+            values[start + 1] = 0.into();
+            values[start + 2] = TokenValue::Real(offset as f64);
+            values[start + 3] = TokenValue::Real(1.0);
+            values[start + 4] = TokenValue::Real(2.0);
+        }
+        values[expected_start] = 1.into();
+        values[expected_start + 1] = 1.into();
+        values[expected_start + 2] = 0.into();
+
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(3, values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "NG={geometry_count}");
+        assert_eq!(analysis.valid_candidate_count, 1, "NG={geometry_count}");
+        let groups = analysis.groups.expect("Type 402 Form 21 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert!(groups.properties.is_empty());
+    }
+}
+
+#[test]
+fn type402_form21_table_boundary_precedes_valid_generic_alternative() {
+    let association = directory_target(1, 212);
+    let dimension = directory_target(3, 216);
+    let geometry = directory_target(7, 116);
+    let mut source = directory_target(5, 402);
+    source.form = 21;
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &dimension),
+        (5, &source),
+        (7, &geometry),
+    ]);
+    let values = vec![
+        402.into(),
+        1.into(),
+        1.into(),
+        3.into(),
+        4.into(),
+        TokenValue::Real(0.25),
+        7.into(),
+        0.into(),
+        TokenValue::Real(0.0),
+        TokenValue::Real(1.0),
+        2.into(),
+        1.into(),
+        1.into(),
+        0.into(),
+    ];
+    let analysis = analyze_trailing_pointer_groups(&token_parameter_record(5, values), &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 402 Form 21 table boundary");
+    assert_eq!(groups.token_start, 11);
+    assert_eq!(groups.associations, vec![1]);
+    assert!(groups.properties.is_empty());
+}
+
+#[test]
+fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let dimension = directory_target(3, 216);
+    let geometry = directory_target(7, 116);
+    let mut source = directory_target(5, 402);
+    source.form = 21;
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &dimension),
+        (5, &source),
+        (7, &geometry),
+    ]);
+    let cases = vec![
+        vec![
+            402.into(),
+            0.into(),
+            1.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            0.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            (-1_i64).into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            TokenValue::String(b"1".to_vec()),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+        vec![402.into(), 1.into()],
+        vec![
+            402.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+        ],
+        vec![
+            402.into(),
+            1.into(),
+            1.into(),
+            3.into(),
+            4.into(),
+            TokenValue::Real(0.25),
+            7.into(),
+            0.into(),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(2.0),
+            1.into(),
+        ],
+    ];
+
+    for values in cases {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(5, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type408_fixed_primary_boundary_follows_translation_and_scale() {
     let association = directory_target(3, 212);
     let source = directory_target(7, 408);
