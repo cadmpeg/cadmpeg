@@ -340,6 +340,12 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     }
     let resabs = float(line3.get(1), "resabs")?;
     let resnor = float(line3.get(2), "resnor")?;
+    if !resabs.is_finite() || resabs < 0.0 || !resnor.is_finite() || resnor < 0.0 {
+        return Err(SatError {
+            offset: at,
+            reason: "header tolerances must be finite and nonnegative".to_string(),
+        });
+    }
     Ok(TextHeader {
         save_format_version,
         record_count,
@@ -1483,6 +1489,36 @@ mod tests {
             let error = parse(&stream).expect_err("invalid scale must fail");
             assert_eq!(error.offset, scale_start);
             assert_eq!(error.reason, "header scale must be finite and positive");
+        }
+    }
+
+    #[test]
+    fn invalid_header_tolerances_are_rejected() {
+        for (resabs, resnor) in [
+            ("-1", "1e-10"),
+            ("NaN", "1e-10"),
+            ("inf", "1e-10"),
+            ("1e-6", "-1"),
+            ("1e-6", "NaN"),
+            ("1e-6", "inf"),
+        ] {
+            let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+            let tolerance_start = stream
+                .windows(b"1 1e-06 1e-10".len())
+                .position(|window| window == b"1 1e-06 1e-10")
+                .expect("tolerance line");
+            let replacement = format!("1 {resabs} {resnor}");
+            stream.splice(
+                tolerance_start..tolerance_start + b"1 1e-06 1e-10".len(),
+                replacement.bytes(),
+            );
+
+            let error = parse(&stream).expect_err("invalid tolerance must fail");
+            assert_eq!(error.offset, tolerance_start);
+            assert_eq!(
+                error.reason,
+                "header tolerances must be finite and nonnegative"
+            );
         }
     }
 

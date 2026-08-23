@@ -647,7 +647,7 @@ The first line holds exactly four binary header words as ASCII integers in the b
 
 The second line holds exactly three product strings — product family, product version, and save date — as counted strings. A counted string in a header line is a decimal byte count, one whitespace separator byte, and that many bytes; header lines do not use the record encoding's `@` prefix. Only whitespace can follow the third string.
 
-The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`.
+The third line holds exactly three kernel doubles in the binary order: `scale`, `resabs`, and `resnor`. The `resabs` and `resnor` tolerances are finite nonnegative error bounds. A negative value, infinity, or NaN makes the stream malformed.
 
 **Unit rule.** In the text encoding, `scale` is a finite positive number and is the stream's length unit in millimetres per unit. Zero, a negative number, infinity, or NaN makes the stream malformed. A model-space length equals its stored value multiplied by `scale` millimetres. This differs from the binary encoding, whose lengths are centimetres and whose `scale` word is not a coordinate multiplier (§4). Dimensionless values — unit vectors, ratios, angles, knots, parameters, and pcurve coordinates — do not take the unit.
 
