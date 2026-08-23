@@ -313,6 +313,25 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
 }
 
 #[test]
+fn operation_state_group_table_handles_a_long_adjacent_group_run() {
+    const GROUP_COUNT: usize = 4096;
+    let mut bytes = Vec::with_capacity(GROUP_COUNT * 3 + 12);
+    for _ in 0..GROUP_COUNT {
+        bytes.extend([0x01, 0x00, 0x00]);
+    }
+    let map_start = bytes.len();
+    bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
+    bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
+
+    let table = super::operation_state_group_table_before_counter_map(&bytes, map_start, 0)
+        .expect("long adjacent group run");
+    assert_eq!(table.groups.len(), GROUP_COUNT);
+    assert_eq!(table.offset, 0);
+    assert_eq!(table.end_offset, map_start);
+    assert!(table.trailing_bytes.is_empty());
+}
+
+#[test]
 fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     let bytes = [
         0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,

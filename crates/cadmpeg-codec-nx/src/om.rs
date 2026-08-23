@@ -7413,6 +7413,13 @@ fn operation_state_group_table_before_counter_map(
     map_start: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroupTable<'_>> {
+    #[derive(Clone, Copy)]
+    struct GroupPath {
+        last_candidate: usize,
+        length: usize,
+        first_start: usize,
+    }
+
     if map_start > bytes.len() {
         return None;
     }
@@ -7431,13 +7438,19 @@ fn operation_state_group_table_before_counter_map(
     }
     candidates.sort_by_key(|(start, _, end)| (*end, *start));
 
-    let mut best_by_end = BTreeMap::<usize, Vec<usize>>::new();
+    let mut predecessors = std::iter::repeat_n(None, candidates.len()).collect::<Vec<_>>();
+    let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
     for (candidate_index, (start, _, end)) in candidates.iter().enumerate() {
-        let mut path = best_by_end.get(start).cloned().unwrap_or_default();
-        path.push(candidate_index);
+        let previous = best_by_end.get(start).copied();
+        let path = GroupPath {
+            last_candidate: candidate_index,
+            length: previous.map_or(1, |path| path.length + 1),
+            first_start: previous.map_or(*start, |path| path.first_start),
+        };
+        predecessors[candidate_index] = previous.map(|path| path.last_candidate);
         let replace = best_by_end.get(end).is_none_or(|current| {
-            path.len() > current.len()
-                || (path.len() == current.len() && candidates[path[0]].0 < candidates[current[0]].0)
+            path.length > current.length
+                || (path.length == current.length && path.first_start < current.first_start)
         });
         if replace {
             best_by_end.insert(*end, path);
@@ -7450,12 +7463,19 @@ fn operation_state_group_table_before_counter_map(
         } else {
             map_start
         };
-    let path = best_by_end.get(&trailing_start)?;
+    let terminal = best_by_end.get(&trailing_start).copied()?;
+    let mut path = Vec::with_capacity(terminal.length);
+    let mut candidate = Some(terminal.last_candidate);
+    while let Some(candidate_index) = candidate {
+        path.push(candidate_index);
+        candidate = predecessors[candidate_index];
+    }
+    path.reverse();
     let first = *path.first()?;
     let last = *path.last()?;
     let groups = path
-        .iter()
-        .map(|candidate| candidates[*candidate].1.clone())
+        .into_iter()
+        .map(|candidate| candidates[candidate].1.clone())
         .collect();
     Some(OperationStateGroupTable {
         offset: base_offset.checked_add(candidates[first].0)?,
