@@ -388,6 +388,47 @@ fn decode_types_template_and_visible_blank_line_fonts() {
 }
 
 #[test]
+fn line_font_definition_requires_its_definition_directory_fields() {
+    let cases = [
+        ("subordinate", "00010200", &[][..], &[][..], &[][..]),
+        ("structure", "00000200", &[(1, 7)][..], &[][..], &[][..]),
+        ("line weight", "00000200", &[][..], &[(1, 1)][..], &[][..]),
+        ("color", "00000200", &[][..], &[][..], &[(1, 1)][..]),
+    ];
+
+    for (name, status, structures, line_weights, colors) in cases {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_directory_fields(
+                    &[OwnedTestEntity {
+                        entity_type: 304,
+                        form: 2,
+                        label: "PATTERN".into(),
+                        status,
+                        parameters: "304,2,1,2,1H3;".into(),
+                    }],
+                    colors,
+                    &[(1, 1)],
+                    &[],
+                    line_weights,
+                    structures,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+                    && loss.message.contains("line-font definition")
+            }),
+            "invalid {name} was projected: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn decode_rejects_out_of_table_text_template_font() {
     let result = IgesCodec
         .decode(

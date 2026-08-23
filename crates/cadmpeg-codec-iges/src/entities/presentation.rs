@@ -104,6 +104,15 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
+fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.status.subordinate == 0
+        && entry.status.use_flag == 2
+        && entry.structure == 0
+        && (1..=5).contains(&entry.line_font)
+        && entry.line_weight == 0
+        && entry.color == 0
+}
+
 fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
     match dialect {
         Dialect::V4_0 | Dialect::V5_0 => {
@@ -339,7 +348,7 @@ pub(super) fn project(
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.status.use_flag != 2 || !(1..=5).contains(&entry.line_font) {
+        if !line_font_definition_directory_valid(entry) {
             losses.push(loss(
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
