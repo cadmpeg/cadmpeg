@@ -122,3 +122,56 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
     assert_eq!(members[0].historical_entity_ref, Some(42));
     assert_eq!(members[0].historical_state_ids, [2]);
 }
+
+#[test]
+fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
+    let mut topology = AsmHistoricalTopology {
+        faces: vec![10, 11, 12],
+        edges: vec![20],
+        ..Default::default()
+    };
+    let tag = |entity_kind, entity_ref, selector, references: Vec<i64>| {
+        crate::history_records::AsmHistoricalPersistentSubentityTag {
+            entity_kind,
+            entity_ref,
+            selector,
+            token: "rim".into(),
+            design_references: references,
+            ordinal: 0,
+        }
+    };
+    topology.persistent_subentity_tags = vec![
+        tag(AsmHistoricalEntityKind::Face, 10, 7, vec![301]),
+        tag(AsmHistoricalEntityKind::Face, 11, 9, vec![301]),
+        tag(AsmHistoricalEntityKind::Face, 12, 7, vec![302]),
+        tag(AsmHistoricalEntityKind::Edge, 20, 11, vec![301]),
+    ];
+    let mut reference = crate::records::DesignRecipeReference {
+        selector: 0x0100_0080,
+        selector_offset: 0,
+        token: "rim".into(),
+        token_offset: 4,
+        design_reference: 301,
+        design_reference_offset: 8,
+        candidate_faces: vec![cadmpeg_ir::ids::FaceId("wrong-active-face".into())],
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    };
+
+    bind_historical_recipe_reference_candidates(&mut reference, &topology);
+
+    assert_eq!(
+        reference.candidate_faces,
+        [
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10)),
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(11)),
+        ]
+    );
+    assert_eq!(
+        reference.candidate_edges,
+        [cadmpeg_ir::ids::EdgeId(crate::ids::brep_entity_id(20))]
+    );
+    assert!(reference.alternate_selector_faces.is_empty());
+    assert!(reference.alternate_selector_edges.is_empty());
+}

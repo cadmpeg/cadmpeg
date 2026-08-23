@@ -1476,6 +1476,24 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 1,
                 AsmHistoricalTopology {
                     faces: vec![7, 8, 9, 10],
+                    persistent_subentity_tags: [
+                        (7, "3", 203),
+                        (8, "3", 203),
+                        (9, "-1", 199),
+                        (10, "-1", 199),
+                    ]
+                    .into_iter()
+                    .map(|(entity_ref, token, design_reference)| {
+                        crate::history_records::AsmHistoricalPersistentSubentityTag {
+                            entity_kind: AsmHistoricalEntityKind::Face,
+                            entity_ref,
+                            selector: 17,
+                            token: token.into(),
+                            design_references: vec![design_reference],
+                            ordinal: 0,
+                        }
+                    })
+                    .collect(),
                     ..AsmHistoricalTopology::default()
                 },
                 None,
@@ -1557,20 +1575,20 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     );
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
-    let mut ambiguous_source_operand = cylinder_operands[0].clone();
-    ambiguous_source_operand.recipe_references[0]
+    let mut stale_active_operand = cylinder_operands[0].clone();
+    stale_active_operand.recipe_references[0]
         .candidate_faces
         .push(FaceId("f3d:brep/input/brep:entity#998".into()));
-    let mut ambiguous_source_operands = vec![ambiguous_source_operand];
+    let mut stale_active_operands = vec![stale_active_operand];
     bind_face_operand_history_candidates(
-        &mut ambiguous_source_operands,
+        &mut stale_active_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
         &[],
         std::slice::from_ref(&cylinder_history),
         &HashMap::new(),
     );
-    assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
+    assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
     ambiguous_geometry_history.states[0]

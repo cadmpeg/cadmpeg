@@ -7028,6 +7028,7 @@ fn validate_edge_operands<'a>(
     history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
+        &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
     );

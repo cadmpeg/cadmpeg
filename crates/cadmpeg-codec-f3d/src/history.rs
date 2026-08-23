@@ -3463,6 +3463,65 @@ fn exact_face_selection_group<'a>(
     groups.next().is_none().then_some(group)
 }
 
+/// Bind one recipe reference to every live face or edge fragment carrying its
+/// token and Design reference in the recipe-state topology.
+fn bind_historical_recipe_reference_candidates(
+    reference: &mut crate::records::DesignRecipeReference,
+    topology: &AsmHistoricalTopology,
+) {
+    reference.candidate_faces.clear();
+    reference.candidate_edges.clear();
+    reference.alternate_selector_faces.clear();
+    reference.alternate_selector_edges.clear();
+    let live_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let live_edges = topology.edges.iter().copied().collect::<HashSet<_>>();
+    for tag in topology.persistent_subentity_tags.iter().filter(|tag| {
+        tag.token == reference.token && tag.design_references.contains(&reference.design_reference)
+    }) {
+        match tag.entity_kind {
+            AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => reference
+                .candidate_faces
+                .push(cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(
+                    tag.entity_ref,
+                ))),
+            AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => reference
+                .candidate_edges
+                .push(cadmpeg_ir::ids::EdgeId(crate::ids::brep_entity_id(
+                    tag.entity_ref,
+                ))),
+            _ => {}
+        }
+    }
+    reference
+        .candidate_faces
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_faces.dedup();
+    reference
+        .candidate_edges
+        .sort_by(|left, right| left.0.cmp(&right.0));
+    reference.candidate_edges.dedup();
+}
+
+fn historical_recipe_faces(
+    design_reference: i64,
+    topology: &AsmHistoricalTopology,
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let live_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut faces = topology
+        .persistent_subentity_tags
+        .iter()
+        .filter(|tag| {
+            tag.entity_kind == AsmHistoricalEntityKind::Face
+                && live_faces.contains(&tag.entity_ref)
+                && tag.design_references.contains(&design_reference)
+        })
+        .map(|tag| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(tag.entity_ref)))
+        .collect::<Vec<_>>();
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    faces
+}
+
 pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::DesignFaceOperand],
     scopes: &[crate::records::DesignParameterScope],
@@ -3529,6 +3588,26 @@ pub(crate) fn bind_face_operand_history_candidates(
         let Some(topology) = &previous.topology else {
             continue;
         };
+        for reference in &mut operand.recipe_references {
+            bind_historical_recipe_reference_candidates(reference, topology);
+        }
+        if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
+            operand.candidate_faces =
+                historical_recipe_faces(i64::from(*recipe_record_index), topology);
+            operand.unreferenced_candidate_faces = operand
+                .candidate_faces
+                .iter()
+                .filter(|face| {
+                    !operand
+                        .recipe_references
+                        .iter()
+                        .flat_map(|reference| &reference.candidate_faces)
+                        .any(|candidate| candidate == *face)
+                })
+                .cloned()
+                .collect();
+            operand.alternate_selector_candidate_faces.clear();
+        }
         let Some(changed_faces) =
             face_changes_across_state_chain(state, previous_state_id, &states)
         else {
@@ -5159,12 +5238,17 @@ fn edge_recipe_reference_context(
 pub(crate) fn bind_edge_operand_history_candidates(
     operands: &mut [crate::records::DesignEdgeOperand],
     scopes: &[crate::records::DesignParameterScope],
+    recipes: &[crate::records::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
     if projection_was_finalized(histories) {
         return;
     }
+    let recipe_record_indices = recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe.record_index))
+        .collect::<HashMap<_, _>>();
     let mut scope_operand_counts = HashMap::<(String, u32), usize>::new();
     for operand in operands.iter() {
         let Some(stream) = crate::ids::native_stream(&operand.id) else {
@@ -5245,6 +5329,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
         let (Some(result_topology), Some(topology)) = (&state.topology, &previous.topology) else {
             continue;
         };
+        for reference in &mut operand.recipe_references {
+            bind_historical_recipe_reference_candidates(reference, topology);
+        }
+        if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
+            operand.candidate_faces =
+                historical_recipe_faces(i64::from(*recipe_record_index), topology);
+        }
         let states = history_state_index(history);
         let Some(changed_faces) =
             face_changes_across_state_chain(state, previous_state_id, &states)

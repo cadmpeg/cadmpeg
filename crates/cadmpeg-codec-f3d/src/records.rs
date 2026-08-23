@@ -363,18 +363,18 @@ pub struct DesignRecipeReference {
     pub design_reference: i64,
     /// Byte offset of `design_reference`.
     pub design_reference_offset: u64,
-    /// Active solved faces carrying the exact selector/reference pair.
+    /// Recipe-state faces carrying the token and Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
-    /// Active solved edges carrying the exact selector/reference pair.
+    /// Recipe-state edges carrying the token and Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_edges: Vec<EdgeId>,
-    /// Active solved faces carrying the same token and Design reference under
-    /// a different native selector.
+    /// Active-BREP faces carrying the token and Design reference under a
+    /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alternate_selector_faces: Vec<FaceId>,
-    /// Active solved edges carrying the same token and Design reference under
-    /// a different native selector.
+    /// Active-BREP edges carrying the token and Design reference under a
+    /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alternate_selector_edges: Vec<EdgeId>,
 }

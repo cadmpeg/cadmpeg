@@ -4471,6 +4471,7 @@ fn extend_related_design_records(
     crate::history::bind_edge_operand_history_candidates(
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
+        &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
     );
