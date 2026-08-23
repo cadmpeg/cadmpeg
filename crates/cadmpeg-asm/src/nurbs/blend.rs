@@ -1074,12 +1074,17 @@ pub(crate) fn var_blend_spl_sur(
     let shape_tail = cur.take_long()?;
     let RevisionSurfaceTail {
         enumeration: tail_enum,
-        fit_tolerance: cache_fit_tolerance,
+        fit_tolerance: stored_cache_fit_tolerance,
         solved_cache_domains: _,
         parameterization: tail_parameterization,
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    let cache_fit_tolerance = if shape_prefix == 0 {
+        None
+    } else {
+        stored_cache_fit_tolerance
+    };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
     let (secondary_curve, secondary_range) = if cur.take_ident() == Some("null_curve") {

@@ -566,7 +566,7 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
             ..
         } => construction.tail_enum == 2,
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-            construction.tail_enum == 2
+            construction.tail_enum == 2 || construction.shape_prefix == 0
         }
         _ => false,
     }

@@ -374,6 +374,7 @@ pub(crate) fn synthetic_variable_blend_smbh_with_selector(
         v_range,
         FirstRadiusLaw::TwoEnds,
         0,
+        11,
     )
 }
 
@@ -387,6 +388,7 @@ pub(crate) fn synthetic_variable_blend_smbh_with_tail_form(name: &str, tail_form
         [None, None],
         FirstRadiusLaw::TwoEnds,
         tail_form,
+        11,
     )
 }
 
@@ -403,6 +405,7 @@ pub(crate) fn synthetic_variable_blend_smbh_with_interp_radius(
         [None, None],
         FirstRadiusLaw::Interp,
         0,
+        11,
     )
 }
 
@@ -416,6 +419,23 @@ pub(crate) fn synthetic_variable_blend_smbh_with_edge_offset_radius(name: &str) 
         [None, None],
         FirstRadiusLaw::EdgeOffset,
         0,
+        11,
+    )
+}
+
+/// The same cache-bearing stream with an explicit approximation-current value.
+pub(crate) fn synthetic_variable_blend_smbh_with_cache_state(
+    name: &str,
+    shape_prefix: i64,
+) -> Vec<u8> {
+    synthetic_variable_blend_smbh_inner(
+        name,
+        false,
+        None,
+        [None, None],
+        FirstRadiusLaw::TwoEnds,
+        0,
+        shape_prefix,
     )
 }
 
@@ -426,6 +446,7 @@ pub(crate) fn synthetic_variable_blend_smbh_inner(
     v_range: [Option<f64>; 2],
     first_value: FirstRadiusLaw,
     tail_form: i64,
+    shape_prefix: i64,
 ) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -494,7 +515,7 @@ pub(crate) fn synthetic_variable_blend_smbh_inner(
             None => surface.push(0x0b),
         }
     }
-    t_long(&mut surface, 11);
+    t_long(&mut surface, shape_prefix);
     t_dbl(&mut surface, 0.125);
     t_dbl(&mut surface, 0.6);
     t_long(&mut surface, 12);
