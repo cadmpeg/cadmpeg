@@ -480,17 +480,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
 
-**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for uncovered rows.
+**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for uncovered rows. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
 
-**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every uncovered same-incidence group.
-
-### SN-36. Allocation-rank binding rule
-
-**Question.** Does allocation rank bind a same-incidence row, and under which condition?
-
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" states that lexicographic ordering does not bind a row because it is not a serialized endpoint identity, and makes allocation-rank binding a final gauge reduction that follows the mesh constraints. `catia.md` §5.6 "Same-incidence spline or line rows of one curve family" gives rank-binding stages in the same section. The production decoder retains every endpoint pair through mesh search and applies the rank rule only to a complete candidate; rank does not supply a source endpoint identity.
-
-**Need.** We must establish the native relation, or a format-defined gauge invariant, that distinguishes a physical row from another row in the same complete relation. Allocation rank alone does not establish a serialized endpoint identity.
+**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every uncovered same-incidence line or spline group.
 
 ## 4. Object stream
 

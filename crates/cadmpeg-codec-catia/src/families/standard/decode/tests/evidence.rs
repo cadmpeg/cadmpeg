@@ -324,6 +324,28 @@ fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
 }
 
 #[test]
+fn circular_face_interval_choices_select_disjoint_arc_branches() {
+    let tau = std::f64::consts::TAU;
+    let simple = vec![
+        vec![[0.0, 0.125], [0.125, tau]],
+        vec![
+            [3.0, std::f64::consts::PI],
+            [std::f64::consts::PI, tau + 3.0],
+        ],
+    ];
+    let crossing = vec![
+        vec![
+            [0.125, std::f64::consts::PI],
+            [std::f64::consts::PI, tau + 0.125],
+        ],
+        vec![[0.0, 3.0], [3.0, tau]],
+    ];
+
+    assert!(circular_range_choices_have_simple_selection(&simple));
+    assert!(!circular_range_choices_have_simple_selection(&crossing));
+}
+
+#[test]
 fn standard_line_pair_preference_rejects_partial_collinear_overlap() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
@@ -1730,7 +1752,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
 }
 
 #[test]
-fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
+fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() {
     let mut ir = CadIr::empty(Units::default());
     for (index, position) in [
         Point3::new(-2.0, 0.0, 0.0),
@@ -1769,9 +1791,9 @@ fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
     ]
     .into_iter()
     .collect();
-    let supports = [0, 1].map(|index| StandardCurveSupport {
-        pos: index,
-        tag: index as u32,
+    let supports = [(90, 900), (10, 100)].map(|(pos, tag)| StandardCurveSupport {
+        pos,
+        tag,
         faces: [0, 1],
         geometry: StandardCurveGeometry::Line,
     });
@@ -1786,183 +1808,4 @@ fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
-}
-
-#[test]
-fn standard_spline_rows_bind_complete_bipartite_domains_by_allocation_rank() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Bspline,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let mut candidates = [domain.clone(), domain];
-
-    bind_ordered_standard_curve_branches(&supports, &mut candidates);
-
-    assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
-}
-
-#[test]
-fn standard_spline_group_binding_does_not_rank_unfocused_groups() {
-    let supports = [10, 11, 20, 21].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: if tag < 20 { [1, 2] } else { [3, 4] },
-        geometry: StandardCurveGeometry::Bspline,
-    });
-    let unfocused_domain = vec![[0, 1], [0, 2], [3, 1], [3, 2]];
-    let focused_domain = vec![[4, 5], [4, 6], [7, 5], [7, 6]];
-    let mut candidates = [
-        unfocused_domain.clone(),
-        unfocused_domain.clone(),
-        focused_domain.clone(),
-        focused_domain,
-    ];
-
-    bind_ordered_standard_curve_branches_for_group(&supports, &mut candidates, &[2, 3]);
-
-    assert_eq!(candidates[0], unfocused_domain);
-    assert_eq!(candidates[1], unfocused_domain);
-    assert_eq!(candidates[2], vec![[4, 5]]);
-    assert_eq!(candidates[3], vec![[7, 6]]);
-}
-
-#[test]
-fn standard_line_rows_bind_complete_bipartite_domains_by_allocation_rank() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let mut candidates = [domain.clone(), domain];
-
-    bind_ordered_standard_curve_branches(&supports, &mut candidates);
-
-    assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
-}
-
-#[test]
-fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
-    let assignment = [None, None];
-
-    let constrained = standard_curve_branch_candidates_after_partial_assignment(
-        &supports,
-        &candidates,
-        &groups,
-        &assignment,
-        None,
-    )
-    .expect("unresolved branch relation remains admissible");
-
-    assert_eq!(constrained, candidates);
-}
-
-#[test]
-fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
-    let budget = WorkBudget::new(1);
-
-    assert!(standard_curve_branch_candidates_after_partial_assignment(
-        &supports,
-        &candidates,
-        &groups,
-        &[None, None],
-        Some(&budget),
-    )
-    .is_none());
-    assert!(budget.exhausted());
-}
-
-#[test]
-fn standard_branch_ranking_defers_candidate_work_until_frontier_completion() {
-    let supports = [[0, 1], [0, 1], [1, 2], [1, 2]]
-        .into_iter()
-        .enumerate()
-        .map(|(tag, faces)| StandardCurveSupport {
-            pos: tag,
-            tag: tag as u32,
-            faces,
-            geometry: StandardCurveGeometry::Line,
-        })
-        .collect::<Vec<_>>();
-    let first_domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
-    let second_domain = vec![[4, 6], [4, 7], [5, 6], [5, 7]];
-    let candidates = [
-        first_domain.clone(),
-        first_domain,
-        second_domain.clone(),
-        second_domain,
-    ];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
-    let budget = WorkBudget::new(8);
-
-    assert_eq!(
-        standard_curve_branch_candidates_after_partial_assignment(
-            &supports,
-            &candidates,
-            &groups,
-            &[None, None, None, None],
-            Some(&budget),
-        ),
-        Some(candidates.to_vec())
-    );
-    assert!(!budget.exhausted());
-}
-
-#[test]
-fn standard_branch_group_binding_ignores_empty_unrelated_domains() {
-    let supports = [
-        StandardCurveSupport {
-            pos: 10,
-            tag: 10,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        },
-        StandardCurveSupport {
-            pos: 11,
-            tag: 11,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        },
-        StandardCurveSupport {
-            pos: 12,
-            tag: 12,
-            faces: [8, 9],
-            geometry: StandardCurveGeometry::Line,
-        },
-    ];
-    let domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
-    let all_candidates = [domain.clone(), domain, Vec::new()];
-    let mut group_candidates = all_candidates[..2].to_vec();
-
-    bind_standard_curve_branch_group(
-        &supports,
-        &mut group_candidates,
-        &[0, 1],
-        &all_candidates,
-        &[None, None, None],
-    );
-
-    assert_eq!(group_candidates, [vec![[0, 2]], vec![[1, 3]]]);
 }
