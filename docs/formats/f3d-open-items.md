@@ -268,6 +268,18 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
+### MA-09. Definition-iterator catalog record grammar
+
+**Question.** What is the logical-record member sequence of `DefinitionIteratorProperties.bin`, and which members bind an appearance name to its schema and category?
+
+**Known.** `protein.md` §2 "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start" and §3 "Each page is 136 bytes" define the common 16-byte stream header, page state machine, and logical-record extents. The page grammar states that scanning the stored stream for a record-start marker does not recover record extents. `InstanceProperties.bin` already uses this framing in the reader and source-less writer.
+
+**Conflict.** `definition_catalog` in `materials.rs` scans every marker-shaped byte sequence in the stored `DefinitionIteratorProperties.bin`, treats the next marker hit as the record end, and searches byte-by-byte for up to eight plausible LP-ASCII strings. A marker inside a page body can split one record, and page headers can enter the string search. The same file's source-less writer emits the definition catalog as one raw marker plus four strings without the required stream header or pages. The reader can therefore assign a schema or category from a false record, while the writer emits a stream that disagrees with the common Protein framing.
+
+**Need.** The reader must frame definition records through the shared page state machine before it binds catalog fields. A source-less writer must emit the same framed stream. The logical member sequence is required to identify the appearance-name, schema, and category fields without a plausible-string scan.
+
+**Note.** The catalog currently overwrites an appearance's decoded schema and category without a loss when a plausible raw scan matches. A synthetic paged definition record with a marker-shaped payload and a source-less Protein round trip must cover the corrected boundary.
+
 ### MA-05. Canvas crop
 
 **Question.** Which Canvas fields hold the crop state?
