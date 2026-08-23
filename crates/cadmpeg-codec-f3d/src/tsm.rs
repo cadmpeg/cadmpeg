@@ -1085,6 +1085,15 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 &vertex_live,
                 "vertex",
             )?;
+        } else {
+            for required in ["segments", "sweep", "ef", "er", "ff", "fr", "vf", "vr"] {
+                if !block.record_kinds.contains(required) {
+                    return Err(malformed(
+                        name,
+                        format!("radial symmetry block is missing {required}"),
+                    ));
+                }
+            }
         }
     }
     for connectivity in &derived_grips {
@@ -1639,6 +1648,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             error.to_string().contains("unsupported symmetry flags"),
             "unexpected error: {error}"
         );
+
+        let missing = source.replace("105r vf 0 1\n", "");
+        let error = parse_cage(missing.as_bytes()).expect_err("incomplete radial maps");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
 
     #[test]
