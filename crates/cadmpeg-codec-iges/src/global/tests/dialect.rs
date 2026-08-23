@@ -343,6 +343,48 @@ fn the_5_0_model_scale_default_is_not_the_4_0_implicit_zero() {
 }
 
 #[test]
+fn the_5_0_line_weight_fields_support_optional_and_relative_modes() {
+    let mut fields = valid_global_fields();
+    fields[15].clear();
+    fields[16].clear();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert!(losses.is_empty(), "{losses:#?}");
+    let context = parsed.length_context().unwrap();
+    assert!(context.line_weight_number_is_valid(0));
+    assert!(!context.line_weight_number_is_valid(1));
+    assert_eq!(context.line_weight_mm(1), None);
+
+    fields[15] = "3".into();
+    fields[16] = "0".into();
+    let (parsed, losses) = resolve_global_fields(&fields);
+    assert!(losses.is_empty(), "{losses:#?}");
+    let context = parsed.length_context().unwrap();
+    assert!(context.line_weight_number_is_valid(0));
+    assert!(context.line_weight_number_is_valid(3));
+    assert!(!context.line_weight_number_is_valid(4));
+    assert_eq!(context.line_weight_mm(3), None);
+}
+
+#[test]
+fn the_5_0_present_gradations_still_require_field_17() {
+    let mut fields = valid_global_fields();
+    fields[16].clear();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+
+    let (_, losses) = resolve_global_fields(&fields);
+    assert_eq!(
+        report_code_count_from_losses(&losses, IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
+}
+
+#[test]
 fn the_4_0_numeric_implicit_defaults_are_not_later_version_fallbacks() {
     let mut fields = valid_global_fields();
     fields[8].clear();

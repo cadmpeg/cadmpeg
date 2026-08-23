@@ -475,7 +475,7 @@ pub(super) fn project(
         }
     }
     for entry in directory.iter().filter(|entry| entry.line_weight != 0) {
-        if global.line_weight_mm(entry.line_weight).is_none() {
+        if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(
                 entry,
                 "line-weight number is outside the Global gradation range",

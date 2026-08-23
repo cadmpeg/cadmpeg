@@ -140,7 +140,13 @@ pub(crate) struct ProjectedGlobal {
 #[derive(Debug, Clone, Copy)]
 struct LineWeightScale {
     gradations: i64,
-    maximum_width: f64,
+    mode: LineWeightMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LineWeightMode {
+    Absolute { maximum_width: f64 },
+    Relative,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -882,9 +888,9 @@ impl Resolution {
     }
 
     fn line_weight_scale(&mut self, dialect: Dialect) -> Option<LineWeightScale> {
-        let (gradations, gradations_defect) = match self
-            .supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS)
-        {
+        let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS);
+        let gradations_was_supplied = !matches!(&supplied_gradations, Supplied::Absent);
+        let (gradations, gradations_defect) = match supplied_gradations {
             Supplied::Absent if matches!(dialect, Dialect::V4_0) => (None, Some(Defect::Absent)),
             Supplied::Absent => (Some(1), None),
             Supplied::Value(value)
@@ -894,9 +900,20 @@ impl Resolution {
             }
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
-        let (maximum_width, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
+        let (mode, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
+            Supplied::Absent if dialect == Dialect::V5_0 && !gradations_was_supplied => {
+                (None, None)
+            }
+            Supplied::Value(0.0) if dialect == Dialect::V5_0 => {
+                (Some(LineWeightMode::Relative), None)
+            }
+            Supplied::Value(value) if value > 0.0 => (
+                Some(LineWeightMode::Absolute {
+                    maximum_width: value,
+                }),
+                None,
+            ),
             Supplied::Absent => (None, Some(Defect::Absent)),
-            Supplied::Value(value) if value > 0.0 => (Some(value), None),
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         if let Some((index, defect)) = [
@@ -915,7 +932,7 @@ impl Resolution {
         }
         Some(LineWeightScale {
             gradations: gradations?,
-            maximum_width: maximum_width?,
+            mode: mode?,
         })
     }
 
@@ -1210,9 +1227,20 @@ impl ProjectedGlobal {
 
     pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
         let scale = self.line_weight_scale?;
-        (number > 0 && number <= scale.gradations).then_some(
-            number as f64 * scale.maximum_width * self.length_factor_mm / scale.gradations as f64,
-        )
+        if !(number > 0 && number <= scale.gradations) {
+            return None;
+        }
+        let LineWeightMode::Absolute { maximum_width } = scale.mode else {
+            return None;
+        };
+        Some(number as f64 * maximum_width * self.length_factor_mm / scale.gradations as f64)
+    }
+
+    pub(crate) fn line_weight_number_is_valid(&self, number: i64) -> bool {
+        number == 0
+            || self
+                .line_weight_scale
+                .is_some_and(|scale| number > 0 && number <= scale.gradations)
     }
 }
 

@@ -379,6 +379,36 @@ fn decode_resolves_directory_line_weight_to_millimetres() {
 }
 
 #[test]
+fn decode_accepts_v5_relative_directory_line_weights() {
+    let entities = [OwnedTestEntity {
+        entity_type: 110,
+        form: 0,
+        label: "LINE".into(),
+        status: "00000000",
+        parameters: "110,0,0,0,1,0,0;".into(),
+    }];
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,3,0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_line_weights(
+                &entities,
+                global,
+                &[(1, 3)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let display = &result.ir().native.namespace("iges").unwrap().arenas["display_attributes"][0];
+    assert_eq!(display.fields()["line_weight_number"], 3);
+    assert_eq!(display.fields()["line_weight_mm"], serde_json::Value::Null);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::LineWeightScaleUnavailable.kind()
+            || loss.code == crate::loss::IgesLossCode::DisplayDataNotProjected.kind()
+    }));
+}
+
+#[test]
 fn decode_distinguishes_absolute_and_incremental_text_templates() {
     let result = IgesCodec
         .decode(

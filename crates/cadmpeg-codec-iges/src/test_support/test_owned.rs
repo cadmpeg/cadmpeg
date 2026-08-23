@@ -124,6 +124,25 @@ pub(crate) fn owned_test_file_with_global(entities: &[OwnedTestEntity], global: 
     )
 }
 
+pub(crate) fn owned_test_file_with_global_and_line_weights(
+    entities: &[OwnedTestEntity],
+    global: &[u8],
+    line_weights: &[(u32, i64)],
+) -> Vec<u8> {
+    owned_test_file_with_parameter_layout(
+        entities,
+        global,
+        &DirectoryFields {
+            colors: &[],
+            line_fonts: &[],
+            levels: &[],
+            line_weights,
+            structures: &[],
+        },
+        false,
+    )
+}
+
 fn owned_test_file_with_parameter_layout(
     entities: &[OwnedTestEntity],
     global: &[u8],
