@@ -258,10 +258,10 @@ mod width_tests {
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
-        intersection_patch_layout, projection_patch_layout, rolling_ball_patch_layout,
-        silhouette_patch_layout, spring_patch_layout, subset_patch_layout,
-        surface_curve_patch_layout, surface_offset_patch_layout, three_surface_patch_layout,
-        vector_offset_patch_layout, ProjectionTailPatchLayout,
+        intersection_patch_layout, procedural_curve_resolving_refs, projection_patch_layout,
+        rolling_ball_patch_layout, silhouette_patch_layout, spring_patch_layout,
+        subset_patch_layout, surface_curve_patch_layout, surface_offset_patch_layout,
+        three_surface_patch_layout, vector_offset_patch_layout, ProjectionTailPatchLayout,
     };
     use crate::nurbs::proc_surface::{DecodedProceduralSurfaceDefinition, EmbeddedLawExpression};
     use crate::nurbs::reader::NUBS_MARKER;
@@ -1267,6 +1267,45 @@ mod width_tests {
                 .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
 
             assert!((curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn procedural_curve_cache_ignores_nested_support_scope() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "spring_int_cur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+            bytes.push(0x10);
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let decoded = procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width))
+                .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
+
+            assert!((decoded.curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn procedural_curve_with_only_nested_cache_is_withheld() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "spring_int_cur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width)).is_none()
+            );
         }
     }
 

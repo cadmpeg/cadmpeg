@@ -653,19 +653,20 @@ fn procedural_curve_recursive(
     // intcurve opens with its cache — the first block, followed by the fit
     // tolerance; later blocks belong to nested construction machinery
     // (support surfaces, blend spines, progenitors) and are not the carrier.
-    let positions = crate::nurbs::toks::marker_positions(toks);
+    let cache_scope = crate::nurbs::toks::owned_construction_scope(toks).unwrap_or(toks);
+    let positions = crate::nurbs::toks::owned_marker_positions(cache_scope);
     let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
         positions
             .into_iter()
             .rev()
-            .find_map(|position| curve_block(toks, position))
+            .find_map(|position| curve_block(cache_scope, position))
     } else {
         positions
             .into_iter()
-            .find_map(|position| curve_block(toks, position))
+            .find_map(|position| curve_block(cache_scope, position))
     };
     if let Some((curve, end)) = solved {
-        let cache_fit_tolerance = match toks.get(end) {
+        let cache_fit_tolerance = match cache_scope.get(end) {
             Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
             _ => None,
         };
