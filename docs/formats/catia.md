@@ -314,7 +314,8 @@ For mode `1`, `coordinate:f32le[entry_count][3]` follows the header directly. Ta
 Mode `0` compresses repeated coordinate prefixes:
 
 ```text
-control:u8[align4(ceil(entry_count / 4))]
+control:u8[ceil(entry_count / 4)]
+ff
 scalar_count:u32le
 scalar:f32le[scalar_count]
 ```
@@ -328,7 +329,7 @@ Each control byte contains four two-bit codes from least-significant to most-sig
 
 The first row uses code `0`. The decoder must consume exactly `scalar_count` values after reconstructing `entry_count` rows.
 
-In both modes, the first and last handles of an edge-table row select that row's ordered endpoint coordinates. Multiple unequal handles can select bit-identical coordinates and thereby identify one logical vertex. The relation is complete only when the marker is unique, every declared extent is present, every terminal handle is less than `entry_count`, every selected coordinate equals one `05 08 01` row bit-for-bit as f32, and every coordinate row is selected. Other modes use a different coordinate coding.
+In both modes, the first and last handles of an edge-table row select that row's endpoint coordinates in trim-occurrence order. Multiple unequal handles can select bit-identical coordinates and thereby identify one logical vertex. A same-id object-stream edge record gives physical edge direction independently. When both relations exist, their unordered endpoint pairs must agree; the object-stream order remains the physical edge direction. The relation is complete only when the marker is unique, every declared extent is present, every terminal handle is less than `entry_count`, every selected coordinate equals one `05 08 01` row bit-for-bit as f32, and every coordinate row is selected. Other modes use a different coordinate coding.
 
 Each closed face cycle initially has an independent whole-cycle reversal gauge, including each outer and inner boundary of a multiply connected face. A closed edge is a one-coedge boundary whose start and end vertex are identical. Across a shell, the gauges are fixed by requiring the two coedge uses of every shared physical edge to have opposite traversal senses. The resulting Boolean parity system must be consistent across every connected boundary component; reversing a boundary reverses its coedge order, toggles every edge-use sense, and swaps each use's endpoints.
 

@@ -215,8 +215,11 @@ fn compressed_visualization_point_bindings(
     point_by_bits: &HashMap<[u32; 3], usize>,
 ) -> Option<HashMap<u32, usize>> {
     let packed_len = count.checked_add(3)? / 4;
-    let control_len = packed_len.checked_add(3)? & !3;
-    let scalar_count_at = controls.checked_add(control_len)?;
+    let delimiter = controls.checked_add(packed_len)?;
+    if *source.get(delimiter)? != 0xff {
+        return None;
+    }
+    let scalar_count_at = delimiter.checked_add(1)?;
     let scalar_count = usize::try_from(View::u32_le_at(source, scalar_count_at)?).ok()?;
     let scalars = scalar_count_at.checked_add(4)?;
     let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;

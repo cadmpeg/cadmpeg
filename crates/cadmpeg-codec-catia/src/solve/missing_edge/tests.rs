@@ -47,7 +47,7 @@ fn compressed_visualization_points_reuse_coordinate_prefixes() {
     bytes.push(0xff);
     bytes.extend_from_slice(&4u32.to_le_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0xe4, 0xff, 0xff, 0xff]);
+    bytes.extend_from_slice(&[0xe4, 0xff]);
     bytes.extend_from_slice(&6u32.to_le_bytes());
     for scalar in [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0] {
         bytes.extend_from_slice(&scalar.to_le_bytes());
@@ -69,14 +69,15 @@ fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() 
     bytes.push(0xff);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x08, 0xff, 0xff, 0xff]);
+    bytes.extend_from_slice(&[0x08, 0xff]);
     bytes.extend_from_slice(&4u32.to_le_bytes());
     for scalar in [1.0f32, 2.0, 3.0, 4.0] {
         bytes.extend_from_slice(&scalar.to_le_bytes());
     }
 
+    let scalar_count_at = INDEXED_VISUALIZATION_POINT_HEADER_LEN + 2;
     let mut missing_scalar = bytes.clone();
-    missing_scalar[23..27].copy_from_slice(&5u32.to_le_bytes());
+    missing_scalar[scalar_count_at..scalar_count_at + 4].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
         visualization_endpoint_pairs(&missing_scalar, &rows, &points),
         None
@@ -84,6 +85,13 @@ fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() 
 
     bytes[19] |= 1;
     assert_eq!(visualization_endpoint_pairs(&bytes, &rows, &points), None);
+
+    let mut missing_delimiter = bytes;
+    missing_delimiter[20] = 0;
+    assert_eq!(
+        visualization_endpoint_pairs(&missing_delimiter, &rows, &points),
+        None
+    );
 }
 
 #[test]

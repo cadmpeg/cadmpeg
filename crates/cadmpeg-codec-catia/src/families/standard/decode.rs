@@ -3340,16 +3340,12 @@ fn attach_standard_topology(
             ]
         })
         .collect::<Vec<_>>();
-    if let Some(pairs) = missing_edge::standard_edge_rows(spine).and_then(|rows| {
+    let visualization_endpoint_pairs = missing_edge::standard_edge_rows(spine).and_then(|rows| {
         missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
-    }) {
+    });
+    if let Some(pairs) = &visualization_endpoint_pairs {
         if pairs.len() != ordered_endpoint_pairs.len() {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
-        }
-        for (edge, pair) in pairs.into_iter().enumerate() {
-            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
-            }
         }
     }
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
@@ -3502,6 +3498,13 @@ fn attach_standard_topology(
             .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
         {
             if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+        }
+    }
+    if let Some(pairs) = visualization_endpoint_pairs {
+        for (edge, pair) in pairs.into_iter().enumerate() {
+            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
                 return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
             }
         }

@@ -480,9 +480,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
 
-**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for uncovered rows. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
+**Known.** A row covered by a same-id `b5 03 5e` record receives its ordered endpoint pair directly through the positional vertex roster. A row covered by the indexed visualization-point allocation receives its endpoint pair from the first and last trim handles in occurrence order. The object-stream and visualization relations must select the same unordered pair; object-stream order gives physical edge direction. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" defines geometric and closed-incidence constraints for rows uncovered by both relations. Flexible circular rows on one carrier and face select complementary endpoint-defined arc branches simultaneously; only pairwise disjoint or exactly coincident open intervals are admissible.
 
-**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every uncovered same-incidence line or spline group.
+**Need.** We must prove that geometric carrier intervals and closed mesh incidence select one matching for every same-incidence line or spline group without object-stream or indexed visualization endpoint identity.
 
 ## 4. Object stream
 
