@@ -28,8 +28,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
 
-**Note.** The gap-and-length reader and the rolled reader share the reference count, frame length, and leading word. Their owner slots differ by one byte. The fixed frame proves the owner record identities. Scope admission composes that layout with each owner's parameter source kind and rejects a layout whose source kinds name another form.
-
 **Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
 
 ### DR-12. Placement `refType` values
@@ -52,11 +50,9 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
 
-**Known.** `f3d.md` §3.1 "A surface-patch boundary-settings record has" gives the member order, the offsets, and the types. `PatchContinuity` value `0` imposes positional continuity, `1` imposes tangency, and `2` imposes curvature; the value is stored per boundary component, and one patch can impose a different condition on each of its boundaries.
+**Known.** `f3d.md` §3.1 defines the boundary-settings member order, offsets, and types. `PatchContinuity` values `0`, `1`, and `2` select positional, tangent, and curvature continuity per boundary component.
 
-`PatchFlip` does not hold the boundary side. It carries the source value `0` or `2` in the admitted settings records; the value is generation-dependent and does not provide an independent boundary-side selector. `PatchScale` is `-1.0` in every record, so no mapping from it to a neutral value is decidable in either direction. `IsSeedSel` is set on exactly one boundary component of a patch.
-
-**Need.** A neutral patch still needs the boundary side to place its generated surface. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
+**Need.** We must assign the boundary-side selector and the physical quantity represented by `PatchScale`. The mapping must distinguish opposite boundary sides and unequal continuity weights without deriving either value from the generated surface.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 
@@ -84,8 +80,6 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 **Question.** What do the construction-group scalar fields hold? What does the variant byte control? What do the group-role values outside the defined feature-specific sets mean? What does the boolean of the compact flag record a trailing reference names select?
 
 **Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`," gives the member order and the value limits. The group holds a nonzero u32 `ordinal`, a nonnegative finite f64 `scalar`, and a second copy of `ordinal` that one container generation omits. The value of `variant` is zero or one. The same paragraph defines the Extrude roles `0x05`, `0x08`, `0x41`, and `0x11` and defines Fillet role `0x04` as the full-round center-face form. In an Extrude one-sided to-entity extent, role `0x05` is a target-shape group whose members are whole-body recipe operands. In the Fillet full-round form the group has one compact persistent-identity member, one trailing compact flag whose boolean is `true`, and `variant = 0`; the member's bounded-face operand supplies the center face and the flag requests automatic side-face inference. `Hole` construction-operand groups use roles `0x04` and `0x05` without an Extrude role discriminator; typed Hole body and face operands remain direct scope references. Roles `0x81` and `0x100` name no defined operand family, and `0x100` does not fit in one byte. `scalar` is not equal to a compact-parameter value in the same feature scope, with or without unit scaling. `ordinal` is below 256, has one value for all groups of one feature scope, and does not decrease with the record index. The two optional references that follow the member run, and the count that opens the identity run, have no reader. The compact flag record has the automatic-side meaning in the Fillet full-round form; its meaning in other group families remains unsettled.
-
-**Note.** The u32 word before `role` is zero in every record, so a reader that takes `role` as a u64 starting at that word and a reader that takes it as a u32 starting after it name the same value. The decoder takes the u64. Nothing separates the two readings. In a one-sided-to-face `Extrude` or `Extrusion`, role `0x12` is the face-termination group; the same role in a `Thicken` scope is a bounded-face group.
 
 **Need.** We must know the scalar, variant, optional-reference, and compact-flag meanings for the remaining construction-group forms before writing them from a neutral model.
 
@@ -156,8 +150,6 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
-**Note.** Retain circular-pattern scope record indices `2918`, `3342`, `3752`, `4268`, and `16314` as anchors for the unresolved relation members. These indices do not settle the relation fields or operation semantics.
-
 ### DR-30. `sketch_attrib_def` member `ref_b`
 
 **Question.** What does `ref_b`, the second member of the `sketch_attrib_def` payload, name?
@@ -172,7 +164,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Known.** Primary-header offset 29 value `1` selects a circular section. Offset 30 value `1` selects a filled section and value `0` selects a hollow section. For the filled form, scalar ordinal two is the outside diameter and scalar ordinal three is an inactive positive thickness. For the hollow form, scalar ordinal two is the outside diameter and scalar ordinal three is the inward wall thickness, which is less than the outside radius. The settings reference contains a u32 and one finite double. Class-`421`/`257` uses the fixed prefix and four class-`342` 103-byte parameter-owner references at local ordinals zero through three; its legacy reference table has one settings record, one role-`0x0000000500000000` path group, the group's nonempty ordered members, and no other construction group or trailing scope reference. Class-`405`/`259` and class-`475`/`260` legacy `Pipe` prefixes store the result operation, section shape, and filled flag at offsets `26`, `30`, and `31`; the admitted legacy reference form has four owner-local scalar records, one settings record, one role-`0x0000000500000000` path group, its nonempty ordered members, and no other construction group or trailing scope reference.
 
-**Need.** Square and triangular sections still need their selector values and dimension conventions. A writer also needs the complete generated-section selector and scalar mapping for those forms. **Settling specimens:** otherwise equal square and triangular pipes with the hollow option both off and on.
+**Need.** We must define the selector values and dimension conventions for square and triangular sections, and the scalar mapping for hollow variants. Comparing otherwise equal square and triangular pipes with hollow placement alternately inside and outside distinguishes section shape, size convention, and wall-placement fields.
 
 ### DR-61. u64 values in a cross-document `Combine` selector tail
 
@@ -246,8 +238,6 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Known.** `f3d.md` §3.2 "Boolean stores one u8." gives the tag structure `(quantity class << 12) | unit index`, with the unit index one-based, and gives three length tags: `0x200d` is centimetre, `0x200e` is millimetre, and `0x2016` is inch. The decoder converts these three to millimetres and returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so a change of that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag, and one record mixes tags across its own members, so the attribute does not bound the tag set.
 
-**Note.** The neutral model does not have a value with no scale. `distance_property` in `materials.rs` returns no value for an unknown tag, and every caller in `texture_asset` then substitutes `0.0`. A bump depth or a real-world scale authored in an unknown length unit is therefore exported as zero, which is also the unset value, and no loss is recorded. The item's Need and the decoder disagree.
-
 **Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. We must know which further unit indexes the length class `0x2` has, and whether a Distance takes a quantity class other than length.
 
 ### MA-04. Texture map-channel values
@@ -263,8 +253,6 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 **Question.** Which member does a `TextureMap2dSchema` closure omit from its value block?
 
 **Known.** `f3d.md` §3.2 "An `InstanceProperties` record opens with" states that such a block is one four-byte slot shorter than its closure, and that only omitting `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves every surviving member at its schema default. The two are byte-degenerate: both are four-byte integers at adjacent positions, and the surviving pair reads `1` and `0` under either choice, which are the two members' declared defaults in either assignment.
-
-**Note.** The decoder has already taken one of the two choices and exports the result. `instance_property_serializes` in `protein.rs` omits `texture_MapChannel_ID_Advanced`, and its own comment states that the choice is not decidable from the bytes. `texture_asset` in `materials.rs` then reads the surviving first word as `texture_MapChannel` and puts it in the neutral `map_channel`. If the omitted member is the other one, that neutral value is the advanced channel id and the texture binds to the wrong UV set. The record consumes exactly, so the exact-consumption check cannot separate the two.
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
@@ -296,8 +284,6 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
 
-**Note.** The six selector-specific pair runs are retained as native radial maps. Their identifiers remain opaque until the native element namespace is settled.
-
 ### TS-07. `106ek` edge-slot values
 
 **Question.** What edge state does each signed `106ek` value carry?
@@ -305,5 +291,3 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 **Known.** A `106ek value` run follows a `105sym 0` correspondence block. It has exactly one record per `e` slot in edge-record order, including deleted slots. The value is the signed integer `-1`, `0`, or `1`. A deleted edge slot carries `-1`, but populated slots also carry `-1`. The values do not equal crease state, boundary state, symmetry-plane side, or the edge's knot interval. The complete run is retained in the source T-spline program and is reported by opcode when it has no typed neutral carrier.
 
 **Need.** A cage with one controlled editor operation that changes `106ek` while topology, symmetry, crease tags, knot intervals, and selection stay fixed must identify the state. The reader can then bind each value to its positional neutral edge, and the writer can regenerate the run after an edit.
-
-## 5. Test evidence
