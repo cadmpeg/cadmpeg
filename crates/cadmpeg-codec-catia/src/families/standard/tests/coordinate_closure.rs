@@ -1449,6 +1449,23 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 }
 
 #[test]
+fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
+    let run = MeshEdgeRun {
+        edge: 0,
+        face: 1,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+
+    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run])
+        .expect("a single occurrence does not conflict with the serialized wildcard");
+
+    assert_eq!(faces, vec![[1, 1]]);
+}
+
+#[test]
 fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
     let run = |face| MeshEdgeRun {
         edge: 0,
