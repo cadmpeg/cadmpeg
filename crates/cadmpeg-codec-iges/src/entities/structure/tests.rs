@@ -1591,6 +1591,24 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
 }
 
 #[test]
+fn decode_rejects_linear_dimension_orientation_eight() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(recalculable_dimension_associativity_file_with_orientation(
+                8,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_types_fundamental_units_and_property_owner() {
     let result = IgesCodec
         .decode(

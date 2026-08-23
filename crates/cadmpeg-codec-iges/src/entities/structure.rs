@@ -1140,7 +1140,7 @@ fn predefined_associativity_valid(
             let orientation_valid = record.integer(4).is_some_and(|orientation| {
                 dimension_entry.is_some_and(|dimension| match dimension.entity_type {
                     202 => matches!(orientation, 0..=3),
-                    216 => matches!(orientation, 4..=8),
+                    216 => matches!(orientation, 4..=7),
                     218 => matches!(orientation, 6..=7),
                     206 | 220 | 222 => orientation == 0,
                     _ => false,

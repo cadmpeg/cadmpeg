@@ -716,6 +716,12 @@ pub(crate) fn flow_associativity_forms_file() -> Vec<u8> {
 }
 
 pub(crate) fn recalculable_dimension_associativity_file() -> Vec<u8> {
+    recalculable_dimension_associativity_file_with_orientation(4)
+}
+
+pub(crate) fn recalculable_dimension_associativity_file_with_orientation(
+    orientation: i64,
+) -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 212,
@@ -764,7 +770,7 @@ pub(crate) fn recalculable_dimension_associativity_file() -> Vec<u8> {
             form: 21,
             label: "RECALCD".into(),
             status: "00010200",
-            parameters: "402,1,2,11,4,0,7,0,0,0,0,9,1,4,0,0;".into(),
+            parameters: format!("402,1,2,11,{orientation},0,7,0,0,0,0,9,1,4,0,0;"),
         },
     ])
 }
