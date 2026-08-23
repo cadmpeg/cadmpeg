@@ -2,7 +2,7 @@
 //! Procedural spline-surface embedded types and their `_spl_sur` decoders.
 
 use crate::nurbs::blend::{
-    cyl_spl_sur, full_rb_blend_spl_sur, rb_blend_spl_sur_fallback, rolling_ball_side,
+    compact_rb_blend_spl_sur, cyl_spl_sur, full_rb_blend_spl_sur, rolling_ball_side,
     var_blend_spl_sur, vertex_blend_spl_sur,
 };
 use crate::nurbs::core::{curve_block, surface_block};
@@ -4177,7 +4177,7 @@ fn procedural_resolving_refs(
         .or_else(|| var_blend_spl_sur(toks, Some(table)))
         .or_else(|| vertex_blend_spl_sur(toks, Some(table)))
         .or_else(|| full_rb_blend_spl_sur(toks, table))
-        .or_else(|| rb_blend_spl_sur_fallback(toks))
+        .or_else(|| compact_rb_blend_spl_sur(toks))
     {
         if let DecodedProceduralSurfaceDefinition::TSpline(construction) = &mut decoded.definition {
             if let cadmpeg_ir::geometry::TSplineSubtransform::Reference { index, resolved } =

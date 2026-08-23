@@ -176,17 +176,17 @@ If a one-vector sphere is accepted, the point set is unchanged but the pole and 
 
 **Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
 
-### GC-32. Rolling-ball fallback field selection
+### GC-32. Unadmitted rolling-ball branches
 
-**Question.** Which members give the radii, spine, and two supports of an `rb_blend_spl_sur` record when the structured side decoder fails?
+**Question.** Does an `rb_blend_spl_sur` record outside the complete and compact grammars carry another defined layout?
 
-**Known.** `asm.md` §6.6 `rb_blend_spl_sur` gives ordered side graphs, a slice curve, offsets, radius selection, and cross-section fields. `procedural_surface_resolving_refs` calls `rb_blend_spl_sur_fallback` after the complete decoder fails. The fallback in `nurbs/blend.rs` collects every `DOUBLE` before the first tail cache, takes the last two as the radius endpoints, takes the last decodable curve as the spine, assigns analytic support surfaces by encounter order to slots zero and one, forces a circular cross-section, and drops the native rolling-ball payload. It records no distinction between a structured decode failure and a successful fallback.
+**Known.** `asm.md` §6.6 gives both admitted layouts. The complete form has ordered side graphs, a slice curve, offsets, radius selection, and cross-section fields. The compact form has a positional run of labelled supports, one spine, two radius values, enum `-1`, one solved cache, and an optional fit tolerance. A record outside both grammars remains opaque and retains its native payload and solved cache; it does not infer members by encounter order.
 
-If optional side ranges, locations, or other doubles occur after the actual offsets, the last two doubles are not the radius law. If a support or nested construction has a later curve block, the last curve is not the slice. A valid non-circular selector is emitted as circular geometry. The neutral result can therefore contain a wrong radius, wrong spine, or wrong surface with no loss.
+Optional side ranges, locations, and other doubles can occur after the actual offsets, so scalar encounter order does not identify the radius law. A support or nested construction can contain a later curve block, so curve encounter order does not identify the slice. The serialized cross-section selector, not subtype membership, determines whether the section is circular.
 
-**Need.** A real `rb_blend_spl_sur` specimen with a failed structured branch must identify each field by its grammar and must state whether a failed branch is recoverable. Until then the fallback must not infer members from encounter order and must retain the native payload or report the loss.
+**Need.** A branch outside both admitted grammars must identify each field and state whether that branch is recoverable.
 
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_surface.rs:4087-4115` and `crates/cadmpeg-asm/src/nurbs/blend.rs:1505-1577`. The complete decoder and the structured grammar are counter-evidence for conforming records that parse successfully, not for the fallback's behavior after a parse failure.
+**Note.** The complete decoder and its structured grammar establish conforming records only; they do not establish the layout of a rejected branch.
 
 ### GC-33. Cone pcurve chart sign and scale
 

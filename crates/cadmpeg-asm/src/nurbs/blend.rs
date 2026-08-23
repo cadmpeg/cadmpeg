@@ -1499,74 +1499,69 @@ pub(crate) fn full_rb_blend_spl_sur(
     })
 }
 
-pub(crate) fn rb_blend_spl_sur_fallback(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+/// Decode the compact rolling-ball carrier emitted without the native side
+/// graph. Every field is positional; nested construction members are not
+/// searched by token kind.
+pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?;
-    // Skip the scope opening and its name token.
-    let header_len = 2usize;
-    let (_, cache_end) = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| surface_block(span, at))
-        .next_back()?;
+    let mut cur = Cur::at(span, 2);
+    let mut supports = [None, None];
+    let mut support_count = 0usize;
+    while matches!(cur.peek(), Some(Token::Str(label)) if label == "blend_support_surface") {
+        if support_count == supports.len() {
+            return None;
+        }
+        cur.take_str()?;
+        let has_outer_kind = matches!(cur.peek(), Some(Token::Ident(name) | Token::SubIdent(name)) if name != "nubs" && name != "nurbs");
+        if has_outer_kind {
+            cur.take_ident()?;
+        }
+        let payload_start = cur.pos();
+        let support = if !has_outer_kind {
+            let (_, end) = surface_block(span, cur.pos())?;
+            cur.set_pos(end);
+            None
+        } else if let Some(surface) = embedded_surface(&mut cur) {
+            Some(surface)
+        } else {
+            cur.set_pos(payload_start);
+            let (surface, end) = surface_block(span, cur.pos())?;
+            cur.set_pos(end);
+            Some(SurfaceGeometry::Nurbs(surface))
+        };
+        supports[support_count] = support;
+        support_count += 1;
+    }
+    let (spine, spine_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(spine_end);
+    let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
+    (cur.take_enum()? == -1).then_some(())?;
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
+        Some(cur.take_f64()? * LEN_TO_MM)
+    } else {
+        None
+    };
+    matches!(cur.peek(), Some(Token::SubtypeClose)).then_some(())?;
+    (cur.pos() + 1 == span.len()).then_some(())?;
 
-    let mut support_geometries = Vec::new();
-    let mut radius_boundary = None;
-    let mut pos = header_len;
-    while pos < cache_end {
-        match span.get(pos)? {
-            Token::SubIdent(name)
-                if ["plane", "sphere", "cone", "torus"].contains(&name.as_str()) =>
-            {
-                let at = pos + 1;
-                let mut end = Cur::at(span, at);
-                let geometry = embedded_surface(&mut end).or_else(|| {
-                    surface_block(span, at).map(|(decoded, _)| SurfaceGeometry::Nurbs(decoded))
-                });
-                support_geometries.push(geometry);
-            }
-            Token::Enum(-1) => radius_boundary = Some(pos),
-            _ => {}
-        }
-        pos += 1;
-    }
-    let boundary = radius_boundary?;
-    let mut radius_values = Vec::new();
-    for token in span.get(header_len..boundary)? {
-        if let Token::Double(value) = token {
-            radius_values.push(*value);
-        }
-    }
-    let end = *radius_values.last()? * LEN_TO_MM;
-    let start = *radius_values.get(radius_values.len().checked_sub(2)?)? * LEN_TO_MM;
-    let radius = if start == end {
+    let radius = if offsets[0] == offsets[1] {
         BlendRadiusLaw::Constant {
-            signed_radius: start,
+            signed_radius: offsets[0],
         }
     } else {
-        BlendRadiusLaw::Linear { start, end }
+        BlendRadiusLaw::Linear {
+            start: offsets[0],
+            end: offsets[1],
+        }
     };
-    let center_curve = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| curve_block(span, at))
-        .map(|(curve, _)| curve)
-        .next_back();
-    let supports: [Option<SurfaceGeometry>; 2] = support_geometries
-        .into_iter()
-        .chain(std::iter::repeat(None))
-        .take(2)
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two support slots collected");
-    let cache_fit_tolerance = match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    };
-
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),
-            spine: center_curve,
+            spine: Some(spine),
             radius,
             cross_section: BlendCrossSection::Circular,
             native: None,
