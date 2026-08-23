@@ -377,6 +377,11 @@ impl ContainerNoted for FeatureOperationTerminalFrame {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for FeatureOperationStateJournalUse {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.operation_source_offset)
+    }
+}
 impl ContainerNoted for FeaturePayloadString {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1969,6 +1974,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_operation_terminal_frames, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_frames, r, ns),
         len: |m| m.features.feature_operation_terminal_frames.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_state_journal_uses",
+        tag: Some("FEATURE_OPERATION_STATE_JOURNAL_USE"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_state_journal_uses, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_state_journal_uses, r, ns),
+        len: |m| m.features.feature_operation_state_journal_uses.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

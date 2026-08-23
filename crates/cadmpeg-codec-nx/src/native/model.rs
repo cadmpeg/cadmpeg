@@ -135,6 +135,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_terminal_discriminators:
         Vec<FeatureOperationTerminalDiscriminator>,
     pub(crate) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
+    pub(crate) feature_operation_state_journal_uses: Vec<FeatureOperationStateJournalUse>,
     pub(crate) feature_payload_strings: Vec<FeaturePayloadString>,
     pub(crate) feature_simple_hole_templates: Vec<FeatureSimpleHoleTemplate>,
     pub(crate) feature_simple_hole_repeated_scalar_lanes: Vec<FeatureSimpleHoleRepeatedScalarLane>,
@@ -519,6 +520,12 @@ impl NativeModel {
             feature_operation_terminal_discriminators(container);
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(container, &feature_operation_common_frames);
+        let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
+            &feature_operation_labels,
+            &feature_operation_records,
+            &feature_operation_terminal_frames,
+            &operation_state_journal_groups,
+        );
         let feature_payload_strings = feature_payload_strings(container);
         let feature_simple_hole_templates = feature_simple_hole_templates(
             &feature_operation_labels,
@@ -1080,6 +1087,7 @@ impl NativeModel {
                 feature_operation_common_frames,
                 feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
+                feature_operation_state_journal_uses,
                 feature_payload_strings,
                 feature_simple_hole_templates,
                 feature_simple_hole_repeated_scalar_lanes,

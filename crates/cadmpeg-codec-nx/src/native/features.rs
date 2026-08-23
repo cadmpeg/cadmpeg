@@ -6,7 +6,7 @@ use super::*;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
     DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
-    OmSchemaRole,
+    OmOperationStateJournalGroup, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use std::borrow::Cow;
@@ -279,6 +279,33 @@ pub struct FeatureOperationTerminalFrame {
     pub source_offset: u64,
     /// Absolute offset of the object-reference token.
     pub object_index_source_offset: u64,
+}
+
+/// Exact join from an operation terminal ordinal to its state-journal row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationStateJournalUse {
+    /// Globally unique operation-to-journal relation identity.
+    pub id: String,
+    /// Owning feature-history section.
+    pub section_link: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Terminal frame carrying the duplicated local ordinal.
+    pub operation_terminal_frame: String,
+    /// State-journal group containing the matching row.
+    pub journal_group: String,
+    /// Zero-based row order within the journal group.
+    pub journal_row_ordinal: u32,
+    /// Duplicated operation terminal ordinal.
+    pub operation_local_ordinal: u32,
+    /// Matching journal state ordinal.
+    pub journal_state_ordinal: u32,
+    /// Absolute source offset of the operation terminal frame.
+    pub operation_source_offset: u64,
+    /// Absolute source offset of the matching journal row.
+    pub journal_source_offset: u64,
 }
 
 /// Ordered length-framed string from one bounded feature-operation payload.
@@ -3389,6 +3416,78 @@ pub fn feature_operation_terminal_frames(
         },
     );
     frames
+}
+
+/// Join operation terminal ordinals to exact rows in the owning state journal.
+pub fn feature_operation_state_journal_uses(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    terminal_frames: &[FeatureOperationTerminalFrame],
+    journal_groups: &[OmOperationStateJournalGroup],
+) -> Vec<FeatureOperationStateJournalUse> {
+    let labels_by_id = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label))
+        .collect::<BTreeMap<_, _>>();
+    let record_labels = records
+        .iter()
+        .filter_map(|record| {
+            let label = labels_by_id.get(record.operation_label.as_str())?;
+            Some((record.id.as_str(), *label))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut journal_rows = BTreeMap::new();
+    for group in journal_groups {
+        for (row_ordinal, row) in group.rows.iter().enumerate() {
+            let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
+                continue;
+            };
+            let key = (group.section_link.as_str(), row.state_ordinal);
+            match journal_rows.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some((group, row_ordinal, row)));
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    *entry.into_mut() = None;
+                }
+            }
+        }
+    }
+    let mut uses = Vec::new();
+    for frame in terminal_frames {
+        let Some(label) = record_labels.get(frame.operation_record.as_str()) else {
+            continue;
+        };
+        let Some(Some((group, journal_row_ordinal, row))) =
+            journal_rows.get(&(label.section_link.as_str(), frame.local_ordinal))
+        else {
+            continue;
+        };
+        let operation_key = frame
+            .operation_record
+            .strip_prefix("nx:feature-history:operation-record#")
+            .unwrap_or(frame.operation_record.as_str());
+        let journal_key = group
+            .id
+            .strip_prefix("nx:feature-history:operation-state-journal-group#")
+            .unwrap_or(group.id.as_str());
+        uses.push(FeatureOperationStateJournalUse {
+            id: format!(
+                "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
+            ),
+            section_link: label.section_link.clone(),
+            operation_label: label.id.clone(),
+            operation_record: frame.operation_record.clone(),
+            operation_terminal_frame: frame.id.clone(),
+            journal_group: group.id.clone(),
+            journal_row_ordinal: *journal_row_ordinal,
+            operation_local_ordinal: frame.local_ordinal,
+            journal_state_ordinal: row.state_ordinal,
+            operation_source_offset: frame.source_offset,
+            journal_source_offset: row.source_offset,
+        });
+    }
+    uses
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::native::om::{OmOperationStateJournalGroup, OmOperationStateJournalRow};
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use std::collections::BTreeMap;
 
@@ -124,4 +125,144 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
     assign_operation_header_identities(&mut labels, &block_identities);
     assert!(labels[0].stable_identity.is_none());
+}
+
+fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
+    OmOperationStateJournalRow {
+        timestamp: 1_700_000_000,
+        value_marker: 0xe0,
+        value: state_ordinal,
+        raw_value: vec![0xe0, 0, 0, 0, state_ordinal as u8],
+        schema_id: 12,
+        raw_schema_id: vec![12],
+        state_ordinal,
+        raw_state_ordinal: vec![state_ordinal as u8],
+        source_offset,
+        end_offset: source_offset + 16,
+    }
+}
+
+fn journal_group(
+    id: &str,
+    section_link: &str,
+    rows: Vec<OmOperationStateJournalRow>,
+) -> OmOperationStateJournalGroup {
+    OmOperationStateJournalGroup {
+        id: id.to_string(),
+        section_link: section_link.to_string(),
+        ordinal: 0,
+        selector: [4, 0],
+        rows,
+        source_entry: "/Root/UG_PART/UG_PART".to_string(),
+        source_offset: 480,
+        end_offset: 560,
+    }
+}
+
+fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
+    FeatureOperationRecord {
+        id: id.to_string(),
+        operation_label: operation_label.to_string(),
+        ordinal: 0,
+        byte_len: 32,
+        sha256: "record-sha256".to_string(),
+        payload_byte_len: 8,
+        payload_sha256: "payload-sha256".to_string(),
+        stable_identity: None,
+        payload_source_offset: 404,
+        source_offset: 400,
+    }
+}
+
+fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperationTerminalFrame {
+    FeatureOperationTerminalFrame {
+        id: "nx:feature-history:operation-terminal-frame#0000000000-0000000000".to_string(),
+        operation_record: operation_record.to_string(),
+        immediate_common_frame: None,
+        local_ordinal,
+        raw_local_ordinal: vec![local_ordinal as u8],
+        object_index: None,
+        raw_object_index: vec![0xff],
+        data_block: None,
+        source_offset: 420,
+        object_index_source_offset: 421,
+    }
+}
+
+#[test]
+fn operation_terminal_ordinal_joins_unique_section_journal_row() {
+    let label = label(0, [None; 4]);
+    let record = operation_record(
+        "nx:feature-history:operation-record#0000000000-0000000000",
+        &label.id,
+    );
+    let group = journal_group(
+        "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
+        &label.section_link,
+        vec![journal_row(6, 500), journal_row(7, 520)],
+    );
+    let frame = terminal_frame(&record.id, 7);
+
+    let uses = feature_operation_state_journal_uses(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&frame),
+        std::slice::from_ref(&group),
+    );
+
+    let [relation] = uses.as_slice() else {
+        panic!("one unique section-scoped journal row should join");
+    };
+    assert_eq!(
+        relation.id,
+        "nx:feature-history:operation-state-journal-use#0000000000-0000000000-0000000000-0000000000-0000000001"
+    );
+    assert_eq!(relation.operation_record, record.id);
+    assert_eq!(relation.journal_row_ordinal, 1);
+    assert_eq!(relation.operation_local_ordinal, 7);
+    assert_eq!(relation.journal_state_ordinal, 7);
+    assert_eq!(relation.operation_source_offset, 420);
+    assert_eq!(relation.journal_source_offset, 520);
+}
+
+#[test]
+fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
+    let label = label(0, [None; 4]);
+    let record = operation_record(
+        "nx:feature-history:operation-record#0000000000-0000000000",
+        &label.id,
+    );
+    let frame = terminal_frame(&record.id, 7);
+    let wrong_section = journal_group(
+        "nx:feature-history:operation-state-journal-group#wrong",
+        "history#1",
+        vec![journal_row(7, 600)],
+    );
+    let matching = journal_group(
+        "nx:feature-history:operation-state-journal-group#matching",
+        &label.section_link,
+        vec![journal_row(7, 620)],
+    );
+    let duplicate = journal_group(
+        "nx:feature-history:operation-state-journal-group#duplicate",
+        &label.section_link,
+        vec![journal_row(7, 640)],
+    );
+
+    let section_scoped = feature_operation_state_journal_uses(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&frame),
+        &[wrong_section, matching.clone()],
+    );
+    assert_eq!(section_scoped.len(), 1);
+    assert_eq!(section_scoped[0].journal_source_offset, 620);
+
+    let ambiguous = feature_operation_state_journal_uses(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&frame),
+        &[matching, duplicate],
+    );
+    assert!(ambiguous.is_empty());
 }

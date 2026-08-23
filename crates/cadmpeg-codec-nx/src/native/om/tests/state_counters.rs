@@ -5,6 +5,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
+use crate::native::features::FeatureOperationStateJournalUse;
 use crate::native::om::{
     operation_state_counters, operation_state_groups, operation_state_journal_groups,
     operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
@@ -97,6 +98,18 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .arena_as::<OmOperationStateJournalGroup>("om_operation_state_journal_groups")
         .expect("state-journal arena");
     assert_eq!(emitted, groups.as_slice());
+
+    let uses = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
+        .expect("operation-state journal use arena");
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].operation_local_ordinal, 2);
+    assert_eq!(uses[0].journal_state_ordinal, 2);
+    assert_eq!(uses[0].journal_row_ordinal, 0);
 }
 
 #[test]

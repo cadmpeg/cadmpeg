@@ -369,7 +369,8 @@ pub(crate) fn composed_feature_history_payload(
 /// Compose a feature-history payload with two anchored state-journal groups.
 pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
     let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
-    let mut section = composed_feature_history_section(&[(input_slots, "SKETCH", vec![0x00])]);
+    let mut section =
+        composed_feature_history_section(&[(input_slots, "SKETCH", vec![0x02, 0x02, 0xff, 0x00])]);
     let operation_marker = section
         .windows(15)
         .position(|window| {
