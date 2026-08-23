@@ -574,6 +574,52 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     ))
 }
 
+/// Read the guarded 3D coordinate layouts used by spatial-relation markers.
+///
+/// The established indexed layout is shared with ordinary spatial points. A
+/// relation can also carry a source point in one of the older profile-locus
+/// layouts; those records use the same marker identity and profile role but
+/// store the coordinate triplet at one of two tagged offsets. Require exactly
+/// one tagged triplet so an incidental byte pattern cannot become geometry.
+pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
+    if let Some(point) = marker_spatial_coordinates(payload, offset) {
+        return Some(point);
+    }
+    let code = marker_native_code(payload, offset)?;
+    let supported_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            == Some(LEGACY_EXTENDED_SKETCH_MARKER);
+    if !(code == 0 || matches!(code, 2..=5))
+        || !supported_prefix
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
+        || View::u16_le_at(payload, offset + 27) != Some(1)
+    {
+        return None;
+    }
+    let tagged_offsets = [56usize, 64]
+        .into_iter()
+        .filter_map(|relative| {
+            let tag = offset.checked_add(relative)?;
+            (payload.get(tag..tag + 2) == Some(&[0x0e, 0x00])).then_some(tag.checked_add(2)?)
+        })
+        .collect::<Vec<_>>();
+    let [coordinate_offset] = tagged_offsets.as_slice() else {
+        return None;
+    };
+    if !(0..3).all(|index| {
+        View::f64_le_at(payload, coordinate_offset + index * 8)
+            .is_some_and(|value| value == 0.0 || value.is_normal())
+    }) {
+        return None;
+    }
+    let coordinate =
+        |relative| Some(View::f64_le_at(payload, coordinate_offset + relative)? * 1000.0);
+    Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
+}
+
 pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
     spatial_vertex_offsets(payload)
         .into_iter()

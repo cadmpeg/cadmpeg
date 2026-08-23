@@ -1771,6 +1771,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             matches!(
                 feature.definition,
                 cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+                    | cadmpeg_ir::features::FeatureDefinition::SpatialSketch { .. }
             )
         })
         .filter_map(|feature| feature.native_ref.as_deref())
@@ -1791,6 +1792,12 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .spatial_sketch_entities
                 .iter()
                 .filter_map(|entity| entity.native_ref.clone()),
+        )
+        .chain(
+            ir.model
+                .spatial_sketch_constraints
+                .iter()
+                .filter_map(|constraint| constraint.native_ref.clone()),
         )
         .collect::<std::collections::HashSet<_>>();
     let owned_instances = crate::resolved_features::relation_geometry::owned_relation_parameters(
@@ -1893,6 +1900,12 @@ fn multiply_projected_sketch_relation_records(
                 .spatial_sketch_entities
                 .iter()
                 .filter_map(|entity| entity.native_ref.as_deref()),
+        )
+        .chain(
+            ir.model
+                .spatial_sketch_constraints
+                .iter()
+                .filter_map(|constraint| constraint.native_ref.as_deref()),
         )
         .filter(|native_ref| native_relation_ids.contains(native_ref))
     {
@@ -2394,6 +2407,14 @@ fn build_geometry_ir(
         &sketches,
         &ir.model.features,
         &sketch_entities,
+        &ir.model.parameters,
+        &sketch_lanes,
+    );
+    crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
+        &mut ir.model.spatial_sketch_constraints,
+        &mut ir.model.spatial_sketch_entities,
+        &ir.model.spatial_sketches,
+        &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
     );
@@ -3456,6 +3477,14 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.surfaces,
+        &ir.model.features,
+        &ir.model.parameters,
+        &sketch_lanes,
+    );
+    crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
+        &mut ir.model.spatial_sketch_constraints,
+        &mut ir.model.spatial_sketch_entities,
+        &ir.model.spatial_sketches,
         &ir.model.features,
         &ir.model.parameters,
         &sketch_lanes,
