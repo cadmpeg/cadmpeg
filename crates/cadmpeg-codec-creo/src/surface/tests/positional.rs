@@ -1475,6 +1475,48 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
 }
 
 #[test]
+fn decodes_structurally_delimited_type24_round_edge_envelope() {
+    let mut body = vec![0x34, 0xe0, 0x00];
+    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x00, 0x12, 0x68]);
+    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
+    body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
+    body.extend_from_slice(&[0xf7, 0x17]);
+
+    let record = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+
+    assert_eq!(
+        record.type24_round_edge_envelope(0x24),
+        Some(Type24RoundEdgeEnvelope {
+            parameter_interval: [
+                f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]),
+                f64::from_be_bytes([0x3f, 0xe0, 0, 0, 0, 0, 0, 0]),
+            ],
+            vertices: [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]],
+            generated_entity_reference: Some(0x17),
+        })
+    );
+    assert!(record.type24_round_edge_envelope(0x25).is_none());
+}
+
+#[test]
 fn decodes_terminal_square_radial_type24_round_envelope() {
     let body = [
         0x32, 0x90, 0x32, 0x70, 0x63, 0x1c, 0x71, 0xa7, 0x2d, 0x4b, 0xc1, 0x0d, 0x60, 0xad, 0x2a,

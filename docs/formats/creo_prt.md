@@ -887,6 +887,30 @@ axis vector. Its magnitude is the bounded axial length, its normalized value
 is the axis direction, and the first extent endpoint supplies the other two
 origin coordinates.
 
+A generated type-24 round-edge body has a control shell, two edge parameters,
+two model-space endpoint triples, and an optional generated-entity reference.
+The control shell is one of `1b <control> 00`, `34 <control> 00`, `32
+<scalar>`, `19 <scalar>`, `eb ba <payload3>`, `ec ba <payload3>`, `ed ba
+<payload3>`, `5a b2`, or a bare `18`. The two edge parameters use the first
+tabulated-cylinder directrix-coordinate lane. A positive DICT parameter with
+prefix `p` in `4b..a3` reconstructs IEEE bytes two through seven with
+`q = (p + 75) mod 256`; byte one is `3f` when `q >= 80` and `40` otherwise.
+The signed directrix lattice handles all other parameter prefixes. The
+separator after the first parameter is one byte in `11..14`, or three bytes
+beginning with `00` or `34`; separator payload bytes are not scalar fields.
+The second parameter follows the separator.
+
+The six endpoint coordinates use the positional surface-row scalar lane in
+XYZ order. A complete endpoint sequence may end at the body boundary or at
+`f7 <reference-id>`; a compound close may follow that sequence when another
+bounded body is present. The reference identifies the generated entity and
+does not supply a coordinate. The two triples are samples on the generated
+round-edge carrier, not a carrier by themselves. A class-913 replay supplies
+the constant rolling radius and the generated-entity/support join supplies
+candidate cylinder axes. Admit the unique cylinder whose two samples have
+that radius from its axis; retain the row native when the radius, ownership,
+or axis witness is missing, conflicting, or non-unique.
+
 The single-diameter type-24 form has one terminal frame of exactly eight
 slots. Its first slot is auxiliary, its second slot is the positive diameter,
 and its final six slots are two XYZ extent endpoints. Exactly one absolute

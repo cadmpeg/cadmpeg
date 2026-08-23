@@ -204,6 +204,21 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &ir.model.surfaces,
         &ir.model.procedural_surfaces,
     );
+    let decoded_type24_round_edge_envelope_count = scan
+        .surfaces
+        .parameters
+        .iter()
+        .filter_map(|record| {
+            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+                .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)?;
+            (crate::surface::unique_surface_parameter(
+                &scan.surfaces.parameters,
+                record.surface_id,
+            ) == Some(record))
+            .then_some(())?;
+            record.type24_round_edge_envelope(row.type_byte)
+        })
+        .count();
     let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
     {
         coverage.insert(
@@ -384,6 +399,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.insert(
             "transferred_positional_cylinder_count".to_string(),
             positional_cylinder_count,
+        );
+        coverage.insert(
+            "decoded_type24_round_edge_envelope_count".to_string(),
+            decoded_type24_round_edge_envelope_count,
         );
         coverage.insert(
             "transferred_positional_cone_count".to_string(),

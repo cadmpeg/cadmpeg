@@ -607,6 +607,18 @@ pub struct Type24RoundEnvelope {
     pub extent_endpoints: [[f64; 3]; 2],
 }
 
+/// Axial parameters and model-space endpoint samples from a generated
+/// type-24 round edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type24RoundEdgeEnvelope {
+    /// The two stored edge parameters in source order.
+    pub parameter_interval: [f64; 2],
+    /// The two model-space edge endpoints in source order.
+    pub vertices: [[f64; 3]; 2],
+    /// Optional generated-entity reference following the endpoint samples.
+    pub generated_entity_reference: Option<u32>,
+}
+
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalarFrame {
@@ -1066,6 +1078,59 @@ impl SurfaceParameterRecord {
             .iter()
             .all(|value| value.is_finite())
             .then_some([values[..3].try_into().ok()?, values[3..].try_into().ok()?])
+    }
+
+    /// Decode the positional round-edge envelope carried by a type-24 row.
+    ///
+    /// The leading control shell and the separator are structural. They must
+    /// be consumed before the first-coordinate scalar lane is entered; a
+    /// generic scalar walk would mistake separator payload bytes for vertex
+    /// coordinates. A compound close may follow the optional generated-entity
+    /// reference when the row continues with another bounded body.
+    #[must_use]
+    pub fn type24_round_edge_envelope(&self, type_byte: u8) -> Option<Type24RoundEdgeEnvelope> {
+        (type_byte == 0x24).then_some(())?;
+        let cache = scalar::ScalarCache::default();
+        let start = type24_round_edge_shell_end(&self.body, &cache)?;
+        let (first_parameter, mut cursor) =
+            scalar::decode_round_edge_coordinate(&self.body, start, &cache)?;
+        cursor = type24_round_edge_separator_end(&self.body, cursor)?;
+        let (second_parameter, next) =
+            scalar::decode_round_edge_coordinate(&self.body, cursor, &cache)?;
+        cursor = next;
+        let mut values = [0.0; 6];
+        for value in &mut values {
+            let (decoded, next) = scalar::decode_in_surface_row_lane(&self.body, cursor, &cache)?;
+            *value = decoded;
+            cursor = next;
+        }
+        let generated_entity_reference = if self.body.get(cursor) == Some(&psb::token::ENTITY_REF) {
+            let (reference, end) = psb::reference_id(&self.body, cursor + 1).ok()?;
+            cursor = end;
+            Some(reference)
+        } else {
+            None
+        };
+        let valid_end =
+            cursor == self.body.len() || self.body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE);
+        valid_end.then_some(())?;
+        let [first_x, first_y, first_z, second_x, second_y, second_z] = values;
+        let values = [
+            first_parameter,
+            second_parameter,
+            first_x,
+            first_y,
+            first_z,
+            second_x,
+            second_y,
+            second_z,
+        ];
+        values.iter().all(|value| value.is_finite()).then_some(())?;
+        Some(Type24RoundEdgeEnvelope {
+            parameter_interval: [first_parameter, second_parameter],
+            vertices: [[first_x, first_y, first_z], [second_x, second_y, second_z]],
+            generated_entity_reference,
+        })
     }
 
     fn type24_round_frame(
@@ -1700,6 +1765,29 @@ impl SurfaceParameterRecord {
         })
         .filter(LineExtrusionFrame::is_valid)
     }
+}
+
+fn type24_round_edge_shell_end(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+    match body {
+        [0x1b | 0x34, _, 0x00, ..] => Some(3),
+        [0x5a, 0xb2, ..] => Some(2),
+        [0x18, ..] => Some(1),
+        [0xeb..=0xed, 0xba, _, _, _, ..] => Some(5),
+        [0x19 | 0x32, ..] => {
+            scalar::decode_round_edge_coordinate(body, 1, cache).map(|(_, end)| end)
+        }
+        _ => None,
+    }
+}
+
+fn type24_round_edge_separator_end(body: &[u8], offset: usize) -> Option<usize> {
+    if matches!(body.get(offset), Some(0x11..=0x14)) {
+        return Some(offset + 1);
+    }
+    if matches!(body.get(offset), Some(0x00 | 0x34)) {
+        return body.get(offset + 1..offset + 3).map(|_| offset + 3);
+    }
+    None
 }
 
 /// Structural classification of a plane-row local-system chunk.

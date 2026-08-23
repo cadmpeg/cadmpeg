@@ -382,6 +382,27 @@ pub fn decode_tabulated_cylinder_first_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
+/// Decode one scalar in a type-24 round-edge envelope.
+///
+/// Round-edge envelopes use the tabulated-cylinder first-coordinate lane for
+/// their two edge parameters. Their positive DICT lattice starts at `0x4b`,
+/// rather than at the narrower range used by the general tabulated-cylinder
+/// parser. The enclosing envelope grammar supplies the field boundaries, so
+/// this function does not classify a prefix outside that lane by itself.
+pub fn decode_round_edge_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    let prefix = *data.get(offset)?;
+    if (0x4b..=0xa3).contains(&prefix) {
+        let byte_1 = prefix.wrapping_add(0x75);
+        let byte_0: u8 = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
+        return ieee7_dict(data, offset, u16::from(byte_0) << 8 | u16::from(byte_1));
+    }
+    decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+}
+
 /// Decode the second coordinate of a tabulated-cylinder directrix control point.
 ///
 /// Positive DICT tokens encode the first two IEEE bytes as `0x3f75 + prefix`;
@@ -1557,6 +1578,27 @@ mod tests {
         [
             0x41, bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]
+    }
+
+    #[test]
+    fn round_edge_positive_dict_uses_the_extended_prefix_lattice() {
+        let low = [0x4b, 0, 0, 0, 0, 0, 0];
+        let high = [0xa3, 0, 0, 0, 0, 0, 0];
+        let cache = ScalarCache::default();
+        let (low_value, low_end) = decode_round_edge_coordinate(&low, 0, &cache)
+            .expect("low extended positive-DICT prefix");
+        let (high_value, high_end) = decode_round_edge_coordinate(&high, 0, &cache)
+            .expect("high extended positive-DICT prefix");
+        assert_eq!(low_end, low.len());
+        assert_eq!(high_end, high.len());
+        assert_eq!(
+            low_value,
+            f64::from_be_bytes([0x3f, 0xc0, 0, 0, 0, 0, 0, 0])
+        );
+        assert_eq!(
+            high_value,
+            f64::from_be_bytes([0x40, 0x18, 0, 0, 0, 0, 0, 0])
+        );
     }
 
     #[test]
