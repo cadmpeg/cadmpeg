@@ -7,8 +7,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    analyze_trailing_pointer_groups, entity_primary_end, groups_for_candidate,
-    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
+    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_with_records,
+    entity_primary_end, groups_for_candidate, structural_pointer_group_candidates, ParameterRecord,
+    Token, TokenValue,
 };
 use crate::directory::{DirectoryEntry, Status};
 use crate::loss::IgesLossCode;
@@ -12759,6 +12760,557 @@ fn type302_malformed_class_counts_or_spans_do_not_enable_generic_recovery() {
         assert_eq!(analysis.valid_candidate_count, 0);
         assert!(analysis.groups.is_none());
     }
+}
+
+#[test]
+fn type316_entity_table_boundary_follows_unit_entry_count() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+
+    for (count, expected_start) in [(1_usize, 5_usize), (2, 8)] {
+        let mut source = directory_target(9, 316);
+        source.form = 0;
+        let directory = BTreeMap::from([(1, &association), (5, &property), (9, &source)]);
+        let mut values: Vec<TokenValue> = vec![316_i64.into(), (count as i64).into()];
+        for _ in 0..count {
+            values.extend([
+                TokenValue::String(b"LENGTH".to_vec()),
+                TokenValue::String(b"M".to_vec()),
+                1.0_f64.into(),
+            ]);
+        }
+        values.extend([1_i64.into(), 1_i64.into(), 1_i64.into(), 5_i64.into()]);
+
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(9, values), &directory);
+        assert_eq!(analysis.candidate_count, 1);
+        assert_eq!(analysis.valid_candidate_count, 1);
+        let groups = analysis.groups.expect("Type 316 table boundary");
+        assert_eq!(groups.token_start, expected_start);
+        assert_eq!(groups.associations, vec![1]);
+        assert_eq!(groups.properties, vec![5]);
+    }
+}
+
+#[test]
+fn type316_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let mut source = directory_target(9, 316);
+    source.form = 0;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (9, &source),
+    ]);
+    let record = token_parameter_record(
+        9,
+        vec![
+            316_i64.into(),
+            1_i64.into(),
+            TokenValue::String(b"LENGTH".to_vec()),
+            TokenValue::String(b"M".to_vec()),
+            2_i64.into(),
+            1_i64.into(),
+            3_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+    );
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![4, 5]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 316 table boundary");
+    assert_eq!(groups.token_start, 5);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type316_malformed_count_or_span_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let mut source = directory_target(9, 316);
+    source.form = 0;
+    let directory = BTreeMap::from([(1, &association), (5, &property), (9, &source)]);
+    let malformed: Vec<Vec<TokenValue>> = vec![
+        vec![
+            316_i64.into(),
+            0_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            316_i64.into(),
+            (-1_i64).into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            316_i64.into(),
+            i64::MAX.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            316_i64.into(),
+            TokenValue::String(b"bad-count".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            316_i64.into(),
+            1_i64.into(),
+            TokenValue::String(b"LENGTH".to_vec()),
+            TokenValue::String(b"M".to_vec()),
+        ],
+    ];
+    for values in malformed {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(9, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
+fn type322_entity_table_boundary_follows_form_specific_attribute_values() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+
+    for (form, value_counts, value_stride) in [
+        (0_i64, vec![0_usize, 2], 0_usize),
+        (1, vec![0, 2], 1),
+        (2, vec![1, 0], 2),
+    ] {
+        let expected_start = 4 + value_counts
+            .iter()
+            .map(|count| 3 + count * value_stride)
+            .sum::<usize>();
+        let mut source = directory_target(11, 322);
+        source.form = form;
+        let directory = BTreeMap::from([(1, &association), (5, &property), (11, &source)]);
+        let attribute_count = i64::try_from(value_counts.len()).expect("test count fits");
+        let mut values: Vec<TokenValue> = vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            attribute_count.into(),
+        ];
+        for (attribute_index, value_count) in value_counts.into_iter().enumerate() {
+            values.extend([
+                i64::try_from(attribute_index + 1)
+                    .expect("test attribute type fits")
+                    .into(),
+                1_i64.into(),
+                i64::try_from(value_count)
+                    .expect("test value count fits")
+                    .into(),
+            ]);
+            for value_index in 0..value_count * value_stride {
+                values.push(
+                    i64::try_from(value_index + 1)
+                        .expect("test value fits")
+                        .into(),
+                );
+            }
+        }
+        values.extend([1_i64.into(), 1_i64.into(), 1_i64.into(), 5_i64.into()]);
+
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(11, values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "form={form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form={form}");
+        let groups = analysis.groups.expect("Type 322 table boundary");
+        assert_eq!(groups.token_start, expected_start, "form={form}");
+        assert_eq!(groups.associations, vec![1], "form={form}");
+        assert_eq!(groups.properties, vec![5], "form={form}");
+    }
+}
+
+#[test]
+fn type322_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let mut source = directory_target(11, 322);
+    source.form = 1;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (11, &source),
+    ]);
+    let record = token_parameter_record(
+        11,
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            10_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+            1_i64.into(),
+            3_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+    );
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![8, 9]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 322 table boundary");
+    assert_eq!(groups.token_start, 9);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let mut source = directory_target(11, 322);
+    source.form = 1;
+    let directory = BTreeMap::from([(1, &association), (5, &property), (11, &source)]);
+    let malformed: Vec<Vec<TokenValue>> = vec![
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            0_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            (-1_i64).into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            TokenValue::String(b"bad-count".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            i64::MAX.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            (-1_i64).into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            TokenValue::String(b"bad-value-count".to_vec()),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+        ],
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+            7_i64.into(),
+        ],
+    ];
+    for values in malformed {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(11, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
+fn type422_entity_table_boundary_follows_referenced_definition_shape() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let mut definition = directory_target(9, 322);
+    definition.form = 0;
+    let definition_record = token_parameter_record(
+        9,
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            10_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+        ],
+    );
+    for (form, values, expected_start) in [
+        (
+            0_i64,
+            vec![
+                422_i64.into(),
+                7_i64.into(),
+                8_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+            3_usize,
+        ),
+        (
+            1_i64,
+            vec![
+                422_i64.into(),
+                2_i64.into(),
+                7_i64.into(),
+                8_i64.into(),
+                9_i64.into(),
+                10_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+            6,
+        ),
+    ] {
+        let mut instance = directory_target(11, 422);
+        instance.form = form;
+        instance.structure = -9;
+        let directory = BTreeMap::from([
+            (1, &association),
+            (5, &property),
+            (9, &definition),
+            (11, &instance),
+        ]);
+        let instance_record = token_parameter_record(11, values);
+        let records = BTreeMap::from([(9, &definition_record), (11, &instance_record)]);
+        let analysis =
+            analyze_trailing_pointer_groups_with_records(&instance_record, &directory, &records);
+        assert_eq!(analysis.candidate_count, 1, "form={form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form={form}");
+        let groups = analysis.groups.expect("Type 422 table boundary");
+        assert_eq!(groups.token_start, expected_start, "form={form}");
+        assert_eq!(groups.associations, vec![1], "form={form}");
+        assert_eq!(groups.properties, vec![5], "form={form}");
+    }
+}
+
+#[test]
+fn type422_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let mut definition = directory_target(9, 322);
+    definition.form = 0;
+    let mut instance = directory_target(11, 422);
+    instance.form = 1;
+    instance.structure = -9;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (3, &association_3),
+        (5, &property),
+        (9, &definition),
+        (11, &instance),
+    ]);
+    let definition_record = token_parameter_record(
+        9,
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            10_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+        ],
+    );
+    let record = integer_parameter_record(11, &[422, 1, 7, 2, 1, 3, 1, 5]);
+    let records = BTreeMap::from([(9, &definition_record), (11, &record)]);
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![3, 4]);
+
+    let analysis = analyze_trailing_pointer_groups_with_records(&record, &directory, &records);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 422 table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![3]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let mut definition = directory_target(9, 322);
+    definition.form = 0;
+    let mut instance = directory_target(11, 422);
+    instance.form = 1;
+    instance.structure = -9;
+    let directory = BTreeMap::from([
+        (1, &association),
+        (5, &property),
+        (9, &definition),
+        (11, &instance),
+    ]);
+    let definitions = [
+        token_parameter_record(
+            9,
+            vec![
+                322_i64.into(),
+                TokenValue::String(b"ATTR".to_vec()),
+                1_i64.into(),
+                1_i64.into(),
+                10_i64.into(),
+                1_i64.into(),
+                2_i64.into(),
+            ],
+        ),
+        token_parameter_record(
+            9,
+            vec![
+                322_i64.into(),
+                TokenValue::String(b"ATTR".to_vec()),
+                1_i64.into(),
+                1_i64.into(),
+                10_i64.into(),
+                1_i64.into(),
+                TokenValue::String(b"bad-count".to_vec()),
+            ],
+        ),
+    ];
+    let instances = [
+        integer_parameter_record(11, &[422, -1, 7, 2, 1, 1, 1, 5]),
+        token_parameter_record(
+            11,
+            vec![
+                422_i64.into(),
+                TokenValue::String(b"bad-row-count".to_vec()),
+                7_i64.into(),
+                2_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+        ),
+        integer_parameter_record(11, &[422, 1, 7, 1]),
+    ];
+    for (definition_record, instance_record) in [
+        (&definitions[0], &instances[0]),
+        (&definitions[0], &instances[1]),
+        (&definitions[0], &instances[2]),
+        (&definitions[1], &instances[2]),
+    ] {
+        let records = BTreeMap::from([(9, definition_record), (11, instance_record)]);
+        let analysis =
+            analyze_trailing_pointer_groups_with_records(instance_record, &directory, &records);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+
+    let mut unresolved_instance = instance;
+    unresolved_instance.structure = 0;
+    let unresolved_record = integer_parameter_record(11, &[422, 1, 7, 2, 1, 1, 1, 5]);
+    let records = BTreeMap::from([(9, &definitions[0]), (11, &unresolved_record)]);
+    let unresolved_directory = BTreeMap::from([
+        (1, &association),
+        (5, &property),
+        (9, &definition),
+        (11, &unresolved_instance),
+    ]);
+    let analysis = analyze_trailing_pointer_groups_with_records(
+        &unresolved_record,
+        &unresolved_directory,
+        &records,
+    );
+    assert_eq!(analysis.candidate_count, 0);
+    assert_eq!(analysis.valid_candidate_count, 0);
+    assert!(analysis.groups.is_none());
 }
 
 #[test]

@@ -338,11 +338,38 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_from_end(
+        record,
+        directory,
+        entity_primary_end(record, directory),
+    )
+}
+
+fn analyze_trailing_pointer_groups_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> TrailingPointerAnalysis {
+    let is_attribute_table_instance = directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
+    if !is_attribute_table_instance {
+        return analyze_trailing_pointer_groups(record, directory);
+    }
+    let primary_end = entity_primary_end_with_records(record, directory, records);
+    analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
+}
+
+fn analyze_trailing_pointer_groups_from_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    primary_end: Option<usize>,
+) -> TrailingPointerAnalysis {
     // IGES defines the group order and pointer classes, but the entity table
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
     // registered layout.
-    let candidates = match entity_primary_end(record, directory) {
+    let candidates = match primary_end {
         Some(start) => {
             let prefix = non_integer_prefix(record);
             pointer_group_candidate_with_prefix(record, start, &prefix)
@@ -538,6 +565,10 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 302 Forms 5001 through 9999 put the class count at index 1 and repeat
 /// `BP`, `OR`, `N`, and `N` item-type fields per class, so their groups start at
 /// token `2 + sum(3 + N)`.
+/// Type 316 Form 0 puts the unit-entry count at index 1 and stores three fields
+/// per entry, so its groups start at token `2 + 3*NP`.
+/// Type 322 Forms 0 through 2 put the attribute count at index 3 and store a
+/// three-field descriptor plus its form-specific values per attribute.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
 /// groups start at token ten.
 /// Type 312 Forms 0 and 1 store ten fixed primary fields, so their groups
@@ -802,6 +833,8 @@ pub(crate) fn entity_primary_end(
         (304, 1) => Some(fixed_primary_end(record, 5)),
         (304, 2) => Some(line_font_pattern_primary_end(record)),
         (310, 0) => Some(text_font_primary_end(record)),
+        (316, 0) => Some(units_data_primary_end(record)),
+        (322, 0..=2) => Some(attribute_table_definition_primary_end(record, entry.form)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
@@ -852,6 +885,20 @@ pub(crate) fn entity_primary_end(
         (144, 0) => Some(trimmed_surface_primary_end(record)),
         _ => None,
     }
+}
+
+fn entity_primary_end_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<usize> {
+    let entry = directory.get(&record.directory_sequence)?;
+    if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
+        return Some(attribute_table_instance_primary_end(
+            record, entry, directory, records,
+        ));
+    }
+    entity_primary_end(record, directory)
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -1422,6 +1469,128 @@ fn associativity_definition_primary_end(record: &ParameterRecord) -> usize {
         cursor = next;
     }
     cursor
+}
+
+fn units_data_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(3))
+        .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn attribute_table_definition_primary_end(record: &ParameterRecord, form: i64) -> usize {
+    let Some(attribute_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let value_stride = match form {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => return record.tokens.len(),
+    };
+    let mut cursor = 4_usize;
+    for _ in 0..attribute_count {
+        let Some(value_count) = record
+            .integer_or(cursor + 2, 1)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = cursor.checked_add(3).and_then(|start| {
+            value_count
+                .checked_mul(value_stride)
+                .and_then(|span| start.checked_add(span))
+        }) else {
+            return record.tokens.len();
+        };
+        if next > record.tokens.len() {
+            return record.tokens.len();
+        }
+        cursor = next;
+    }
+    cursor
+}
+
+fn attribute_table_definition_value_counts(record: &ParameterRecord) -> Option<Vec<usize>> {
+    let attribute_count = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)?;
+    let mut cursor = 4_usize;
+    let mut value_counts = Vec::with_capacity(attribute_count.min(record.tokens.len()));
+    for attribute_index in 0..attribute_count {
+        let count_index = cursor.checked_add(2)?;
+        record.tokens.get(cursor)?;
+        record.tokens.get(cursor + 1)?;
+        let value_count = match record.tokens.get(count_index) {
+            Some(_) => record.integer_or(count_index, 1),
+            None if attribute_index + 1 == attribute_count => Some(1),
+            None => None,
+        }
+        .and_then(|value| usize::try_from(value).ok())?;
+        value_counts.push(value_count);
+        cursor = count_index.checked_add(1)?;
+    }
+    Some(value_counts)
+}
+
+fn attribute_table_instance_primary_end(
+    record: &ParameterRecord,
+    entry: &DirectoryEntry,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> usize {
+    let Some(definition_sequence) = entry
+        .structure
+        .checked_neg()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|sequence| sequence % 2 == 1)
+    else {
+        return record.tokens.len();
+    };
+    let Some(definition_entry) = directory
+        .get(&definition_sequence)
+        .filter(|entry| entry.entity_type == 322 && entry.form == 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(definition_record) = records.get(&definition_entry.sequence) else {
+        return record.tokens.len();
+    };
+    let Some(value_counts) = attribute_table_definition_value_counts(definition_record) else {
+        return record.tokens.len();
+    };
+    let Some(values_per_row) = value_counts
+        .into_iter()
+        .try_fold(0_usize, usize::checked_add)
+    else {
+        return record.tokens.len();
+    };
+    let (value_start, row_count) = if entry.form == 0 {
+        (1_usize, 1_usize)
+    } else {
+        let Some(row_count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return record.tokens.len();
+        };
+        (2, row_count)
+    };
+    row_count
+        .checked_mul(values_per_row)
+        .and_then(|span| value_start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
 }
 
 fn network_instance_primary_end(record: &ParameterRecord) -> usize {
@@ -2413,7 +2582,7 @@ pub(crate) fn assemble_with_context(
             .last()
             .map_or(line_start, |last| last.saturating_add(1));
         let parameter_end = tokens.len();
-        let mut record = ParameterRecord {
+        let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
             comment: bytes.get(record_end..).unwrap_or_default().to_vec(),
@@ -2421,14 +2590,28 @@ pub(crate) fn assemble_with_context(
             tokens,
             parameter_end,
         };
-        let analysis = analyze_trailing_pointer_groups(&record, &entries);
-        record.parameter_end = analysis
-            .groups
-            .as_ref()
+        records.push(record);
+    }
+    {
+        let record_by_directory = records
+            .iter()
+            .map(|record| (record.directory_sequence, record))
+            .collect::<BTreeMap<_, _>>();
+        for record in &records {
+            let analysis = analyze_trailing_pointer_groups_with_records(
+                record,
+                &entries,
+                &record_by_directory,
+            );
+            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
+        }
+    }
+    for record in &mut records {
+        record.parameter_end = trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| analysis.groups.as_ref())
             .filter(|groups| groups.fully_valid)
             .map_or(record.tokens.len(), |groups| groups.token_start);
-        trailing_pointer_analysis.insert(entry.sequence, analysis);
-        records.push(record);
     }
     let accounted = ownership
         .iter()
