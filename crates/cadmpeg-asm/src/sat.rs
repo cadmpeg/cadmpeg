@@ -419,6 +419,13 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
             reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
         });
     };
+    reader.skip_ws();
+    if reader.pos != bytes.len() {
+        return Err(SatError {
+            offset: reader.pos,
+            reason: "non-whitespace data follows the stream terminator".to_string(),
+        });
+    }
     Ok(TextStream {
         header,
         records,
@@ -1583,6 +1590,16 @@ mod tests {
         let stream = parse(&asm_stream("point $-1 -1 $-1 1 \n\t2 \n\t3 #\n")).expect("wrapped");
         assert_eq!(stream.records.len(), 1);
         assert_eq!(stream.records[0].tokens.len(), 4);
+    }
+
+    #[test]
+    fn stream_terminator_rejects_trailing_data() {
+        let mut stream = asm_stream("point $-1 -1 $-1 1 2 3 #\n");
+        let trailing_offset = stream.len();
+        stream.extend_from_slice(b"point $-1 -1 $-1 4 5 6 #\n");
+
+        let error = parse(&stream).expect_err("record after stream terminator must fail");
+        assert_eq!(error.offset, trailing_offset);
     }
 
     #[test]

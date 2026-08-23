@@ -668,7 +668,7 @@ Field forms:
 
 Record indices count records in file order from zero, starting at the first record after the header lines. A stream that begins with an `asmheader` record gives it index 0; a save-format 700 stream stores no `asmheader` record and gives index 0 to its first entity record. `$N` references index this table directly.
 
-The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
+The stream ends with a terminator line that identifies the serialization branch: `End-of-ASM-data` on the ASM branch and `End-of-ACIS-data` on the ACIS branch. Only whitespace can follow this terminator. Save-format 700 streams use the ACIS terminator and the legacy subtype spellings (§6.6); later save formats use the ASM terminator and the modern spellings.
 
 ### 7.4 Save-format 700 record layouts
 
