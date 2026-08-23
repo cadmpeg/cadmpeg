@@ -261,7 +261,8 @@ mod width_tests {
         DecodedRollingBallCurve,
     };
     use crate::nurbs::core::{
-        curve_cache, decode_curve_cache, decode_surface_cache, surface_cache,
+        curve_cache, decode_curve_cache, decode_surface_cache, final_surface_patch_layout,
+        surface_cache,
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
@@ -1325,10 +1326,14 @@ mod width_tests {
     #[test]
     fn surface_cache_decodes_in_both_integer_widths() {
         for int_width in [4usize, 8] {
-            let surface = decode_surface_cache(&surface_block(int_width))
+            let block = surface_block(int_width);
+            let surface = decode_surface_cache(&block)
                 .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
             assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));
+            assert!(final_surface_patch_layout(&block, int_width).is_some());
+            let other_width = if int_width == 4 { 8 } else { 4 };
+            assert!(final_surface_patch_layout(&block, other_width).is_none());
         }
     }
 

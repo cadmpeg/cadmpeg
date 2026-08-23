@@ -399,14 +399,13 @@ impl From<KnotLayout> for KnotPatchLayout {
     }
 }
 
-/// Locate the final valid `nubs`/`nurbs` surface block in a carrier record.
-pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_surface_block(record, position, int_width))
-            .next_back()
-    })?;
+/// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
+/// integer width.
+pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<SurfacePatchLayout> {
+    let decoded = marker_positions(record)
+        .into_iter()
+        .filter_map(|position| decode_surface_block(record, position, int_width))
+        .next_back()?;
     Some(SurfacePatchLayout {
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
@@ -421,14 +420,17 @@ pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
     })
 }
 
-/// Locate the surface block at `ordinal` among valid surface caches in a carrier record.
-pub fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_surface_block(record, position, int_width))
-            .nth(ordinal)
-    })?;
+/// Locate the surface block at `ordinal` among valid surface caches at the
+/// stream's known integer width.
+pub fn surface_patch_layout_at(
+    record: &[u8],
+    ordinal: usize,
+    int_width: usize,
+) -> Option<SurfacePatchLayout> {
+    let decoded = marker_positions(record)
+        .into_iter()
+        .filter_map(|position| decode_surface_block(record, position, int_width))
+        .nth(ordinal)?;
     Some(SurfacePatchLayout {
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,

@@ -671,13 +671,13 @@ impl AsmEditSet {
         tolerance: f64,
     ) -> Result<(), CodecError> {
         let record_bytes = record_slice(bytes, record, "procedural-surface")?;
-        let layout =
-            crate::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "spline record {} has no solved surface cache",
-                    record.index
-                ))
-            })?;
+        let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes, self.ref_width)
+            .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "spline record {} has no solved surface cache",
+                record.index
+            ))
+        })?;
         if record_bytes.get(layout.end) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "spline record {} has no writable fit-tolerance carrier",
@@ -1563,10 +1563,11 @@ fn patch_nurbs_surface_record(
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
     let record_bytes = record_slice(bytes, record, "NURBS surface")?;
+    let int_width = stream_ref_width(bytes);
     let layout = surface_ordinal
         .map_or_else(
-            || crate::nurbs::core::final_surface_patch_layout(record_bytes),
-            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal),
+            || crate::nurbs::core::final_surface_patch_layout(record_bytes, int_width),
+            |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal, int_width),
         )
         .ok_or_else(|| {
             CodecError::Malformed(format!(
