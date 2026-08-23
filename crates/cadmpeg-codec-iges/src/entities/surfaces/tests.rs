@@ -7,6 +7,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -14,7 +16,30 @@ use crate::IgesCodec;
 
 use crate::global::Dialect;
 
-use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
+use super::{
+    angular_basis, homogeneous_curve_boundary_matches, offset_indicator_parameters,
+    tabulated_directrix_type_allowed,
+};
+
+fn type128_surface_with_closure(
+    global: &[u8],
+    closed_u: i64,
+    closed_v: i64,
+    poles: &str,
+) -> Vec<u8> {
+    let parameters =
+        format!("128,1,1,1,1,{closed_u},{closed_v},1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,{poles},0,1,0,1;");
+    owned_test_file_with_global(
+        &[OwnedTestEntity {
+            entity_type: 128,
+            form: 0,
+            label: "SURFACE".into(),
+            status: "00000000",
+            parameters,
+        }],
+        global,
+    )
+}
 
 #[test]
 fn tabulated_directrix_types_follow_the_declared_dialect() {
@@ -579,6 +604,75 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
+    for global in [
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(),
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(),
+    ] {
+        let invalid = IgesCodec
+            .decode(
+                &mut Cursor::new(type128_surface_with_closure(
+                    global,
+                    1,
+                    0,
+                    "0,0,0,1,0,0,0,1,0,1,0,0",
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(invalid.ir().model.surfaces.is_empty());
+        assert!(invalid
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("U-closed surface flag")));
+
+        for (closed_u, closed_v, poles) in [
+            (1, 0, "0,0,0,0,0,0,0,1,0,0,1,0"),
+            (0, 1, "0,0,0,1,0,0,0,0,0,1,0,0"),
+        ] {
+            let valid = IgesCodec
+                .decode(
+                    &mut Cursor::new(type128_surface_with_closure(
+                        global, closed_u, closed_v, poles,
+                    )),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert_eq!(valid.ir().model.surfaces.len(), 1);
+            assert!(!valid
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("closed surface")));
+        }
+    }
+}
+
+#[test]
+fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
+    let first = NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        weights: Some(vec![1.0, 1.0]),
+        periodic: false,
+    };
+    let mut scaled = first.clone();
+    scaled.weights = Some(vec![2.0, 2.0]);
+    assert_eq!(
+        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        Some(true)
+    );
+
+    scaled.control_points[1].x = 1.1;
+    assert_eq!(
+        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        Some(false)
+    );
 }
 
 #[test]

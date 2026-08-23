@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
-    SurfaceGeometry,
+    SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -75,6 +75,203 @@ fn bounded_nurbs(
 ) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
+}
+
+#[derive(Clone)]
+struct HomogeneousBezierSpan {
+    domain: [f64; 2],
+    controls: Vec<[f64; 4]>,
+}
+
+fn insert_homogeneous_curve_knot(
+    degree: usize,
+    knots: &mut Vec<f64>,
+    controls: &mut Vec<[f64; 4]>,
+    knot: f64,
+) -> Option<()> {
+    let count = controls.len();
+    let span = knots
+        .windows(2)
+        .position(|pair| pair[0] <= knot && knot < pair[1])?;
+    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
+    if multiplicity >= degree {
+        return Some(());
+    }
+    let mut inserted = vec![[0.0; 4]; count + 1];
+    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
+    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
+    for index in span - degree + 1..=span - multiplicity {
+        let denominator = knots[index + degree] - knots[index];
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let alpha = (knot - knots[index]) / denominator;
+        inserted[index] = std::array::from_fn(|axis| {
+            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
+        });
+    }
+    knots.insert(span + 1, knot);
+    *controls = inserted;
+    Some(())
+}
+
+fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    if degree == 0
+        || count <= degree
+        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
+        || !knots_nondecreasing(&curve.knots)
+    {
+        return None;
+    }
+    let weights = curve.weights.as_deref().map_or_else(
+        || cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok(),
+        |weights| Some(weights.to_owned()),
+    )?;
+    if weights.len() != count
+        || curve.control_points.iter().any(|point| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .any(|value| !value.is_finite())
+        })
+        || weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    {
+        return None;
+    }
+    let mut controls = curve
+        .control_points
+        .iter()
+        .zip(weights)
+        .map(|(point, weight)| [weight * point.x, weight * point.y, weight * point.z, weight])
+        .collect::<Vec<_>>();
+    if controls.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+
+    let mut knots = curve.knots.clone();
+    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    let mut internal = knots[degree + 1..count]
+        .iter()
+        .copied()
+        .filter(|knot| domain[0] < *knot && *knot < domain[1])
+        .collect::<Vec<_>>();
+    internal.sort_by(f64::total_cmp);
+    internal.dedup();
+    for knot in internal {
+        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
+            insert_homogeneous_curve_knot(degree, &mut knots, &mut controls, knot)?;
+        }
+    }
+    let mut boundaries = knots[degree..=controls.len()].to_vec();
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let spans = boundaries
+        .windows(2)
+        .enumerate()
+        .filter_map(|(index, domain)| {
+            (domain[0] < domain[1]).then(|| {
+                let start = index.checked_mul(degree)?;
+                Some(HomogeneousBezierSpan {
+                    domain: [domain[0], domain[1]],
+                    controls: controls.get(start..=start + degree)?.to_vec(),
+                })
+            })?
+        })
+        .collect::<Vec<_>>();
+    (!spans.is_empty()).then_some(spans)
+}
+
+fn homogeneous_curve_boundary_matches(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    range: [f64; 2],
+    resolution: f64,
+) -> Option<bool> {
+    if !resolution.is_finite()
+        || resolution < 0.0
+        || !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+    {
+        return None;
+    }
+    let first_spans = homogeneous_bezier_spans(first)?;
+    let second_spans = homogeneous_bezier_spans(second)?;
+    if first.degree != second.degree
+        || first.knots != second.knots
+        || first_spans.len() != second_spans.len()
+    {
+        return None;
+    }
+    let degree = usize::try_from(first.degree).ok()?;
+    let product_degree = degree.checked_mul(2)?;
+    let binomial = |n: usize, k: usize| {
+        let k = k.min(n - k);
+        (1..=k).fold(1.0, |value, factor| {
+            value * (n - k + factor) as f64 / factor as f64
+        })
+    };
+    for (first_span, second_span) in first_spans.iter().zip(second_spans) {
+        if first_span.domain[1] <= range[0] || first_span.domain[0] >= range[1] {
+            continue;
+        }
+        if first_span.domain != second_span.domain {
+            return None;
+        }
+        let first_weight = first_span
+            .controls
+            .iter()
+            .map(|control| control[3])
+            .fold(f64::INFINITY, f64::min);
+        let second_weight = second_span
+            .controls
+            .iter()
+            .map(|control| control[3])
+            .fold(f64::INFINITY, f64::min);
+        let threshold = resolution * first_weight * second_weight / 3.0_f64.sqrt();
+        if !threshold.is_finite() {
+            return None;
+        }
+        for product_index in 0..=product_degree {
+            let mut cross = [0.0; 3];
+            let lower = product_index.saturating_sub(degree);
+            let upper = product_index.min(degree);
+            for first_index in lower..=upper {
+                let second_index = product_index - first_index;
+                let coefficient = binomial(degree, first_index) * binomial(degree, second_index)
+                    / binomial(product_degree, product_index);
+                for (axis, component) in cross.iter_mut().enumerate() {
+                    *component += coefficient
+                        * (first_span.controls[first_index][axis]
+                            * second_span.controls[second_index][3]
+                            - second_span.controls[second_index][axis]
+                                * first_span.controls[first_index][3]);
+                }
+            }
+            if cross
+                .into_iter()
+                .any(|component| !component.is_finite() || component.abs() > threshold)
+            {
+                return Some(false);
+            }
+        }
+    }
+    Some(true)
+}
+
+fn surface_boundary_is_closed(
+    surface: &NurbsSurface,
+    fixed_axis: SurfaceParameterAxis,
+    fixed_range: [f64; 2],
+    varying_range: [f64; 2],
+    resolution: f64,
+) -> Option<bool> {
+    let first = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?;
+    let second = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?;
+    homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
 }
 
 fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
@@ -857,7 +1054,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    for entry in directory
+    'surface: for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
@@ -1139,21 +1336,59 @@ pub(super) fn project(
                 }
             }
         }
+        let surface = NurbsSurface {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count: u_count_u32,
+            v_count: v_count_u32,
+            control_points,
+            weights,
+            u_periodic: flags[3] == Some(1),
+            v_periodic: flags[4] == Some(1),
+        };
+        for (declared, fixed_axis, fixed_range, varying_range, direction) in [
+            (
+                flags[0] == Some(1),
+                SurfaceParameterAxis::U,
+                u_range,
+                v_range,
+                "U",
+            ),
+            (
+                flags[1] == Some(1),
+                SurfaceParameterAxis::V,
+                v_range,
+                u_range,
+                "V",
+            ),
+        ] {
+            let Some(actual) = surface_boundary_is_closed(
+                &surface,
+                fixed_axis,
+                fixed_range,
+                varying_range,
+                global.minimum_resolution_mm(),
+            ) else {
+                losses.push(entity_loss(
+                    entry,
+                    format!("{direction}-closed surface boundary cannot be evaluated"),
+                ));
+                continue 'surface;
+            };
+            if actual != declared {
+                losses.push(entity_loss(
+                    entry,
+                    format!("{direction}-closed surface flag disagrees with boundary curves"),
+                ));
+                continue 'surface;
+            }
+        }
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                u_count: u_count_u32,
-                v_count: v_count_u32,
-                control_points,
-                weights,
-                u_periodic: flags[3] == Some(1),
-                v_periodic: flags[4] == Some(1),
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
         ir.model.procedural_surfaces.push(ProceduralSurface {
