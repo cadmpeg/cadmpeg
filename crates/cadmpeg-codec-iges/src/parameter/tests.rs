@@ -8,8 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
     analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_with_records,
-    entity_primary_end, groups_for_candidate, structural_pointer_group_candidates, ParameterRecord,
-    Token, TokenValue,
+    entity_primary_end, entity_primary_end_with_records, groups_for_candidate,
+    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::card::{scan, Section};
 use crate::directory::{DirectoryEntry, Status};
@@ -131,6 +131,123 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
         parameter_end,
         comment: Vec::new(),
     }
+}
+
+#[test]
+fn fixed_envelope_entity_forms_have_registered_primary_boundaries() {
+    const PROBE_TOKEN_COUNT: usize = 512;
+    let matrix_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
+    let source = std::fs::read_to_string(matrix_path).unwrap();
+    let matrix = toml::from_str::<toml::Value>(&source).unwrap();
+    let mut sequence = 1_u32;
+
+    for entity in matrix["entity"].as_array().unwrap() {
+        let entity_type = entity["type"].as_integer().unwrap();
+        let mut forms = entity["forms"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|value| value.as_integer().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let implementor_defined = entity["forms"].as_str() == Some("implementor-defined")
+            || entity
+                .get("implementor_defined")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false);
+        if implementor_defined {
+            forms.extend([5001, 9999]);
+        }
+
+        for form in forms {
+            if matches!(entity_type, 0 | 306 | 422) {
+                continue;
+            }
+            let mut entry = directory_target(sequence, entity_type);
+            entry.form = form;
+            let directory = BTreeMap::from([(sequence, &entry)]);
+            let mut values = vec![TokenValue::Integer(0); PROBE_TOKEN_COUNT];
+            values[0] = entity_type.into();
+            let record = token_parameter_record(sequence, values);
+            let primary_end = entity_primary_end(&record, &directory);
+            assert!(
+                primary_end.is_some_and(|end| end <= record.tokens.len()),
+                "missing primary boundary for Type {entity_type} Form {form}"
+            );
+            sequence += 2;
+        }
+    }
+
+    for (entity_type, form) in [(0_i64, 0_i64), (306, 0)] {
+        let entry = directory_target(sequence, entity_type);
+        let directory = BTreeMap::from([(sequence, &entry)]);
+        let record = token_parameter_record(
+            sequence,
+            vec![entity_type.into(), form.into(), 0_i64.into()],
+        );
+        assert_eq!(
+            entity_primary_end(&record, &directory),
+            None,
+            "Type {entity_type} Form {form} must use its non-table framing"
+        );
+        sequence += 2;
+    }
+
+    for entity_type in [600_i64, 699, 10_000, 99_999] {
+        let entry = directory_target(sequence, entity_type);
+        let directory = BTreeMap::from([(sequence, &entry)]);
+        let record = token_parameter_record(sequence, vec![entity_type.into(), 0_i64.into()]);
+        assert_eq!(
+            entity_primary_end(&record, &directory),
+            None,
+            "macro instance Type {entity_type} must retain its definition-dependent stream"
+        );
+        sequence += 2;
+    }
+
+    let mut definition = directory_target(sequence, 322);
+    definition.form = 0;
+    let definition_record = token_parameter_record(
+        sequence,
+        vec![
+            322_i64.into(),
+            TokenValue::String(b"ATTR".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            10_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+        ],
+    );
+    let definition_sequence = sequence;
+    sequence += 2;
+    let mut instance = directory_target(sequence, 422);
+    instance.form = 0;
+    instance.structure = -i64::from(definition_sequence);
+    let instance_record = token_parameter_record(
+        sequence,
+        vec![
+            422_i64.into(),
+            7_i64.into(),
+            8_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+    );
+    let directory = BTreeMap::from([(definition_sequence, &definition), (sequence, &instance)]);
+    let records = BTreeMap::from([
+        (definition_sequence, &definition_record),
+        (sequence, &instance_record),
+    ]);
+    assert_eq!(
+        entity_primary_end_with_records(&instance_record, &directory, &records),
+        Some(3)
+    );
 }
 
 #[test]
