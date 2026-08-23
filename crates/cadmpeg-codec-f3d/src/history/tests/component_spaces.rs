@@ -177,6 +177,44 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
 }
 
 #[test]
+fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
+    let reference = |design_reference, faces: &[i64]| crate::records::DesignRecipeReference {
+        selector: 0,
+        selector_offset: 0,
+        token: "face".into(),
+        token_offset: 0,
+        design_reference,
+        design_reference_offset: 0,
+        candidate_faces: faces
+            .iter()
+            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .collect(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    };
+    let references = [reference(203, &[8, 7]), reference(199, &[9])];
+
+    assert_eq!(
+        direct_face_recipe_candidates(
+            crate::records::ConstructionRecipeKind::Face,
+            &references,
+            203,
+        ),
+        Some(vec![
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(7)),
+            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(8)),
+        ])
+    );
+    assert!(direct_face_recipe_candidates(
+        crate::records::ConstructionRecipeKind::BoundedFace,
+        &references,
+        203,
+    )
+    .is_none());
+}
+
+#[test]
 fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,

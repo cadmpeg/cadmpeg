@@ -3615,6 +3615,25 @@ fn historical_recipe_faces(
     faces
 }
 
+fn direct_face_recipe_candidates(
+    recipe_kind: crate::records::ConstructionRecipeKind,
+    references: &[crate::records::DesignRecipeReference],
+    recipe_record_index: i32,
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    if recipe_kind != crate::records::ConstructionRecipeKind::Face {
+        return None;
+    }
+    let mut faces = references
+        .iter()
+        .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
+        .flat_map(|reference| &reference.candidate_faces)
+        .cloned()
+        .collect::<Vec<_>>();
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    (!faces.is_empty()).then_some(faces)
+}
+
 pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::DesignFaceOperand],
     scopes: &[crate::records::DesignParameterScope],
@@ -3706,6 +3725,15 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
+        let direct_face_candidates = recipe_record_indices
+            .get(operand.recipe_id.as_str())
+            .and_then(|record_index| {
+                direct_face_recipe_candidates(
+                    operand.recipe_kind,
+                    &operand.recipe_references,
+                    *record_index,
+                )
+            });
         let feature_family = crate::design::design_feature_family(&scope.kind);
         let thread_face_candidates = (feature_family
             == Some(crate::design::DesignFeatureFamily::Thread))
@@ -3753,13 +3781,15 @@ pub(crate) fn bind_face_operand_history_candidates(
             )
         })
         .flatten();
-        let history_candidates = thread_face_candidates
-            .clone()
-            .or(nested_split_face_candidates)
-            .or_else(|| grouped_reference_face_candidates.clone())
-            .unwrap_or_else(|| {
-                crate::design::face_resolve::historical_face_operand_candidates(operand)
-            });
+        let history_candidates = direct_face_candidates.clone().unwrap_or_else(|| {
+            thread_face_candidates
+                .clone()
+                .or(nested_split_face_candidates)
+                .or_else(|| grouped_reference_face_candidates.clone())
+                .unwrap_or_else(|| {
+                    crate::design::face_resolve::historical_face_operand_candidates(operand)
+                })
+        });
         operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
@@ -3773,6 +3803,14 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
         );
+        if direct_face_candidates.is_some() {
+            operand.resolved_face_slots = operand
+                .preceding_candidate_faces
+                .iter()
+                .filter_map(|face| stable_ref(&face.0))
+                .collect();
+            continue;
+        }
         let preserves_stable_face_set = feature_family
             == Some(crate::design::DesignFeatureFamily::Shell)
             || operand
