@@ -169,6 +169,22 @@ pub(crate) fn b2_adjacent_face_owner_stream() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn b2_adjacent_secondary_face_owner_stream() -> Vec<u8> {
+    let target = compact_uint_bytes(278);
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x5f,
+        u8::try_from(1 + target.len() + 2).expect("face-node payload length"),
+        0x05,
+        0x82,
+    ];
+    bytes.extend_from_slice(&target);
+    bytes.extend_from_slice(&[0x03, 0x03]);
+    bytes.extend_from_slice(&b2_all_compact_owner_packet_stream());
+    bytes
+}
+
 pub(crate) fn b2_adjacent_face_counted_owner_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x11, 0x82, 0x08, 0x94, 0x03, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x19,

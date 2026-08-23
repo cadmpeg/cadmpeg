@@ -362,78 +362,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-17. Class-`0x62` owner bounds
 
-**Question.** What do the three binary32 bound pairs in a fixed `b2`, `b3`, or `b4 03 62` owner tail represent, and how are they scoped?
+**Question.** What do the binary64 and binary32 lanes represent in tagged alternating and width-coded fixed-nine owner packets?
 
-**Known.** The decoder separates the fixed five-byte header, the binary64 parameter rectangle, and the binary32 bounds. In tagged alternating packets at offsets `40482` through `50620` and `61352` through `68556`, the binary64 `lower` and `upper` pairs match the U/V parameter domains of their independently associated NURBS carriers. The V interval can be a proper subinterval of the carrier domain. This resolves the binary64 lane for that encoding when the carrier relation is already known; it does not identify the owner packet's face.
+**Known.** In the all-compact grammar, the three binary32 pairs are the model-space X, Y, and Z bounds of the owned face boundary. In tagged alternating packets with an established NURBS-carrier relation, the binary64 pairs are the carrier parameter rectangle and may cover a proper subdomain. The tagged binary32 lane is not a direct face-boundary box. Width-coded binary32 bounds can enclose more than one face boundary.
 
-**Need.** We must identify the coordinate system, axes, and scope of the three binary32 bounds.
-
-The fixed-nine grammar has a distinct all-compact subtype. In four
-topology-bearing standard spines, all-compact packets at offsets
-`1511860`, `1512333`, `1518588`, `1518685`, `1519121`, `1524406`,
-`1526188`, `1527699`, `1529296`, `1530897`, `1532391`, `1533984`,
-`1535487`, and `1537104`; `933885`, `935186`, `936469`, and `937778`;
-the 58-packet population from `1267952` through `1434751`; and the
-20-packet population from `538468` through `586831` each have three
-binary32 bound pairs that contain exactly one serialized face-boundary AABB
-within `2e-3` in each coordinate. Width-coded fixed-nine packets at
-`1520445`, `1522425`, `1553427`, `1556160`, and `1558192` each admit two
-face-boundary AABBs. The one-face enclosing-box rule is therefore limited to
-the all-compact subtype; grouped width-coded extents and the binary64 box
-axes remain open.
-
-The tagged alternating packets above do not match standard face-local AABBs:
-the nearest per-packet maximum-coordinate residuals range from `0.745981` to
-`3.389341`. The binary32 lane is therefore not a direct standard face AABB in
-that dialect. The all-compact face-boundary candidates and the tagged carrier
-parameter rectangles are different observations; neither supplies a general
-owner-to-face identity.
-
-An additional fixed-nine population has 81 class-`0x62` records. Seventy-two
-tagged records start at offsets `40482` through `50620`; the nine all-compact
-records start at offsets `144640`, `144739`, `144872`, `144971`, `146789`,
-`146888`, `147019`, `147118`, and `153243`. Every record has family `B`, width
-`1`, flag `3`, class `0x62`, and header token `5`. The four edge-reference
-positions in these records contain 324 values and 245 distinct numeric
-references: 183 occur once, 46 twice, 15 three times, and one four times.
-All 81 records fall in consolidated source extent `15`. These counts rule out
-the numeric reference value as one global physical-edge namespace and show
-that the allocation-group boundary is still not identified.
+**Need.** We must define the binary64 lane in the all-compact and width-coded grammars and the binary32 lane in the tagged alternating and width-coded grammars.
 
 ### SN-18. Class-`0x62` owner-to-face binding
 
 **Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
 
-**Known.** Allocation links bind class-`0x5f` records to class-`0x62` owners.
+**Known.** A complete class-`0x5f` node immediately preceding a fixed-nine owner binds to that owner when its target's checked successor is the ninth owner identity. Terminal `03 05` admits every fixed-nine grammar. Terminal `03 03` admits the all-compact grammar only. The node target and owner identities are allocation-local.
 
-**Need.** We must know the face binding to assign the owner metadata.
+**Need.** We must identify the allocation-group relation that maps the bound node target to a standard face ordinal without comparing local identities across groups.
 
-The binding also needs an allocation-group discriminator. Consolidated source
-extent `15` contains all 81 fixed-nine records, so it cannot scope reference
-equality. The four edge-reference positions have the multiplicities recorded
-in SN-17; comparing them across the extent would merge allocation-local
-identities. We need the relation that scopes those references and joins the
-scoped owner to a standard face ordinal.
-
-The all-compact subtype provides a stronger geometric candidate but not a
-source identity. Fourteen adjacent `5f,62` relations occur at owner offsets
-`1511860`, `1512333`, `1518588`, `1518685`, `1519121`, `1524406`,
-`1526188`, `1527699`, `1529296`, `1530897`, `1532391`, `1533984`,
-`1535487`, and `1537104`; their node targets are `278`, `592`, `219`,
-`253`, `597`, `114`, and `179` for the final eight, and each final owner
-reference equals the checked target successor. Their numeric bounds select
-face ordinals `56`, `58`, `63`, `64`, `67`, `76`, `77`, `79`, `82`, `85`,
-`87`, `90`, `92`, and `95` by the one-face AABB witness. The node targets
-remain allocation identities, not those face ordinals. Other all-compact
-packets have no adjacent node, so the geometric witness does not define the
-general owner-to-face binding.
-
-The same population has no direct one-to-one reference join: 183 reference
-values are singletons, while the remaining values occur two to four times
-across packets in the shared source extent. The all-compact numeric boxes are
-therefore derived face candidates only. Verdict: the fixed-nine grammar and
-the limited enclosing-box witness are admitted; the general owner-to-face
-binding remains open pending the allocation-group relation.
+**Note.** The all-compact model-space box can nominate one geometric face, but this geometric witness does not define the source identity join.
 
 ### SN-19. Cone `pre_range_scalar`
 
@@ -487,7 +430,7 @@ binding remains open pending the allocation-group relation.
 
 **Question.** What higher-level object does each derived `b2`, `b3`, or `b4 03 5f` to `0x62` packet relation represent?
 
-**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. Other terminal pairs remain unassigned. The relation does not assign a higher-level object or allocation role.
+**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. The `03 03` terminal form retains the same relation for an all-compact fixed-nine packet. Other terminal and packet-grammar combinations remain unassigned. The relation does not assign a higher-level object or allocation role.
 
 **Need.** We must know the object role to assign the owner to a feature or face.
 

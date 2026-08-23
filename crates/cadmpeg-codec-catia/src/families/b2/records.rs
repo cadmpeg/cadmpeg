@@ -158,7 +158,8 @@ pub struct B2OwnerNumericTail {
     pub lower: [f64; 2],
     /// Upper coordinate pair of a strictly increasing binary64 box.
     pub upper: [f64; 2],
-    /// Three strictly increasing binary32 bounds in serialization order.
+    /// Three strictly increasing binary32 bounds in serialization order. In
+    /// an all-compact owner these are the model-space X, Y, and Z bounds.
     pub bounds: [[f32; 2]; 3],
 }
 
@@ -858,8 +859,9 @@ pub(crate) fn b2_face_nodes_5f_from_records(
         .collect()
 }
 
-/// Bind immediately adjacent `5f,62` records when the packet's ninth identity
-/// is the checked successor of the node target.
+/// Bind immediately adjacent `5f,62` records when the terminal admits the
+/// packet dialect and its ninth identity is the checked successor of the node
+/// target.
 #[must_use]
 #[cfg(test)]
 pub fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
@@ -873,7 +875,6 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 ) -> Vec<B2AdjacentFaceOwner> {
     let nodes = b2_face_nodes_5f_from_records(data, records)
         .into_iter()
-        .filter(|value| value.terminal == [0x03, 0x05])
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let owners = b2_owner_packets_from_records(data, records)
@@ -888,12 +889,14 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
             };
             let face_node = nodes.get(&link_record.range.start)?;
             let owner = owners.get(&owner_record.range.start)?;
-            (face_node.target.checked_add(1) == Some(owner.references[8])).then(|| {
-                B2AdjacentFaceOwner {
+            let terminal_is_admitted = face_node.terminal == [0x03, 0x05]
+                || (face_node.terminal == [0x03, 0x03]
+                    && owner.reference_encoding == B2OwnerReferenceEncoding::AllCompact);
+            (terminal_is_admitted && face_node.target.checked_add(1) == Some(owner.references[8]))
+                .then(|| B2AdjacentFaceOwner {
                     face_node: *face_node,
                     owner: owner.clone(),
-                }
-            })
+                })
         })
         .collect()
 }

@@ -364,6 +364,32 @@ fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
 }
 
 #[test]
+fn b2_secondary_face_node_terminal_requires_all_compact_owner() {
+    let secondary = b2_adjacent_secondary_face_owner_stream();
+    let pairs = crate::families::b2::records::b2_adjacent_face_owners(&secondary);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].face_node.terminal, [0x03, 0x03]);
+    assert_eq!(pairs[0].face_node.target, 278);
+    assert_eq!(pairs[0].owner.references[8], 279);
+
+    let owner_start = secondary
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("owner frame");
+    let mut tagged = b2_adjacent_face_owner_stream();
+    let tagged_owner_start = tagged
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("tagged owner frame");
+    tagged[tagged_owner_start - 1] = 0x03;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&tagged).is_empty());
+
+    let mut unknown_terminal = secondary;
+    unknown_terminal[owner_start - 1] = 0x07;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&unknown_terminal).is_empty());
+}
+
+#[test]
 fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let owners = crate::families::b2::records::b2_counted_owners(&bytes);

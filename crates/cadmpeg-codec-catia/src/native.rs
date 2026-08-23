@@ -244,7 +244,8 @@ pub struct CatiaOwnerNumericTail {
     pub lower: [f64; 2],
     /// Upper coordinate pair of a strictly increasing binary64 box.
     pub upper: [f64; 2],
-    /// Three strictly increasing binary32 bounds in serialization order.
+    /// Three strictly increasing binary32 bounds in serialization order. In
+    /// an all-compact owner these are the model-space X, Y, and Z bounds.
     pub bounds: [[f32; 2]; 3],
 }
 
