@@ -1719,6 +1719,46 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
 }
 
 #[test]
+fn om_operation_payload_text_frames_retain_marker_and_order() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let frames = super::operation_payload_text_frames(record);
+    assert_eq!(
+        frames,
+        vec![
+            super::OperationPayloadTextFrame {
+                marker: 0x03,
+                offset: 200,
+                value: "CUT",
+            },
+            super::OperationPayloadTextFrame {
+                marker: 0x04,
+                offset: 206,
+                value: "DONE",
+            },
+            super::OperationPayloadTextFrame {
+                marker: 0x03,
+                offset: 213,
+                value: "M Profile",
+            },
+        ]
+    );
+}
+
+#[test]
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
     let strings = super::surface_payload_strings(bytes);

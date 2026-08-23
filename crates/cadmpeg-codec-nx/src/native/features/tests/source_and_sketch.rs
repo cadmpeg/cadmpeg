@@ -88,6 +88,56 @@ fn nx_feature_source_content_orders_payload_text() {
 }
 
 #[test]
+fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 500,
+        payload,
+        label,
+    };
+
+    let frames = super::symbolic_thread_text_frames(record).expect("two text frames");
+    assert_eq!(frames.len(), 3);
+    assert_eq!(frames[0].marker, 0x03);
+    assert_eq!(frames[0].offset, 500);
+    assert_eq!(frames[0].value, "M Profile");
+    assert_eq!(frames[1].offset, 512);
+    assert_eq!(frames[1].value, "M3_x_0.5");
+    assert_eq!(frames[2].offset, 523);
+    assert_eq!(frames[2].value, "CUT");
+}
+
+#[test]
+fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 500,
+        payload,
+        label,
+    };
+
+    assert!(super::symbolic_thread_text_frames(record).is_none());
+}
+
+#[test]
 fn nx_block_dimensions_do_not_cross_expression_sections() {
     use super::{FeatureBlockConstruction, FeatureParameterBinding};
     use crate::native::om::{Expression, ExpressionDeclaration, ExpressionUnit};

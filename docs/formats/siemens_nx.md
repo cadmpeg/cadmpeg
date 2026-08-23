@@ -230,6 +230,14 @@ The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.
 
+An operation-payload text frame is `marker:u8, length:u8,
+text[length - 2], 00`. The length is `text_byte_count + 2`, and the trailing
+terminator is at `marker + length`. Markers `03` and `04` select text-frame
+lanes. The text is nonempty printable UTF-8. A `SYMBOLIC_THREAD` operation
+retains its complete type-`03` frames in serialized order when the payload
+contains at least two such frames. Each retained frame keeps its marker, text,
+and absolute source offset.
+
 `UNITE`, `SUBTRACT`, and `INTERSECT` labels are followed by the fixed Boolean
 header `31 00 00 01 00 14 2f a4 7a e1 47 ae 14 7b 03 00 00 e0 7f ff ff ff 01 01`,
 then a target list and a tool list separated and terminated by `00`. Each list

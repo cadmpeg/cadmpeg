@@ -323,6 +323,38 @@ pub struct FeaturePayloadString {
     pub source_offset: u64,
 }
 
+/// Exact text frame retained from a `SYMBOLIC_THREAD` operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSymbolicThreadTextFrame {
+    /// Globally unique text-frame identity.
+    pub id: String,
+    /// Owning typed `SYMBOLIC_THREAD` record.
+    pub symbolic_thread: String,
+    /// Zero-based order among the operation's type-`03` text frames.
+    pub ordinal: u32,
+    /// Exact serialized text-frame marker.
+    pub marker: u8,
+    /// Exact UTF-8 text value.
+    pub value: String,
+    /// Absolute file offset of the text-frame marker.
+    pub source_offset: u64,
+}
+
+/// Typed text-frame payload retained from one `SYMBOLIC_THREAD` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSymbolicThread {
+    /// Globally unique symbolic-thread identity.
+    pub id: String,
+    /// Owning `SYMBOLIC_THREAD` operation label.
+    pub operation_label: String,
+    /// Owning exact feature-operation record.
+    pub operation_record: String,
+    /// Ordered complete type-`03` text frames in the payload.
+    pub text_frames: Vec<FeatureSymbolicThreadTextFrame>,
+    /// Absolute file offset of the operation record's fixed header marker.
+    pub source_offset: u64,
+}
+
 /// Typed operation template carried by a hole payload string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSimpleHoleTemplate {
@@ -3518,6 +3550,61 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
         },
     );
     strings
+}
+
+fn symbolic_thread_text_frames(
+    record: crate::om::OperationRecord<'_>,
+) -> Option<Vec<crate::om::OperationPayloadTextFrame<'_>>> {
+    if record.label.value != "SYMBOLIC_THREAD" {
+        return None;
+    }
+    let frames = crate::om::operation_payload_text_frames(record)
+        .into_iter()
+        .filter(|frame| frame.marker == 0x03)
+        .collect::<Vec<_>>();
+    (frames.len() >= 2).then_some(frames)
+}
+
+/// Decode complete typed text frames from symbolic-thread operations.
+pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThread> {
+    let mut threads = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(frames) = symbolic_thread_text_frames(record) else {
+                return;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            let id =
+                format!("nx:feature-history:symbolic-thread#{section_key}-{operation_ordinal:010}");
+            let text_frames = frames
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, frame)| FeatureSymbolicThreadTextFrame {
+                    id: format!(
+                        "nx:feature-history:symbolic-thread-text-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    symbolic_thread: id.clone(),
+                    ordinal: ordinal as u32,
+                    marker: frame.marker,
+                    value: frame.value.to_string(),
+                    source_offset: entry_offset + frame.offset as u64,
+                })
+                .collect();
+            threads.push(FeatureSymbolicThread {
+                id,
+                operation_label,
+                operation_record,
+                text_frames,
+                source_offset: entry_offset + record.offset as u64,
+            });
+        },
+    );
+    threads
 }
 
 /// Join exact hole payload templates to their operation identities.

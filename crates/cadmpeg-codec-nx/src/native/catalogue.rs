@@ -2279,6 +2279,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: false,
     },
     CatalogueRow {
+        arena: "feature_symbolic_threads",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_symbolic_threads, r, ns),
+        len: |m| m.features.feature_symbolic_threads.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_simple_hole_templates",
         tag: None,
         exactness: Exactness::ByteExact,

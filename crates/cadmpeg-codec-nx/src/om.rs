@@ -1947,6 +1947,17 @@ pub struct OperationPayloadString<'a> {
     pub value: &'a str,
 }
 
+/// One length-framed UTF-8 text frame in a bounded operation payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationPayloadTextFrame<'a> {
+    /// Marker selecting the payload text-frame family.
+    pub marker: u8,
+    /// Absolute offset of the marker.
+    pub offset: usize,
+    /// Exact non-empty text value.
+    pub value: &'a str,
+}
+
 /// One canonical variable-width object index in an operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadObjectReference {
@@ -3232,12 +3243,14 @@ fn operation_records_with_labels_and_ordinals<'a>(
         .collect()
 }
 
-/// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
-    let mut strings = Vec::new();
+/// Decode ordered `03|04, length, text, 00` frames from one operation payload.
+pub fn operation_payload_text_frames(
+    record: OperationRecord<'_>,
+) -> Vec<OperationPayloadTextFrame<'_>> {
+    let mut frames = Vec::new();
     let mut at = 0usize;
     while at + 4 <= record.payload.len() {
-        if record.payload[at] != 0x04 {
+        if !matches!(record.payload[at], 0x03 | 0x04) {
             at += 1;
             continue;
         }
@@ -3260,13 +3273,26 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
             at += 1;
             continue;
         }
-        strings.push(OperationPayloadString {
+        frames.push(OperationPayloadTextFrame {
+            marker: record.payload[at],
             offset: record.payload_offset + at,
             value,
         });
         at = end + 1;
     }
-    strings
+    frames
+}
+
+/// Decode ordered `04, length, text, 00` strings from one operation payload.
+pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
+    operation_payload_text_frames(record)
+        .into_iter()
+        .filter(|frame| frame.marker == 0x04)
+        .map(|frame| OperationPayloadString {
+            offset: frame.offset,
+            value: frame.value,
+        })
+        .collect()
 }
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
