@@ -5,9 +5,11 @@ use crate::global::Dialect;
 
 pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -> bool {
     let admitted = match entity_type {
-        0 | 100 | 102 | 112 | 114 | 116 | 120 | 122 | 123 | 130 | 132 | 140 | 141 | 142 | 143
-        | 144 | 150 | 152 | 154 | 156 | 158 | 160 | 164 | 168 | 182 | 186 | 202 | 204 | 206
-        | 208 | 210 | 213 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414 | 420 => form == 0,
+        0 | 100 | 102 | 112 | 114 | 116 | 120 | 122 | 123 | 130 | 132 | 134 | 136 | 138 | 140
+        | 141 | 142 | 143 | 144 | 150 | 152 | 154 | 156 | 158 | 160 | 164 | 168 | 182 | 186
+        | 202 | 204 | 206 | 208 | 210 | 213 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414
+        | 420 => form == 0,
+        146 | 148 => matches!(form, 0..=34),
         228 => matches!(form, 0..=3 | 5001..=9999),
         230 => matches!(form, 0..=1),
         212 => general_note_form_admitted(form),
@@ -32,6 +34,7 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
         402 => matches!(form, 1 | 2 | 3..=8 | 9..=16 | 18..=21),
         406 => property_form_admitted(form),
         416 => matches!(form, 0..=4),
+        418 => form == 0,
         502 | 504 | 508 | 510 => form == 1,
         514 => matches!(form, 1..=2),
         _ => false,

@@ -1069,6 +1069,7 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
           "flashes": [],
           "groups": [],
           "line_fonts": [],
@@ -1106,7 +1107,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 5
+        "version": 6
       }
     },
     "source": {

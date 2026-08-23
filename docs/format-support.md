@@ -119,7 +119,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 - **Compressed ASCII.** Distinct representation envelope.
 - **Binary.** Distinct representation envelope.
 - **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable. Its presence holds the Fixed ASCII mechanical/document score at the last level that admits it as opaque.
-- **Finite-element analysis.** Types 134, 136, 138, 146, 148, and 418 form an adjacent analysis envelope.
+- **Finite-element analysis.** Types 134, 136, 138, 146, 148, and 418 are admitted in their standard forms and retained as typed records in `native.iges.fem_entities`. The codec has no neutral finite-element IR or FEM writer; these records remain native-only and report the standard retained-unprojected disposition.
 - **Electrical, artwork, and schematic.** Type 125 is admitted as a geometry location carrier, with its flash shape retained in `native.iges.flashes`. Type 402 Forms 8, 10, and 11 remain in the adjacent electrical-presentation envelope. Types 132, 320, and 420 remain in the mechanical/document profile for typed network definition, connection identity, and occurrence structure.
 - **Macro and extension definitions.** Type 306 belongs to extension-envelope declaration.
 

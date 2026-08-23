@@ -6,9 +6,10 @@ specification_version = "5.3"
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
 # list is closed and admits only those forms unless `implementor_defined = true`
 # is present. That field adds the same 5001 through 9999 range to the explicit
-# list. Obsolete, finite-element,
-# electrical/artwork/schematic, and macro/extension branches are adjacent
-# envelopes and are not part of this mechanical/document envelope. Type 125
+# list. Obsolete, electrical/artwork/schematic, and macro/extension branches
+# remain adjacent envelopes. The standard finite-element entity records are
+# retained in the typed native FEM arena; they do not project to neutral IR.
+# Type 125
 # is admitted as a geometry location carrier; its artwork shape is retained
 # in the typed native arena. Types 132, 320, and 420 remain admitted as
 # product-network identity and occurrence records; other electrical signal,
@@ -221,6 +222,66 @@ decoder = "entities::structure::project"
 destination = "native.iges.connect_points"
 fixture_classes = ["network-connect-points"]
 assertions = ["owner-links", "classification", "placement", "byte-coverage"]
+
+[[entity]]
+type = 134
+name = "finite-element-node"
+forms = [0]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-nodes"]
+assertions = ["coordinate-system-links", "node-identity", "byte-coverage"]
+
+[[entity]]
+type = 136
+name = "finite-element"
+forms = [0]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-elements"]
+assertions = ["topology", "node-connectivity", "byte-coverage"]
+
+[[entity]]
+type = 138
+name = "nodal-displacement-and-rotation"
+forms = [0]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-displacements"]
+assertions = ["case-count", "node-values", "byte-coverage"]
+
+[[entity]]
+type = 146
+name = "nodal-results"
+forms = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-nodal-results"]
+assertions = ["result-arity", "node-values", "byte-coverage"]
+
+[[entity]]
+type = 148
+name = "element-results"
+forms = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-element-results"]
+assertions = ["result-arity", "element-locations", "byte-coverage"]
+
+[[entity]]
+type = 418
+name = "nodal-load-constraint"
+forms = [0]
+domain = "finite-element-analysis"
+decoder = "native::fem"
+destination = "native.iges.fem_entities"
+fixture_classes = ["fem-load-constraints"]
+assertions = ["case-count", "node-link", "property-links", "byte-coverage"]
 
 [[entity]]
 type = 140

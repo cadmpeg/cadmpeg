@@ -116,6 +116,20 @@ fn v4_admission_matches_its_entity_and_form_table() {
         (125, 0, true),
         (125, 4, true),
         (125, 5, false),
+        (134, 0, true),
+        (134, 1, false),
+        (136, 0, true),
+        (136, 1, false),
+        (138, 0, true),
+        (138, 1, false),
+        (146, 0, true),
+        (146, 34, true),
+        (146, 35, false),
+        (148, 0, true),
+        (148, 34, true),
+        (148, 35, false),
+        (418, 0, true),
+        (418, 1, false),
         (402, 5, true),
         (402, 6, false),
         (402, 7, true),
@@ -160,6 +174,30 @@ fn v4_admission_matches_its_entity_and_form_table() {
             expected,
             "entity type {entity_type} form {form}"
         );
+    }
+}
+
+#[test]
+fn standard_fem_forms_are_admitted_in_v4_and_v5() {
+    for dialect in [
+        Dialect::V4_0,
+        Dialect::V5_0,
+        Dialect::V5_1,
+        Dialect::V5_2,
+        Dialect::V5_3,
+    ] {
+        for entity_type in [134, 136, 138, 418] {
+            assert!(
+                crate::profile::envelope_a_admits(entity_type, 0, dialect),
+                "{dialect:?} Type {entity_type} Form 0"
+            );
+            assert!(!crate::profile::envelope_a_admits(entity_type, 1, dialect));
+        }
+        for entity_type in [146, 148] {
+            assert!(crate::profile::envelope_a_admits(entity_type, 0, dialect));
+            assert!(crate::profile::envelope_a_admits(entity_type, 34, dialect));
+            assert!(!crate::profile::envelope_a_admits(entity_type, 35, dialect));
+        }
     }
 }
 

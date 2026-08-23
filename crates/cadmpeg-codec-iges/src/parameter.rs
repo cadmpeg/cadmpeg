@@ -822,6 +822,10 @@ pub(crate) fn entity_primary_end(
         (402, 9) => Some(single_parent_primary_end(record)),
         (230, 0..=1) => Some(sectioned_area_primary_end(record)),
         (228, 0..=3 | 5001..=9999) => Some(general_symbol_primary_end(record)),
+        (134, 0) => Some(fixed_primary_end(record, 5)),
+        (136, 0) => Some(finite_element_primary_end(record)),
+        (138, 0) => Some(nodal_displacement_primary_end(record)),
+        (146 | 148, 0..=34) => Some(fem_result_primary_end(record, entry.entity_type)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
         (204, 0) => Some(fixed_primary_end(record, 8)),
@@ -908,6 +912,7 @@ pub(crate) fn entity_primary_end(
         (213, 0) => Some(new_general_note_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
+        (418, 0) => Some(nodal_load_constraint_primary_end(record)),
         _ => None,
     }
 }
@@ -941,6 +946,128 @@ fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
     } else {
         record.tokens.len()
     }
+}
+
+fn counted_fem_end(
+    record: &ParameterRecord,
+    count_index: usize,
+    start: usize,
+    stride: usize,
+) -> usize {
+    let Some(count) = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    count
+        .checked_mul(stride)
+        .and_then(|span| start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn finite_element_primary_end(record: &ParameterRecord) -> usize {
+    counted_fem_end(record, 2, 4, 1)
+}
+
+fn nodal_displacement_primary_end(record: &ParameterRecord) -> usize {
+    let Some(case_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(node_count_index) = 2usize.checked_add(case_count) else {
+        return record.tokens.len();
+    };
+    let Some(node_count) = record
+        .integer(node_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(start) = node_count_index.checked_add(1) else {
+        return record.tokens.len();
+    };
+    let Some(stride) = case_count
+        .checked_mul(6)
+        .and_then(|value| value.checked_add(2))
+    else {
+        return record.tokens.len();
+    };
+    node_count
+        .checked_mul(stride)
+        .and_then(|span| start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn fem_result_primary_end(record: &ParameterRecord, entity_type: i64) -> usize {
+    let (value_count_index, item_count_index, item_start): (usize, usize, usize) =
+        if entity_type == 146 {
+            (4, 5, 6)
+        } else {
+            (4, 6, 7)
+        };
+    let Some(value_count) = record
+        .integer(value_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(item_count) = record
+        .integer(item_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    if entity_type == 146 {
+        return value_count
+            .checked_add(2)
+            .and_then(|stride| item_count.checked_mul(stride))
+            .and_then(|span| item_start.checked_add(span))
+            .filter(|end| *end <= record.tokens.len())
+            .unwrap_or(record.tokens.len());
+    }
+    let mut cursor = item_start;
+    for _ in 0..item_count {
+        let Some(report_location_count_index) = cursor.checked_add(5) else {
+            return record.tokens.len();
+        };
+        let Some(report_location_count) = record
+            .integer(report_location_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(report_location_start) = cursor.checked_add(6) else {
+            return record.tokens.len();
+        };
+        let Some(value_count_index) = report_location_start.checked_add(report_location_count)
+        else {
+            return record.tokens.len();
+        };
+        let Some(result_count) = record
+            .integer(value_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = value_count_index
+            .checked_add(1)
+            .and_then(|start| start.checked_add(result_count))
+            .filter(|end| *end <= record.tokens.len())
+        else {
+            return record.tokens.len();
+        };
+        cursor = next;
+    }
+    cursor
+}
+
+fn nodal_load_constraint_primary_end(record: &ParameterRecord) -> usize {
+    counted_fem_end(record, 1, 4, 1)
 }
 
 fn line_font_pattern_primary_end(record: &ParameterRecord) -> usize {
@@ -2980,3 +3107,5 @@ mod tests;
 mod type228_tests;
 #[cfg(test)]
 mod type230_tests;
+#[cfg(test)]
+mod type_fem_tests;

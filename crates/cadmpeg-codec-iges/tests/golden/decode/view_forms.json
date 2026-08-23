@@ -1568,6 +1568,7 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
           "flashes": [],
           "groups": [],
           "line_fonts": [],
@@ -1673,7 +1674,7 @@
             }
           ]
         },
-        "version": 5
+        "version": 6
       }
     },
     "source": {

@@ -18,6 +18,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod annotations;
+mod fem;
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
@@ -4521,6 +4522,7 @@ pub(crate) fn store(
         &mut overdeclared_counts,
         global.dialect(),
     );
+    let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
     let mut malformed_definition_sequences = Vec::new();
@@ -4764,6 +4766,7 @@ pub(crate) fn store(
         segmented_visibility.len(),
         drawings.len(),
         annotations.len(),
+        fem_entities.len(),
         product_occurrences.len(),
         product_occurrence_expansion.len(),
         quarantined_directory_records.len(),
@@ -4775,7 +4778,7 @@ pub(crate) fn store(
         ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     }
     let namespace = ir.native.namespace_mut("iges");
-    namespace.version = 5;
+    namespace.version = 6;
     namespace.set_arena_from("cards", cards)?;
     namespace.set_arena_from("entities", entities)?;
     namespace.set_arena_from("directions", directions)?;
@@ -4815,6 +4818,7 @@ pub(crate) fn store(
     namespace.set_arena_from("segmented_visibility", segmented_visibility)?;
     namespace.set_arena_from("drawings", drawings)?;
     namespace.set_arena_from("annotations", annotations)?;
+    namespace.set_arena_from("fem_entities", fem_entities)?;
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
     namespace.set_arena_from(
