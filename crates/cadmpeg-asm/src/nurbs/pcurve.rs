@@ -45,11 +45,9 @@ pub struct PcurvePatchLayout {
     pub control_end: usize,
 }
 
-/// Locate the final valid non-rational 2D pcurve block in a carrier record.
-pub fn final_pcurve_patch_layout(record: &[u8]) -> Option<PcurvePatchLayout> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| final_pcurve_patch_layout_at(record, int_width))
+/// Locate the final valid 2D pcurve block at the stream's known integer width.
+pub fn final_pcurve_patch_layout(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
+    final_pcurve_patch_layout_at(record, int_width)
 }
 
 fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
@@ -261,8 +259,8 @@ mod width_tests {
         DecodedRollingBallCurve,
     };
     use crate::nurbs::core::{
-        curve_cache, decode_curve_cache, decode_surface_cache, final_surface_patch_layout,
-        surface_cache,
+        curve_cache, decode_curve_cache, decode_surface_cache, final_curve_patch_layout,
+        final_surface_patch_layout, first_curve_patch_layout, surface_cache,
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
@@ -1239,12 +1237,18 @@ mod width_tests {
     #[test]
     fn curve_cache_decodes_in_both_integer_widths() {
         for int_width in [4usize, 8] {
-            let curve = decode_curve_cache(&curve_block(int_width))
+            let block = curve_block(int_width);
+            let curve = decode_curve_cache(&block)
                 .unwrap_or_else(|| panic!("curve cache at width {int_width}"));
             assert_eq!(curve.degree, 1);
             assert_eq!(curve.control_points.len(), 2);
             assert_eq!(curve.control_points[1].x, 10.0); // cm→mm ×10
             assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
+            assert!(first_curve_patch_layout(&block, int_width).is_some());
+            assert!(final_curve_patch_layout(&block, int_width).is_some());
+            let other_width = if int_width == 4 { 8 } else { 4 };
+            assert!(first_curve_patch_layout(&block, other_width).is_none());
+            assert!(final_curve_patch_layout(&block, other_width).is_none());
         }
     }
 
@@ -1258,6 +1262,11 @@ mod width_tests {
             let mut pcurves = pcurve_block(int_width);
             pcurves.extend_from_slice(&pcurve_block(int_width));
             assert!(super::decode_pcurve_cache(&pcurves).is_none());
+
+            let block = pcurve_block(int_width);
+            assert!(super::final_pcurve_patch_layout(&block, int_width).is_some());
+            let other_width = if int_width == 4 { 8 } else { 4 };
+            assert!(super::final_pcurve_patch_layout(&block, other_width).is_none());
         }
     }
 

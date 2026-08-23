@@ -695,8 +695,8 @@ impl AsmEditSet {
         tolerance: f64,
     ) -> Result<(), CodecError> {
         let record_bytes = record_slice(bytes, record, "procedural-curve")?;
-        let layout =
-            crate::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
+        let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes, self.ref_width)
+            .ok_or_else(|| {
                 CodecError::Malformed(format!(
                     "intcurve record {} has no solved curve cache",
                     record.index
@@ -1654,10 +1654,11 @@ fn patch_nurbs_curve_record(
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
     let record_bytes = record_slice(bytes, record, "NURBS curve")?;
+    let int_width = stream_ref_width(bytes);
     let layout = if final_cache {
-        crate::nurbs::core::final_curve_patch_layout(record_bytes)
+        crate::nurbs::core::final_curve_patch_layout(record_bytes, int_width)
     } else {
-        crate::nurbs::core::first_curve_patch_layout(record_bytes)
+        crate::nurbs::core::first_curve_patch_layout(record_bytes, int_width)
     }
     .ok_or_else(|| {
         CodecError::Malformed(format!(
@@ -1748,16 +1749,18 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let layout =
-        crate::nurbs::pcurve::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(
-            || CodecError::Malformed("NURBS pcurve subtype extent is truncated".into()),
-        )?)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "pcurve record {} has no writable UV cache",
-                record.index
-            ))
-        })?;
+    let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
+        bytes.get(scope.clone()).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
+        })?,
+        ref_width,
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "pcurve record {} has no writable UV cache",
+            record.index
+        ))
+    })?;
     if layout.control_count != control_points.len()
         || layout.control_value_offsets.len() != control_points.len() * 2
         || layout.weight_value_offsets.len() != weights.as_ref().map_or(0, Vec::len)

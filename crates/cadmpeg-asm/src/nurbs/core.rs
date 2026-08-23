@@ -523,13 +523,11 @@ pub struct CurvePatchLayout {
     pub degree_value_offset: usize,
 }
 
-/// Locate the first valid 3D curve cache in a carrier record.
-pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .find_map(|position| decode_curve_block(record, position, int_width))
-    })?;
+/// Locate the first valid 3D curve cache at the stream's known integer width.
+pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+    let decoded = marker_positions(record)
+        .into_iter()
+        .find_map(|position| decode_curve_block(record, position, int_width))?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
@@ -542,14 +540,12 @@ pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     })
 }
 
-/// Locate the final valid 3D curve cache in a carrier record.
-pub fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_curve_block(record, position, int_width))
-            .next_back()
-    })?;
+/// Locate the final valid 3D curve cache at the stream's known integer width.
+pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+    let decoded = marker_positions(record)
+        .into_iter()
+        .filter_map(|position| decode_curve_block(record, position, int_width))
+        .next_back()?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
