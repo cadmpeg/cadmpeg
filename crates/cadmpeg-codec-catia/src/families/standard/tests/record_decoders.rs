@@ -1284,6 +1284,40 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
 }
 
 #[test]
+fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence() {
+    use crate::families::standard::records::{
+        StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord,
+    };
+
+    let mut edge_faces = vec![[0, 0]];
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20]
+        .into_iter()
+        .map(|target| {
+            StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
+                pos: 0,
+                target,
+                kind: 0x33,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    crate::families::standard::decode::apply_standard_native_edge_faces(
+        &mut edge_faces,
+        &supports,
+        &records,
+        &HashMap::from([(700, HashSet::from([10]))]),
+    );
+
+    assert_eq!(edge_faces, [[0, 0]]);
+}
+
+#[test]
 fn standard_line_parser_reads_face_incidence() {
     let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
     let lines = crate::families::standard::records::standard_lines(&bytes, 2, Some(1));

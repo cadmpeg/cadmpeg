@@ -660,6 +660,16 @@ withholds placement and boundary-pruned endpoint domains from the open row
 before joint assignment; the evidence does not select its second face.
 Verdict: repeated edge-face slot assignment remains open.
 
+A third FBB-only stream has 321 face rows and 928 standard supports. Its
+`0x60` support row at BREP-stream offset `1129551` (ordinal `109`, tag
+`139216`) serializes `[39,39]` and retains alternate face domain `[44]`. The
+admitted B5 edge object `139216` has one loop occurrence only: face object
+`139333`, loop object `139334`, member position `4`. That occurrence names the
+serialized face and supplies no second-face occurrence. The native owner
+relation is therefore partial; `apply_standard_native_edge_faces` correctly
+leaves `[39,39]`, and the joint solver must retain `[44]` as the unresolved
+second-face domain. Verdict: repeated edge-face slot assignment remains open.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
