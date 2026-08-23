@@ -11,6 +11,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The largest sequence address representable by an IGES pointer constant.
+const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ReferenceKind {
@@ -98,7 +101,7 @@ impl<'a> ParameterResolver<'a> {
         if raw_pointer == 0 {
             return None;
         }
-        let target_sequence = u32::try_from(raw_pointer).ok();
+        let target_sequence = positive_pointer_sequence(raw_pointer);
         self.resolve_sequence(
             source,
             parameter_index,
@@ -120,9 +123,7 @@ impl<'a> ParameterResolver<'a> {
         if raw_pointer == 0 {
             return None;
         }
-        let target_sequence = raw_pointer
-            .checked_neg()
-            .and_then(|value| u32::try_from(value).ok());
+        let target_sequence = negative_pointer_sequence(raw_pointer);
         self.resolve_sequence(
             source,
             parameter_index,
@@ -222,9 +223,7 @@ fn negative_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: raw_pointer
-            .checked_abs()
-            .and_then(|value| u32::try_from(value).ok()),
+        target_sequence: negative_pointer_sequence(raw_pointer),
     }
 }
 
@@ -232,10 +231,26 @@ fn positive_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: (raw_pointer != 0)
-            .then(|| u32::try_from(raw_pointer).ok())
-            .flatten(),
+        target_sequence: positive_pointer_sequence(raw_pointer),
     }
+}
+
+fn positive_pointer_sequence(raw_pointer: i64) -> Option<u32> {
+    if !(1..=MAX_POINTER_SEQUENCE).contains(&raw_pointer) {
+        return None;
+    }
+    u32::try_from(raw_pointer).ok()
+}
+
+fn negative_pointer_sequence(raw_pointer: i64) -> Option<u32> {
+    if raw_pointer >= 0 {
+        return None;
+    }
+    let magnitude = raw_pointer.checked_abs()?;
+    if !(1..=MAX_POINTER_SEQUENCE).contains(&magnitude) {
+        return None;
+    }
+    u32::try_from(magnitude).ok()
 }
 
 fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
