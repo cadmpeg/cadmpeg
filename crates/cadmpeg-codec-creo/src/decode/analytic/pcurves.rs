@@ -1741,6 +1741,7 @@ mod tests {
             type_byte: 0,
             scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
             scalar_tokens,
+            reference_geometry: [0, 0],
             opaque_spans: vec![
                 crate::curve::CurveParameterOpaqueSpan {
                     raw: vec![0xfc, 0x02],

@@ -405,6 +405,9 @@ pub struct CurveParameterRecord {
     pub references: Vec<CurveParameterReference>,
     /// Maximal byte spans not claimed by scalar or reference tokens.
     pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
+    /// Positional `ref_geom[0]` and `ref_geom[1]` values following the four
+    /// topology references.
+    pub reference_geometry: [u32; 2],
     /// Whether the topology suffix boundary is unique.
     pub suffix: CurveSuffixStatus,
     /// Byte offset of the positional row in the original stream.
@@ -5633,7 +5636,10 @@ struct FramedRow {
     end: usize,
     suffix_start: usize,
     suffix: [u32; 4],
+    reference_geometry: [u32; 2],
 }
+
+type TopologySuffixCandidate = (usize, [u32; 4], [u32; 2]);
 
 #[derive(Debug, Clone, Copy)]
 struct TopologyPrefix {
@@ -5709,7 +5715,7 @@ fn framed_rows_with_face_ids(payload: &[u8], face_ids: Option<&BTreeSet<u32>>) -
         let known_face_ids = face_ids.map(|face_ids| {
             let mut known = face_ids.clone();
             for &(start, end, _) in &segments {
-                let Some((_, suffix)) = unique_topology_suffix_in_segment(&payload[start..end])
+                let Some((_, suffix, _)) = unique_topology_suffix_in_segment(&payload[start..end])
                 else {
                     continue;
                 };
@@ -5753,14 +5759,17 @@ fn framed_segment_with_face_ids(
         .collect::<Vec<_>>();
     prefixes.sort_unstable_by_key(|(_, end)| *end);
     let closes = segment
-        .windows(3)
+        .iter()
         .enumerate()
-        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
+        .filter(|(_, byte)| **byte == psb::token::COMPOUND_CLOSE)
         .map(|(offset, _)| offset)
         .collect::<Vec<_>>();
     for close in closes.into_iter().rev() {
-        let row_end = close + 3;
-        let Some((suffix_start, suffix)) = topology_suffix_with_face_ids(
+        let row_end = close + 1;
+        if !complete_curve_row_linkage(&segment[row_end..]) {
+            continue;
+        }
+        let Some((suffix_start, suffix, reference_geometry)) = topology_suffix_with_face_ids(
             &segment[..row_end],
             materialized_face_ids,
             known_face_ids,
@@ -5776,6 +5785,7 @@ fn framed_segment_with_face_ids(
                 end: start + row_end,
                 suffix_start,
                 suffix,
+                reference_geometry,
             });
         }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
@@ -5786,10 +5796,59 @@ fn framed_segment_with_face_ids(
                 end: start + row_end,
                 suffix_start: suffix_start - prefixes[0].0,
                 suffix,
+                reference_geometry,
             });
         }
     }
     None
+}
+
+fn generic_compact_at(bytes: &[u8], offset: usize) -> Option<(u32, usize)> {
+    (*bytes.get(offset)? <= 0xbf).then_some(())?;
+    let (value, next) = compact_int(bytes, offset);
+    (next > offset).then_some((value, next))
+}
+
+/// Validate the array-item linkage between a curve row's compound close and
+/// its row terminator. The linkage has an optional entity link, an optional
+/// counted link list, and up to four terminal compact links. The final row may
+/// append the enclosing array close before the next namespace boundary.
+fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
+    let bytes = bytes
+        .strip_suffix(&[0xe1, 0xf5, 0x05, 0xf6, 0xe0, 0x00])
+        .or_else(|| bytes.strip_suffix(&[0xe1, 0xe0, 0x00]))
+        .unwrap_or(bytes);
+    let mut cursor = 0;
+    if bytes.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        let Some((_, next)) = generic_compact_at(bytes, cursor + 1) else {
+            return false;
+        };
+        cursor = next;
+    }
+    if bytes.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
+        let Some((count, next)) = generic_compact_at(bytes, cursor + 1) else {
+            return false;
+        };
+        let Some(count) = bounded_len(count.into(), 1, bytes.len().saturating_sub(next)) else {
+            return false;
+        };
+        cursor = next;
+        for _ in 0..count {
+            let Some((_, next)) = generic_compact_at(bytes, cursor) else {
+                return false;
+            };
+            cursor = next;
+        }
+    }
+    let mut terminal_count = 0;
+    while cursor < bytes.len() {
+        let Some((_, next)) = generic_compact_at(bytes, cursor) else {
+            return false;
+        };
+        cursor = next;
+        terminal_count += 1;
+    }
+    terminal_count <= 4
 }
 
 fn curve_scalar_lane(
@@ -5895,10 +5954,10 @@ pub fn parameter_records_with_face_ids(
         };
         let (_, after_feature) = compact_int(row, after_id + 1);
         let body_start = after_feature + 2;
-        let Some(close) = row.len().checked_sub(3) else {
+        let Some(close) = row.len().checked_sub(1) else {
             continue;
         };
-        if row.get(close..) != Some(&[0, 0, 0xe3]) || body_start > close {
+        if row.get(close) != Some(&psb::token::COMPOUND_CLOSE) || body_start > close {
             continue;
         }
         let suffix_start = framed.suffix_start;
@@ -5921,6 +5980,7 @@ pub fn parameter_records_with_face_ids(
             skipped_references,
             references,
             opaque_spans,
+            reference_geometry: framed.reference_geometry,
             suffix: CurveSuffixStatus::Unique,
             offset: framed.start,
             body_offset: framed.start + body_start,
@@ -6694,7 +6754,7 @@ fn topology_suffix_with_face_ids(
     row: &[u8],
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
-) -> Option<(usize, [u32; 4])> {
+) -> Option<TopologySuffixCandidate> {
     let candidates = topology_suffix_candidates(row)?;
     if candidates.len() == 1 {
         return candidates.first().copied();
@@ -6702,7 +6762,7 @@ fn topology_suffix_with_face_ids(
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
         let role_matches = candidates
             .iter()
-            .filter(|(_, references)| {
+            .filter(|(_, references, _)| {
                 references[..2]
                     .iter()
                     .all(|&face_id| face_id == 0 || ids.contains(&face_id))
@@ -6716,7 +6776,7 @@ fn topology_suffix_with_face_ids(
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().filter(|(_, references)| {
+    let mut role_matches = candidates.into_iter().filter(|(_, references, _)| {
         references[..2]
             .iter()
             .all(|&face_id| face_id == 0 || ids.contains(&face_id))
@@ -6725,11 +6785,11 @@ fn topology_suffix_with_face_ids(
     role_matches.next().is_none().then_some(candidate)
 }
 
-fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<(usize, [u32; 4])> {
+fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<TopologySuffixCandidate> {
     let closes = segment
         .windows(3)
         .enumerate()
-        .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
+        .filter(|(_, bytes)| *bytes == [0, 0, psb::token::COMPOUND_CLOSE])
         .map(|(offset, _)| offset);
     for close in closes.rev() {
         let row_end = close + 3;
@@ -6743,28 +6803,51 @@ fn unique_topology_suffix_in_segment(segment: &[u8]) -> Option<(usize, [u32; 4])
     None
 }
 
-fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<(usize, [u32; 4])>> {
-    let close = row.len().checked_sub(3)?;
-    (row.get(close..)? == [0, 0, 0xe3]).then_some(())?;
+fn topology_suffix_candidates(row: &[u8]) -> Option<Vec<TopologySuffixCandidate>> {
+    let close = row.len().checked_sub(1)?;
+    (row.get(close) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    let reference_geometry_candidates = if row.get(close.saturating_sub(2)..close) == Some(&[0, 0])
+    {
+        vec![(close - 2, [0, 0])]
+    } else {
+        let mut candidates = Vec::new();
+        for length in 2..=4 {
+            let Some(start) = close.checked_sub(length) else {
+                continue;
+            };
+            let Some((first, next)) = generic_compact_at(row, start) else {
+                continue;
+            };
+            let Some((second, end)) = generic_compact_at(row, next) else {
+                continue;
+            };
+            if end == close {
+                candidates.push((start, [first, second]));
+            }
+        }
+        candidates
+    };
     let mut candidates = Vec::new();
-    for length in 4..=11 {
-        let Some(start) = close.checked_sub(length) else {
-            continue;
-        };
-        let Ok((f0, p1)) = reference_id(row, start) else {
-            continue;
-        };
-        let Ok((f1, p2)) = reference_id(row, p1) else {
-            continue;
-        };
-        let Ok((e0, p3)) = reference_id(row, p2) else {
-            continue;
-        };
-        let Ok((e1, end)) = reference_id(row, p3) else {
-            continue;
-        };
-        if end == close {
-            candidates.push((start, [f0, f1, e0, e1]));
+    for (reference_geometry_start, reference_geometry) in reference_geometry_candidates {
+        for length in 4..=11 {
+            let Some(start) = reference_geometry_start.checked_sub(length) else {
+                continue;
+            };
+            let Ok((f0, p1)) = reference_id(row, start) else {
+                continue;
+            };
+            let Ok((f1, p2)) = reference_id(row, p1) else {
+                continue;
+            };
+            let Ok((e0, p3)) = reference_id(row, p2) else {
+                continue;
+            };
+            let Ok((e1, end)) = reference_id(row, p3) else {
+                continue;
+            };
+            if end == reference_geometry_start {
+                candidates.push((start, [f0, f1, e0, e1], reference_geometry));
+            }
         }
     }
     Some(candidates)

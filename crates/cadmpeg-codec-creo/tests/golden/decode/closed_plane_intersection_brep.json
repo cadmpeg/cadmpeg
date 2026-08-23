@@ -941,6 +941,10 @@
               "id": "creo:visibgeom:curve_parameter#10",
               "offset": 277,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],
@@ -958,6 +962,10 @@
               "id": "creo:visibgeom:curve_parameter#11",
               "offset": 294,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],
@@ -975,6 +983,10 @@
               "id": "creo:visibgeom:curve_parameter#12",
               "offset": 311,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],
@@ -992,6 +1004,10 @@
               "id": "creo:visibgeom:curve_parameter#13",
               "offset": 328,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],
@@ -1009,6 +1025,10 @@
               "id": "creo:visibgeom:curve_parameter#14",
               "offset": 345,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],
@@ -1026,6 +1046,10 @@
               "id": "creo:visibgeom:curve_parameter#15",
               "offset": 362,
               "opaque_spans": [],
+              "reference_geometry": [
+                0,
+                0
+              ],
               "references": [],
               "scalar_tokens": [],
               "scalar_values": [],

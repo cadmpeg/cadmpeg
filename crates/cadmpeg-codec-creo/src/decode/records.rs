@@ -1519,6 +1519,7 @@ pub(super) struct CreoCurveParameterRecord {
     pub(super) skipped_references: Vec<u32>,
     pub(super) references: Vec<CreoCurveParameterReference>,
     pub(super) opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    pub(super) reference_geometry: [u32; 2],
     pub(super) suffix: &'static str,
     pub(super) suffix_candidate_count: Option<usize>,
     pub(super) offset: usize,
@@ -1723,6 +1724,7 @@ pub(super) fn curve_parameter_records(
                         length: span.length,
                     })
                     .collect(),
+                reference_geometry: record.reference_geometry,
                 suffix,
                 suffix_candidate_count,
                 offset: record.offset,

@@ -156,14 +156,6 @@ length unit.
 
 **Need.** We must know the override to construct the torus or sphere carrier.
 
-### GS-04. Curve parameter-bound trailer
-
-**Question.** How are the two curve parameter bounds and following reference trailer framed outside a bounded `fc <count>` two-chart parameter body?
-
-**Known.** `creo_prt.md` §4.1 defines the canonical and positional two-chart sample bodies, their incident-face order, the spline `(u, v)` join, exact sample-body consumption, and pointwise chart admission. The bounded parameter body ends before the four-reference topology suffix and its `00 00 e3` close.
-
-**Need.** We must identify the outer row-trailer boundary and the exact scalar and reference token lanes to retain the two curve bounds and reference trailer without conflating them with the topology suffix.
-
 ### GS-05. Prototype-adjacent `tab_cyl` points
 
 **Question.** What geometric role does each point in a prototype-adjacent `tab_cyl` instance row have?

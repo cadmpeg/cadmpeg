@@ -1762,7 +1762,7 @@ body is retained as exact native bytes and has no neutral loop meaning.
 | ND count               | `crv_array\0 [f3] f8 <count>`                                  |
 | DEPDB count            | `crv_array\0 f2 f8 <count>`                                    |
 | Positional row header  | `<crv_id_ci> <type_byte> <feat_id_ci> <dir0_flag> <dir1_flag>` |
-| Standard suffix        | `[F0, F1, E0, E1]` before `00 00 e3`                           |
+| Standard suffix        | `[F0, F1, E0, E1, R0, R1] e3`                                  |
 | DEPDB one-sided suffix | `[0, X1, F1, 0]`; `127` terminates `X1`                        |
 | Row terminators        | `e1 e3` or `e1 f5 05 f6 e3`                                    |
 
@@ -1824,8 +1824,23 @@ carrier incidence is not limited to the stored side of each edge.
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before
-the four-reference suffix. A suffix candidate is a sequence of four canonical
-reference identifiers that reaches `00 00 e3`. A unique candidate is valid
+the six-reference suffix. `F0`, `F1`, `E0`, and `E1` use the canonical
+reference-identifier lane. `R0` and `R1` replay the named prototype fields
+`ref_geom[0]` and `ref_geom[1]` through the generic compact-integer lane. The
+common `R0 = R1 = 0` form is the exact tail `00 00 e3`; nonzero reference
+geometry values replace the corresponding zero compact integer. These fields
+are references, not curve parameters.
+
+After `e3`, a row can carry array-item linkage before its row terminator. The
+linkage consists, in order, of an optional `f7 <compact-link>`, an optional
+`f8 <count> <count compact-links>`, and zero through four terminal compact
+links. A final row can then carry `e1 e0 00` or
+`e1 f5 05 f6 e0 00` before the next namespace boundary. Array-item linkage
+does not extend the parameter body.
+
+A suffix candidate is a sequence of four canonical topology reference
+identifiers followed by two generic compact reference-geometry values that
+reaches `e3`. A unique candidate is valid
 without namespace qualification. When multiple candidates exist, retain only
 candidates whose `F0` and `F1` are zero or identify rows in the enclosing
 `srf_array`. A face identifier absent from that array may qualify when it occurs
@@ -1917,7 +1932,8 @@ pointwise-corresponding pcurve samples. A later row in the same `crv_array`
 namespace with the same nonzero `feat_id` and raw `type_byte` replays the unique
 canonical sample count without the `fc <count>` prefix. The canonical or
 replay body is complete only when exactly `4 * count` scalar slots consume its
-bounded parameter body. Multiple canonical counts for one feature and raw type
+bounded parameter body. It has no trailing parameter-bound scalars. Multiple
+canonical counts for one feature and raw type
 make an unprefixed replay ambiguous.
 
 Each chart's first coordinate uses the first tabulated-cylinder directrix

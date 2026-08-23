@@ -14,6 +14,7 @@ fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterR
         skipped_references: Vec::new(),
         references: Vec::new(),
         opaque_spans: Vec::new(),
+        reference_geometry: [0, 0],
         suffix,
         offset: curve_id as usize,
         body_offset: curve_id as usize,
@@ -381,6 +382,37 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
 }
 
 #[test]
+fn retains_nonzero_reference_geometry_after_topology_references() {
+    let payload = [
+        b't', b'o', b'p', b'o', b'l', b'_', b'r', b'e', b'f', b'_', b'd', b'a', b't', b'a', 0, 7,
+        8, 4, 1, 0xf6, 0xff, // opaque parameter body
+        10, 11, 7, 7, // face and next-edge references
+        0, 68, // ref_geom[0] and ref_geom[1]
+        0xe3, 0x81, 0x0d, // row close and array-item linkage
+        0xe1, 0xe3,
+    ];
+    let face_ids = BTreeSet::from([10, 11]);
+
+    assert_eq!(
+        topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
+        [10, 11]
+    );
+    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].body, [0xff]);
+    assert_eq!(parameters[0].reference_geometry, [0, 68]);
+}
+
+#[test]
+fn reference_geometry_uses_the_generic_compact_lane() {
+    let row = [10, 11, 7, 7, 0x81, 0x0d, 68, 0xe3];
+    assert_eq!(
+        topology_suffix_candidates(&row),
+        Some(vec![(0, [10, 11, 7, 7], [269, 68])])
+    );
+}
+
+#[test]
 fn face_namespace_resolves_ambiguous_reference_boundaries() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[
@@ -445,7 +477,7 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
         ),
-        Some((0, [371, 369, 331, 297]))
+        Some((0, [371, 369, 331, 297], [0, 0]))
     );
 }
 
