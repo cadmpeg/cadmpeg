@@ -970,7 +970,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 }
 
 #[test]
-fn compact_vertex_identity_is_scoped_by_owner_allocation() {
+fn compact_owner_does_not_type_unresolved_edge_references_as_vertices() {
     let allocation = [
         0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
         0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
@@ -980,7 +980,7 @@ fn compact_vertex_identity_is_scoped_by_owner_allocation() {
     let bytes = allocation.repeat(2);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.consolidated_edge_nodes.len(), 2);
-    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert!(native.consolidated_vertex_identities.is_empty());
     assert_ne!(
         native.consolidated_edge_nodes[0].allocation_owner,
         native.consolidated_edge_nodes[1].allocation_owner
@@ -993,10 +993,8 @@ fn compact_vertex_identity_is_scoped_by_owner_allocation() {
         native.consolidated_edge_nodes[1].allocation_ordinal,
         Some(2)
     );
-    assert_ne!(
-        native.consolidated_edge_nodes[0].vertices,
-        native.consolidated_edge_nodes[1].vertices
-    );
+    assert_eq!(native.consolidated_edge_nodes[0].vertices, ["", ""]);
+    assert_eq!(native.consolidated_edge_nodes[1].vertices, ["", ""]);
 }
 
 #[test]
@@ -1080,11 +1078,8 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(node.header_token, 5);
     assert_eq!(node.vertex_refs, [889, 895]);
     assert!(node.uses.is_none());
-    assert_eq!(native.consolidated_vertex_identities.len(), 2);
-    assert_eq!(
-        native.consolidated_vertex_identities[0].incident_edge_nodes,
-        ["catia:consolidated:edge-node#0"]
-    );
+    assert_eq!(node.vertices, ["", ""]);
+    assert!(native.consolidated_vertex_identities.is_empty());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 277;
+pub const CATIA_NATIVE_VERSION: u32 = 278;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -824,14 +824,17 @@ pub struct CatiaConsolidatedEdgeNode {
     pub allocation_ordinal: Option<u32>,
     /// Allocation-local curve-support reference.
     pub curve_ref: u32,
-    /// Raw endpoint-address operands in edge direction.
+    /// Middle reference pair. These are endpoint addresses only when an
+    /// allocation walk or complete edge-use run proves that layout.
     pub vertex_refs: [u32; 2],
     /// Resolved class-`0x5d` allocation records in edge direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation_vertex_records: Option<[u64; 2]>,
-    /// Retained vertex-identity records in edge direction.
+    /// Retained vertex identities in edge direction. Empty strings mean that
+    /// the five-reference layout remains unresolved.
     pub vertices: [String; 2],
-    /// Allocation-local endpoint selectors.
+    /// Final reference pair. Complete edge-use runs interpret these as
+    /// allocation-local side selectors; other layouts retain them untyped.
     pub parameter_selectors: [u32; 2],
     /// Wire addressing forms of curve, vertex, and parameter references.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -6815,6 +6818,9 @@ fn consolidated_vertex_identities(
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
+        if node.allocation_vertex_records.is_none() && node.uses.is_none() {
+            continue;
+        }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let allocation_record = node
                 .allocation_vertex_records
