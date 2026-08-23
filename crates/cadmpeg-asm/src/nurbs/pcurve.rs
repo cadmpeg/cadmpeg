@@ -3,7 +3,8 @@
 
 use crate::nurbs::core::KnotPatchLayout;
 use crate::nurbs::reader::{
-    is_periodic, marker_at, marker_positions, read_knots, take_tagged_int, INT_WIDTHS,
+    is_periodic, marker_at, marker_positions, owned_marker_positions, read_knots, take_tagged_int,
+    INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
@@ -51,7 +52,7 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: usize) -> Option<Pcur
 }
 
 fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<PcurvePatchLayout> {
-    marker_positions(record)
+    owned_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
             let (_cp_dims, marker_len, rational) = marker_at(record, marker_pos)?;
@@ -261,6 +262,7 @@ mod width_tests {
     use crate::nurbs::core::{
         curve_cache, decode_curve_cache, decode_surface_cache, final_curve_patch_layout,
         final_surface_patch_layout, first_curve_patch_layout, surface_cache,
+        surface_patch_layout_at,
     };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
@@ -1334,6 +1336,63 @@ mod width_tests {
 
             let tokens = lex_test_span(&bytes, int_width);
             assert!(super::pcurve_fit_tolerance(&tokens).is_none());
+        }
+    }
+
+    #[test]
+    fn patch_layout_roles_exclude_nested_construction_caches() {
+        for int_width in [4usize, 8] {
+            let mut surfaces = vec![0x0f];
+            push_ident(&mut surfaces, "carrier");
+            surfaces.extend_from_slice(&surface_block(int_width));
+            let surface_end = surfaces.len();
+            surfaces.push(0x0f);
+            push_ident(&mut surfaces, "support");
+            surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 9.0));
+            surfaces.extend_from_slice(&[0x10, 0x10]);
+            assert_eq!(
+                final_surface_patch_layout(&surfaces, int_width)
+                    .expect("owned surface layout")
+                    .end,
+                surface_end
+            );
+            assert!(surface_patch_layout_at(&surfaces, 1, int_width).is_none());
+
+            let mut curves = vec![0x0f];
+            push_ident(&mut curves, "carrier");
+            curves.extend_from_slice(&curve_block(int_width));
+            let curve_end = curves.len();
+            curves.push(0x0f);
+            push_ident(&mut curves, "support");
+            curves.extend_from_slice(&curve_block_with_endpoint(int_width, [9.0, 0.0, 0.0]));
+            curves.extend_from_slice(&[0x10, 0x10]);
+            assert_eq!(
+                first_curve_patch_layout(&curves, int_width)
+                    .expect("first owned curve layout")
+                    .end,
+                curve_end
+            );
+            assert_eq!(
+                final_curve_patch_layout(&curves, int_width)
+                    .expect("final owned curve layout")
+                    .end,
+                curve_end
+            );
+
+            let mut pcurves = vec![0x0f];
+            push_ident(&mut pcurves, "carrier");
+            pcurves.extend_from_slice(&pcurve_block(int_width));
+            let pcurve_end = pcurves.len();
+            pcurves.push(0x0f);
+            push_ident(&mut pcurves, "support");
+            pcurves.extend_from_slice(&pcurve_block(int_width));
+            pcurves.extend_from_slice(&[0x10, 0x10]);
+            assert_eq!(
+                super::final_pcurve_patch_layout(&pcurves, int_width)
+                    .expect("final owned pcurve layout")
+                    .control_end,
+                pcurve_end
+            );
         }
     }
 
