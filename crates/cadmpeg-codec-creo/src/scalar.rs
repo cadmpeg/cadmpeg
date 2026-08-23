@@ -968,6 +968,13 @@ pub(crate) fn decode_plane_support_local_system(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], PlaneSupportFrameLayout)> {
+    if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
+        (cursor == body.len()).then_some(())?;
+        return Some((
+            finite_local_system_slots(values)?,
+            PlaneSupportFrameLayout::DirectNormalTriples,
+        ));
+    }
     let (values, cursor, layout) =
         if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
             (values, cursor, PlaneSupportFrameLayout::SupportTriples)
@@ -1191,6 +1198,38 @@ fn decode_plane_support_special_prefix(
     (body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]).then_some((
         [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         body.len(),
+    ))
+}
+
+fn decode_diagonal_z_plane_support(body: &[u8], cache: &ScalarCache) -> Option<([f64; 12], usize)> {
+    let sign = |token: u8| match token {
+        0x0f => Some(1.0),
+        0x10 => Some(-1.0),
+        _ => None,
+    };
+    let [a, 0x18, 0xe5, b, 0x18, 0xe5, c] = *body.get(..7)? else {
+        return None;
+    };
+    let parameter_sign = sign(a)?;
+    sign(b)?;
+    sign(c)?;
+    let (origin, cursor) = decode_plane_support_origin(body, 7, cache)?;
+    Some((
+        [
+            parameter_sign,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            origin[0],
+            origin[1],
+            origin[2],
+        ],
+        cursor,
     ))
 }
 
@@ -2005,6 +2044,19 @@ mod tests {
         assert_eq!(
             decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots[9]),
             Some(-0.5)
+        );
+    }
+
+    #[test]
+    fn diagonal_compact_plane_support_names_the_z_normal() {
+        let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
+
+        let (slots, layout) = decode_plane_support_local_system(&body, &ScalarCache::default())
+            .expect("complete diagonal support image");
+        assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
+        assert_eq!(
+            slots,
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
         );
     }
 

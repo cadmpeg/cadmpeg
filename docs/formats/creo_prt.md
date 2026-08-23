@@ -1631,6 +1631,14 @@ the next decodable coordinate occupies one zero slot. A terminal `18` occupies
 one zero slot. The `18 e5` direction macro and the other compact support
 macros are support-triple forms, not matrix rows.
 
+The seven-byte compact image `A 18 e5 B 18 e5 C`, where each of `A`, `B`,
+and `C` is `0f` or `10`, names a model-Z plane-normal frame. In a plane row,
+it expands to a direct-normal frame with the model-X parameter direction, a
+zero middle triple, and the model-Z normal. `A = 0f` selects positive model X
+and `A = 10` selects negative model X. The `B` and `C` tokens retain the
+orthogonal compact-image signs; they do not select a different normal
+coordinate.
+
 The rank-two body `18 e4 0f e4 18 e5 0f 18 e6` expands to support triples
 `[0, 1, 0]`, `[0, 0, 0]`, and `[1, 0, 0]`, followed by origin `[0, 0, 0]`.
 This image has the same expansion in every twelve-slot local-system field.
