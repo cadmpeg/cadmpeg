@@ -1151,7 +1151,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
 }
 
 #[test]
-fn generated_skin_surface_round_trips_set_rotate_and_term_laws() {
+fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
     use cadmpeg_ir::math::Vector3;
 
@@ -1173,6 +1173,19 @@ fn generated_skin_surface_round_trips_set_rotate_and_term_laws() {
         LawExpression::Algebraic {
             operator: "SET".into(),
             operands: vec![LawExpression::Double { value: -2.0 }],
+        },
+        LawExpression::Algebraic {
+            operator: "O".into(),
+            operands: vec![
+                LawExpression::Algebraic {
+                    operator: "ABS".into(),
+                    operands: vec![LawExpression::Double { value: -2.5 }],
+                },
+                LawExpression::Algebraic {
+                    operator: "SIN".into(),
+                    operands: vec![LawExpression::Double { value: 0.25 }],
+                },
+            ],
         },
         LawExpression::Algebraic {
             operator: "ROTATE".into(),
@@ -1217,9 +1230,11 @@ fn generated_skin_surface_round_trips_set_rotate_and_term_laws() {
         construction.formula.variables.as_slice(),
         [
             LawExpression::Algebraic { operator: set, operands: set_operands },
+            LawExpression::Algebraic { operator: compose, operands: compose_operands },
             LawExpression::Algebraic { operator: rotate, operands: rotate_operands },
             LawExpression::Algebraic { operator: term, operands: term_operands },
         ] if set == "SET" && set_operands.len() == 1
+            && compose == "O" && compose_operands.len() == 2
             && rotate == "ROTATE" && rotate_operands.len() == 2
             && term == "TERM" && term_operands.len() == 2
     ));

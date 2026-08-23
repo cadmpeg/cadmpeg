@@ -2379,7 +2379,7 @@ fn law_expression_resolving(
                 | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
                 | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
                 | "SET" | "SQRT" | "NORM" | "NOT" => 1,
-                "CROSS" | "DOT" | "DCUR" | "ROTATE" | "TERM" => 2,
+                "CROSS" | "DOT" | "DCUR" | "O" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
                 _ => return None,
             };
@@ -4229,6 +4229,34 @@ mod sweep_law_tests {
         };
         assert_eq!(value, "0.008726867790758789*X");
         assert_eq!(cur.take_long(), Some(21));
+        assert_eq!(cur.pos(), tokens.len());
+    }
+
+    #[test]
+    fn composition_law_consumes_two_recursive_operands() {
+        let tokens = [
+            Token::Str("O".into()),
+            Token::Str("ABS".into()),
+            Token::Double(-2.5),
+            Token::Str("SIN".into()),
+            Token::Double(0.25),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+
+        let law = law_expression(&mut cur, 0).expect("composition law");
+
+        assert!(matches!(
+            law,
+            EmbeddedLawExpression::Algebraic { operator, operands }
+                if operator == "O"
+                    && matches!(operands.as_slice(), [
+                        EmbeddedLawExpression::Algebraic { operator: left, operands: left_operands },
+                        EmbeddedLawExpression::Algebraic { operator: right, operands: right_operands },
+                    ] if left == "ABS"
+                        && matches!(left_operands.as_slice(), [EmbeddedLawExpression::Double(value)] if *value == -2.5)
+                        && right == "SIN"
+                        && matches!(right_operands.as_slice(), [EmbeddedLawExpression::Double(value)] if *value == 0.25))
+        ));
         assert_eq!(cur.pos(), tokens.len());
     }
 

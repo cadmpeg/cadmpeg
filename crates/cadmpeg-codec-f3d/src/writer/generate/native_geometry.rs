@@ -2311,7 +2311,7 @@ fn native_law_expression(
                 | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
                 | "ARCSECH" | "ARCCSCH" | "ABS" | "EXP" | "LN" | "LOG" | "SIGN" | "SIZE"
                 | "SET" | "SQRT" | "NORM" | "NOT" => 1,
-                "CROSS" | "DOT" | "DCUR" | "ROTATE" | "TERM" => 2,
+                "CROSS" | "DOT" | "DCUR" | "O" | "ROTATE" | "TERM" => 2,
                 "VEC" | "DSURF" => 3,
                 "MIN" | "MAX" | "STEP" => {
                     return Err(CodecError::NotImplemented(format!(

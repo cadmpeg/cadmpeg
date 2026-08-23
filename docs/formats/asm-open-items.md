@@ -104,14 +104,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We cannot read a record with a value other than `0` or `2`. **Settling specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout. GC-27 gives the separate limit that value `2` reaches.
 
-### GC-24. Binding of the law formula text infix operator `O`
-
-**Question.** What are the precedence and associativity of the infix operator `O` in stored law formula text?
-
-**Known.** `asm.md` §6.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences. A `law_int_cur` written from the field order in `asm.md` §6.3 over a solved curve cache is refused on read, and the refusal covers the smallest form, whose law is `null_law` and which carries no operator at all. The field order and the arity encoding are both speculative, so the refusal bears on neither the operator token spellings nor the binding, and it does not show that the record is unreachable by a different field order.
-
-**Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
-
 ### GC-25. Payload after a true shared revision-gated surface tail logical
 
 **Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
