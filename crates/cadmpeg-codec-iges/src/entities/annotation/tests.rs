@@ -23,10 +23,10 @@ use crate::global::Dialect;
 
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_dialect, fixed_or_variable_valid,
-    general_note_string_count_valid, general_symbol_note_valid, justification_valid,
-    leader_valid_for_dialect, mirror_flag_valid, new_general_note_charset_valid,
-    new_general_note_font_valid, sectioned_area_curves_coplanar, sectioned_area_valid,
-    vertical_text_flag_valid,
+    general_note_string_count_valid, general_note_text_valid_for_dialect,
+    general_symbol_note_valid, justification_valid, leader_valid_for_dialect, mirror_flag_valid,
+    new_general_note_charset_valid, new_general_note_font_valid, sectioned_area_curves_coplanar,
+    sectioned_area_valid, vertical_text_flag_valid,
 };
 
 #[test]
@@ -91,6 +91,119 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn general_note_kanji_text_uses_biased_jis_hex_pairs() {
+    assert!(general_note_text_valid_for_dialect(
+        b"34413B7A",
+        2001,
+        Dialect::V5_0,
+        false
+    ));
+    assert!(general_note_text_valid_for_dialect(
+        b"",
+        2001,
+        Dialect::V5_0,
+        false
+    ));
+    assert!(!general_note_text_valid_for_dialect(
+        b"34413B7",
+        2001,
+        Dialect::V5_0,
+        false
+    ));
+    assert!(!general_note_text_valid_for_dialect(
+        b"34413B7G",
+        2001,
+        Dialect::V5_0,
+        false
+    ));
+    assert!(!general_note_text_valid_for_dialect(
+        b"20413B7A",
+        2001,
+        Dialect::V5_0,
+        false
+    ));
+    assert!(general_note_text_valid_for_dialect(
+        b" ",
+        2001,
+        Dialect::V5_0,
+        true
+    ));
+    assert!(!general_note_text_valid_for_dialect(
+        b"34413B7A",
+        2001,
+        Dialect::V4_0,
+        false
+    ));
+}
+
+#[test]
+fn decode_accepts_and_retains_v5_0_kanji_general_note() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(v5_0_kanji_general_note_file("34413B7A")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(
+        annotations[0].fields()["strings"][0]["text"],
+        serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
+    for text in ["34413B7", "34413B7G", "20413B7A"] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(v5_0_kanji_general_note_file(text)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "text {text:?}: {:#?}",
+            result.report().losses
+        );
+        let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+        assert_eq!(
+            annotations[0].fields()["strings"][0]["text"],
+            serde_json::json!(text.as_bytes())
+        );
+    }
+}
+
+fn v5_0_kanji_general_note_file(text: &str) -> Vec<u8> {
+    let parameters = format!(
+        "212,1,{length},20,4,2001,1.5707963267948966,0,0,0,0,0,0,{length}H{text};",
+        length = text.len()
+    );
+    owned_test_file_with_global(
+        &[OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "KANJI".into(),
+            status: "00000100",
+            parameters,
+        }],
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;",
+    )
 }
 
 #[test]

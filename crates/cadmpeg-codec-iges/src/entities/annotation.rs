@@ -253,6 +253,50 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
+fn hexadecimal_byte(bytes: &[u8]) -> Option<u8> {
+    let [high, low] = bytes else {
+        return None;
+    };
+    let high = match high {
+        b'0'..=b'9' => high - b'0',
+        b'A'..=b'F' => high - b'A' + 10,
+        b'a'..=b'f' => high - b'a' + 10,
+        _ => return None,
+    };
+    let low = match low {
+        b'0'..=b'9' => low - b'0',
+        b'A'..=b'F' => low - b'A' + 10,
+        b'a'..=b'f' => low - b'a' + 10,
+        _ => return None,
+    };
+    Some((high << 4) | low)
+}
+
+fn general_note_text_valid_for_dialect(
+    text: &[u8],
+    font: i64,
+    dialect: Dialect,
+    is_v5_null_string: bool,
+) -> bool {
+    if font != 2001 {
+        return true;
+    }
+    if matches!(dialect, Dialect::V4_0) {
+        return false;
+    }
+    if is_v5_null_string && matches!(dialect, Dialect::V5_0) {
+        return true;
+    }
+    text.len().is_multiple_of(4)
+        && text.chunks_exact(4).all(|character| {
+            hexadecimal_byte(&character[..2])
+                .zip(hexadecimal_byte(&character[2..]))
+                .is_some_and(|(row, column)| {
+                    (0x21..=0x7e).contains(&row) && (0x21..=0x7e).contains(&column)
+                })
+        })
+}
+
 fn general_note_valid_for_dialect(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -287,9 +331,18 @@ fn general_note_valid_for_dialect(
                         .number_or(field, 0.0)
                         .is_some_and(|value| value.is_finite() && value >= 0.0)
                 })
-                && record.integer_or(start + 3, 1).is_some_and(|value| {
-                    general_note_font_valid_for_dialect(value, entries, dialect)
-                })
+                && record
+                    .integer_or(start + 3, 1)
+                    .zip(text)
+                    .is_some_and(|(font, text)| {
+                        general_note_font_valid_for_dialect(font, entries, dialect)
+                            && general_note_text_valid_for_dialect(
+                                text,
+                                font,
+                                dialect,
+                                record.integer(1) == Some(1) && text == b" ",
+                            )
+                    })
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)
