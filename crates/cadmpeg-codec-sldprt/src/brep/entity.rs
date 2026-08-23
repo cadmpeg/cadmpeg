@@ -98,75 +98,12 @@ impl EntityRecord {
         (self.flags & 0xff) as u8
     }
 }
-fn slot_count(schema: &str, disc: u16, flo: u8) -> Option<usize> {
-    let revision = schema.split('_').nth(2)?.parse::<u32>().ok()?;
-    if !matches!(
-        revision,
-        17_106
-            | 18_106
-            | 19_008
-            | 20_000
-            | 25_001
-            | 26_105
-            | 28_002
-            | 28_101
-            | 30_000
-            | 31_001
-            | 31_100
-            | 32_001
-            | 33_103
-            | 34_101
-            | 35_102
-            | 36_001
-    ) {
-        return None;
-    }
-    if !matches!(
-        disc,
-        0x0004
-            | 0x0006
-            | 0x000c
-            | 0x000e
-            | 0x000f
-            | 0x0010
-            | 0x0011
-            | 0x0012
-            | 0x0013
-            | 0x0014
-            | 0x0015
-            | 0x0016
-            | 0x0017
-            | 0x0018
-            | 0x0019
-            | 0x001a
-            | 0x001b
-            | 0x001c
-            | 0x001d
-            | 0x001e
-            | 0x001f
-            | 0x0020
-            | 0x0021
-            | 0x0022
-            | 0x0023
-            | 0x0024
-            | 0x0025
-            | 0x0026
-            | 0x0027
-            | 0x0028
-            | 0x002a
-            | 0x002c
-            | 0x002e
-    ) {
-        return None;
-    }
-    match (disc, flo) {
-        (0x0026, 3) => Some(6),
-        (_, 1) => Some(6),
-        (_, 2) => Some(7),
-        (_, 4) => Some(9),
-        (_, 5) => Some(10),
-        _ => None,
-    }
+/// Number of u16 fields in one bare XT ATTRIBUTE node.
+///
+/// The low flag byte is the value count. Every attribute has five pointer
+/// fields before its values, regardless of the definition node it references.
+fn attribute_slot_count(flo: u8) -> Option<usize> {
+    (1..=0x20).contains(&flo).then_some(5 + usize::from(flo))
 }
 fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16>, usize)> {
     if prefixed {
@@ -188,7 +125,7 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16
         .collect::<Option<Vec<_>>>()?;
     Some((refs, at.checked_add(count.checked_mul(2)?)?))
 }
-fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord> {
+fn scan_entities(body: &[u8], _schema: &str, prefixed: bool) -> Vec<EntityRecord> {
     let mut out = Vec::new();
     for off in 0..body.len().saturating_sub(25) {
         if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
@@ -217,7 +154,7 @@ fn scan_entities(body: &[u8], schema: &str, prefixed: bool) -> Vec<EntityRecord>
         let count = if prefixed {
             0
         } else {
-            let Some(count) = slot_count(schema, disc, flo) else {
+            let Some(count) = attribute_slot_count(flo) else {
                 continue;
             };
             count
@@ -12261,36 +12198,8 @@ mod tests {
     }
 
     #[test]
-    fn unknown_bare_entity_families_do_not_invent_six_reference_slots() {
-        let mut header = vec![0x00, 0x51];
-        header.extend(3u32.to_be_bytes());
-        header.extend(2u16.to_be_bytes());
-        header.extend(1u32.to_be_bytes());
-        header.extend(0x9999u16.to_be_bytes());
-
-        let mut bare = header.clone();
-        for reference in 2u16..=7 {
-            bare.extend(reference.to_be_bytes());
-        }
-        bare.extend([0; 16]);
-        assert!(scan_entities(&bare, TEST_SCHEMA, false).is_empty());
-
-        let mut prefixed = header;
-        for reference in 2u16..=8 {
-            prefixed.push(1);
-            prefixed.extend(reference.to_be_bytes());
-        }
-        prefixed.push(0);
-        prefixed.extend([0; 16]);
-        assert_eq!(
-            scan_entities(&prefixed, "SCH_UNKNOWN_99999", true)[0].refs,
-            (2u16..=8).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn bare_entity_slot_counts_use_schema_disc_and_flo() {
-        let seven = bare_entity_slots(700, 1, 0x16, 2, &[2, 3, 4, 5, 6, 7, 8]);
+    fn bare_attribute_slot_counts_use_flo_only() {
+        let seven = bare_entity_slots(700, 1, 0x9999, 2, &[2, 3, 4, 5, 6, 7, 8]);
         let nine = bare_entity_slots(701, 2, 0x1a, 4, &[9, 10, 11, 12, 13, 14, 15, 16, 17]);
         let terminal = bare_entity_slots(702, 3, 0x06, 2, &[18, 19, 1, 1, 1, 1, 1]);
         let ten = bare_entity_slots(703, 4, 0x1c, 5, &[20, 21, 22, 1, 1, 23, 1, 1, 1, 1]);
@@ -12300,7 +12209,7 @@ mod tests {
         bytes.extend_from_slice(&ten);
         bytes.extend([0; 16]);
 
-        let records = scan_entities(&bytes, "SCH_2400201_20000_13006", false);
+        let records = scan_entities(&bytes, "SCH_UNKNOWN_99999", false);
         assert_eq!(records.len(), 4);
         assert_eq!(records[0].refs.len(), 7);
         assert_eq!(records[0].end, seven.len());
@@ -12313,10 +12222,10 @@ mod tests {
             records[3].end,
             seven.len() + nine.len() + terminal.len() + ten.len()
         );
-        assert!(scan_entities(&bytes, "SCH_UNKNOWN_99999_13006", false).is_empty());
-        assert_eq!(slot_count(TEST_SCHEMA, 0x26, 3), Some(6));
-        assert_eq!(slot_count(TEST_SCHEMA, 0x06, 2), Some(7));
-        assert_eq!(slot_count(TEST_SCHEMA, 0x1c, 5), Some(10));
+        assert_eq!(attribute_slot_count(1), Some(6));
+        assert_eq!(attribute_slot_count(3), Some(8));
+        assert_eq!(attribute_slot_count(5), Some(10));
+        assert_eq!(attribute_slot_count(0), None);
     }
 
     #[test]
