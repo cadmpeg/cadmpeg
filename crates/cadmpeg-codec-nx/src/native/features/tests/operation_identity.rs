@@ -284,6 +284,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         &bindings,
         &streams,
         &groups,
+        &[],
     );
 
     assert_eq!(uses.len(), 1);
@@ -297,6 +298,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         &unterminated,
         &streams,
         &groups,
+        &[],
     )
     .is_empty());
 
@@ -319,6 +321,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         &bindings,
         &interrupted_streams,
         &groups,
+        &[],
     )
     .is_empty());
 }

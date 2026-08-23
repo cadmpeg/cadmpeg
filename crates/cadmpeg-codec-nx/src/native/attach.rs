@@ -2073,6 +2073,12 @@ fn attach_feature_operations(
                         group.clone(),
                     );
                 }
+                for (member_ordinal, member) in use_.parasolid_group_members.iter().enumerate() {
+                    source_properties.insert(
+                        format!("body_write.{ordinal}.parasolid_group_member.{member_ordinal}"),
+                        member.clone(),
+                    );
+                }
             }
         }
         source_properties.extend(operation_source_properties(

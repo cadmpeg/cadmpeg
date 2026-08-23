@@ -53,6 +53,7 @@ pub(crate) struct DisplayJtRecords {
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ParasolidRecords {
     pub(crate) parasolid_group_records: Vec<ParasolidGroupRecord>,
+    pub(crate) parasolid_group_members: Vec<ParasolidGroupMember>,
     pub(crate) parasolid_deltas_transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
     pub(crate) parasolid_deltas_terminal_null_references:
         Vec<ParasolidDeltasTerminalNullReferences>,
@@ -466,6 +467,7 @@ impl NativeModel {
             parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
         let parasolid_group_records =
             parasolid_group_records(streams, &delta_pairs, &deltas_events.records);
+        let parasolid_group_members = parasolid_group_members(streams, &delta_pairs);
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
@@ -547,6 +549,7 @@ impl NativeModel {
             &segment_body_bindings,
             streams,
             &parasolid_group_records,
+            &parasolid_group_members,
         );
         let feature_operation_tagged_references = feature_operation_tagged_references(container);
         let feature_operation_data_block_references =
@@ -1064,6 +1067,7 @@ impl NativeModel {
             },
             parasolid: ParasolidRecords {
                 parasolid_group_records,
+                parasolid_group_members,
                 parasolid_deltas_transmit_headers: deltas_events.transmit_headers,
                 parasolid_deltas_terminal_null_references: deltas_events.terminal_null_references,
                 parasolid_deltas_records: deltas_events.records,

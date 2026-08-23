@@ -219,6 +219,9 @@ pub struct FeatureOperationBodyPartitionUse {
     /// Ordered GROUP record updates retained inside the owning partition scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parasolid_group_records: Vec<String>,
+    /// Current ordered GROUP members resolved inside the owning partition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_members: Vec<String>,
 }
 
 /// Exact direct tagged-reference field retained from one feature operation.
@@ -3654,6 +3657,7 @@ pub fn feature_operation_body_partition_uses(
     bindings: &[SegmentBodyBinding],
     streams: &[crate::parasolid::Stream],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    group_members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> Vec<FeatureOperationBodyPartitionUse> {
     image_uses
         .iter()
@@ -3678,6 +3682,14 @@ pub fn feature_operation_body_partition_uses(
                 })
                 .map(|group| group.id.clone())
                 .collect();
+            let parasolid_group_members = group_members
+                .iter()
+                .filter(|member| {
+                    member.partition_stream_ordinal == partition_stream_ordinal
+                        && member.group_node_id == write.group_node
+                })
+                .map(|member| member.id.clone())
+                .collect();
             Some(FeatureOperationBodyPartitionUse {
                 id: write
                     .id
@@ -3688,6 +3700,7 @@ pub fn feature_operation_body_partition_uses(
                 partition_stream_ordinal,
                 group_node: write.group_node,
                 parasolid_group_records,
+                parasolid_group_members,
             })
         })
         .collect()

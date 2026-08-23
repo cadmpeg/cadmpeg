@@ -1192,6 +1192,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "parasolid_group_members",
+        tag: Some("PARASOLID_GROUP_MEMBER"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_members, r, ns),
+        len: |m| m.parasolid.parasolid_group_members.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "parasolid_deltas_transmit_headers",
         tag: Some("DELTAS_TRANSMIT_HEADER"),
         exactness: Exactness::ByteExact,

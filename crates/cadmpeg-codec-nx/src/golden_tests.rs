@@ -244,6 +244,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_entity_vector_records",
     "parasolid_field_names_records",
     "parasolid_group_records",
+    "parasolid_group_members",
     "parasolid_intersection_records",
     "parasolid_offset_surface_records",
     "parasolid_support_uv_records",
@@ -883,13 +884,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 251, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 252, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| row.phase == Phase::GroupA)
             .count(),
-        120,
+        121,
         "group A family count"
     );
     assert_eq!(

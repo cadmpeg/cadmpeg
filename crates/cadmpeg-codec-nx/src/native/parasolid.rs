@@ -8,7 +8,7 @@ use crate::deltas::Census;
 
 use super::substrate::{ParsedStreams, StreamView};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +39,30 @@ pub struct ParasolidGroupRecord {
     pub byte_len: u64,
     /// GROUP tag offset in the inflated source stream.
     pub inflated_offset: u64,
+}
+
+/// One topology member in a fully closed current Parasolid GROUP chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidGroupMember {
+    /// Globally unique membership identity.
+    pub id: String,
+    /// Partition whose local XMT and node namespaces own the chain.
+    pub partition_stream_ordinal: u32,
+    /// Current GROUP record XMT identity.
+    pub group_xmt: u32,
+    /// Current GROUP kernel node identity.
+    pub group_node_id: u32,
+    /// Zero-based member order from the list head to tail.
+    pub ordinal: u32,
+    /// `TYPE_91` list-record XMT identity.
+    pub list_record_xmt: u32,
+    /// Member record XMT identity.
+    pub member_xmt: u32,
+    /// Parasolid topology family of the member record.
+    pub member_family: String,
+    /// Kernel node identity when the member family carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_node_id: Option<u32>,
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -126,6 +150,166 @@ pub(crate) fn parasolid_group_records(
     }
     groups.sort_by_key(|group| (group.stream_ordinal, group.inflated_offset));
     groups
+}
+
+fn is_group_member_family(family: &str) -> bool {
+    matches!(
+        family,
+        "BODY" | "SHELL" | "FACE" | "LOOP" | "FIN" | "EDGE" | "VERTEX" | "REGION"
+    )
+}
+
+fn group_members_from_records(
+    partition_stream_ordinal: u32,
+    records: &[crate::deltas::Record],
+) -> Vec<ParasolidGroupMember> {
+    let mut records_by_xmt = BTreeMap::<u32, Vec<&crate::deltas::Record>>::new();
+    for record in records {
+        records_by_xmt.entry(record.xmt).or_default().push(record);
+    }
+    let unique_record = |xmt| match records_by_xmt.get(&xmt).map(Vec::as_slice) {
+        Some([record]) => Some(*record),
+        _ => None,
+    };
+    let mut groups_by_node = BTreeMap::<u32, Vec<&crate::deltas::Record>>::new();
+    for record in records
+        .iter()
+        .filter(|record| crate::deltas::record_family_name(record) == Some("GROUP"))
+    {
+        let Some(node_id) = record.node_id else {
+            continue;
+        };
+        groups_by_node.entry(node_id).or_default().push(record);
+    }
+    let mut members = Vec::new();
+    for groups in groups_by_node.values() {
+        let [group] = groups.as_slice() else {
+            continue;
+        };
+        let Some(&tail) = group.references.get(4) else {
+            continue;
+        };
+        let mut reverse_chain = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut current = tail;
+        let mut expected_next = 1;
+        let mut complete = true;
+        while current != 1 {
+            if !seen.insert(current) {
+                complete = false;
+                break;
+            }
+            let Some(list_record) = unique_record(current) else {
+                complete = false;
+                break;
+            };
+            if crate::deltas::record_family_name(list_record) != Some("TYPE_91")
+                || list_record.references.len() != 6
+                || list_record.references[0] != group.xmt
+                || list_record.references[5] != expected_next
+            {
+                complete = false;
+                break;
+            }
+            let member_xmt = list_record.references[1];
+            let Some(member_record) = unique_record(member_xmt) else {
+                complete = false;
+                break;
+            };
+            let Some(member_family) = crate::deltas::record_family_name(member_record) else {
+                complete = false;
+                break;
+            };
+            if !is_group_member_family(member_family) {
+                complete = false;
+                break;
+            }
+            reverse_chain.push((current, member_xmt, member_family, member_record.node_id));
+            expected_next = current;
+            current = list_record.references[4];
+        }
+        if !complete || reverse_chain.is_empty() {
+            continue;
+        }
+        reverse_chain.reverse();
+        let Some(group_node_id) = group.node_id else {
+            continue;
+        };
+        members.extend(reverse_chain.into_iter().enumerate().filter_map(
+            |(ordinal, (list_record_xmt, member_xmt, member_family, member_node_id))| {
+                Some(ParasolidGroupMember {
+                    id: format!(
+                        "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{}-{ordinal}",
+                        group.xmt
+                    ),
+                    partition_stream_ordinal,
+                    group_xmt: group.xmt,
+                    group_node_id,
+                    ordinal: u32::try_from(ordinal).ok()?,
+                    list_record_xmt,
+                    member_xmt,
+                    member_family: member_family.to_string(),
+                    member_node_id,
+                })
+            },
+        ));
+    }
+    members
+}
+
+fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, bytes: &[u8]) {
+    enum Event {
+        Record(crate::deltas::Record),
+        Tombstone(u32),
+    }
+    let census = crate::deltas::walk(bytes);
+    let mut events = census
+        .records
+        .into_iter()
+        .map(|record| (record.offset, Event::Record(record)))
+        .chain(
+            census
+                .tombstones
+                .into_iter()
+                .map(|tombstone| (tombstone.offset, Event::Tombstone(tombstone.xmt))),
+        )
+        .collect::<Vec<_>>();
+    events.sort_by_key(|(offset, _)| *offset);
+    for (_, event) in events {
+        match event {
+            Event::Record(record) => {
+                records.insert(record.xmt, record);
+            }
+            Event::Tombstone(xmt) => {
+                records.remove(&xmt);
+            }
+        }
+    }
+}
+
+/// Resolve current GROUP membership from partition and ordered deltas events.
+pub(crate) fn parasolid_group_members(
+    streams: &[Stream],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Vec<ParasolidGroupMember> {
+    streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind == crate::parasolid::StreamKind::Partition)
+        .filter_map(|(stream_ordinal, stream)| {
+            let stream_ordinal_u32 = u32::try_from(stream_ordinal).ok()?;
+            let mut current = BTreeMap::new();
+            apply_group_state_events(&mut current, &stream.inflated);
+            for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
+                apply_group_state_events(&mut current, &streams.get(*delta)?.inflated);
+            }
+            Some((
+                stream_ordinal_u32,
+                current.into_values().collect::<Vec<_>>(),
+            ))
+        })
+        .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
+        .collect()
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -2910,6 +3094,48 @@ mod tests {
             kind,
             schema: Some(schema.to_string()),
         }
+    }
+
+    fn record(
+        kind: u16,
+        xmt: u32,
+        node_id: Option<u32>,
+        references: Vec<u32>,
+    ) -> crate::deltas::Record {
+        crate::deltas::Record {
+            kind,
+            xmt,
+            node_id,
+            references,
+            position: None,
+            canonical_bytes: if kind == 90 { vec![0, 90] } else { Vec::new() },
+            offset: 0,
+            end: 1,
+        }
+    }
+
+    #[test]
+    fn group_members_follow_complete_bidirectional_type_91_chain() {
+        let group = record(90, 10, Some(7), vec![3, 4, 5, 6, 30]);
+        let tail = record(91, 30, None, vec![10, 100, 3, 4, 20, 1]);
+        let head = record(91, 20, None, vec![10, 101, 3, 4, 1, 30]);
+        let tail_member = record(14, 100, Some(50), Vec::new());
+        let head_member = record(16, 101, Some(51), Vec::new());
+        let records = [group, tail, head, tail_member, head_member];
+
+        let members = super::group_members_from_records(4, &records);
+
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].list_record_xmt, 20);
+        assert_eq!(members[0].member_family, "EDGE");
+        assert_eq!(members[0].member_node_id, Some(51));
+        assert_eq!(members[1].list_record_xmt, 30);
+        assert_eq!(members[1].member_family, "FACE");
+        assert_eq!(members[1].member_node_id, Some(50));
+
+        let mut broken = records;
+        broken[2].references[5] = 99;
+        assert!(super::group_members_from_records(4, &broken).is_empty());
     }
 
     #[test]

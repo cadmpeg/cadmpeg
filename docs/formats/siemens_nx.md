@@ -1731,6 +1731,24 @@ IDs in other partitions do not participate. A resolved partition scope with no
 retained GROUP update keeps the scoped node relation without importing a
 record from another partition.
 
+A Parasolid GROUP record is `kind:u16 BE=90, xmt:xmt_ref,
+node_id:u32 BE, leading_refs[4], selector:u8, linked_ref:xmt_ref,
+linked_status:u8`. Each leading reference has status 1. `selector` is 2, 4,
+or 9, and `linked_status` is zero or one. The current GROUP state is obtained
+by applying full records and compact tombstones in partition and paired-deltas
+event order by XMT identity.
+
+The GROUP `linked_ref` is the tail of its member chain. A chain row is a
+type-91 record with six references. Slot zero equals the GROUP XMT, slot one
+names the topology member, slot four names the previous row or null, and slot
+five names the next row or null. The tail has null slot five. Following slot
+four to null and checking every reciprocal slot-five link yields member order
+from head to tail after reversal. Every row XMT and member XMT must resolve
+uniquely in the current partition state, every row must point back to the same
+GROUP, and every member must be a BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX,
+or REGION record. A cycle, missing record, duplicate XMT, broken reciprocal
+link, cross-GROUP row, or non-topology member rejects the complete chain.
+
 A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
 
 A direct operation data-block reference field is `01 02 03, object_index, 01 00 00 00 00 00`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
