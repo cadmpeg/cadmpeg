@@ -934,18 +934,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must identify the fields in both lanes before decoding or writing their internal values.
 
-### E5-12. Class-`0xd8` sense flag
-
-**Question.** How does the class-`0xd8` tail `sense:i32le` orient the swept-arc carrier relative to its owning face?
-
-**Known.** `catia.md` §9 defines the class-`0xd8` payload, its constant-radius arc rows, its quintic position and derivative lanes, and its tail `sense` value of `+1` or `−1`. The face → class-`0xf1` wrapper → first-reference join binds the carrier to one standard freeform face. The face record retains its own orientation flag. The decoder transfers the stored angle and retains `sense` on the native carrier record without equating it to the face flag.
-
-**Need.** We must establish the signed surface orientation relation before applying `sense` to the neutral `RollingBallJet` angle or face binding.
-
-**Conflict.** None.
-
-**Note.** The class-`0xd8` value and derivative lanes are admitted independently of this orientation relation. A carrier can transfer as an exact procedural surface while its native sense remains retained-only.
-
 ## 7. FBB-only and float-packed variants
 
 ### FV-01. `u24be` endpoint quotient binding

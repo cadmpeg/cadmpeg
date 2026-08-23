@@ -863,10 +863,39 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
                 multiplicities,
                 sites,
             },
-        }) if knots == &vec![2.0, 5.0]
+    }) if knots == &vec![2.0, 5.0]
             && multiplicities == &vec![6, 6]
             && sites.len() == 2
     ));
+
+    let mut opposite_records = records.clone();
+    let StandardSurfaceRecord::Freeform { forward, .. } = &mut opposite_records[0] else {
+        unreachable!("synthetic D8 face record");
+    };
+    *forward = false;
+    assert!(
+        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream).is_empty()
+    );
+
+    let mut reverse_stream = stream.clone();
+    let d8_payload_size = usize::from(u16::from_le_bytes(
+        reverse_stream[5..7].try_into().expect("D8 payload size"),
+    ));
+    let sense_offset = 13 + d8_payload_size - 63 + 5 * std::mem::size_of::<f64>();
+    let encoded_sense_offset = reverse_stream
+        .windows(std::mem::size_of::<i32>())
+        .position(|bytes| bytes == (-1_i32).to_le_bytes());
+    assert_eq!(Some(sense_offset), encoded_sense_offset);
+    reverse_stream[sense_offset..sense_offset + std::mem::size_of::<i32>()]
+        .copy_from_slice(&1_i32.to_le_bytes());
+    assert_eq!(
+        crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
+        1
+    );
+    assert!(
+        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
+            .contains_key(&7)
+    );
 }
 
 #[test]

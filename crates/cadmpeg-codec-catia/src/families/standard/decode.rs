@@ -1071,7 +1071,8 @@ pub(crate) fn associate_standard_freeform_e5_surfaces(
 
 /// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
 /// The face and wrapper identities are the same strict join used by analytic
-/// E5 carriers; only the underlying carrier decoder differs.
+/// E5 carriers; only the underlying carrier decoder differs. The carrier's
+/// signed sense must agree with the owning face orientation before admission.
 pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
@@ -1095,14 +1096,17 @@ pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
     records
         .iter()
         .filter_map(|record| {
-            let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
-                record
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform {
+                tag,
+                forward,
+                ..
+            } = record
             else {
                 return None;
             };
             let carrier = *carrier_ids.get(tag)?;
             let jet = jets.get(&carrier)?;
-            Some((
+            (*forward == (jet.sense == -1)).then_some((
                 *tag,
                 StandardSurfaceProcedure::RollingBall {
                     carrier_object_id: jet.record_id,
