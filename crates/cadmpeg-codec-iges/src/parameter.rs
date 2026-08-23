@@ -507,8 +507,9 @@ fn analyze_trailing_pointer_groups_from_end(
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
-/// Type 230 Form 0 puts the island count at index 8 and consumes one pointer
-/// per island, so its groups start at token `9 + N`; zero islands is valid.
+/// Type 230 Forms 0 and 1 put the island count at index 8 and consume one
+/// pointer per island, so their groups start at token `9 + N`; Form 0 allows
+/// zero islands and Form 1 requires at least one island.
 /// Type 320 Form 0 puts `NA` at index 3 and `NC` after the fixed `TF`, `PRD`,
 /// and `DPTR` fields, so its groups start at token `8 + NA + NC` after the
 /// entity type token. Both counts may be zero when their lists fit.
@@ -819,7 +820,7 @@ pub(crate) fn entity_primary_end(
         (406, 27) => Some(generic_data_primary_end(record)),
         (406, 5001..=9999) => Some(counted_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
-        (230, 0) => Some(sectioned_area_primary_end(record)),
+        (230, 0..=1) => Some(sectioned_area_primary_end(record)),
         (228, 0) => Some(general_symbol_primary_end(record)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
@@ -2975,3 +2976,5 @@ mod counted_list_tests;
 mod quarantine_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod type230_tests;

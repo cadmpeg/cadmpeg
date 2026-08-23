@@ -237,6 +237,34 @@ pub(crate) fn symbol_and_sectioned_area_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn inverted_sectioned_area_file() -> Vec<u8> {
+    inverted_sectioned_area_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn inverted_sectioned_area_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "ISLAND".into(),
+                status: "00000000",
+                parameters: "100,0,0,0,1,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 230,
+                form: 1,
+                label: "INVERTED".into(),
+                status: "00000100",
+                parameters: "230,0,2,0,0,0,1,0.7853981633974483,1,1;".into(),
+            },
+        ],
+        global,
+    )
+}
+
 pub(crate) fn out_of_table_sectioned_area_pattern_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

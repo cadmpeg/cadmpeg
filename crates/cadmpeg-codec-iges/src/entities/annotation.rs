@@ -224,7 +224,7 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
         (220, 0) => Some(AnnotationKind::PointDimension),
         (222, 0..=1) => Some(AnnotationKind::RadiusDimension),
         (228, 0) => Some(AnnotationKind::GeneralSymbol),
-        (230, 0) => Some(AnnotationKind::SectionedArea),
+        (230, 0..=1) => Some(AnnotationKind::SectionedArea),
         _ => None,
     }
 }
@@ -973,22 +973,39 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // the table fields, dialect, placement, and Global tolerances are distinct validation inputs
 fn sectioned_area_valid(
     ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    form: i64,
     dialect: Dialect,
     transform: Transform,
     length_factor: f64,
     resolution: f64,
 ) -> bool {
-    let boundary_sequence = pointer(record, 1, entries);
-    let boundary_valid = boundary_sequence
-        .and_then(|sequence| entries.get(&sequence).copied())
-        .is_some_and(section_boundary_type);
+    if !matches!(form, 0 | 1) {
+        return false;
+    }
+    let boundary_sequence = match record.integer(1) {
+        Some(0) if form == 1 => Some(None),
+        Some(_) => pointer(record, 1, entries).map(Some),
+        None => None,
+    };
+    let boundary_valid = boundary_sequence.is_some_and(|sequence| {
+        sequence.is_none_or(|sequence| {
+            entries
+                .get(&sequence)
+                .copied()
+                .is_some_and(section_boundary_type)
+        })
+    });
     let Some(island_count) = record.count(8) else {
         return false;
     };
+    if form == 1 && island_count == 0 {
+        return false;
+    }
     let island_sequences = (0..island_count)
         .map(|offset| pointer(record, 9 + offset, entries))
         .collect::<Option<Vec<_>>>();
@@ -1001,6 +1018,7 @@ fn sectioned_area_valid(
     });
     let definition_sequences = boundary_sequence
         .into_iter()
+        .flatten()
         .chain(island_sequences.iter().flatten().copied())
         .collect::<Vec<_>>();
     let coplanarity_valid = matches!(dialect, Dialect::V4_0)
@@ -1099,6 +1117,7 @@ pub(super) fn project(
                             ir,
                             record,
                             &entries,
+                            entry.form,
                             global.dialect(),
                             transform.body_transform(),
                             global.length_factor_mm(),

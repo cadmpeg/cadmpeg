@@ -300,6 +300,7 @@
               "boundary": "iges:entity:directory#9",
               "declared_island_count": 1,
               "fill_pattern": 2,
+              "form": 0,
               "id": "iges:presentation:annotation#D13",
               "islands": [
                 "iges:entity:directory#11"

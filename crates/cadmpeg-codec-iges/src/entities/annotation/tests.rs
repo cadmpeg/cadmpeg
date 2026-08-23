@@ -534,6 +534,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &ir,
         &record,
         &entries,
+        0,
         Dialect::V4_0,
         Transform::identity(),
         1.0,
@@ -543,6 +544,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &ir,
         &record,
         &entries,
+        0,
         Dialect::V5_0,
         Transform::identity(),
         1.0,
@@ -563,8 +565,109 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &ir,
         &record,
         &entries,
+        0,
         Dialect::V5_0,
         translated_pattern_plane,
+        1.0,
+        0.001
+    ));
+}
+
+#[test]
+fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
+    let mut ir = CadIr::empty(Units::default());
+    for sequence in [1, 3] {
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        });
+    }
+    let entry = |sequence, entity_type| DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+    let island = entry(3, 100);
+    let entries = BTreeMap::from([(3, &island)]);
+    let record = |island_count: i64| {
+        let values = [
+            TokenValue::Integer(230),
+            TokenValue::Integer(0),
+            TokenValue::Integer(2),
+            TokenValue::Real(0.0),
+            TokenValue::Real(0.0),
+            TokenValue::Real(0.0),
+            TokenValue::Real(1.0),
+            TokenValue::Real(std::f64::consts::FRAC_PI_4),
+            TokenValue::Integer(island_count),
+            TokenValue::Integer(3),
+        ];
+        ParameterRecord {
+            directory_sequence: 5,
+            line_range: 1..2,
+            bytes: Vec::new(),
+            parameter_end: if island_count == 0 { 9 } else { values.len() },
+            tokens: values
+                .into_iter()
+                .map(|value| Token { value, span: 0..0 })
+                .collect(),
+            comment: Vec::new(),
+        }
+    };
+
+    assert!(sectioned_area_valid(
+        &ir,
+        &record(1),
+        &entries,
+        1,
+        Dialect::V5_0,
+        Transform::identity(),
+        1.0,
+        0.001
+    ));
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record(0),
+        &entries,
+        1,
+        Dialect::V5_0,
+        Transform::identity(),
+        1.0,
+        0.001
+    ));
+    assert!(!sectioned_area_valid(
+        &ir,
+        &record(1),
+        &entries,
+        0,
+        Dialect::V5_0,
+        Transform::identity(),
         1.0,
         0.001
     ));
@@ -849,4 +952,50 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_type230_form1_preserves_inverted_crosshatching() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(inverted_sectioned_area_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(annotations.len(), 1);
+    let section = &annotations[0];
+    assert_eq!(section.fields()["kind"], "sectioned_area");
+    assert_eq!(section.fields()["form"], 1);
+    assert!(section.fields()["boundary"].is_null());
+    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_type230_form1_is_admitted_in_iges_5_0() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(inverted_sectioned_area_file_with_global(global)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["iges_version"],
+        "5.0"
+    );
+    let section = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    assert_eq!(section.fields()["form"], 1);
+    assert!(section.fields()["boundary"].is_null());
+    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
 }

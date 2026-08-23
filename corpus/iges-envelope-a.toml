@@ -593,12 +593,12 @@ assertions = ["typed-links", "identity", "byte-coverage"]
 [[entity]]
 type = 230
 name = "sectioned-area"
-forms = [0]
+forms = [0, 1]
 domain = "annotation"
 decoder = "entities::annotation::project"
 destination = "native.iges.annotations"
-fixture_classes = ["sectioned-areas"]
-assertions = ["boundary-links", "fill-pattern", "byte-coverage"]
+fixture_classes = ["sectioned-areas", "inverted-crosshatching"]
+assertions = ["boundary-links", "fill-pattern", "form-semantics", "byte-coverage"]
 
 [[entity]]
 type = 302

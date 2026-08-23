@@ -131,6 +131,8 @@ fn v4_admission_matches_its_entity_and_form_table() {
         (402, 21, false),
         (404, 0, true),
         (404, 1, false),
+        (230, 0, true),
+        (230, 1, false),
         (406, 3, true),
         (406, 4, false),
         (406, 18, true),
@@ -152,6 +154,17 @@ fn v4_admission_matches_its_entity_and_form_table() {
             crate::profile::envelope_a_admits(entity_type, form, Dialect::V4_0),
             expected,
             "entity type {entity_type} form {form}"
+        );
+    }
+}
+
+#[test]
+fn type230_form1_is_admitted_from_iges_5_0_onward() {
+    assert!(!crate::profile::envelope_a_admits(230, 1, Dialect::V4_0));
+    for dialect in [Dialect::V5_0, Dialect::V5_1, Dialect::V5_2, Dialect::V5_3] {
+        assert!(
+            crate::profile::envelope_a_admits(230, 1, dialect),
+            "{dialect:?}"
         );
     }
 }

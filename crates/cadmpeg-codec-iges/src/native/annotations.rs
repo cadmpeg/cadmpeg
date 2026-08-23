@@ -168,6 +168,7 @@ pub(super) enum NativeAnnotation {
     SectionedArea {
         id: String,
         source_entity: String,
+        form: i64,
         boundary: Option<String>,
         fill_pattern: Option<i64>,
         pattern_anchor: [Option<f64>; 3],
@@ -618,6 +619,7 @@ fn sectioned_area(
     NativeAnnotation::SectionedArea {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         boundary: subject.section_boundary_link(1),
         fill_pattern: record.and_then(|record| record.integer(2)),
         pattern_anchor: [
