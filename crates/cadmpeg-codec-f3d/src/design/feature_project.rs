@@ -41,9 +41,9 @@ use crate::records::{
     DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup,
     DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier,
     DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction,
-    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
+    DesignPathFeatureConstruction, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, SketchCurveGeometry,
+    SketchCurveIdentity,
 };
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
@@ -5873,17 +5873,14 @@ pub(crate) fn project_fixed_loft(
             {
                 return None;
             }
-            let mut body_groups = groups.iter().filter(|group| {
-                group.role == ROLE_0X8 && group.scope_reference_ordinal == 1
-            });
+            let mut body_groups = groups
+                .iter()
+                .filter(|group| group.role == ROLE_0X8 && group.scope_reference_ordinal == 1);
             let body_group = body_groups.next()?;
             if body_groups.next().is_some() {
                 return None;
             }
-            Some((
-                body_group.record_index,
-                body_group.scope_reference_ordinal,
-            ))
+            Some((body_group.record_index, body_group.scope_reference_ordinal))
         }
         _ => return None,
     };
@@ -5892,10 +5889,7 @@ pub(crate) fn project_fixed_loft(
             || legacy_body_group_identity
                 == Some((group.record_index, group.scope_reference_ordinal))
     };
-    let body_count = groups
-        .iter()
-        .filter(|group| is_body_group(**group))
-        .count();
+    let body_count = groups.iter().filter(|group| is_body_group(**group)).count();
     let expected_body_count = usize::from(*operation != DesignExtrudeOperation::NewBody);
     if body_count != expected_body_count {
         return None;

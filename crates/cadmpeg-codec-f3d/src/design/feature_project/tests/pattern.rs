@@ -11,8 +11,8 @@
 use super::prelude::*;
 use super::project_rectangular_pattern_scalars;
 use crate::records::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-    DesignParameterScope, DesignRectangularPatternConstruction,
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
+    DesignRectangularPatternConstruction,
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
@@ -22,9 +22,7 @@ const EPS_SPACING: f64 = 1e-12;
 
 fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
-        id: format!(
-            "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
-        ),
+        id: format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
         scope_record_index,
         scope_reference_ordinal: 1,
         record_index,

@@ -1442,17 +1442,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         bytes
     }
 
-    let mut scope = crate::records::DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat",
-        "Loft",
-        12,
-    );
-    scope.path_feature_construction = Some(
-        crate::records::DesignPathFeatureConstruction::Loft {
-            operation: crate::records::DesignExtrudeOperation::Cut,
-            operation_offset: 0,
-        },
-    );
+    let mut scope =
+        crate::records::DesignParameterScope::empty("f3d:Design/BulkStream.dat", "Loft", 12);
+    scope.path_feature_construction = Some(crate::records::DesignPathFeatureConstruction::Loft {
+        operation: crate::records::DesignExtrudeOperation::Cut,
+        operation_offset: 0,
+    });
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);
     let parsed_322 = parse_loft_legacy_body_carrier(

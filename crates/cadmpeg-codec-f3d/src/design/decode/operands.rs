@@ -37,11 +37,10 @@ use crate::records::{
     DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
     DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterOwner,
     DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignSketchProfileOperand, DesignSketchProfileRegion,
-    DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
-    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
-    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
+    DesignSketchProfileRegionSelection, DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, DesignVertexRecipe,
+    DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
@@ -1340,15 +1339,12 @@ pub fn decode_loft_legacy_body_carriers(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(mut carrier) =
-                parse_loft_legacy_body_carrier(bytes, scope, ordinal, header)
+            let Some(mut carrier) = parse_loft_legacy_body_carrier(bytes, scope, ordinal, header)
             else {
                 continue;
             };
-            carrier.id = ids::native_design_loft_legacy_body_carrier_id(
-                &entry.name,
-                header.byte_offset,
-            );
+            carrier.id =
+                ids::native_design_loft_legacy_body_carrier_id(&entry.name, header.byte_offset);
             out.push(carrier);
         }
     }
@@ -1397,16 +1393,15 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         _ => return None,
     };
     if indexed_record_index(bytes, start) != Some(header.record_index)
-        || bytes.get(
-            start + legacy_loft_322::ZERO_RUN_10
-                ..start + legacy_loft_322::ZERO_RUN_10 + 10,
-        )? != [0; 10]
+        || bytes
+            .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
+            != [0; 10]
         || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
         || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
             != scope.record_index
-        || bytes.get(
-            start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6,
-        )? != [0; 6]
+        || bytes
+            .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
+            != [0; 6]
         || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
     {
         return None;
@@ -1433,7 +1428,9 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     }
     cursor = cursor.checked_add(4)?;
     let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)? || bytes.get(cursor..cursor + 2)? != [0, 0] {
+    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
+        || bytes.get(cursor..cursor + 2)? != [0, 0]
+    {
         return None;
     }
     let flags: [u8; 2] = bytes.get(cursor..cursor + 2)?.try_into().ok()?;
@@ -1455,7 +1452,10 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         if record_index != scope.record_index {
             return None;
         }
-        (Some(record_index), Some(u64::try_from(reference_offset).ok()?))
+        (
+            Some(record_index),
+            Some(u64::try_from(reference_offset).ok()?),
+        )
     } else {
         (None, None)
     };
@@ -1465,12 +1465,11 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     {
         return None;
     }
-    let paired_class_tag =
-        std::str::from_utf8(bytes.get(
-            paired_byte_offset + indexed_header::CLASS_TAG
-                ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-        )?)
-        .ok()?;
+    let paired_class_tag = std::str::from_utf8(bytes.get(
+        paired_byte_offset + indexed_header::CLASS_TAG
+            ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
+    )?)
+    .ok()?;
     if paired_class_tag != paired_class {
         return None;
     }
@@ -1495,15 +1494,11 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         opaque_scalar,
         opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
         repeated_opaque_index,
-        repeated_opaque_index_offset: u64::try_from(
-            start + legacy_loft_322::REPEATED_OPAQUE_INDEX,
-        )
-        .ok()?,
+        repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
+            .ok()?,
         next_next_record_index,
-        next_next_reference_offset: u64::try_from(
-            start + legacy_loft_322::NEXT_NEXT_REFERENCE,
-        )
-        .ok()?,
+        next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
+            .ok()?,
         flags,
         flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
         next_record_index,

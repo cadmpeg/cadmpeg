@@ -791,15 +791,13 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
 
     let mut malformed = bytes;
     malformed[25] = 0;
-    assert!(
-        exact_assembly_alignment(
-            &malformed,
-            &IndexedRecordOffsets::build(&malformed),
-            &scope,
-            &owners,
-        )
-        .is_none()
-    );
+    assert!(exact_assembly_alignment(
+        &malformed,
+        &IndexedRecordOffsets::build(&malformed),
+        &scope,
+        &owners,
+    )
+    .is_none());
 }
 
 #[test]

@@ -588,8 +588,7 @@ fn validation_checks_pipe_path_group_roles() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
-        0x0000_0008_0000_0000;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role = 0x0000_0008_0000_0000;
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 

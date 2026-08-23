@@ -16,14 +16,14 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use crate::CadIr;
 use crate::geometry::{
-    CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
-    SweepSurfaceLayout, knots_nondecreasing,
+    knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
+    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    SurfaceParameterAxis, SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
+use crate::CadIr;
 use cadmpeg_core::decode::alloc_filled;
 
 /// Test whether two model-space points are reflections across a line carrier.
@@ -4024,13 +4024,11 @@ fn identity_sweep_rail(formula: &LawFormula) -> bool {
     if !name.starts_with("ROTATE(DOMAIN(") || !name.ends_with("),TRANS1)") {
         return false;
     }
-    let [
-        LawExpression::TransformVec {
-            vectors,
-            scale,
-            flags,
-        },
-    ] = formula.variables.as_slice()
+    let [LawExpression::TransformVec {
+        vectors,
+        scale,
+        flags,
+    }] = formula.variables.as_slice()
     else {
         return false;
     };
