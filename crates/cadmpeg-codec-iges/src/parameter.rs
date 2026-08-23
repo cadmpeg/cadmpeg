@@ -334,9 +334,10 @@ impl ParameterRecord {
     }
 }
 
-pub(crate) fn analyze_trailing_pointer_groups(
+fn analyze_trailing_pointer_groups_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
@@ -351,14 +352,25 @@ pub(crate) fn analyze_trailing_pointer_groups(
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
-        entity_primary_end(record, directory),
+        entity_primary_end_for_dialect(record, directory, dialect),
     )
 }
 
-fn analyze_trailing_pointer_groups_with_records(
+#[cfg(test)]
+// Existing boundary fixtures use the fully specified later-profile default;
+// every production caller supplies the resolved file dialect explicitly.
+pub(crate) fn analyze_trailing_pointer_groups(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_for_dialect(record, directory, Dialect::V5_3)
+}
+
+fn analyze_trailing_pointer_groups_with_records_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
@@ -374,10 +386,25 @@ fn analyze_trailing_pointer_groups_with_records(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups(record, directory);
+        return analyze_trailing_pointer_groups_for_dialect(record, directory, dialect);
     }
-    let primary_end = entity_primary_end_with_records(record, directory, records);
+    let primary_end =
+        entity_primary_end_with_records_for_dialect(record, directory, records, dialect);
     analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
+}
+
+#[cfg(test)]
+fn analyze_trailing_pointer_groups_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_with_records_for_dialect(
+        record,
+        directory,
+        records,
+        Dialect::V5_3,
+    )
 }
 
 fn analyze_trailing_pointer_groups_from_end(
@@ -787,17 +814,18 @@ fn connect_node_primary_end(record: &ParameterRecord) -> usize {
     connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
 }
 
-pub(crate) fn entity_primary_end(
+pub(crate) fn entity_primary_end_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
-        (402, 3) => Some(view_visibility_primary_end(record, 1)),
-        (402, 4) => Some(view_visibility_primary_end(record, 5)),
+        (402, 3) => Some(view_visibility_primary_end(record, 1, dialect)),
+        (402, 4) => Some(view_visibility_primary_end(record, 5, dialect)),
         (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
         (402, 8) => Some(signal_string_primary_end(record)),
         (402, 10) => Some(text_node_primary_end(record)),
@@ -937,10 +965,21 @@ pub(crate) fn entity_primary_end(
     }
 }
 
-fn entity_primary_end_with_records(
+#[cfg(test)]
+// Keep the legacy test fixture adapter dialect-explicit so it cannot be used
+// by production assembly when a file's resolved dialect is available.
+pub(crate) fn entity_primary_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<usize> {
+    entity_primary_end_for_dialect(record, directory, Dialect::V5_3)
+}
+
+fn entity_primary_end_with_records_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
@@ -948,7 +987,16 @@ fn entity_primary_end_with_records(
             record, entry, directory, records,
         ));
     }
-    entity_primary_end(record, directory)
+    entity_primary_end_for_dialect(record, directory, dialect)
+}
+
+#[cfg(test)]
+fn entity_primary_end_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<usize> {
+    entity_primary_end_with_records_for_dialect(record, directory, records, Dialect::V5_3)
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -1272,14 +1320,28 @@ fn planar_associativity_primary_end(record: &ParameterRecord) -> usize {
     positive_counted_primary_end(record, 2, 4, 1)
 }
 
-fn view_visibility_primary_end(record: &ParameterRecord, block_width: usize) -> usize {
+pub(crate) fn view_visibility_entity_count(
+    record: &ParameterRecord,
+    dialect: Dialect,
+) -> Option<usize> {
+    let value = if dialect == Dialect::V4_0 {
+        record.integer(2)
+    } else {
+        record.integer_or(2, 0)
+    }?;
+    usize::try_from(value).ok()
+}
+
+fn view_visibility_primary_end(
+    record: &ParameterRecord,
+    block_width: usize,
+    dialect: Dialect,
+) -> usize {
     let view_count = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0);
-    let entity_count = record
-        .integer_or(2, 0)
-        .and_then(|value| usize::try_from(value).ok());
+    let entity_count = view_visibility_entity_count(record, dialect);
     view_count
         .zip(entity_count)
         .and_then(|(view_count, entity_count)| {
@@ -3384,10 +3446,11 @@ pub(crate) fn assemble_with_context(
             .map(|record| (record.directory_sequence, record))
             .collect::<BTreeMap<_, _>>();
         for record in &records {
-            let analysis = analyze_trailing_pointer_groups_with_records(
+            let analysis = analyze_trailing_pointer_groups_with_records_for_dialect(
                 record,
                 &entries,
                 &record_by_directory,
+                global.dialect(),
             );
             trailing_pointer_analysis.insert(record.directory_sequence, analysis);
         }

@@ -259,7 +259,7 @@ fn general_note_valid_for_dialect(
     dialect: Dialect,
     form: i64,
 ) -> bool {
-    let parameter_end = crate::parameter::entity_primary_end(record, entries)
+    let parameter_end = crate::parameter::entity_primary_end_for_dialect(record, entries, dialect)
         .unwrap_or_else(|| record.parameter_end());
     if !general_note_suffix_structurally_valid(record, parameter_end) {
         return false;

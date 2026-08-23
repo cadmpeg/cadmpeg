@@ -7,12 +7,14 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{
-    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_with_records,
-    entity_primary_end, entity_primary_end_with_records, groups_for_candidate,
+    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_dialect,
+    analyze_trailing_pointer_groups_with_records, entity_primary_end,
+    entity_primary_end_for_dialect, entity_primary_end_with_records, groups_for_candidate,
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 use crate::card::{scan, Section};
 use crate::directory::{DirectoryEntry, Status};
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -11077,6 +11079,72 @@ fn type402_view_visibility_forms_follow_counted_view_blocks() {
         let record = token_parameter_record(9, values);
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
     }
+}
+
+#[test]
+fn type402_view_visibility_entity_count_requirement_follows_dialect() {
+    let association = directory_target(1, 212);
+    let view = directory_target(3, 410);
+    let mut source = directory_target(9, 402);
+    source.form = 3;
+    let directory = BTreeMap::from([(1, &association), (3, &view), (9, &source)]);
+    let omitted_count = token_parameter_record(
+        9,
+        vec![
+            402.into(),
+            1.into(),
+            TokenValue::Omitted,
+            3.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+    );
+
+    assert_eq!(
+        entity_primary_end_for_dialect(&omitted_count, &directory, Dialect::V4_0),
+        Some(omitted_count.tokens.len())
+    );
+    let v4_analysis =
+        analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, Dialect::V4_0);
+    assert!(v4_analysis.groups.is_none());
+
+    for dialect in [Dialect::V5_0, Dialect::V5_1, Dialect::V5_2, Dialect::V5_3] {
+        assert_eq!(
+            entity_primary_end_for_dialect(&omitted_count, &directory, dialect),
+            Some(4),
+            "dialect={dialect:?}"
+        );
+        let analysis =
+            analyze_trailing_pointer_groups_for_dialect(&omitted_count, &directory, dialect);
+        let groups = analysis
+            .groups
+            .expect("optional Type 402 visible-entity list");
+        assert_eq!(groups.token_start, 4, "dialect={dialect:?}");
+        assert_eq!(groups.associations, vec![1], "dialect={dialect:?}");
+    }
+
+    let explicit_zero = token_parameter_record(
+        9,
+        vec![
+            402.into(),
+            1.into(),
+            0.into(),
+            3.into(),
+            1.into(),
+            1.into(),
+            0.into(),
+        ],
+    );
+    assert_eq!(
+        entity_primary_end_for_dialect(&explicit_zero, &directory, Dialect::V4_0),
+        Some(4)
+    );
+    let analysis =
+        analyze_trailing_pointer_groups_for_dialect(&explicit_zero, &directory, Dialect::V4_0);
+    let groups = analysis.groups.expect("explicit V4 Type 402 entity count");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1]);
 }
 
 #[test]

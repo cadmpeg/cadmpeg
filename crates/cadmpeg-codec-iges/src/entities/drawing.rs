@@ -432,9 +432,7 @@ pub(super) fn project(
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
-        let entity_count = record
-            .integer_or(2, 0)
-            .and_then(|value| usize::try_from(value).ok());
+        let entity_count = crate::parameter::view_visibility_entity_count(record, global.dialect());
         let block_width = if entry.form == 3 { 1 } else { 5 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {

@@ -327,6 +327,74 @@ fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
 }
 
 #[test]
+fn decode_view_visibility_entity_count_requirement_follows_dialect() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let decode = |global: &[u8], visible_parameters: &str| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[
+                        OwnedTestEntity {
+                            entity_type: 410,
+                            form: 0,
+                            label: "VIEW".into(),
+                            status: "00000000",
+                            parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+                        },
+                        OwnedTestEntity {
+                            entity_type: 402,
+                            form: 3,
+                            label: "VISIBLE".into(),
+                            status: "00000000",
+                            parameters: visible_parameters.into(),
+                        },
+                    ],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+
+    let v4 = decode(GLOBAL_V4, "402,1,,1;");
+    let v4_losses = v4
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(v4_losses.len(), 1, "{:#?}", v4.report().losses);
+    assert_eq!(
+        v4_losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D3")
+    );
+
+    let v5 = decode(GLOBAL_V5_0, "402,1,,1;");
+    assert!(
+        v5.report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        v5.report().losses
+    );
+    let visibility = &v5.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+    assert_eq!(visibility.len(), 1);
+    assert_eq!(
+        visibility[0].fields()["displays"].as_array().unwrap().len(),
+        1
+    );
+    assert!(visibility[0].fields()["entities"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_preserves_ordered_segmented_view_display() {
     let result = IgesCodec
         .decode(
