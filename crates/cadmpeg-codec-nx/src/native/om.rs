@@ -47,6 +47,52 @@ pub struct OmRecordArea {
     pub source_offset: u64,
 }
 
+/// One row from the feature-history state journal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateJournalRow {
+    /// Big-endian Unix timestamp stored by the journal.
+    pub timestamp: u32,
+    /// Tagged schema-value marker.
+    pub value_marker: u8,
+    /// Decoded tagged schema value.
+    pub value: u32,
+    /// Exact tagged schema-value token.
+    pub raw_value: Vec<u8>,
+    /// Journal schema identifier.
+    pub schema_id: u32,
+    /// Exact schema-identifier token.
+    pub raw_schema_id: Vec<u8>,
+    /// Monotone state-counter ordinal.
+    pub state_ordinal: u32,
+    /// Exact state-ordinal token.
+    pub raw_state_ordinal: Vec<u8>,
+    /// Absolute file offset of the row's `e0` marker.
+    pub source_offset: u64,
+    /// Absolute exclusive end offset after the `13` terminator.
+    pub end_offset: u64,
+}
+
+/// One anchored state-journal group from a feature-history section.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmOperationStateJournalGroup {
+    /// Globally unique group identity.
+    pub id: String,
+    /// Owning feature-history section link.
+    pub section_link: String,
+    /// Zero-based group ordinal in serialized order.
+    pub ordinal: u32,
+    /// Exact two-byte group selector.
+    pub selector: [u8; 2],
+    /// Ordered journal rows.
+    pub rows: Vec<OmOperationStateJournalRow>,
+    /// Directory entry containing the feature-history section.
+    pub source_entry: String,
+    /// Absolute file offset of the `04` group opener.
+    pub source_offset: u64,
+    /// Absolute exclusive end offset after the final row.
+    pub end_offset: u64,
+}
+
 /// One row from the feature-history operation-state counter map.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateCounter {
@@ -336,6 +382,69 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
                         object_index_source_offset: entry_offset + row.object_index.offset as u64,
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + row.offset as u64,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode anchored state-journal groups from canonical feature-history areas.
+pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationStateJournalGroup> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(groups) = section.operation_state_journal_groups() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            groups
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(ordinal, group)| {
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    let rows = group
+                        .rows
+                        .into_iter()
+                        .map(|row| {
+                            Some(OmOperationStateJournalRow {
+                                timestamp: row.timestamp,
+                                value_marker: row.value.marker,
+                                value: row.value.value,
+                                raw_value: row.value.raw.to_vec(),
+                                schema_id: row.schema_id.value?,
+                                raw_schema_id: row.schema_id.raw.to_vec(),
+                                state_ordinal: row.ordinal.value?,
+                                raw_state_ordinal: row.ordinal.raw.to_vec(),
+                                source_offset: entry_offset + row.offset as u64,
+                                end_offset: entry_offset + row.end_offset as u64,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(OmOperationStateJournalGroup {
+                        id: format!(
+                            "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        selector: group.selector,
+                        rows,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + group.offset as u64,
+                        end_offset: entry_offset + group.end_offset as u64,
                     })
                 })
                 .collect()

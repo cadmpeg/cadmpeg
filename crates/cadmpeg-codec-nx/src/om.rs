@@ -1909,7 +1909,6 @@ pub struct OperationStateGroupTable<'a> {
 }
 
 /// One state-journal row preceding feature operation records.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationStateJournalRow<'a> {
     /// Absolute byte offset of the row's `e0` timestamp marker.
@@ -1927,7 +1926,6 @@ pub struct OperationStateJournalRow<'a> {
 }
 
 /// One state-journal group.
-#[allow(dead_code)] // The native state projection consumes this parser in the next OM slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateJournalGroup<'a> {
     /// Absolute byte offset of the `04` group opener.
@@ -3026,6 +3024,35 @@ impl<'a> Section<'a> {
         let base_offset = self.record_area_offset?;
         let map_start = map.offset.checked_sub(base_offset)?;
         operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
+    }
+
+    /// Decode anchored state-journal groups from a feature-history record area.
+    ///
+    /// The journal prefix is selected by the record-area marker and its
+    /// version-token run. After a complete group, only the exact `04 00`
+    /// separator form may be skipped when it leads to another complete group.
+    /// Any other byte stops the journal so later record-region data cannot
+    /// become state.
+    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup<'a>>> {
+        let is_feature_history = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::FEATURE_RECORD");
+        if !is_feature_history {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let header = self.record_area_header()?;
+        let product = header.product.offset.checked_sub(base_offset)?;
+        let product_end = product_record_range_at(bytes, product)?.end;
+        let start = operation_state_journal_start(bytes, product_end)?;
+        let end = self
+            .cached_operation_labels
+            .first()
+            .and_then(|label| label.header_offset.checked_sub(base_offset))
+            .unwrap_or(bytes.len());
+        operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
     }
 
     fn operation_state_block(&self) -> Option<OperationStateBlock<'a>> {
@@ -7515,6 +7542,80 @@ fn operation_state_journal_group_at(
         rows,
         end_offset: base_offset.checked_add(cursor)?,
     })
+}
+
+fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usize> {
+    let marker = bytes
+        .get(product_end..)?
+        .windows(2)
+        .position(|window| window == [0x41, 0x00])?
+        .checked_add(product_end)?;
+    let mut at = marker.checked_add(2)?;
+    let mut count_tokens = 0usize;
+    let mut saw_repeated_token = false;
+    loop {
+        if bytes
+            .get(at..at + 3)
+            .is_some_and(|token| token[0] == 0x03 && token[1] == 0x05)
+        {
+            count_tokens += 1;
+            at += 3;
+        } else if bytes.get(at..at + 4) == Some(&[0x03, 0x03, 0x02, 0x00]) {
+            saw_repeated_token = true;
+            at += 4;
+        } else {
+            break;
+        }
+    }
+    if bytes.get(at) == Some(&0x00) {
+        at += 1;
+    }
+    while bytes.get(at..at + 2) == Some(&[0x04, 0x00]) {
+        at += 2;
+    }
+    (count_tokens > 0 && (saw_repeated_token || count_tokens >= 2)).then_some(at)
+}
+
+fn operation_state_journal_groups_before_boundary(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    let mut previous_ordinal = None;
+    loop {
+        let Some(group) = operation_state_journal_group_at(bytes, at, end, base_offset) else {
+            let mut next = at;
+            while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
+                next += 2;
+            }
+            if next == at
+                || operation_state_journal_group_at(bytes, next, end, base_offset).is_none()
+            {
+                break;
+            }
+            at = next;
+            continue;
+        };
+        for row in &group.rows {
+            let ordinal = row.ordinal.value?;
+            if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
+                return None;
+            }
+            previous_ordinal = Some(ordinal);
+        }
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty()).then_some(groups)
 }
 
 /// Decode a complete bounded state journal.

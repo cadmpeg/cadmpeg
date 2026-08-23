@@ -6,13 +6,15 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::native::om::{
-    operation_state_counters, operation_state_groups, operation_state_messages,
-    operation_state_slot_lanes, operation_state_statuses, OmOperationStateCounter,
-    OmOperationStateMessage, OmOperationStateSlotLane, OmOperationStateStatus,
-    OmRollForwardStateGroup, OmRollForwardStateRow,
+    operation_state_counters, operation_state_groups, operation_state_journal_groups,
+    operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
+    OmOperationStateCounter, OmOperationStateJournalGroup, OmOperationStateMessage,
+    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
+    OmRollForwardStateRow,
 };
 use crate::test_support::{
-    composed_feature_history_payload_with_operation_state_statuses, prt_with_named_payloads,
+    composed_feature_history_payload_with_operation_state_statuses,
+    composed_feature_history_payload_with_state_journal, prt_with_named_payloads,
     segment_om_record_area_with_state_counter_map,
     segment_om_record_area_with_state_groups_and_counter_map,
 };
@@ -56,6 +58,45 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         .arena_as::<OmOperationStateCounter>("om_operation_state_counters")
         .expect("state-counter arena");
     assert_eq!(emitted, rows.as_slice());
+}
+
+#[test]
+fn native_catalog_emits_anchored_operation_state_journal_groups() {
+    let payload = composed_feature_history_payload_with_state_journal();
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
+    let container = container::scan_bytes(file).expect("required invariant");
+
+    let groups = operation_state_journal_groups(&container);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].selector, [0x01, 0x02]);
+    assert_eq!(groups[0].rows.len(), 1);
+    assert_eq!(groups[0].rows[0].value_marker, 0xc0);
+    assert_eq!(groups[0].rows[0].value, 0x0001_0203);
+    assert_eq!(groups[0].rows[0].schema_id, 0x310);
+    assert_eq!(groups[0].rows[0].state_ordinal, 2);
+    assert_eq!(groups[1].selector, [0x05, 0x06]);
+    assert_eq!(groups[1].rows[0].value_marker, 0xa0);
+    assert_eq!(groups[1].rows[0].value, 0x0102);
+    assert_eq!(groups[1].rows[0].state_ordinal, 3);
+    assert!(groups[1].source_offset > groups[0].source_offset);
+
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                payload,
+            )])),
+            &DecodeOptions::default(),
+        )
+        .expect("native decode");
+    let emitted = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<OmOperationStateJournalGroup>("om_operation_state_journal_groups")
+        .expect("state-journal arena");
+    assert_eq!(emitted, groups.as_slice());
 }
 
 #[test]

@@ -366,6 +366,47 @@ pub(crate) fn composed_feature_history_payload(
     payload
 }
 
+/// Compose a feature-history payload with two anchored state-journal groups.
+pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let mut section = composed_feature_history_section(&[(input_slots, "SKETCH", vec![0x00])]);
+    let operation_marker = section
+        .windows(15)
+        .position(|window| {
+            window == b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff"
+        })
+        .expect("operation marker");
+    let journal = [
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x03, 0x03, 0x02, 0x00, 0x04, 0x01, 0x02, 0x00, 0x00, 0xe0,
+        0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83, 0x10, 0x02, 0x13, 0x04, 0x00, 0x04,
+        0x05, 0x06, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x21, 0xa0, 0x01, 0x02, 0x83, 0x11, 0x03, 0x13,
+    ];
+    section.splice(operation_marker..operation_marker, journal.iter().copied());
+    let section_len = u32::from_be_bytes(section[8..12].try_into().expect("section length field"));
+    section[8..12].copy_from_slice(
+        &(section_len + u32::try_from(journal.len()).expect("journal fixture length"))
+            .to_be_bytes(),
+    );
+
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+
+    let mut store = composed_offset_store(&[]);
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    for index in 0..2 {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
+    payload
+}
+
 pub(crate) type ComposedInputs = (
     Vec<(&'static [u8], &'static str, Vec<u8>)>,
     Vec<u8>,

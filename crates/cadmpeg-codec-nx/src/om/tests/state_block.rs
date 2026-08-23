@@ -328,3 +328,22 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     assert_eq!(row.schema_id.value, Some(0x310));
     assert_eq!(row.ordinal.value, Some(0x2a));
 }
+
+#[test]
+fn operation_state_journal_start_accepts_count_token_runs() {
+    let prefix = [0x41, 0x00, 0x03, 0x05, 0x03, 0x03, 0x05, 0x03, 0x00];
+    let group = [
+        0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
+        0x10, 0x2a, 0x13,
+    ];
+    let mut bytes = prefix.to_vec();
+    bytes.extend(group);
+
+    let start = super::operation_state_journal_start(&bytes, 0).expect("journal prefix");
+    assert_eq!(start, prefix.len());
+    let groups =
+        super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
+            .expect("journal groups");
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].rows[0].ordinal.value, Some(0x2a));
+}
