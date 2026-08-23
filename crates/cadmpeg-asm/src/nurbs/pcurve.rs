@@ -253,7 +253,9 @@ mod width_tests {
         decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
         DecodedRollingBallCurve,
     };
-    use crate::nurbs::core::{decode_curve_cache, decode_surface_cache};
+    use crate::nurbs::core::{
+        curve_cache, decode_curve_cache, decode_surface_cache, surface_cache,
+    };
     use crate::nurbs::proc_curve::{
         compound_patch_layout, extrusion_patch_layout, helix_patch_layout,
         intersection_patch_layout, projection_patch_layout, rolling_ball_patch_layout,
@@ -311,7 +313,7 @@ mod width_tests {
     }
 
     /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
-    fn curve_block(int_width: usize) -> Vec<u8> {
+    fn curve_block_with_endpoint(int_width: usize, endpoint: [f64; 3]) -> Vec<u8> {
         let mut b = NUBS_MARKER.to_vec();
         push_int(&mut b, 0x04, 1, int_width); // degree
         push_int(&mut b, 0x15, 0, int_width); // open closure
@@ -320,14 +322,18 @@ mod width_tests {
         push_int(&mut b, 0x04, 1, int_width);
         push_f64(&mut b, 1.0);
         push_int(&mut b, 0x04, 1, int_width);
-        for component in [0.0, 0.0, 0.0, 1.0, 2.0, 3.0] {
+        for component in [0.0, 0.0, 0.0, endpoint[0], endpoint[1], endpoint[2]] {
             push_f64(&mut b, component);
         }
         b
     }
 
+    fn curve_block(int_width: usize) -> Vec<u8> {
+        curve_block_with_endpoint(int_width, [1.0, 2.0, 3.0])
+    }
+
     /// A degree-1 2×2-pole `nubs` surface block over `[0, 1]²`.
-    fn surface_block(int_width: usize) -> Vec<u8> {
+    fn surface_block_with_x_offset(int_width: usize, x_offset: f64) -> Vec<u8> {
         let mut b = NUBS_MARKER.to_vec();
         push_int(&mut b, 0x04, 1, int_width); // u degree
         push_int(&mut b, 0x04, 1, int_width); // v degree
@@ -343,11 +349,15 @@ mod width_tests {
             push_int(&mut b, 0x04, 1, int_width);
         }
         for pole in 0..4 {
-            push_f64(&mut b, f64::from(pole));
+            push_f64(&mut b, x_offset + f64::from(pole));
             push_f64(&mut b, 0.0);
             push_f64(&mut b, 0.0);
         }
         b
+    }
+
+    fn surface_block(int_width: usize) -> Vec<u8> {
+        surface_block_with_x_offset(int_width, 0.0)
     }
 
     fn pcurve_block(int_width: usize) -> Vec<u8> {
@@ -1237,6 +1247,46 @@ mod width_tests {
                 .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
             assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
             assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        }
+    }
+
+    #[test]
+    fn token_curve_cache_ignores_nested_support_scope() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "exact_int_cur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+            bytes.push(0x10);
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let curve = curve_cache(&tokens)
+                .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
+
+            assert!((curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn token_surface_cache_ignores_later_nested_support_scope() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "off_spl_sur");
+            bytes.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&surface_block_with_x_offset(int_width, 9.0));
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let surface = surface_cache(&tokens)
+                .unwrap_or_else(|| panic!("owned surface cache at width {int_width}"));
+
+            assert!((surface.control_points[0].x - 50.0).abs() < f64::EPSILON);
         }
     }
 

@@ -354,6 +354,18 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
         .map(|name| canonical_intcurve_kind(name).into())
 }
 
+/// The first non-reference construction scope owned by `toks`.
+///
+/// Record payloads wrap their face or curve construction in this scope. Cache
+/// ownership is relative to that construction: markers in a nested support
+/// scope belong to the support, not to the record's writable carrier.
+pub(crate) fn owned_construction_scope(toks: &[Token]) -> Option<&[Token]> {
+    let start = owned_subtype_defs(toks)
+        .into_iter()
+        .find_map(|(start, name)| (name != "ref").then_some(start))?;
+    subtype_span(toks, start)
+}
+
 fn canonical_intcurve_kind(name: &str) -> &str {
     match name {
         "bldcur" => "blend_int_cur",
