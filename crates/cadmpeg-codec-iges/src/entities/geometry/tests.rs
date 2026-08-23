@@ -601,6 +601,36 @@ fn decode_rejects_type_126_without_required_normal_fields() {
 }
 
 #[test]
+fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let parameters = "126,3,1,0,0,1,0,0,0,1,2,3,3,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,1,0,3,,,;";
+
+    for global in [&global_v4[..], &global_v5[..]] {
+        let file = owned_test_file_with_global(
+            &[OwnedTestEntity {
+                entity_type: 126,
+                form: 0,
+                label: "NURBS".into(),
+                status: "00000000",
+                parameters: parameters.into(),
+            }],
+            global,
+        );
+        let result = IgesCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(result.ir().model.curves.len(), 1);
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    }
+}
+
+#[test]
 fn decode_projects_a_bounded_polynomial_bspline_curve() {
     let result = IgesCodec
         .decode(

@@ -450,7 +450,7 @@ fn type322_requires_unique_bounded_attribute_types_in_v4_and_v5() {
                             entity_type: 322,
                             form: 0,
                             label: "ATTRDEF".into(),
-                            status: "00000200".into(),
+                            status: "00000200",
                             parameters: parameters.into(),
                         }],
                         global,

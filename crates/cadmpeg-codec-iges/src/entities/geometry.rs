@@ -1439,18 +1439,18 @@ pub(crate) fn project_geometry(
             .max(point_scale * COMPUTATION_TOLERANCE);
         let plane = classify_control_point_plane(&control_points, plane_tolerance);
         let planar = flags[0] == Some(1);
-        let Some(normal_start) = range_start.checked_add(2) else {
-            losses.push(entity_loss(entry, "plane-normal offset overflows"));
-            continue;
-        };
-        let Some(normal_values) = collect_numbers(normal_start, 3) else {
-            losses.push(entity_loss(
-                entry,
-                "plane-normal fields are missing or non-finite",
-            ));
-            continue;
-        };
         if planar {
+            let Some(normal_start) = range_start.checked_add(2) else {
+                losses.push(entity_loss(entry, "plane-normal offset overflows"));
+                continue;
+            };
+            let Some(normal_values) = collect_numbers(normal_start, 3) else {
+                losses.push(entity_loss(
+                    entry,
+                    "plane-normal fields are missing or non-finite",
+                ));
+                continue;
+            };
             let normal_definition =
                 Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
             if !declared_unit_vector(record, normal_start, normal_definition, precision) {
