@@ -144,6 +144,26 @@ pub struct FeatureOperationBodyImageSegmentUse {
     pub segment_body_binding: String,
 }
 
+/// Exact owning-partition scope for one body-write image and its GROUP node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyPartitionUse {
+    /// Globally unique partition-use identity.
+    pub id: String,
+    /// Body-write frame carrying the partition-local GROUP node.
+    pub operation_body_write: String,
+    /// Exact body-image relation that selects the cached-body stream.
+    pub body_image_segment_use: String,
+    /// Plain cached-body binding inside the partition's body-history run.
+    pub segment_body_binding: String,
+    /// Partition stream that terminates the complete cached-body run.
+    pub partition_stream_ordinal: u32,
+    /// Partition-local GROUP node carried by the body-write frame.
+    pub group_node: u32,
+    /// Ordered GROUP record updates retained inside the owning partition scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_records: Vec<String>,
+}
+
 /// Exact direct tagged-reference field retained from one feature operation.
 ///
 /// The tag and object identity are native evidence. They do not assign a
@@ -3406,6 +3426,103 @@ pub fn feature_operation_body_image_segment_uses(
                 operation_body_write: write.id.clone(),
                 body_image_data_block: body_image_data_block.clone(),
                 segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
+
+fn body_history_partition_stream(
+    binding: &SegmentBodyBinding,
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+) -> Option<u32> {
+    (binding.stream_kind == "plain").then_some(())?;
+    let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
+    (streams.get(stream_ordinal)?.kind == crate::parasolid::StreamKind::Plain).then_some(())?;
+    let partition_ordinal = streams
+        .iter()
+        .enumerate()
+        .skip(stream_ordinal + 1)
+        .find_map(|(ordinal, stream)| {
+            (stream.kind == crate::parasolid::StreamKind::Partition).then_some(ordinal)
+        })?;
+    let run_start = streams[..stream_ordinal]
+        .iter()
+        .rposition(|stream| stream.kind != crate::parasolid::StreamKind::Plain)
+        .map_or(0, |ordinal| ordinal + 1);
+    let run_streams = streams.get(run_start..partition_ordinal)?;
+    run_streams
+        .iter()
+        .all(|stream| stream.kind == crate::parasolid::StreamKind::Plain)
+        .then_some(())?;
+    let mut run_bindings = Vec::with_capacity(run_streams.len());
+    for ordinal in run_start..partition_ordinal {
+        let mut matches = bindings.iter().filter(|candidate| {
+            candidate.stream_kind == "plain"
+                && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
+        });
+        let candidate = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        run_bindings.push(candidate);
+    }
+    let (terminal, preceding) = run_bindings.split_last()?;
+    (terminal.stream_role == BODY_HISTORY_TERMINAL_STREAM_ROLE
+        && preceding
+            .iter()
+            .all(|candidate| candidate.stream_role != BODY_HISTORY_TERMINAL_STREAM_ROLE))
+    .then_some(())?;
+    u32::try_from(partition_ordinal).ok()
+}
+
+/// Resolve body-write GROUP nodes only inside their complete body-history unit.
+///
+/// A plain cached-body binding belongs to the next partition only when every
+/// intervening compressed stream is another completely bound plain image and
+/// the run has one terminal role-16 binding. GROUP records from other
+/// partition-local namespaces never participate, even when their node IDs are
+/// equal.
+pub fn feature_operation_body_partition_uses(
+    writes: &[FeatureOperationBodyWrite],
+    image_uses: &[FeatureOperationBodyImageSegmentUse],
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+) -> Vec<FeatureOperationBodyPartitionUse> {
+    image_uses
+        .iter()
+        .filter_map(|image_use| {
+            let mut matching_writes = writes
+                .iter()
+                .filter(|write| write.id == image_use.operation_body_write);
+            let write = matching_writes.next()?;
+            matching_writes.next().is_none().then_some(())?;
+            let mut matching_bindings = bindings
+                .iter()
+                .filter(|binding| binding.id == image_use.segment_body_binding);
+            let binding = matching_bindings.next()?;
+            matching_bindings.next().is_none().then_some(())?;
+            let partition_stream_ordinal =
+                body_history_partition_stream(binding, bindings, streams)?;
+            let parasolid_group_records = groups
+                .iter()
+                .filter(|group| {
+                    group.partition_stream_ordinal == Some(partition_stream_ordinal)
+                        && group.node_id == write.group_node
+                })
+                .map(|group| group.id.clone())
+                .collect();
+            Some(FeatureOperationBodyPartitionUse {
+                id: write
+                    .id
+                    .replacen("operation-body-write", "operation-body-partition-use", 1),
+                operation_body_write: write.id.clone(),
+                body_image_segment_use: image_use.id.clone(),
+                segment_body_binding: binding.id.clone(),
+                partition_stream_ordinal,
+                group_node: write.group_node,
+                parasolid_group_records,
             })
         })
         .collect()

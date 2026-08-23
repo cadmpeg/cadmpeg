@@ -1711,6 +1711,21 @@ plain segment tuple has `body_alias_object_index` equal to the frame's body
 identity. Partition tuples do not participate in this alias namespace. Zero or
 multiple matching plain aliases leave the segment use unresolved.
 
+Plain cached-body streams form consecutive body-history runs in the segment
+stream directory. The final plain tuple in a complete run has stream role 16,
+no earlier tuple in that run has role 16, and the following compressed stream
+is the run's partition. Every plain binding in that complete run belongs to
+the following partition's local kernel-node namespace. A missing or duplicate
+plain tuple, an intervening non-plain stream, a missing following partition,
+or an absent or repeated terminal role leaves the partition scope unresolved.
+
+A body-write GROUP node resolves only inside the partition scope selected by
+its body-image stream's complete run. Every retained GROUP update with the
+same node ID in that scope belongs to the relation in stream order. Equal node
+IDs in other partitions do not participate. A resolved partition scope with no
+retained GROUP update keeps the scoped node relation without importing a
+record from another partition.
+
 A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
 
 A direct operation data-block reference field is `01 02 03, object_index, 01 00 00 00 00 00`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.

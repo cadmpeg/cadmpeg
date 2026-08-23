@@ -131,6 +131,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
     pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
+    pub(crate) feature_operation_body_partition_uses: Vec<FeatureOperationBodyPartitionUse>,
     pub(crate) feature_operation_tagged_references: Vec<FeatureOperationTaggedReference>,
     pub(crate) feature_operation_data_block_references: Vec<FeatureOperationDataBlockReference>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
@@ -534,6 +535,13 @@ impl NativeModel {
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
             &feature_operation_body_writes,
             &segment_body_bindings,
+        );
+        let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
+            &feature_operation_body_writes,
+            &feature_operation_body_image_segment_uses,
+            &segment_body_bindings,
+            streams,
+            &parasolid_group_records,
         );
         let feature_operation_tagged_references = feature_operation_tagged_references(container);
         let feature_operation_data_block_references =
@@ -1118,6 +1126,7 @@ impl NativeModel {
                 feature_operation_records,
                 feature_operation_body_writes,
                 feature_operation_body_image_segment_uses,
+                feature_operation_body_partition_uses,
                 feature_operation_tagged_references,
                 feature_operation_data_block_references,
                 feature_operation_common_frames,

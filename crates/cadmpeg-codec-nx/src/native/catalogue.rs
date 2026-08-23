@@ -2294,6 +2294,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: false,
     },
     CatalogueRow {
+        arena: "feature_operation_body_partition_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_partition_uses, r, ns),
+        len: |m| m.features.feature_operation_body_partition_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "feature_body_data_block_uses",
         tag: None,
         exactness: Exactness::ByteExact,

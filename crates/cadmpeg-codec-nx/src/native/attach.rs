@@ -1195,6 +1195,7 @@ fn attach_feature_operations(
     let operation_body_image_segment_uses = features
         .feature_operation_body_image_segment_uses
         .as_slice();
+    let operation_body_partition_uses = features.feature_operation_body_partition_uses.as_slice();
     let operation_common_frames = features.feature_operation_common_frames.as_slice();
     let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
@@ -2053,6 +2054,25 @@ fn attach_feature_operations(
                     format!("body_write.{ordinal}.segment_body_binding"),
                     use_.segment_body_binding.clone(),
                 );
+            }
+            if let Some(use_) = operation_body_partition_uses
+                .iter()
+                .find(|use_| use_.operation_body_write == write.id)
+            {
+                source_properties.insert(
+                    format!("body_write.{ordinal}.partition_use"),
+                    use_.id.clone(),
+                );
+                source_properties.insert(
+                    format!("body_write.{ordinal}.partition_stream_ordinal"),
+                    use_.partition_stream_ordinal.to_string(),
+                );
+                for (group_ordinal, group) in use_.parasolid_group_records.iter().enumerate() {
+                    source_properties.insert(
+                        format!("body_write.{ordinal}.parasolid_group.{group_ordinal}"),
+                        group.clone(),
+                    );
+                }
             }
         }
         source_properties.extend(operation_source_properties(

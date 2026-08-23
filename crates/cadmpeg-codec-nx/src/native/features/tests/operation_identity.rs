@@ -221,6 +221,108 @@ fn body_image_segment_use_requires_one_plain_alias() {
     .is_empty());
 }
 
+#[test]
+fn body_partition_use_requires_a_complete_terminal_plain_run() {
+    let body_write = vec![
+        0x01, 0x02, 0x0b, 0x31, 0x97, 0x75, 0x01, 0x02, 0x10, 0x41, 0xff,
+    ];
+    let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload =
+        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]))
+    .expect("synthetic body-image store");
+    let writes = super::feature_operation_body_writes(&container);
+    let binding =
+        |id: &str, stream_ordinal, body_alias_object_index, stream_role| SegmentBodyBinding {
+            id: id.to_string(),
+            stream_link: format!("{id}:link"),
+            stream_ordinal,
+            stream_kind: "plain".to_string(),
+            body_object_index: 42,
+            body_alias_object_index,
+            stream_role,
+            source_offset: 100,
+        };
+    let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
+    let image_uses = super::feature_operation_body_image_segment_uses(&writes, &bindings);
+    let stream = |kind| crate::parasolid::Stream {
+        file_offset: 0,
+        consumed: 0,
+        inflated: Vec::new(),
+        kind,
+        schema: Some("SCH_TEST".into()),
+    };
+    let streams = [
+        stream(crate::parasolid::StreamKind::Plain),
+        stream(crate::parasolid::StreamKind::Plain),
+        stream(crate::parasolid::StreamKind::Partition),
+        stream(crate::parasolid::StreamKind::Deltas),
+        stream(crate::parasolid::StreamKind::Partition),
+    ];
+    let group =
+        |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
+            id: id.into(),
+            stream_ordinal: partition_stream_ordinal + 1,
+            stream_kind: "deltas".into(),
+            partition_stream_ordinal: Some(partition_stream_ordinal),
+            xmt: 10,
+            node_id: writes[0].group_node,
+            references: vec![3, 4, 5, 6, 7],
+            selector: 4,
+            linked_reference_status: 0,
+            byte_len: 20,
+            inflated_offset: 0,
+        };
+    let groups = [group("owned", 2), group("collision", 4)];
+
+    let uses = super::feature_operation_body_partition_uses(
+        &writes,
+        &image_uses,
+        &bindings,
+        &streams,
+        &groups,
+    );
+
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].partition_stream_ordinal, 2);
+    assert_eq!(uses[0].parasolid_group_records, ["owned"]);
+
+    let unterminated = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 10)];
+    assert!(super::feature_operation_body_partition_uses(
+        &writes,
+        &image_uses,
+        &unterminated,
+        &streams,
+        &groups,
+    )
+    .is_empty());
+
+    let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
+    assert!(super::body_history_partition_stream(
+        &repeated_terminal[1],
+        &repeated_terminal,
+        &streams,
+    )
+    .is_none());
+
+    let interrupted_streams = [
+        stream(crate::parasolid::StreamKind::Plain),
+        stream(crate::parasolid::StreamKind::Deltas),
+        stream(crate::parasolid::StreamKind::Partition),
+    ];
+    assert!(super::feature_operation_body_partition_uses(
+        &writes,
+        &image_uses,
+        &bindings,
+        &interrupted_streams,
+        &groups,
+    )
+    .is_empty());
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,
