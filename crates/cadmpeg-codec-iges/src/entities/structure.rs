@@ -1619,9 +1619,12 @@ pub(super) fn project(
         let attribute_count = record.count(3).filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
+        let mut attribute_types = BTreeSet::new();
         let mut shape = Vec::new();
         for _ in 0..attribute_count.unwrap_or_default() {
-            let attribute_type_valid = record.integer(cursor).is_some();
+            let attribute_type_valid = record
+                .integer(cursor)
+                .is_some_and(|value| (0..=9999).contains(&value) && attribute_types.insert(value));
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 0..=6));

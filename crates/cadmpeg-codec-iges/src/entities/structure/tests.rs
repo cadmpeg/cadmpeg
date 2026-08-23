@@ -433,6 +433,44 @@ fn type322_accepts_no_value_and_not_used_data_types() {
 }
 
 #[test]
+fn type322_requires_unique_bounded_attribute_types_in_v4_and_v5() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    for global in [&global_v4[..], &global_v5[..]] {
+        for parameters in [
+            "322,4HATTR,1,1,-1,1,1;",
+            "322,4HATTR,1,1,10000,1,1;",
+            "322,4HATTR,1,2,10,1,1,10,1,1;",
+        ] {
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(owned_test_file_with_global(
+                        &[OwnedTestEntity {
+                            entity_type: 322,
+                            form: 0,
+                            label: "ATTRDEF".into(),
+                            status: "00000200".into(),
+                            parameters: parameters.into(),
+                        }],
+                        global,
+                    )),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            assert!(
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+                "invalid Type 322 Attribute Type was admitted: {parameters}"
+            );
+        }
+    }
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
