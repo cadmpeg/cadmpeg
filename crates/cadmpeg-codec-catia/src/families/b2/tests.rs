@@ -410,6 +410,23 @@ fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
 }
 
 #[test]
+fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x0f, 0x05, 0x89,
+        0x19, 0x0b, 0x15, 0x23, 0x11, 0x3b, 0x0d, 0x53, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01,
+    ];
+    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
+    let [owner] = owners.as_slice() else {
+        panic!("one compact counted owner")
+    };
+    assert_eq!(owner.references, [6, 2, 5, 8, 4, 14, 3, 20, 8]);
+
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 7);
+}
+
+#[test]
 fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
     assert_eq!(records.len(), 1);
@@ -484,8 +501,8 @@ fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
     assert_eq!(nodes[0].start_parameter_ref, 2);
     assert_eq!(nodes[0].end_parameter_ref, 1);
     assert_eq!(nodes[0].tail, 0x01);
-    assert_eq!(nodes[1].start_vertex_ref, 207);
-    assert_eq!(nodes[1].end_vertex_ref, 231);
+    assert_eq!(nodes[1].start_vertex_ref, 51);
+    assert_eq!(nodes[1].end_vertex_ref, 57);
 }
 
 #[test]
@@ -497,11 +514,11 @@ fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
     let [node] = nodes.as_slice() else {
         panic!("one compact edge node")
     };
-    assert_eq!(node.curve_ref, 3);
+    assert_eq!(node.curve_ref, 0);
     assert_eq!(node.start_vertex_ref, 2);
-    assert_eq!(node.end_vertex_ref, 15);
-    assert_eq!(node.start_parameter_ref, 7);
-    assert_eq!(node.end_parameter_ref, 11);
+    assert_eq!(node.end_vertex_ref, 3);
+    assert_eq!(node.start_parameter_ref, 1);
+    assert_eq!(node.end_parameter_ref, 2);
     assert_eq!(node.tail, 0x21);
 }
 

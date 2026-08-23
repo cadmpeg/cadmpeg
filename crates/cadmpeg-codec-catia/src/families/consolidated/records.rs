@@ -20,9 +20,9 @@ use crate::families::a5a8::records::{
     a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
 };
 use crate::families::b2::records::{
-    b2_circles_from_records, b2_class25_descriptors_from_records, b2_cone_point,
-    b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
-    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
+    b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
+    b2_class25_descriptors_from_records, b2_cone_point, b2_cones_from_records, b2_cylinder_point,
+    b2_cylinders_from_records, b2_edge_nodes_from_records, b2_edge_parameters_from_records,
     b2_embedded_cylinders_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
     b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records,
     b2_torus_geometry, b2_use_metadata_from_records, point_distance, B2Circle, B2Class25Descriptor,
@@ -118,6 +118,17 @@ pub struct ConsolidatedEdgeUseRun {
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
     pub identity_chain_consistent: bool,
+}
+
+/// Compact edge node selected by its zero-based ordinal in one face-owner allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsolidatedOwnedEdgeNode {
+    /// Byte offset of the owning class-`0x62` packet.
+    pub owner_pos: usize,
+    /// Zero-based frame ordinal after the owner packet.
+    pub allocation_ordinal: u32,
+    /// Selected compact edge node.
+    pub node: B2EdgeNode,
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
@@ -632,7 +643,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    records
+    let preceding = records
         .windows(3)
         .enumerate()
         .filter_map(|(index, window)| {
@@ -692,7 +703,117 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 identity_chain_consistent,
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let succeeding = records.windows(4).filter_map(|window| {
+        let [node_record, definition_record, use0, use1] = window else {
+            return None;
+        };
+        if !records_are_contiguous(window)
+            || node_record.family != ConsolidatedFamily::B
+            || node_record.class != 0x5e
+            || definition_record.family != ConsolidatedFamily::B
+            || !matches!(definition_record.class, 0x23..=0x25)
+            || use0.family != ConsolidatedFamily::B
+            || use0.class != 0x06
+            || use1.family != ConsolidatedFamily::B
+            || use1.class != 0x06
+        {
+            return None;
+        }
+        let node = *nodes.get(&node_record.range.start)?;
+        let uses = [
+            uses.get(&use0.range.start)?.clone(),
+            uses.get(&use1.range.start)?.clone(),
+        ];
+        let definition_data = consolidated_edge_definition_data(
+            definition_record.class,
+            &data[definition_record.payload.clone()],
+        );
+        let identity_chain_consistent = match &definition_data {
+            Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
+                operand
+                    .checked_add(1)
+                    .zip(operand.checked_add(2))
+                    .is_some_and(|(first, second)| {
+                        uses[0].references.as_deref() == Some(&[node.start_parameter_ref, first])
+                            && uses[1].references.as_deref()
+                                == Some(&[node.end_parameter_ref, second])
+                    })
+                    && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
+            }
+            _ => false,
+        };
+        Some(ConsolidatedEdgeUseRun {
+            definition: Some(ConsolidatedEdgeDefinition {
+                pos: definition_record.range.start,
+                width: definition_record.width,
+                flag: definition_record.flag,
+                class: definition_record.class,
+                header_token: definition_record.header_token,
+                payload: data[definition_record.payload.clone()].to_vec(),
+                data: definition_data,
+            }),
+            uses,
+            node,
+            identity_chain_consistent,
+        })
+    });
+    preceding.into_iter().chain(succeeding).collect()
+}
+
+/// Resolve compact owner references that land exactly on class-`0x5e` frames.
+pub(crate) fn consolidated_owned_edge_nodes_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedOwnedEdgeNode> {
+    let indices = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.range.start, index))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<BTreeMap<_, _>>();
+    let mut owned = Vec::new();
+    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
+        let Some(&owner_index) = indices.get(&relation.owner.pos) else {
+            continue;
+        };
+        for allocation_ordinal in relation.owner.references {
+            let Some(target_index) = usize::try_from(allocation_ordinal)
+                .ok()
+                .and_then(|ordinal| owner_index.checked_add(1 + ordinal))
+                .filter(|target| *target < records.len())
+            else {
+                continue;
+            };
+            if !records_are_contiguous(&records[owner_index..=target_index]) {
+                continue;
+            }
+            let target = &records[target_index];
+            if target.family != ConsolidatedFamily::B || target.class != 0x5e {
+                continue;
+            }
+            let Some(&node) = nodes.get(&target.range.start) else {
+                continue;
+            };
+            if owned
+                .last()
+                .is_some_and(|previous: &ConsolidatedOwnedEdgeNode| {
+                    previous.owner_pos == relation.owner.pos && previous.node.pos == node.pos
+                })
+            {
+                continue;
+            }
+            owned.push(ConsolidatedOwnedEdgeNode {
+                owner_pos: relation.owner.pos,
+                allocation_ordinal,
+                node,
+            });
+        }
+    }
+    owned
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated

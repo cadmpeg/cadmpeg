@@ -593,7 +593,7 @@ pub(crate) fn b2_counted_owners_from_records(
             }
             let mut at = frame.payload + 1;
             let references = (0..count)
-                .map(|_| persistent_ref(data, &mut at))
+                .map(|_| allocation_ref(data, &mut at))
                 .collect::<Option<Vec<_>>>()?;
             (at < frame.end).then(|| B2CountedOwner {
                 pos: frame.pos,

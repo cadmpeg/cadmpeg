@@ -797,6 +797,12 @@ pub struct CatiaConsolidatedEdgeNode {
     pub flag: u8,
     /// Width-coded header token.
     pub header_token: u32,
+    /// Owning compact class-`0x62` packet, when selected by its allocation roster.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_owner: Option<String>,
+    /// Zero-based frame ordinal after the compact owner packet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_ordinal: Option<u32>,
     /// Allocation-local curve-support reference.
     pub curve_ref: u32,
     /// Global native endpoint identities in edge direction.
@@ -901,8 +907,11 @@ pub struct CatiaConsolidatedEdgeUses {
 pub struct CatiaConsolidatedVertexIdentity {
     /// Stable native-record identity assigned in first-incidence order.
     pub id: String,
-    /// Global native endpoint identity.
+    /// Native endpoint identity within `allocation_owner`, or globally when absent.
     pub identity: u32,
+    /// Compact allocation scope for the identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_owner: Option<String>,
     /// Incident consolidated edge nodes in source order.
     pub incident_edge_nodes: Vec<String>,
 }
@@ -5356,7 +5365,7 @@ define_catia_arenas! {
         pub stored;
     },
     consolidated_vertex_identities: CatiaConsolidatedVertexIdentity {
-        /// Global endpoint identities and their consolidated edge incidence.
+        /// Scoped endpoint identities and their consolidated edge incidence.
         pub stored;
     },
     design_objects: CatiaDesignObject {
@@ -6591,6 +6600,13 @@ fn consolidated_edge_nodes(
         })
         .map(|record| (record.range.start, (record.width, record.flag)))
         .collect::<HashMap<_, _>>();
+    let owned_nodes =
+        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|owned| (owned.node.pos, (owned.owner_pos, owned.allocation_ordinal)))
+        .collect::<HashMap<_, _>>();
     let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
         bytes, records,
     )
@@ -6654,12 +6670,16 @@ fn consolidated_edge_nodes(
         .enumerate()
         .filter_map(|(index, node)| {
             let (width, flag) = frames.get(&node.pos)?;
+            let owner = owned_nodes.get(&node.pos);
             Some(CatiaConsolidatedEdgeNode {
                 id: format!("catia:consolidated:edge-node#{index}"),
                 byte_offset: node.pos as u64,
                 width: *width,
                 flag: *flag,
                 header_token: node.header_token,
+                allocation_owner: owner
+                    .map(|(pos, _)| format!("catia:consolidated:owner-packet#{pos:010}")),
+                allocation_ordinal: owner.map(|(_, ordinal)| *ordinal),
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
                 vertices: [String::new(), String::new()],
@@ -6714,14 +6734,16 @@ fn consolidated_vertex_identities(
     nodes: &mut [CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedVertexIdentity> {
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
-    let mut identity_indices = HashMap::<u32, usize>::new();
+    let mut identity_indices = HashMap::<(Option<String>, u32), usize>::new();
     for node in nodes {
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let index = *identity_indices.entry(identity).or_insert_with(|| {
+            let key = (node.allocation_owner.clone(), identity);
+            let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
                 let index = identities.len();
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
+                    allocation_owner: key.0,
                     incident_edge_nodes: Vec::new(),
                 });
                 index

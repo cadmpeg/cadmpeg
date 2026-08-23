@@ -593,6 +593,51 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
 }
 
 #[test]
+fn consolidated_edge_use_run_accepts_compact_successor_layout() {
+    use crate::families::b2::records::B2UseSense;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21, 0xb2, 0x03, 0x24, 0x04,
+        0x05, 0x81, 0x29, 0x0f, 0x87, 0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 0x05, 0x2d, 0x88, 0xb2,
+        0x03, 0x06, 0x04, 0x05, 0x82, 0x09, 0x31, 0x84,
+    ];
+    let runs = crate::families::consolidated::records::consolidated_edge_use_runs(&bytes);
+    let [run] = runs.as_slice() else {
+        panic!("one successor-layout edge run")
+    };
+    assert!(run.identity_chain_consistent);
+    assert_eq!(run.uses[0].sense, Some(B2UseSense::Sense88));
+    assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
+    assert_eq!(run.uses[0].references.as_deref(), Some(&[1, 11][..]));
+    assert_eq!(run.uses[1].references.as_deref(), Some(&[2, 12][..]));
+    assert_eq!(
+        run.definition.as_ref().and_then(|value| value.data.clone()),
+        Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
+    );
+}
+
+#[test]
+fn compact_owner_ordinal_selects_the_owned_edge_node() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
+        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
+        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
+        0x07, 0x0b, 0x21,
+    ];
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let owned = crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+        &bytes, &records,
+    );
+    let [owned] = owned.as_slice() else {
+        panic!("one owner-selected edge node")
+    };
+    assert_eq!(owned.owner_pos, 9);
+    assert_eq!(owned.allocation_ordinal, 2);
+    assert_eq!(owned.node.pos, 37);
+}
+
+#[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
@@ -604,7 +649,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert_eq!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            operands: [1, 0xe7, 3463],
+            operands: [1, 57, 3463],
             persistent_lead: Some(0x0a),
             values: vec![1.0, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6],
         })
@@ -621,7 +666,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert!(matches!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands: [1, 0xe7, 3463],
+            operands: [1, 57, 3463],
             persistent_lead: Some(0x0a),
             marker: 0x82,
             ref trailing,
@@ -674,7 +719,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
             .and_then(|definition| definition.data.as_ref()),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
-                operands: [1, 0xe7, 3463],
+                operands: [1, 57, 3463],
                 persistent_lead: Some(0x0a),
                 ..
             }

@@ -80,6 +80,7 @@ pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     }
 }
 
+/// Read one allocation reference and remove its wire-form selector bits.
 pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     match *bytes.get(*at)? {
         0x06 => {
@@ -94,8 +95,22 @@ pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
         }
         byte if byte != 0 && matches!(byte % 4, 2 | 3) => {
             *at += 1;
-            Some(u32::from(byte))
+            Some(u32::from(byte >> 2))
         }
         _ => compact_int(bytes, at),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allocation_ref;
+
+    #[test]
+    fn allocation_refs_strip_single_byte_dialect_bits() {
+        for (token, expected) in [(0x03, 0), (0x0b, 2), (0x22, 8), (0x23, 8)] {
+            let mut at = 0;
+            assert_eq!(allocation_ref(&[token], &mut at), Some(expected));
+            assert_eq!(at, 1);
+        }
     }
 }

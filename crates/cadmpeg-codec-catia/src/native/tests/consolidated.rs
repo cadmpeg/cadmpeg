@@ -970,6 +970,36 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 }
 
 #[test]
+fn compact_vertex_identity_is_scoped_by_owner_allocation() {
+    let allocation = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
+        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
+        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
+        0x07, 0x0b, 0x21,
+    ];
+    let bytes = allocation.repeat(2);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert_ne!(
+        native.consolidated_edge_nodes[0].allocation_owner,
+        native.consolidated_edge_nodes[1].allocation_owner
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].allocation_ordinal,
+        Some(2)
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].allocation_ordinal,
+        Some(2)
+    );
+    assert_ne!(
+        native.consolidated_edge_nodes[0].vertices,
+        native.consolidated_edge_nodes[1].vertices
+    );
+}
+
+#[test]
 fn native_namespace_merges_shared_consolidated_vertex_identity() {
     let mut bytes = a5_native_edge_run_stream(6, 139, 142);
     bytes.extend_from_slice(&a5_native_edge_run_stream(9, 142, 151));
