@@ -924,6 +924,9 @@ origin coordinates.
 
 A generated type-24 round-edge body has a control shell, two edge parameters,
 two model-space endpoint triples, and an optional generated-entity reference.
+This production applies only when the bounded row has no complete inline
+non-plane envelope or local-system body. An inline body owns the carrier and
+is not reinterpreted as a generated round-edge replay.
 The control shell is one of `1b <control> 00`, `34 <control> 00`, `32
 <scalar>`, `19 <scalar>`, `eb ba <payload3>`, `ec ba <payload3>`, `ed ba
 <payload3>`, `5a b2`, or a bare `18`. The two edge parameters use the first
@@ -1595,6 +1598,11 @@ In a direct-normal body, the zero-rank triple is exactly zero. The parameter
 direction and stored normal are finite, nonzero, equal-scale, and orthogonal.
 Normalize both triples to obtain the plane chart. Use the stored normal as the
 plane normal; do not replace it with a cross product.
+When the stored frame and its z-mirrored parameter-direction and normal branch
+define distinct planes, complete direct, prototype, and two-chart pcurve
+endpoint pairs are equivalent branch witnesses. Admit the unique branch whose
+chart endpoints lie on the adjacent face carrier. No compatible or multiple
+compatible branches leave the stored frame unresolved.
 
 In a support-triple body, the slots are:
 

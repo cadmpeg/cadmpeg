@@ -747,14 +747,14 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         };
         let feature_class = feature_schema_class(scan, row.feature_id);
-        let round_edge_envelope = (feature_class == Some(913))
+        let inline_non_plane = record.has_inline_non_plane_envelope()
+            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
+        let round_edge_envelope = (feature_class == Some(913) && !inline_non_plane)
             .then(|| record.type24_round_edge_envelope(row.type_byte))
             .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
-        let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
         let round_support_frame = (feature_class == Some(913))
             .then(|| record.type24_scalar_frame_round_envelope(row.type_byte))
             .flatten()

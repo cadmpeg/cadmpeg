@@ -661,6 +661,20 @@ fn stored_frame_branch_constraints(
             ),
         );
     }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
+            continue;
+        };
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                [first[0], last[0]],
+                [first[1], last[1]],
+            ),
+        );
+    }
     constraints
 }
 

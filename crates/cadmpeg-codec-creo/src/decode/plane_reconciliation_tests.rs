@@ -758,6 +758,24 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
 }
 
 #[test]
+fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
+    let mut scan = stored_frame_branch_scan(false);
+    scan.curves
+        .two_chart_pcurves
+        .push(crate::curve::TwoChartPcurveSamples {
+            curve_id: 7,
+            faces: [1, 2],
+            samples: vec![[[1.0, 1.0], [0.6, 0.8]], [[2.0, 1.0], [1.2, 1.6]]],
+            offset: 30,
+        });
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
+}
+
+#[test]
 fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
     let scan = stored_frame_branch_scan(false);
     let candidates = plane_candidates(&scan);
