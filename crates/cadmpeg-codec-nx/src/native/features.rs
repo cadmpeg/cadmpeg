@@ -2355,6 +2355,40 @@ pub struct FeatureThruCurveConstructionBranchGroup {
     pub source_offset: u64,
 }
 
+/// Exact leading construction branch in a `SWP104` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSwp104LeadingBranch {
+    /// Globally unique leading-branch identity.
+    pub id: String,
+    /// Owning `SWP104` operation label.
+    pub operation_label: String,
+    /// Nonzero construction discriminator.
+    pub discriminator: u8,
+    /// Four finite shifted-binary64 values in serialized order.
+    pub scalars: [f64; 4],
+    /// Exact shifted-binary64 encodings.
+    pub raw_scalars: [[u8; 8]; 4],
+    /// Whether one zero byte precedes the branch mode.
+    pub leading_zero: bool,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Optional independent count that bounds the state lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witnessed_count: Option<u8>,
+    /// Exact state lane preceding the terminal marker.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<FeatureSurfaceBranchReference>,
+    /// Terminal reference.
+    pub terminal: FeatureSurfaceBranchReference,
+    /// Exact byte length through the terminal zero.
+    pub byte_len: u64,
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+}
+
 /// Exact logical payload reconstructed from an ordered surface-construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionPayload {
@@ -7971,6 +8005,54 @@ pub fn feature_thru_curve_construction_branch_groups(
         },
     );
     groups
+}
+
+/// Decode and resolve each exact leading `SWP104` construction branch.
+pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp104LeadingBranch> {
+    let indexed = container.indexed_om_sections();
+    let mut branches = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(branch) = crate::om::swp104_payload_leading_branch(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
+                FeatureSurfaceBranchReference {
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            };
+            let members = branch
+                .members
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, reference)| resolve(ordinal, reference))
+                .collect::<Vec<_>>();
+            let terminal = resolve(members.len(), branch.terminal);
+            branches.push(FeatureSwp104LeadingBranch {
+                id: format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                discriminator: branch.discriminator,
+                scalars: branch.scalars,
+                raw_scalars: branch.raw_scalars,
+                leading_zero: branch.leading_zero,
+                mode: branch.mode,
+                declared_count: branch.declared_count,
+                witnessed_count: branch.witnessed_count,
+                state_lane: branch.state_lane,
+                members,
+                terminal,
+                byte_len: (branch.end_offset - record.payload_offset) as u64,
+                source_offset: entry_offset + record.payload_offset as u64,
+            });
+        },
+    );
+    branches
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.

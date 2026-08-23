@@ -633,6 +633,16 @@ order and alias equality do not assign feature ownership.
 
 **Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
 
+### OM-38. `SWP104` leading construction roles
+
+**Question.** Which sweep parameters and selections do the four scalars, mode, counted member references, state lane, and terminal reference encode?
+
+**Known.** `siemens_nx.md` §7.1 "The `SWP104` operation label identifies a sweep-family construction." and §7.1 "A bounded `SWP104` payload begins with one construction branch" define the exact leading branch, independent declared and witnessed counts, ordered references, state-lane bounds, and terminal marker.
+
+**Need.** We must identify the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral sweep feature.
+
+**Conflict.** Serialized order, count relations, and offset-store identities do not assign semantic roles to the retained values or references.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

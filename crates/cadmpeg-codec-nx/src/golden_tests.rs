@@ -187,6 +187,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_surface_construction_references",
     "feature_surface_construction_scalar_pairs",
     "feature_surface_construction_strings",
+    "feature_swp104_leading_branches",
     "feature_thru_curve_construction_branch_groups",
     "feature_thru_curve_construction_envelopes",
     "field_definitions",
@@ -873,7 +874,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 245, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 246, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

@@ -2876,6 +2876,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_swp104_leading_branches",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_swp104_leading_branches, r, ns),
+        len: |m| m.features.feature_swp104_leading_branches.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_thru_curve_construction_branch_groups",
         tag: None,
         exactness: Exactness::ByteExact,

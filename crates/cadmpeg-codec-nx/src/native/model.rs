@@ -203,6 +203,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_surface_construction_scalar_pairs: Vec<FeatureSurfaceConstructionScalarPair>,
     pub(crate) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
     pub(crate) feature_surface_construction_branches: Vec<FeatureSurfaceConstructionBranch>,
+    pub(crate) feature_swp104_leading_branches: Vec<FeatureSwp104LeadingBranch>,
     pub(crate) feature_thru_curve_construction_branch_groups:
         Vec<FeatureThruCurveConstructionBranchGroup>,
     pub(crate) feature_thru_curve_construction_envelopes: Vec<FeatureThruCurveConstructionEnvelope>,
@@ -783,6 +784,7 @@ impl NativeModel {
             feature_surface_construction_strings(container, &feature_surface_construction_payloads);
         let feature_surface_construction_branches =
             feature_surface_construction_branches(container);
+        let feature_swp104_leading_branches = feature_swp104_leading_branches(container);
         let feature_thru_curve_construction_branch_groups =
             feature_thru_curve_construction_branch_groups(container);
         let feature_thru_curve_construction_envelopes =
@@ -1164,6 +1166,7 @@ impl NativeModel {
                 feature_surface_construction_scalar_pairs,
                 feature_surface_construction_strings,
                 feature_surface_construction_branches,
+                feature_swp104_leading_branches,
                 feature_thru_curve_construction_branch_groups,
                 feature_thru_curve_construction_envelopes,
                 feature_extrude_profile_references,

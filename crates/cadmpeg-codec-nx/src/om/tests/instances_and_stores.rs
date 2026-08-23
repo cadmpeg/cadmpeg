@@ -811,6 +811,89 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
 }
 
 #[test]
+fn om_swp104_leading_branch_preserves_counts_state_and_references() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SWP104",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let raw_scalar = [0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
+    let mut payload = vec![0x21, 0, 0, 1, 0];
+    for _ in 0..4 {
+        payload.extend(raw_scalar);
+    }
+    payload.extend([0x23, 1, 3, 0xf0, 0x31, 0xf0, 0x32, 1, 4]);
+    payload.extend([0, 1, 1, 0, 0, 0, 0]);
+    payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let branch = super::swp104_payload_leading_branch(record).expect("leading branch");
+    assert_eq!(branch.discriminator, 0x21);
+    assert_eq!(branch.scalars, [0.04; 4]);
+    assert_eq!(branch.raw_scalars, [raw_scalar; 4]);
+    assert!(!branch.leading_zero);
+    assert_eq!(branch.mode, 0x23);
+    assert_eq!(branch.declared_count, 3);
+    assert_eq!(branch.witnessed_count, Some(4));
+    assert_eq!(branch.state_lane, [0, 1, 1, 0, 0, 0, 0]);
+    assert_eq!(
+        branch
+            .members
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [0x31, 0x32]
+    );
+    assert_eq!(branch.terminal.object_index, 0x33);
+    assert_eq!(branch.end_offset, 259);
+
+    let mut malformed_witness = payload.clone();
+    malformed_witness[45] = 1;
+    assert!(
+        super::swp104_payload_leading_branch(super::OperationRecord {
+            bytes: &malformed_witness,
+            payload: &malformed_witness,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut unwitnessed = vec![0x21, 0, 0, 1, 0];
+    for _ in 0..4 {
+        unwitnessed.extend(raw_scalar);
+    }
+    unwitnessed.extend([0, 0x23, 1, 2, 0xf0, 0x41]);
+    unwitnessed.extend([0; 5]);
+    unwitnessed.extend([0xff, 1, 2, 0xf0, 0x42, 0]);
+    let branch = super::swp104_payload_leading_branch(super::OperationRecord {
+        bytes: &unwitnessed,
+        payload: &unwitnessed,
+        ..record
+    })
+    .expect("unwitnessed leading branch");
+    assert!(branch.leading_zero);
+    assert_eq!(branch.witnessed_count, None);
+    assert_eq!(branch.state_lane, [0; 5]);
+
+    unwitnessed[43] = 1;
+    assert!(
+        super::swp104_payload_leading_branch(super::OperationRecord {
+            bytes: &unwitnessed,
+            payload: &unwitnessed,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     let label = super::OperationLabel {
         header_offset: 100,

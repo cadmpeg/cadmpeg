@@ -2251,6 +2251,33 @@ pub struct ThruCurvePayloadBranchGroup {
     pub terminator: Vec<u8>,
 }
 
+/// Exact leading construction branch in a `SWP104` payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Swp104PayloadLeadingBranch {
+    /// Nonzero construction discriminator at the payload start.
+    pub discriminator: u8,
+    /// Four finite shifted-binary64 values in serialized order.
+    pub scalars: [f64; 4],
+    /// Exact shifted-binary64 encodings.
+    pub raw_scalars: [[u8; 8]; 4],
+    /// Whether one zero byte precedes the branch mode.
+    pub leading_zero: bool,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Optional independent count that bounds the state lane.
+    pub witnessed_count: Option<u8>,
+    /// Exact state lane preceding the terminal marker.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<PayloadObjectReference>,
+    /// Terminal reference.
+    pub terminal: PayloadObjectReference,
+    /// Absolute offset immediately after the terminal zero.
+    pub end_offset: usize,
+}
+
 /// One counted construction branch in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadBranch {
@@ -4913,6 +4940,94 @@ pub fn thru_curve_payload_branch_group(
         declared_count,
         branches,
         terminator,
+    })
+}
+
+/// Decode the exact leading construction branch in a bounded `SWP104`
+/// payload.
+pub fn swp104_payload_leading_branch(
+    record: OperationRecord<'_>,
+) -> Option<Swp104PayloadLeadingBranch> {
+    const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    (record.label.value == "SWP104").then_some(())?;
+    let discriminator = *record.payload.first()?;
+    (discriminator != 0).then_some(())?;
+    (record.payload.get(1..5) == Some(&HEADER)).then_some(())?;
+
+    let mut at = 5;
+    let mut raw_scalars = [[0; 8]; 4];
+    let mut scalars = [0.0; 4];
+    for ordinal in 0..4 {
+        raw_scalars[ordinal] = record.payload.get(at..at + 8)?.try_into().ok()?;
+        scalars[ordinal] = shifted_ieee_f64(&raw_scalars[ordinal])?;
+        at += 8;
+    }
+
+    let leading_zero = record.payload.get(at) == Some(&0x00);
+    at += usize::from(leading_zero);
+    let mode = *record.payload.get(at)?;
+    (mode != 0).then_some(())?;
+    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+        return None;
+    };
+    at += 3;
+    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let offset = at;
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        at += width;
+        members.push(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..at].to_vec(),
+        });
+    }
+
+    let witnessed_count = if record.payload.get(at) == Some(&0x01) {
+        let count @ 2.. = *record.payload.get(at + 1)? else {
+            return None;
+        };
+        Some(count)
+    } else {
+        None
+    };
+    let state_len = if let Some(count) = witnessed_count {
+        at += 2;
+        usize::from(count) + 3
+    } else {
+        5
+    };
+    let state_lane = record.payload.get(at..at + state_len)?.to_vec();
+    if witnessed_count.is_none() && !state_lane.iter().all(|&byte| byte == 0) {
+        return None;
+    }
+    at += state_len;
+    (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    at += 3;
+    let terminal_offset = at;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    at += width;
+    let terminal = PayloadObjectReference {
+        offset: record.payload_offset + terminal_offset,
+        object_index,
+        raw_object_index: record.payload[terminal_offset..at].to_vec(),
+    };
+    (*record.payload.get(at)? == 0x00).then_some(())?;
+    at += 1;
+
+    Some(Swp104PayloadLeadingBranch {
+        discriminator,
+        scalars,
+        raw_scalars,
+        leading_zero,
+        mode,
+        declared_count,
+        witnessed_count,
+        state_lane,
+        members,
+        terminal,
+        end_offset: record.payload_offset + at,
     })
 }
 
