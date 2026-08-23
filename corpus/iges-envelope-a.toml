@@ -583,12 +583,13 @@ assertions = ["typed-links", "identity", "byte-coverage"]
 [[entity]]
 type = 228
 name = "general-symbol"
-forms = [0]
+forms = [0, 1, 2, 3]
+implementor_defined = true
 domain = "annotation"
 decoder = "entities::annotation::project"
 destination = "native.iges.annotations"
-fixture_classes = ["symbols"]
-assertions = ["typed-links", "identity", "byte-coverage"]
+fixture_classes = ["symbols", "symbol-forms"]
+assertions = ["typed-links", "identity", "form-semantics", "byte-coverage"]
 
 [[entity]]
 type = 230

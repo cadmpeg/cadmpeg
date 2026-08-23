@@ -771,12 +771,21 @@ fn general_symbol_zero_note_pointer_follows_the_declared_dialect() {
         &record,
         &entries,
         &records,
+        0,
         Dialect::V4_0
     ));
     assert!(general_symbol_note_valid(
         &record,
         &entries,
         &records,
+        0,
+        Dialect::V5_0
+    ));
+    assert!(!general_symbol_note_valid(
+        &record,
+        &entries,
+        &records,
+        1,
         Dialect::V5_0
     ));
 }
@@ -952,6 +961,65 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_general_symbol_standard_forms_preserves_form_in_iges_4_0_and_5_0() {
+    let globals = [
+        (b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(), "4.0"),
+        (b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(), "5.0"),
+    ];
+    for (global, version) in globals {
+        for form in 1..=3 {
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(general_symbol_form_file(form, global)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+            let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+                .iter()
+                .find(|annotation| annotation.fields()["kind"] == "general_symbol")
+                .unwrap();
+            assert_eq!(
+                result.ir().source.as_ref().unwrap().attributes["iges_version"],
+                version
+            );
+            assert_eq!(symbol.fields()["form"], form);
+            assert_eq!(symbol.fields()["note"], "iges:presentation:annotation#D1");
+            assert_eq!(symbol.fields()["geometry"][0], "iges:entity:directory#3");
+            assert_eq!(
+                symbol.fields()["leaders"][0],
+                "iges:presentation:annotation#D5"
+            );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()));
+        }
+    }
+}
+
+#[test]
+fn decode_general_symbol_implementor_form_is_admitted_in_iges_5_0() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(general_symbol_form_file(5001, global)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+        .iter()
+        .find(|annotation| annotation.fields()["kind"] == "general_symbol")
+        .unwrap();
+    assert_eq!(symbol.fields()["form"], 5001);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

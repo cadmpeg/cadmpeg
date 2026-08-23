@@ -158,6 +158,7 @@ pub(super) enum NativeAnnotation {
     GeneralSymbol {
         id: String,
         source_entity: String,
+        form: i64,
         note: Option<String>,
         declared_geometry_count: Option<i64>,
         geometry: Vec<Option<String>>,
@@ -596,6 +597,7 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
     NativeAnnotation::GeneralSymbol {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         note: subject.note_link(1),
         declared_geometry_count,
         geometry: (0..geometry_count)

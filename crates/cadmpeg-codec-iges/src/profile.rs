@@ -7,7 +7,8 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
     let admitted = match entity_type {
         0 | 100 | 102 | 112 | 114 | 116 | 120 | 122 | 123 | 130 | 132 | 140 | 141 | 142 | 143
         | 144 | 150 | 152 | 154 | 156 | 158 | 160 | 164 | 168 | 182 | 186 | 202 | 204 | 206
-        | 208 | 210 | 213 | 228 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414 | 420 => form == 0,
+        | 208 | 210 | 213 | 308 | 310 | 314 | 316 | 320 | 408 | 412 | 414 | 420 => form == 0,
+        228 => matches!(form, 0..=3 | 5001..=9999),
         230 => matches!(form, 0..=1),
         212 => general_note_form_admitted(form),
         104 => matches!(form, 0..=3),
@@ -42,6 +43,7 @@ fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
     match entity_type {
         123 | 141 | 143 | 182 | 186 | 190 | 192 | 194 | 196 | 198 | 204 | 213 | 316 | 502 | 504
         | 508 | 510 | 514 => false,
+        228 => matches!(form, 0..=3),
         230 => form == 0,
         110 => form == 0,
         118 => matches!(form, 0..=1),

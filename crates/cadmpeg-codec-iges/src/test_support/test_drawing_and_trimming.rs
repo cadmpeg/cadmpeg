@@ -237,6 +237,42 @@ pub(crate) fn symbol_and_sectioned_area_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn general_symbol_form_file(form: i64, global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 212,
+                form: 0,
+                label: "SYMNOTE".into(),
+                status: "00010100",
+                parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HS;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "SYMGEOM".into(),
+                status: "00010100",
+                parameters: "100,0,0,0,1,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 2,
+                label: "SYMLEAD".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 228,
+                form,
+                label: "SYMBOL".into(),
+                status: "00000100",
+                parameters: "228,1,1,3,1,5;".into(),
+            },
+        ],
+        global,
+    )
+}
+
 pub(crate) fn inverted_sectioned_area_file() -> Vec<u8> {
     inverted_sectioned_area_file_with_global(
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",

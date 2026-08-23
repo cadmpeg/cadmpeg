@@ -223,7 +223,7 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
         (218, 0..=1) => Some(AnnotationKind::OrdinateDimension),
         (220, 0) => Some(AnnotationKind::PointDimension),
         (222, 0..=1) => Some(AnnotationKind::RadiusDimension),
-        (228, 0) => Some(AnnotationKind::GeneralSymbol),
+        (228, 0..=3 | 5001..=9999) => Some(AnnotationKind::GeneralSymbol),
         (230, 0..=1) => Some(AnnotationKind::SectionedArea),
         _ => None,
     }
@@ -541,10 +541,11 @@ fn general_symbol_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    form: i64,
     dialect: Dialect,
 ) -> bool {
     match record.integer(1) {
-        Some(0) => !matches!(dialect, Dialect::V4_0),
+        Some(0) => form == 0 && !matches!(dialect, Dialect::V4_0),
         Some(_) => pointer(record, 1, entries)
             .is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect)),
         None => false,
@@ -903,9 +904,10 @@ fn general_symbol_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    form: i64,
     dialect: Dialect,
 ) -> bool {
-    let note_valid = general_symbol_note_valid(record, entries, records, dialect);
+    let note_valid = general_symbol_note_valid(record, entries, records, form, dialect);
     let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
         return false;
     };
@@ -1109,9 +1111,13 @@ pub(super) fn project(
                     AnnotationKind::Leader => {
                         leader_valid_for_dialect(entry, record, global.dialect())
                     }
-                    AnnotationKind::GeneralSymbol => {
-                        general_symbol_valid(record, &entries, &records, global.dialect())
-                    }
+                    AnnotationKind::GeneralSymbol => general_symbol_valid(
+                        record,
+                        &entries,
+                        &records,
+                        entry.form,
+                        global.dialect(),
+                    ),
                     AnnotationKind::SectionedArea => resolved_transform.is_some_and(|transform| {
                         sectioned_area_valid(
                             ir,
