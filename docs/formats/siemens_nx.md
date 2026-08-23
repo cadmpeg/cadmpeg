@@ -1706,6 +1706,11 @@ The body-image object selects a data block only when exactly one offset-only
 indexed section contains that nonzero block ordinal. Zero matching sections or
 multiple matching sections leave the body-image block unresolved.
 
+A resolved body-image block uses a plain cached-body stream when exactly one
+plain segment tuple has `body_alias_object_index` equal to the frame's body
+identity. Partition tuples do not participate in this alias namespace. Zero or
+multiple matching plain aliases leave the segment use unresolved.
+
 A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
 
 A direct operation data-block reference field is `01 02 03, object_index, 01 00 00 00 00 00`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.

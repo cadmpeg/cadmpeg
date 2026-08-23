@@ -131,6 +131,19 @@ pub struct FeatureOperationBodyWrite {
     pub source_offset: u64,
 }
 
+/// Exact bridge from a body-write image block to one plain cached-body stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyImageSegmentUse {
+    /// Globally unique bridge identity.
+    pub id: String,
+    /// Body-write frame owning both the body identity and image block.
+    pub operation_body_write: String,
+    /// Unambiguous offset-store block containing the serialized body image.
+    pub body_image_data_block: String,
+    /// Plain cached-body tuple whose alias equals the body identity.
+    pub segment_body_binding: String,
+}
+
 /// Exact direct tagged-reference field retained from one feature operation.
 ///
 /// The tag and object identity are native evidence. They do not assign a
@@ -3361,6 +3374,41 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
         },
     );
     writes
+}
+
+/// Join body-write identities to unique plain cached-body aliases.
+///
+/// Partition aliases use a separate identity namespace and do not participate.
+/// A missing image block, no plain alias, or duplicate plain alias leaves the
+/// write unresolved.
+pub fn feature_operation_body_image_segment_uses(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureOperationBodyImageSegmentUse> {
+    writes
+        .iter()
+        .filter_map(|write| {
+            let body_image_data_block = write.body_image_data_block.as_ref()?;
+            let mut matches = bindings.iter().filter(|binding| {
+                binding.stream_kind == "plain"
+                    && binding.body_alias_object_index == u32::from(write.body_identity)
+            });
+            let binding = matches.next()?;
+            if matches.next().is_some() {
+                return None;
+            }
+            Some(FeatureOperationBodyImageSegmentUse {
+                id: write.id.replacen(
+                    "operation-body-write",
+                    "operation-body-image-segment-use",
+                    1,
+                ),
+                operation_body_write: write.id.clone(),
+                body_image_data_block: body_image_data_block.clone(),
+                segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Decode exact direct tagged-reference fields from bounded feature operations.

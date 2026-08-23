@@ -177,6 +177,50 @@ fn operation_body_write_resolves_one_unique_image_block() {
     );
 }
 
+#[test]
+fn body_image_segment_use_requires_one_plain_alias() {
+    let body_write = vec![
+        0x01, 0x02, 0x0b, 0x31, 0x97, 0x75, 0x01, 0x02, 0x10, 0x41, 0xff,
+    ];
+    let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload =
+        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]))
+    .expect("synthetic body-image store");
+    let writes = super::feature_operation_body_writes(&container);
+    let binding = |id: &str, stream_kind: &str| SegmentBodyBinding {
+        id: id.to_string(),
+        stream_link: format!("{id}:link"),
+        stream_ordinal: 0,
+        stream_kind: stream_kind.to_string(),
+        body_object_index: 42,
+        body_alias_object_index: 11,
+        stream_role: 10,
+        source_offset: 100,
+    };
+
+    let uses = super::feature_operation_body_image_segment_uses(
+        &writes,
+        &[binding("plain", "plain"), binding("partition", "partition")],
+    );
+
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].operation_body_write, writes[0].id);
+    assert_eq!(
+        uses[0].body_image_data_block,
+        "nx:om-data-blocks-0:block#65"
+    );
+    assert_eq!(uses[0].segment_body_binding, "plain");
+    assert!(super::feature_operation_body_image_segment_uses(
+        &writes,
+        &[binding("first", "plain"), binding("second", "plain")],
+    )
+    .is_empty());
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,
