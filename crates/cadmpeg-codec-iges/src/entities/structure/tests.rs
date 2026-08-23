@@ -15,7 +15,8 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 use super::{
-    line_font_property_code_valid, network_connectivity_valid, signal_string_geometry_target,
+    functional_level_identifier_valid, line_font_property_code_valid, network_connectivity_valid,
+    signal_string_geometry_target,
 };
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
@@ -52,6 +53,78 @@ fn type406_form19_accepts_only_predefined_line_font_pattern_codes() {
     }
     for code in [0, 1, 13, 19, 55, 151, 207, 222, 486, 5001] {
         assert!(!line_font_property_code_valid(code), "{code}");
+    }
+}
+
+#[test]
+fn type406_form24_accepts_only_predefined_functional_level_identifiers() {
+    for value in [
+        "Annotation",
+        "Drilled Holes",
+        "Errors",
+        "Panel_Outline",
+        "Placement_Keepin",
+        "Placement_Keepout",
+        "PRD_ID",
+        "Routing_Keepin",
+        "Routing_Keepout",
+        "Signal_Guide",
+        "Substrate_Outline",
+        "Thermal_Outline",
+        "Trace_Keepin",
+        "Trace_Keepout",
+        "Undefined",
+        "Unplaced_Components",
+        "Via_Keepin",
+        "Via_Keepout",
+        "Via_Placement",
+        "Bond_Pad",
+        "Breakout",
+        "Chip_Pad",
+        "Component_Outline",
+        "Component_Placement",
+        "Crossover",
+        "Deposition_Components",
+        "Dielectric",
+        "Glue_Mask",
+        "Ground",
+        "Hole_Fill",
+        "Laser-Trim-Path",
+        "Pad",
+        "Pin_ID",
+        "Pin_Placement",
+        "Power",
+        "Sheet_Dielectric",
+        "Signal",
+        "Signal_ID",
+        "Silkscreen",
+        "Solder_Mask",
+        "Solder_Paste-Mask",
+        "Wire-Bond",
+        "signal_t",
+        "component_placement_2",
+        "thermal_outline_t",
+        "wire-bond_17",
+    ] {
+        assert!(
+            functional_level_identifier_valid(value.as_bytes()),
+            "{value}"
+        );
+    }
+    for value in [
+        "Signal_C",
+        "Signal_1",
+        "Signal_0",
+        "Signal_T_2",
+        "Bond_Pad_1",
+        "Drilled Holes_T",
+        "Unknown",
+        "",
+    ] {
+        assert!(
+            !functional_level_identifier_valid(value.as_bytes()),
+            "{value}"
+        );
     }
 }
 
@@ -714,6 +787,28 @@ fn decode_rejects_nonstandard_type406_form19_pattern_code() {
                 label: "LFPC".into(),
                 status: "00000000",
                 parameters: "406,1,13;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
+fn decode_rejects_unknown_type406_form24_functional_level_identifier() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 406,
+                form: 24,
+                label: "LAYERMAP".into(),
+                status: "00000000",
+                parameters: "406,5,1,1,3HTOP,0,8HSIGNAL_C;".into(),
             }])),
             &DecodeOptions::default(),
         )

@@ -555,6 +555,104 @@ fn line_font_property_code_valid(value: i64) -> bool {
     )
 }
 
+const FUNCTIONAL_LEVEL_IDENTIFIERS: &[&[u8]] = &[
+    b"Annotation",
+    b"Drilled Holes",
+    b"Errors",
+    b"Panel_Outline",
+    b"Placement_Keepin",
+    b"Placement_Keepout",
+    b"PRD_ID",
+    b"Routing_Keepin",
+    b"Routing_Keepout",
+    b"Signal_Guide",
+    b"Substrate_Outline",
+    b"Trace_Keepin",
+    b"Trace_Keepout",
+    b"Undefined",
+    b"Unplaced_Components",
+    b"Via_Keepin",
+    b"Via_Keepout",
+    b"Via_Placement",
+];
+
+const SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS: &[&[u8]] = &[
+    b"Bond_Pad",
+    b"Breakout",
+    b"Chip_Pad",
+    b"Component_Outline",
+    b"Component_Placement",
+    b"Crossover",
+    b"Deposition_Components",
+    b"Dielectric",
+    b"Glue_Mask",
+    b"Ground",
+    b"Hole_Fill",
+    b"Laser-Trim-Path",
+    b"Pad",
+    b"Pin_ID",
+    b"Pin_Placement",
+    b"Power",
+    b"Sheet_Dielectric",
+    b"Signal",
+    b"Signal_ID",
+    b"Silkscreen",
+    b"Solder_Mask",
+    b"Solder_Paste-Mask",
+    b"Thermal_Outline",
+    b"Wire-Bond",
+];
+
+fn functional_level_identifier_valid(value: &[u8]) -> bool {
+    if FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| value.eq_ignore_ascii_case(identifier))
+    {
+        return true;
+    }
+
+    if SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| value.eq_ignore_ascii_case(identifier))
+    {
+        return true;
+    }
+
+    SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| {
+            let identifier_length = identifier.len();
+            value.len() > identifier_length + 1
+                && value[..identifier_length].eq_ignore_ascii_case(identifier)
+                && value[identifier_length] == b'_'
+                && functional_level_suffix_valid(&value[identifier_length + 1..])
+        })
+}
+
+fn functional_level_suffix_valid(value: &[u8]) -> bool {
+    if value.eq_ignore_ascii_case(b"T") || value.eq_ignore_ascii_case(b"B") {
+        return true;
+    }
+
+    if value.is_empty() {
+        return false;
+    }
+    let mut number = 0_u64;
+    for byte in value {
+        if !byte.is_ascii_digit() {
+            return false;
+        }
+        let Some(next) = number
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u64::from(*byte - b'0')))
+        else {
+            return false;
+        };
+        number = next;
+    }
+    number >= 2
+}
+
 fn generic_property_value_valid(
     record: &ParameterRecord,
     index: usize,
@@ -751,7 +849,7 @@ fn property_fields_valid(
                             && record.integer(start + 2).is_some_and(|value| value >= 0)
                             && record
                                 .string(start + 3)
-                                .is_some_and(|value| !value.is_empty())
+                                .is_some_and(functional_level_identifier_valid)
                     })
             }),
         25 => record
