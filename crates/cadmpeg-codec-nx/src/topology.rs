@@ -672,6 +672,32 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub fn parse(stream: &[u8]) -> Self {
+        Self::parse_with_node_id_domain(stream, false)
+    }
+
+    /// Parse fixed records whose enclosing transmit grammar owns node frames.
+    pub(crate) fn parse_schema_owned(stream: &[u8]) -> Self {
+        let conservative = Self::parse_with_node_id_domain(stream, false);
+        let full_domain = Self::parse_with_node_id_domain(stream, true);
+        let preserves_conservative = conservative.nodes.iter().all(|(key, node)| {
+            full_domain
+                .nodes
+                .get(key)
+                .is_some_and(|candidate| candidate.pos == node.pos && candidate.bytes == node.bytes)
+        });
+        if conservative.body_shape_shells().is_empty()
+            && !full_domain.body_shape_shells().is_empty()
+            && full_domain.body_shape_face_count() != 0
+            && full_domain.has_complete_body_topology()
+            && preserves_conservative
+        {
+            full_domain
+        } else {
+            conservative
+        }
+    }
+
+    fn parse_with_node_id_domain(stream: &[u8], full_node_id_domain: bool) -> Self {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
         for pos in 0..stream.len().saturating_sub(3) {
@@ -688,7 +714,7 @@ impl Graph {
                 &mut candidates
             };
             target.extend(
-                Self::fixed_record_candidates(stream, pos, kind, len)
+                Self::fixed_record_candidates(stream, pos, kind, len, full_node_id_domain)
                     .into_iter()
                     .flatten(),
             );
@@ -738,6 +764,7 @@ impl Graph {
         pos: usize,
         kind: u8,
         len: usize,
+        full_node_id_domain: bool,
     ) -> [Option<NodeCandidate>; 2] {
         let mut candidates = [None; 2];
         let mut count = 0;
@@ -745,9 +772,14 @@ impl Graph {
             .into_iter()
             .flatten()
         {
-            let Some(()) =
-                candidate_has_valid_family_framing(stream, pos, kind, frame.shift, frame.end)
-            else {
+            let Some(()) = candidate_has_valid_family_framing(
+                stream,
+                pos,
+                kind,
+                frame.shift,
+                frame.end,
+                full_node_id_domain,
+            ) else {
                 continue;
             };
             candidates[count] = Some(NodeCandidate {
@@ -1166,6 +1198,7 @@ fn candidate_has_valid_family_framing(
     kind: u8,
     shift: usize,
     end: usize,
+    full_node_id_domain: bool,
 ) -> Option<()> {
     let bytes = stream.get(pos..end)?;
     if matches!(
@@ -1180,7 +1213,8 @@ fn candidate_has_valid_family_framing(
             | 124
             | 133..=134
             | 137
-    ) && View::u32_be_at(bytes, 4 + shift).is_none_or(|node_id| node_id > 1_000_000)
+    ) && !full_node_id_domain
+        && View::u32_be_at(bytes, 4 + shift).is_none_or(|node_id| node_id > 1_000_000)
     {
         return None;
     }

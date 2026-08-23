@@ -78,6 +78,41 @@ fn topology_retains_shell_body_identity_without_body_record() {
 }
 
 #[test]
+fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
+    let mut stream = topology_partition_stream();
+    let fixed_nodes = crate::topology::Graph::parse(&stream)
+        .nodes
+        .values()
+        .filter(|node| node.kind != 17)
+        .map(|node| (node.pos, node.shift))
+        .collect::<Vec<_>>();
+    for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
+        let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
+        stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
+    }
+
+    let graph = crate::topology::Graph::parse_schema_owned(&stream);
+
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
+    assert!(graph
+        .nodes
+        .values()
+        .filter(|node| node.kind != 17)
+        .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let mut stream = topology_partition_stream();
     let shell = stream

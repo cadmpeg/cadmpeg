@@ -173,8 +173,16 @@ impl StreamView {
     /// Parse every cached family from a single byte buffer with the plain
     /// intersection scan. This is the raw view (`stream.inflated`); it is also the
     /// semantic view whenever the semantic bytes equal the raw bytes.
-    fn parse_uniform(bytes: &[u8], point_layout: crate::intersection::ChartPointLayout) -> Self {
-        let graph = Rc::new(Graph::parse(bytes));
+    fn parse_uniform(
+        bytes: &[u8],
+        point_layout: crate::intersection::ChartPointLayout,
+        schema_owned: bool,
+    ) -> Self {
+        let graph = Rc::new(if schema_owned {
+            Graph::parse_schema_owned(bytes)
+        } else {
+            Graph::parse(bytes)
+        });
         StreamView {
             offset_surfaces: graph.offset_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
@@ -192,12 +200,18 @@ impl StreamView {
         graph: Rc<Graph>,
         topology_bytes: &[u8],
         semantic_bytes: &[u8],
+        schema_owned: bool,
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
         point_layout: crate::intersection::ChartPointLayout,
     ) -> (Self, Rc<Graph>) {
-        let semantic_graph =
-            (semantic_bytes != topology_bytes).then(|| Rc::new(Graph::parse(semantic_bytes)));
+        let semantic_graph = (semantic_bytes != topology_bytes).then(|| {
+            Rc::new(if schema_owned {
+                Graph::parse_schema_owned(semantic_bytes)
+            } else {
+                Graph::parse(semantic_bytes)
+            })
+        });
         let scan_graph = semantic_graph.as_deref().unwrap_or(&graph);
         let nurbs_graph = semantic_graph
             .as_ref()
@@ -328,11 +342,20 @@ impl<'a> ParsedStreams<'a> {
                 }
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
-            let raw = Rc::new(StreamView::parse_uniform(&stream.inflated, point_layout));
+            let schema_owned = stream.kind == StreamKind::Partition;
+            let raw = Rc::new(StreamView::parse_uniform(
+                &stream.inflated,
+                point_layout,
+                schema_owned,
+            ));
             let (semantic, nurbs_graph) = if identical {
                 (Rc::clone(&raw), Rc::clone(&raw.graph))
             } else {
-                let graph = Rc::new(Graph::parse(&semantic_bytes));
+                let graph = Rc::new(if schema_owned {
+                    Graph::parse_schema_owned(&semantic_bytes)
+                } else {
+                    Graph::parse(&semantic_bytes)
+                });
                 let topology_for_auxiliary = paired.map(|_| semantic_bytes.clone());
                 semantic_bytes.to_mut().extend_from_slice(&residual);
                 let (semantic, nurbs_graph) = StreamView::parse_semantic(
@@ -341,6 +364,7 @@ impl<'a> ParsedStreams<'a> {
                         .as_deref()
                         .unwrap_or(semantic_bytes.as_ref()),
                     &semantic_bytes,
+                    schema_owned,
                     scan,
                     paired,
                     point_layout,
