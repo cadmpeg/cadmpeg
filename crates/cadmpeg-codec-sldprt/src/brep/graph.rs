@@ -36,6 +36,7 @@ use super::entity;
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
+use super::typed;
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
@@ -891,6 +892,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
+    let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
     let mut ordered = bodies.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|(_, header)| header.description.to_ascii_lowercase().contains("deltas"));
@@ -914,6 +916,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     for (stream_order, (payload, header)) in ordered.into_iter().enumerate() {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        typed_facts.merge_missing(typed::scan(body));
         carriers.merge_missing(scan_carriers(body));
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
@@ -984,7 +987,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             }
         }
     }
-    decode_graph(&carriers, &tables, facts, stream)
+    decode_graph(&carriers, &tables, facts, &typed_facts, stream)
 }
 
 fn decode_body(body: &[u8], schema: &str, stream: &str) -> Brep {
@@ -992,7 +995,8 @@ fn decode_body(body: &[u8], schema: &str, stream: &str) -> Brep {
     let curve_attrs = carriers.curve_attrs();
     let t = topology::scan_with_curve_attrs(body, &curve_attrs);
     let entity_facts = entity::scan(body, schema);
-    decode_graph(&carriers, &t, entity_facts, stream)
+    let typed_facts = typed::scan(body);
+    decode_graph(&carriers, &t, entity_facts, &typed_facts, stream)
 }
 
 fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::BodyModifier> {
@@ -1072,13 +1076,88 @@ fn unique_face_colors(
     (out, unresolved)
 }
 
+fn typed_body_records(
+    facts: &typed::Facts,
+    tables: &topology::Tables,
+) -> Option<Vec<entity::BodyRecord>> {
+    let bridge_attrs = tables.bridges.keys().copied().collect::<HashSet<_>>();
+    let hierarchies = facts.hierarchies(&bridge_attrs)?;
+    let mut records = Vec::with_capacity(hierarchies.len());
+    for hierarchy in hierarchies {
+        let mut body_refs = hierarchy
+            .regions
+            .iter()
+            .map(|region| region.attr)
+            .chain(hierarchy.shells.iter().map(|shell| shell.attr))
+            .chain(hierarchy.faces.iter().map(|(face, _)| *face))
+            .collect::<Vec<_>>();
+        body_refs.sort_unstable();
+        body_refs.dedup();
+        let mut regions = hierarchy
+            .regions
+            .iter()
+            .map(|region| {
+                let mut shells = hierarchy
+                    .shells
+                    .iter()
+                    .filter(|shell| u16::try_from(shell.refs[6]).ok() == Some(region.attr))
+                    .map(|shell| {
+                        let mut refs = hierarchy
+                            .faces
+                            .iter()
+                            .filter(|(_, shell_attr)| *shell_attr == shell.attr)
+                            .map(|(face_attr, _)| *face_attr)
+                            .collect::<Vec<_>>();
+                        refs.sort_unstable();
+                        refs.dedup();
+                        entity::ShellRecord {
+                            attr: shell.attr,
+                            offset: shell.offset,
+                            refs,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                shells.sort_by_key(|shell| shell.attr);
+                entity::RegionRecord {
+                    attr: region.attr,
+                    offset: region.offset,
+                    shells,
+                }
+            })
+            .collect::<Vec<_>>();
+        regions.sort_by_key(|region| region.attr);
+        records.push(entity::BodyRecord {
+            attr: hierarchy.body.attr,
+            kind: hierarchy.kind,
+            refs: body_refs,
+            offset: hierarchy.body.offset,
+            regions,
+        });
+    }
+    records.sort_by_key(|record| record.attr);
+    (!records.is_empty()).then_some(records)
+}
+
 fn decode_graph(
     carriers: &CarrierIndex,
     t: &topology::Tables,
     entity_facts: entity::Facts,
+    typed_facts: &typed::Facts,
     stream: &str,
 ) -> Brep {
-    let mut body_records = entity_facts.bodies;
+    let typed_records = typed_body_records(typed_facts, t);
+    // A typed ownership graph starts at BODY.  FACE/SHELL/REGION byte
+    // candidates can occur in unrelated node payloads until their ownership
+    // closure is established; they must not disable the existing body routes
+    // on their own.
+    let typed_present = !typed_facts.bodies.is_empty();
+    let typed_selected = typed_records.is_some();
+    let typed_authoritative = typed_selected || typed_present;
+    let mut body_records = if typed_authoritative {
+        typed_records.unwrap_or_default()
+    } else {
+        entity_facts.bodies
+    };
     let class_root_bodies = entity_facts.class_root_bodies;
     let cluster_bodies = entity_facts.cluster_bodies;
     let final_body_selectors = entity_facts.final_body_selectors;
@@ -1604,7 +1683,7 @@ fn decode_graph(
     let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
     let mut class_root_selected = false;
     let mut cluster_selected = false;
-    if !class_root_bodies.is_empty() {
+    if !typed_authoritative && !class_root_bodies.is_empty() {
         let (root_group, root_shell) = complete_cluster_binding(&class_root_bodies);
         if !root_group.is_empty() {
             body_records = class_root_bodies;
@@ -1615,7 +1694,8 @@ fn decode_graph(
     }
     // An unindexed cluster-key chain remains a fallback when the primary body
     // layout owns no face. A sole chain owns every canonical face in the site.
-    if !class_root_selected
+    if !typed_authoritative
+        && !class_root_selected
         && (body_records.is_empty() || bridge_group.is_empty())
         && !cluster_bodies.is_empty()
     {
@@ -1627,7 +1707,11 @@ fn decode_graph(
             cluster_selected = true;
         }
     }
-    if !class_root_selected && !cluster_selected && !final_body_selectors.is_empty() {
+    if !typed_authoritative
+        && !class_root_selected
+        && !cluster_selected
+        && !final_body_selectors.is_empty()
+    {
         bind_final_selector_faces(
             &body_records,
             &final_body_selectors,
@@ -5970,6 +6054,87 @@ mod tests {
     }
 
     #[test]
+    fn typed_body_records_preserve_stored_sheet_kind_and_links() {
+        use crate::brep::typed::{BodyNode, FaceNode, Facts, RegionNode, ShellNode};
+        use cadmpeg_ir::topology::BodyKind;
+        use std::collections::HashSet;
+
+        let facts = Facts {
+            bodies: vec![BodyNode {
+                attr: 3,
+                node_id: 7,
+                topology_refs: [7, 8, 9, 10, 1, 12, 11],
+                body_type: 3,
+                region_head_slot: 6,
+                offset: 1,
+                end: 2,
+            }],
+            shells: vec![ShellNode {
+                attr: 7,
+                node_id: 814,
+                refs: [1, 3, 1, 38, 1, 1, 39, 1],
+                offset: 3,
+                end: 4,
+            }],
+            regions: vec![
+                RegionNode {
+                    attr: 11,
+                    node_id: 244,
+                    refs: [1, 3, 39, 1, 44],
+                    kind: b'V',
+                    offset: 5,
+                    end: 6,
+                },
+                RegionNode {
+                    attr: 39,
+                    node_id: 815,
+                    refs: [1, 3, 1, 11, 7],
+                    kind: b'S',
+                    offset: 7,
+                    end: 8,
+                },
+            ],
+            faces: vec![FaceNode {
+                attr: 100,
+                node_id: 900,
+                attribute_chain: 1,
+                refs: [1, 1, 49, 7, 8],
+                sense: 0x2b,
+                offset: 9,
+                end: 10,
+            }],
+        };
+        let mut tables = Tables::default();
+        tables.bridges.insert(
+            100,
+            Record {
+                attr: 100,
+                sequence: None,
+                refs: vec![1, 1, 49, 7, 8],
+                marker: Some(0x2b),
+                xyz_m: None,
+                xyz_offset: None,
+                owner: None,
+                offset: 11,
+            },
+        );
+
+        let records = super::typed_body_records(&facts, &tables).expect("typed body records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].kind, BodyKind::Sheet);
+        assert_eq!(records[0].regions.len(), 2);
+        assert!(records[0].refs.contains(&100));
+        assert_eq!(records[0].regions[1].shells[0].refs, vec![100]);
+        assert_eq!(
+            facts
+                .hierarchies(&HashSet::from([100]))
+                .expect("typed hierarchy")[0]
+                .kind,
+            BodyKind::Sheet
+        );
+    }
+
+    #[test]
     fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
         let bridge = |attr, surface, offset| super::Record {
             attr,
@@ -5991,6 +6156,7 @@ mod tests {
                 entity_count: 1,
                 ..Default::default()
             },
+            &super::typed::Facts::default(),
             "empty",
         );
 
