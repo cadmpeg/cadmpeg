@@ -111,6 +111,72 @@ Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://w
 
 ## 5. Surfaces and topology
 
+### ST-16. Neutral coordinate selected for a sewn boundary vertex
+
+**Question.** Which neutral point represents IGES boundary endpoints that are
+distinct but fall within the boundary sewing tolerance?
+
+**Known.** Type 141 and Type 142 give model-space and parameter-space boundary
+curves, but they do not give the face-local vertices required by neutral
+topology. `iges.md` defines a sewing tolerance from the Global minimum
+resolution and coordinate significance, takes the transitive
+closure of endpoint proximity, rejects a component whose diameter exceeds that
+tolerance, and assigns the lexicographically smallest endpoint as the component
+representative. `crates/cadmpeg-codec-iges/src/entities/trimming.rs:140-189`
+implements that rule. `create_boundary_vertices` then stores the selected
+endpoint as the coordinate of the one neutral point and gives the resulting
+vertex the sewing tolerance.
+
+**Need.** Sewing establishes topological identity, but it does not make one
+source endpoint the geometric value declared by every curve in the component.
+The lexicographic rule replaces the other endpoint coordinates and makes one
+source value authoritative without an IGES rule. The answer defines a derived
+neutral coordinate and its relation to all source endpoints, or preserves the
+endpoint disagreement so that a consumer can distinguish a sewn vertex from an
+exact shared point.
+
 ## 6. Product structure, annotation, and presentation
 
+### PS-16. Top-level occurrence inferred from absence of containment
+
+**Question.** What source relationship makes a Type 408 or Type 420 instance a
+top-level neutral product occurrence?
+
+**Known.** IGES defines Type 308 and Type 320 definition membership and the
+nested placement of their Type 408 and Type 420 instances. It does not define a
+top-level occurrence root. `iges.md` defines a CADIR root as an admitted Type
+408 or Type 420 instance that is not a member of any parseable Type 308 or Type
+320 member list. `crates/cadmpeg-codec-iges/src/native.rs:4617-4669` constructs
+the containment set, and `crates/cadmpeg-codec-iges/src/native.rs:4764-4782`
+expands every admitted instance outside that set from the identity world
+transform. A malformed definition member list suppresses all root inference.
+
+**Need.** Absence from a definition member list does not declare product-root
+meaning. The neutral occurrence and its identity placement are inferred from
+the document graph rather than transferred from an IGES relationship. The
+answer defines an explicit application root, or represents these inferred roots
+so that a consumer cannot mistake them for source-declared product structure.
+
 ## 7. Write path
+
+### WR-16. Type 126 plane and normal inferred from control points
+
+**Question.** Which neutral declaration supplies the Type 126 planar flag and
+unit normal during semantic export?
+
+**Known.** Type 126 stores a planar flag and, for a planar curve, a unit normal.
+The neutral NURBS curve does not store either value.
+`crates/cadmpeg-codec-iges/src/writer.rs:4668-4702` calls
+`nurbs_plane_normal`, uses the presence of its result as the planar flag, and
+writes the returned normal. `crates/cadmpeg-codec-iges/src/writer.rs:4719-4784`
+classifies the control points with relative constants `1e-10` and `1e-12`. For
+coincident control points it writes +Z. For collinear control points it chooses
+the global axis least aligned with the first usable control-polygon direction
+and constructs a perpendicular normal.
+
+**Need.** The fixed thresholds are not a neutral curve tolerance or an IGES
+declaration. Coincident and collinear control points also define no unique
+plane normal. The writer therefore creates source semantics that the neutral
+model does not contain. The answer adds explicit planarity and normal semantics
+to the neutral curve, or emits a Type 126 declaration that does not claim an
+inferred unique plane.
