@@ -906,10 +906,17 @@ XYZ order. A complete endpoint sequence may end at the body boundary or at
 bounded body is present. The reference identifies the generated entity and
 does not supply a coordinate. The two triples are samples on the generated
 round-edge carrier, not a carrier by themselves. A class-913 replay supplies
-the constant rolling radius and the generated-entity/support join supplies
-candidate cylinder axes. Admit the unique cylinder whose two samples have
-that radius from its axis; retain the row native when the radius, ownership,
-or axis witness is missing, conflicting, or non-unique.
+the constant rolling radius. The generated-entity and topology join supplies
+the two incident support planes. Normalize their normals and form every
+intersection of the two planes offset by `+radius` or `-radius`. Keep a
+candidate only when the endpoints bind one-to-one to the two unoffset support
+planes and both endpoint distances from the candidate line equal the replay
+radius. Coincident candidate lines are one carrier; admit the row only when
+one line remains. For perpendicular support planes this is the mixed
+transverse-coordinate construction. The stored parameter interval is an arc
+interval and does not become a cylinder length; a geometric axial span may be
+retained when the endpoint projection is positive. Missing, conflicting, or
+non-unique radius, ownership, support, or line evidence retains the row native.
 
 The single-diameter type-24 form has one terminal frame of exactly eight
 slots. Its first slot is auxiliary, its second slot is the positive diameter,

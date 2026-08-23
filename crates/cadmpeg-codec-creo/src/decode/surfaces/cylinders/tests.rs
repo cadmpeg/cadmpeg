@@ -2,6 +2,8 @@
 
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
+use crate::decode::analytic::PlaneEquation;
+
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
@@ -459,6 +461,58 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
         .surfaces
         .iter()
         .any(|surface| { surface.id.as_str() == "creo:visibgeom:surface#7" }));
+}
+
+#[test]
+fn round_edge_support_frame_selects_one_offset_line() {
+    let frame = super::round_edge_cylinder_frame(
+        crate::surface::Type24RoundEdgeEnvelope {
+            parameter_interval: [0.25, 5.25],
+            vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
+            generated_entity_reference: None,
+        },
+        0.2,
+        &[
+            PlaneEquation {
+                origin: [1.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            PlaneEquation {
+                origin: [0.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            },
+        ],
+    )
+    .expect("one offset round-edge cylinder");
+
+    assert_eq!(frame.origin, [1.2, 0.2, 0.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 0.2);
+    assert_eq!(frame.length, Some(5.0));
+}
+
+#[test]
+fn round_edge_support_frame_rejects_parallel_supports() {
+    assert!(super::round_edge_cylinder_frame(
+        crate::surface::Type24RoundEdgeEnvelope {
+            parameter_interval: [0.0, 1.0],
+            vertices: [[1.0, 0.2, 0.0], [1.0, 0.0, 1.0]],
+            generated_entity_reference: Some(17),
+        },
+        0.2,
+        &[
+            PlaneEquation {
+                origin: [1.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            PlaneEquation {
+                origin: [2.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+        ],
+    )
+    .is_none());
 }
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
