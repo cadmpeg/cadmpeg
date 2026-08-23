@@ -249,6 +249,21 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         ),
                     );
                 }
+                if wedge
+                    .edge
+                    .and_then(|edge| subd.edges.get(edge as usize))
+                    .is_some_and(|edge| {
+                        u32::try_from(index).map_or(true, |owner| !edge.vertices.contains(&owner))
+                    })
+                {
+                    bounds_err(
+                        findings,
+                        &subd.id.0,
+                        &format!(
+                            "SubD vertex {index} wedge {wedge_index} edge is not incident to its owner"
+                        ),
+                    );
+                }
                 for grip in wedge.spokes.iter().chain(&wedge.sectors).flatten() {
                     if !finite_point(&grip.point)
                         || !grip.weight.is_finite()

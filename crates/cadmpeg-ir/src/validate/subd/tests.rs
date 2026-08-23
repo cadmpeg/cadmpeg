@@ -136,6 +136,56 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
 }
 
 #[test]
+fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grip-incidence".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: Some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: None,
+                        phantom: false,
+                        spokes: Vec::new(),
+                        sectors: Vec::new(),
+                    }],
+                }),
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(2.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [1, 2],
+            sharpness: [0.0, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            knot_interval: Some(1.0),
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: Vec::new(),
+        source_object: None,
+    });
+
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("is not incident to its owner")));
+}
+
+#[test]
 fn subd_rejects_invalid_symmetry_carriers() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.subds.push(SubdSurface {
