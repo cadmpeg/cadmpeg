@@ -444,7 +444,7 @@ fn frame_impl(
         let rec_start = pos;
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
-        let mut depth = 0i32;
+        let mut depth = 0usize;
         let mut name_done = false;
         let mut is_delta = false;
         let mut embedded_history_entity = None;
@@ -454,13 +454,16 @@ fn frame_impl(
             if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
                 break;
             }
+            let token_offset = pos;
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
                 Lexed::Terminator if depth == 0 => break,
                 Lexed::Terminator => {
-                    // A terminator inside a subtype scope closes that scope.
-                    // Keep scanning the record.
+                    return Err(FrameError {
+                        offset: token_offset,
+                        reason: "record terminates inside a subtype scope".to_string(),
+                    });
                 }
                 Lexed::SubIdent(s) if !name_done => name_parts.push(s),
                 Lexed::Ident(s) if !name_done => {
@@ -501,6 +504,12 @@ fn frame_impl(
                 }
                 Lexed::Value(Token::SubtypeClose) => {
                     payload_start = false;
+                    if depth == 0 {
+                        return Err(FrameError {
+                            offset: token_offset,
+                            reason: "record closes an unopened subtype scope".to_string(),
+                        });
+                    }
                     depth -= 1;
                     tokens.push(Token::SubtypeClose);
                 }
@@ -625,6 +634,18 @@ mod tests {
         assert_eq!(record.chunk(3), Some(&super::Token::SubtypeClose));
         assert_eq!(record.chunk(4), Some(&super::Token::False));
         assert_eq!(record.chunk_len(), 5);
+    }
+
+    #[test]
+    fn subtype_delimiters_fail_at_the_unbalanced_token() {
+        for (tail, bad_token_index) in [([0x10, 0x11], 0), ([0x0f, 0x11], 1)] {
+            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e'];
+            let tail_offset = bytes.len();
+            bytes.extend_from_slice(&tail);
+
+            let error = frame(&bytes, 0, bytes.len(), 8).expect_err("unbalanced subtype scope");
+            assert_eq!(error.offset, tail_offset + bad_token_index);
+        }
     }
 
     #[test]

@@ -95,7 +95,7 @@ The stream is a tag-typed SAB (ACIS binary) token stream.
 | `0x16`                      | VECTOR_2D            | 16 B                      | 2D `(u,v)`                                                        |
 | `0x17`                      | INT64                | 8 B                       | AutoCAD int64 attribute value                                     |
 
-- `0x11` terminates the current top-level record; the next record's name-token chain begins at the following byte.
+- `0x11` terminates the current top-level record; the next record's name-token chain begins at the following byte. A `0x10` at subtype depth zero or a `0x11` at nonzero depth makes the stream malformed at that delimiter.
 - `0x0A`/`0x0B` inside a record are booleans (often `reversed`/`forward`), **never** record boundaries.
 - Positions (`0x13`) and length-bearing vectors are centimetres; see §4.
 - String, identifier, and sub-identifier payloads are valid UTF-8, and their lengths count bytes. An invalid UTF-8 sequence makes the stream malformed at its first invalid byte.
