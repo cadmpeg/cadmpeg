@@ -3328,6 +3328,30 @@ fn attach_standard_topology(
     let mut ordered_endpoint_pairs =
         alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
             .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let point_coordinates = ir
+        .model
+        .points
+        .iter()
+        .map(|point| {
+            [
+                point.position.x as f32,
+                point.position.y as f32,
+                point.position.z as f32,
+            ]
+        })
+        .collect::<Vec<_>>();
+    if let Some(pairs) = missing_edge::standard_edge_rows(spine).and_then(|rows| {
+        missing_edge::raw_visualization_endpoint_pairs(source, &rows, &point_coordinates)
+    }) {
+        if pairs.len() != ordered_endpoint_pairs.len() {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+        for (edge, pair) in pairs.into_iter().enumerate() {
+            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+        }
+    }
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();

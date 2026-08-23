@@ -12,6 +12,52 @@ fn handles(values: &[u32]) -> HashSet<u32> {
     values.iter().copied().collect()
 }
 
+fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
+    let mut bytes = RAW_VISUALIZATION_POINT_MARKER.to_vec();
+    let count = u32::try_from(triples.len()).expect("synthetic table count");
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.push(0xff);
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0, mode]);
+    for triple in triples {
+        for coordinate in triple {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+#[test]
+fn raw_visualization_points_bind_terminal_handles_by_direct_index() {
+    let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let bytes = raw_visualization_table(1, &[points[0], points[1], points[0]]);
+    let rows = [row(&[0, 40, 1]), row(&[1, 41, 2])];
+
+    assert_eq!(
+        raw_visualization_endpoint_pairs(&bytes, &rows, &points),
+        Some(vec![[0, 1], [1, 0]])
+    );
+}
+
+#[test]
+fn raw_visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
+    let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let rows = [row(&[0, 1])];
+
+    assert_eq!(
+        raw_visualization_endpoint_pairs(&raw_visualization_table(0, &points), &rows, &points,),
+        None
+    );
+    assert_eq!(
+        raw_visualization_endpoint_pairs(
+            &raw_visualization_table(1, &[points[0], points[0]]),
+            &rows,
+            &points,
+        ),
+        None
+    );
+}
+
 #[test]
 fn repeated_long_row_selects_one_majority_sharing_face() {
     let rows = vec![row(&[10, 11, 12, 13, 14])];

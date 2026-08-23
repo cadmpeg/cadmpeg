@@ -12,7 +12,7 @@ use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTo
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -86,6 +86,78 @@ fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option
             Some(pair)
         })
         .collect()
+}
+
+const RAW_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
+const RAW_VISUALIZATION_POINT_HEADER_LEN: usize = 19;
+const RAW_VISUALIZATION_POINT_STRIDE: usize = 12;
+
+/// Bind trim-handle endpoints through the raw indexed visualization-point lane.
+///
+/// Mode 1 stores one XYZ f32 triple at `table[handle]`. Admission is atomic:
+/// the file must contain one structurally complete table, every terminal handle
+/// must select a decoded vertex coordinate exactly, and every decoded vertex
+/// coordinate must be selected by at least one terminal handle. Other table
+/// modes use different coding and are left unbound.
+pub(crate) fn raw_visualization_endpoint_pairs(
+    source: &[u8],
+    edge_rows: &[EdgeRow],
+    point_coordinates: &[[f32; 3]],
+) -> Option<Vec<[usize; 2]>> {
+    let mut markers = source
+        .windows(RAW_VISUALIZATION_POINT_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == RAW_VISUALIZATION_POINT_MARKER).then_some(offset));
+    let marker = markers.next()?;
+    if markers.next().is_some() {
+        return None;
+    }
+    let count = usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?;
+    let indexed_count = usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?;
+    if source.get(marker.checked_add(15)?..marker.checked_add(19)?)? != [0, 0, 0, 1]
+        || indexed_count > count
+        || count.saturating_sub(indexed_count) > 1
+    {
+        return None;
+    }
+    let table = marker.checked_add(RAW_VISUALIZATION_POINT_HEADER_LEN)?;
+    let extent = count
+        .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?
+        .checked_add(table)?;
+    source.get(table..extent)?;
+
+    let mut point_by_bits = HashMap::with_capacity(point_coordinates.len());
+    for (point, coordinates) in point_coordinates.iter().enumerate() {
+        let key = coordinates.map(f32::to_bits);
+        if point_by_bits.insert(key, point).is_some() {
+            return None;
+        }
+    }
+    let mut covered_points = HashSet::new();
+    let mut pairs = Vec::with_capacity(edge_rows.len());
+    for row in edge_rows {
+        let mut pair = [0; 2];
+        for (side, handle) in [*row.handles.first()?, *row.handles.last()?]
+            .into_iter()
+            .enumerate()
+        {
+            let handle = usize::try_from(handle).ok()?;
+            if handle >= count {
+                return None;
+            }
+            let at = table.checked_add(handle.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
+            let key = [
+                View::f32_le_at(source, at)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(4)?)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(8)?)?.to_bits(),
+            ];
+            let point = *point_by_bits.get(&key)?;
+            covered_points.insert(point);
+            pair[side] = point;
+        }
+        pairs.push(pair);
+    }
+    (covered_points.len() == point_coordinates.len()).then_some(pairs)
 }
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {

@@ -304,13 +304,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-10. Logical vertex to `05 08 01` allocation
 
-**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
+**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row when the raw indexed visualization-point mode is absent?
 
-**Known.** `catia.md` §5.4 "One trim-handle namespace spans the complete width-selected trim chain" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation. The same section defines evidence-free topology automorphisms that can jointly permute unbound edge rows and coordinate-row labels without assigning a byte-level coordinate allocation.
+**Known.** `catia.md` §5.4.2 defines mode `1` as a direct trim-handle-indexed f32 coordinate table and binds it exactly to `05 08 01` rows. Section 5.4.1 defines the regular trim-motif allocation walk. The logical-corner quotient and physical endpoint ports remain independent of coordinate-row allocation in the other visualization modes.
 
-**Need.** We must know the allocation relation for byte-faithful writing.
+**Need.** We must decode the coordinate coding used by visualization modes other than `1` and identify the serialized discriminator for regular-motif allocation permutations.
 
-**Conflict.** The specification assigns four fixed column permutations to regular-motif allocation walks. Vertex-count agreement and circle-endpoint agreement do not distinguish those permutations from other emission orders. The serialized discriminator that selects the permutation remains undefined.
+**Conflict.** Vertex-count agreement and circle-endpoint agreement do not distinguish the regular-motif column permutations from other emission orders.
 
 ### SN-11. Standard 3D spline cache
 
