@@ -1498,6 +1498,25 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     #[test]
+    fn rejects_secondary_grips_on_phantom_wedges() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0m gv 0\n0m gv 0\n\
+             0m cg 0 4 1 0 1 0 4 5\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0g 0.5 0 0 1\n0g 0.6 0 0 1\n"
+        );
+        let error = parse_cage(source.as_bytes()).expect_err("phantom spoke");
+        assert!(
+            error
+                .to_string()
+                .contains("phantom wedge carries a nonzero spoke length"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn partitions_rectangular_sector_grids_with_product_arity() {
         let source = format!(
             "#TS0200\n{QUAD_TOPOLOGY}\
