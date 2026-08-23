@@ -343,6 +343,63 @@ pub(super) fn relation_instances(
             },
         )
         .collect::<Vec<_>>();
+    // A class can declare more than one scalar relation. The ordinary
+    // instance grouper joins a display scalar to its adjacent driving scalar
+    // when their operand signatures agree; a second scalar with a different
+    // signature is still a declared relation binding and must not disappear.
+    // Promote only bindings whose scalar is not already claimed by an
+    // instance. A scalar has one relation-instance owner even if malformed
+    // input associates it with more than one class. Non-sketch bindings remain
+    // native-only, matching the existing relation-instance scope.
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    let mut claimed_scalar_refs = instances
+        .iter()
+        .flat_map(|relation| relation.scalar_refs.iter().cloned())
+        .collect::<HashSet<_>>();
+    for binding in &lane.relation_bindings {
+        let Some(feature_ref) = binding
+            .feature_ref
+            .as_deref()
+            .filter(|feature| sketch_features.contains(*feature))
+        else {
+            continue;
+        };
+        let Some(scalar) = lane
+            .scalars
+            .iter()
+            .find(|scalar| scalar.id == binding.scalar_ref)
+        else {
+            continue;
+        };
+        if !claimed_scalar_refs.insert(binding.scalar_ref.clone()) {
+            continue;
+        }
+        instances.push(FeatureInputRelationInstance {
+            id: format!(
+                "sldprt:feature-input:relation-instance#{lane_key}:{}",
+                scalar.offset
+            ),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: scalar.offset,
+            family: binding.family,
+            class_ref: binding.class_ref.clone(),
+            feature_ref: feature_ref.to_owned(),
+            scalar_refs: vec![scalar.id.clone()],
+            parameter_scalar_ref: matches!(scalar.role, FeatureInputScalarRole::Driving)
+                .then(|| scalar.id.clone()),
+            display_scalar_ref: matches!(scalar.role, FeatureInputScalarRole::Display)
+                .then(|| scalar.id.clone()),
+            operands: scalar.operands.clone(),
+        });
+    }
+    instances.sort_by_key(|relation| relation.offset);
+    for (ordinal, relation) in instances.iter_mut().enumerate() {
+        relation.ordinal = ordinal as u32;
+    }
     bind_detached_relation_drivers(&mut instances, lane);
     bind_circle_dimension_centers(&mut instances, lane);
     bind_relation_geometry_operands(&mut instances, lane);
@@ -355,7 +412,7 @@ mod relation_records_tests {
     use super::*;
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
-        FeatureInputName,
+        FeatureInputName, FeatureInputRelationBinding,
     };
     use std::collections::BTreeMap;
 
@@ -812,6 +869,47 @@ mod relation_records_tests {
             relation.family == FeatureInputRelationFamily::PointPointDistance
                 && relation.class_ref == "class-10"
         }));
+    }
+
+    #[test]
+    fn unclaimed_relation_binding_scalar_becomes_an_instance() {
+        let dynamic = dynamic_scalar(20, FeatureInputOperandKind::Native(0x812a), &[1, 2], 2.0);
+        let mut bound = dynamic_scalar(30, FeatureInputOperandKind::E1, &[3, 4], 3.0);
+        bound.role = FeatureInputScalarRole::Display;
+        let mut lane = lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
+        lane.relation_bindings = vec![FeatureInputRelationBinding {
+            id: "binding-10".into(),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: 10,
+            class_ref: "class-10".into(),
+            family: FeatureInputRelationFamily::LineLineDistance,
+            scalar_ref: bound.id,
+            feature_ref: Some("sketch".into()),
+        }];
+        lane.relation_bindings.push(FeatureInputRelationBinding {
+            id: "binding-11".into(),
+            parent: lane.id.clone(),
+            ordinal: 1,
+            offset: 11,
+            class_ref: "class-11".into(),
+            family: FeatureInputRelationFamily::LineLineDistance,
+            scalar_ref: "scalar-30".into(),
+            feature_ref: Some("sketch".into()),
+        });
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        assert_eq!(instances.len(), 2);
+        assert_eq!(instances[1].offset, 30);
+        assert_eq!(
+            instances[1].family,
+            FeatureInputRelationFamily::LineLineDistance
+        );
+        assert_eq!(instances[1].scalar_refs, vec!["scalar-30"]);
+        assert_eq!(
+            instances[1].display_scalar_ref.as_deref(),
+            Some("scalar-30")
+        );
     }
 
     #[test]
