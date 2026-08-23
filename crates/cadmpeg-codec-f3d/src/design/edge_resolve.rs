@@ -263,6 +263,7 @@ fn edge_flange_updated_edge_candidate(operand: &DesignEdgeOperand) -> Option<Vec
 
 /// Resolve an edge-treatment group with the exact transition chain available
 /// to Fillet and Chamfer operations.
+#[cfg(test)]
 pub(crate) fn resolved_edge_treatment_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -2366,6 +2367,7 @@ fn selector_candidate_edges(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn project_fixed_fillet(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
