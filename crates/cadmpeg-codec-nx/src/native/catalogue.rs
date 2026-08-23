@@ -2836,16 +2836,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_thru_curve_construction_envelopes",
-        tag: None,
-        exactness: Exactness::ByteExact,
-        phase: Phase::ArenaOnly,
-        note: None,
-        emit: |m, r, ns| emit_arena(&m.features.feature_thru_curve_construction_envelopes, r, ns),
-        len: |m| m.features.feature_thru_curve_construction_envelopes.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
         arena: "feature_surface_construction_payloads",
         tag: None,
         exactness: Exactness::ByteExact,
@@ -2883,6 +2873,36 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_branches, r, ns),
         len: |m| m.features.feature_surface_construction_branches.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_thru_curve_construction_branch_groups",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_thru_curve_construction_branch_groups,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_thru_curve_construction_branch_groups
+                .len()
+        },
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_thru_curve_construction_envelopes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_thru_curve_construction_envelopes, r, ns),
+        len: |m| m.features.feature_thru_curve_construction_envelopes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

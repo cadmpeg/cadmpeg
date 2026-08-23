@@ -2317,6 +2317,44 @@ pub struct FeatureThruCurveConstructionEnvelope {
     pub source_offset: u64,
 }
 
+/// One exact counted branch in a `THRU_CURVE` construction group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionBranch {
+    /// Zero-based branch order.
+    pub ordinal: u32,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Exact state lane after the repeated count.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<FeatureSurfaceBranchReference>,
+    /// Terminal reference.
+    pub terminal: FeatureSurfaceBranchReference,
+    /// Exact two-byte branch suffix.
+    pub suffix: [u8; 2],
+    /// Absolute source offset of the mode byte.
+    pub source_offset: u64,
+}
+
+/// Exact counted branch group after a `THRU_CURVE` construction envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionBranchGroup {
+    /// Globally unique branch-group identity.
+    pub id: String,
+    /// Owning `THRU_CURVE` operation label.
+    pub operation_label: String,
+    /// Serialized group count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered explicit branches.
+    pub branches: Vec<FeatureThruCurveConstructionBranch>,
+    /// Exact group terminator selected by the schema generation.
+    pub terminator: Vec<u8>,
+    /// Absolute source offset of the group count.
+    pub source_offset: u64,
+}
+
 /// Exact logical payload reconstructed from an ordered surface-construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionPayload {
@@ -7872,6 +7910,67 @@ pub fn feature_thru_curve_construction_envelopes(
         },
     );
     envelopes
+}
+
+/// Decode and resolve exact counted `THRU_CURVE` construction branches.
+pub fn feature_thru_curve_construction_branch_groups(
+    container: &Container,
+) -> Vec<FeatureThruCurveConstructionBranchGroup> {
+    let indexed = container.indexed_om_sections();
+    let mut groups = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(group) = crate::om::thru_curve_payload_branch_group(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
+                FeatureSurfaceBranchReference {
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            };
+            let branches = group
+                .branches
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, branch)| {
+                    let members = branch
+                        .members
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ordinal, reference)| resolve(ordinal, reference))
+                        .collect::<Vec<_>>();
+                    let terminal = resolve(members.len(), branch.terminal);
+                    FeatureThruCurveConstructionBranch {
+                        ordinal: ordinal as u32,
+                        mode: branch.mode,
+                        declared_count: branch.declared_count,
+                        state_lane: branch.state_lane,
+                        members,
+                        terminal,
+                        suffix: branch.suffix,
+                        source_offset: entry_offset + branch.offset as u64,
+                    }
+                })
+                .collect();
+            groups.push(FeatureThruCurveConstructionBranchGroup {
+                id: format!(
+                    "nx:feature-history:thru-curve-construction-branch-group#{operation_key}"
+                ),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                declared_count: group.declared_count,
+                branches,
+                terminator: group.terminator,
+                source_offset: entry_offset + group.offset as u64,
+            });
+        },
+    );
+    groups
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.

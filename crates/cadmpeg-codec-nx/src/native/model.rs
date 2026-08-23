@@ -199,11 +199,13 @@ pub(crate) struct FeatureRecords {
         Vec<FeatureDraftConstructionIdentityFrame>,
     pub(crate) feature_draft_construction_terminal_lanes: Vec<FeatureDraftConstructionTerminalLane>,
     pub(crate) feature_surface_construction_references: Vec<FeatureSurfaceConstructionReference>,
-    pub(crate) feature_thru_curve_construction_envelopes: Vec<FeatureThruCurveConstructionEnvelope>,
     pub(crate) feature_surface_construction_payloads: Vec<FeatureSurfaceConstructionPayload>,
     pub(crate) feature_surface_construction_scalar_pairs: Vec<FeatureSurfaceConstructionScalarPair>,
     pub(crate) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
     pub(crate) feature_surface_construction_branches: Vec<FeatureSurfaceConstructionBranch>,
+    pub(crate) feature_thru_curve_construction_branch_groups:
+        Vec<FeatureThruCurveConstructionBranchGroup>,
+    pub(crate) feature_thru_curve_construction_envelopes: Vec<FeatureThruCurveConstructionEnvelope>,
     pub(crate) feature_extrude_profile_references: Vec<FeatureExtrudeProfileReference>,
     pub(crate) feature_extrude_payload_headers: Vec<FeatureExtrudePayloadHeader>,
     pub(crate) feature_operation_body_scalar_triples: Vec<FeatureOperationBodyScalarTriple>,
@@ -769,8 +771,6 @@ impl NativeModel {
             feature_draft_construction_terminal_lanes(container);
         let feature_surface_construction_references =
             feature_surface_construction_references(container);
-        let feature_thru_curve_construction_envelopes =
-            feature_thru_curve_construction_envelopes(container);
         let feature_surface_construction_payloads = feature_surface_construction_payloads(
             container,
             &feature_surface_construction_references,
@@ -783,6 +783,10 @@ impl NativeModel {
             feature_surface_construction_strings(container, &feature_surface_construction_payloads);
         let feature_surface_construction_branches =
             feature_surface_construction_branches(container);
+        let feature_thru_curve_construction_branch_groups =
+            feature_thru_curve_construction_branch_groups(container);
+        let feature_thru_curve_construction_envelopes =
+            feature_thru_curve_construction_envelopes(container);
         let feature_extrude_profile_references = feature_extrude_profile_references(container);
         let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
         let feature_operation_body_scalar_triples =
@@ -1156,11 +1160,12 @@ impl NativeModel {
                 feature_draft_construction_identity_frames,
                 feature_draft_construction_terminal_lanes,
                 feature_surface_construction_references,
-                feature_thru_curve_construction_envelopes,
                 feature_surface_construction_payloads,
                 feature_surface_construction_scalar_pairs,
                 feature_surface_construction_strings,
                 feature_surface_construction_branches,
+                feature_thru_curve_construction_branch_groups,
+                feature_thru_curve_construction_envelopes,
                 feature_extrude_profile_references,
                 feature_extrude_payload_headers,
                 feature_operation_body_scalar_triples,

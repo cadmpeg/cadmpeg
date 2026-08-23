@@ -2215,6 +2215,40 @@ pub struct ThruCurvePayloadReferenceField {
     pub trailing_control: u8,
     /// Exact two-byte value selected by the `a0` marker.
     pub trailing_value: [u8; 2],
+    /// Absolute offset immediately after the envelope.
+    pub end_offset: usize,
+}
+
+/// One exact counted branch in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadBranch {
+    /// Absolute offset of the branch mode byte.
+    pub offset: usize,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Exact state lane after the repeated count.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<PayloadObjectReference>,
+    /// Terminal reference.
+    pub terminal: PayloadObjectReference,
+    /// Exact two-byte branch suffix.
+    pub suffix: [u8; 2],
+}
+
+/// Exact counted branch group after a `THRU_CURVE` reference envelope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadBranchGroup {
+    /// Absolute offset of the serialized group count.
+    pub offset: usize,
+    /// Serialized group count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered explicit branches.
+    pub branches: Vec<ThruCurvePayloadBranch>,
+    /// Exact group terminator selected by the schema generation.
+    pub terminator: Vec<u8>,
 }
 
 /// One counted construction branch in a surface-feature payload.
@@ -4769,6 +4803,116 @@ pub fn thru_curve_payload_references(
         references: references.try_into().ok()?,
         trailing_control,
         trailing_value,
+        end_offset: record.payload_offset + at + 7,
+    })
+}
+
+fn thru_curve_payload_branch(
+    record: OperationRecord<'_>,
+    at: usize,
+) -> Option<(ThruCurvePayloadBranch, usize)> {
+    let mode = *record.payload.get(at)?;
+    (mode != 0).then_some(())?;
+    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+        return None;
+    };
+    let mut cursor = at + 3;
+    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let offset = cursor;
+        let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+        cursor += width;
+        members.push(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..cursor].to_vec(),
+        });
+    }
+    (record.payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
+    cursor += 2;
+
+    let standard_len = usize::from(declared_count) + 3;
+    let standard = record
+        .payload
+        .get(cursor..cursor + standard_len)
+        .filter(|lane| lane.iter().all(|&byte| byte == 0))
+        .map(<[u8]>::to_vec);
+    let extended = (declared_count == 5)
+        .then(|| record.payload.get(cursor..cursor + 18))
+        .flatten()
+        .filter(|lane| {
+            lane[..4] == [0; 4]
+                && lane[4..6] == [0x01, declared_count]
+                && lane[10..12] == [0x01, declared_count]
+                && lane[16..] == [0; 2]
+        })
+        .map(<[u8]>::to_vec);
+    let ((Some(state_lane), None) | (None, Some(state_lane))) = (standard, extended) else {
+        return None;
+    };
+    cursor += state_lane.len();
+    (record.payload.get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    cursor += 3;
+    let terminal_offset = cursor;
+    let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+    cursor += width;
+    let terminal = PayloadObjectReference {
+        offset: record.payload_offset + terminal_offset,
+        object_index,
+        raw_object_index: record.payload[terminal_offset..cursor].to_vec(),
+    };
+    (*record.payload.get(cursor)? == 0x00).then_some(())?;
+    cursor += 1;
+    let suffix: [u8; 2] = record.payload.get(cursor..cursor + 2)?.try_into().ok()?;
+    (suffix[0] == 0x81 && matches!(suffix[1], 0x48 | 0x58)).then_some(())?;
+    cursor += suffix.len();
+
+    Some((
+        ThruCurvePayloadBranch {
+            offset: record.payload_offset + at,
+            mode,
+            declared_count,
+            state_lane,
+            members,
+            terminal,
+            suffix,
+        },
+        cursor,
+    ))
+}
+
+/// Decode the exact counted branch group after a bounded `THRU_CURVE`
+/// reference envelope.
+pub fn thru_curve_payload_branch_group(
+    record: OperationRecord<'_>,
+) -> Option<ThruCurvePayloadBranchGroup> {
+    const TERMINATORS: [&[u8]; 2] = [
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0xff, 0x01],
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
+    ];
+    let envelope = thru_curve_payload_references(record)?;
+    let mut at = envelope.end_offset.checked_sub(record.payload_offset)?;
+    let group_offset = at;
+    let declared_count @ 2.. = *record.payload.get(at)? else {
+        return None;
+    };
+    at += 1;
+    let mut branches = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let (branch, next) = thru_curve_payload_branch(record, at)?;
+        branches.push(branch);
+        at = next;
+    }
+    let terminator = TERMINATORS
+        .into_iter()
+        .find(|terminator| record.payload.get(at..at + terminator.len()) == Some(*terminator))?
+        .to_vec();
+    Some(ThruCurvePayloadBranchGroup {
+        offset: record.payload_offset + group_offset,
+        declared_count,
+        branches,
+        terminator,
     })
 }
 

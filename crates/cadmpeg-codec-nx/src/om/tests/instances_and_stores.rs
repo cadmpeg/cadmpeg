@@ -524,6 +524,51 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
         })
         .is_none()
     );
+
+    let mut branched = payload[..payload.len() - 1].to_vec();
+    branched.push(3);
+    let append_standard_branch = |bytes: &mut Vec<u8>, mode, first, terminal| {
+        bytes.extend([mode, 1, 2, 0xf0, first, 1, 2]);
+        bytes.extend([0; 5]);
+        bytes.extend([0xff, 1, 2, 0xf0, terminal, 0, 0x81, 0x58]);
+    };
+    append_standard_branch(&mut branched, 0x15, 0x31, 0x32);
+    append_standard_branch(&mut branched, 0x15, 0x33, 0x34);
+    branched.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+    branched.extend([0xaa, 0xbb]);
+    let group = super::thru_curve_payload_branch_group(super::OperationRecord {
+        bytes: &branched,
+        payload: &branched,
+        ..record
+    })
+    .expect("complete branch group");
+    assert_eq!(group.declared_count, 3);
+    assert_eq!(group.branches.len(), 2);
+    assert_eq!(group.branches[0].mode, 0x15);
+    assert_eq!(group.branches[0].declared_count, 2);
+    assert_eq!(group.branches[0].state_lane, [0; 5]);
+    assert_eq!(group.branches[0].members[0].object_index, 0x31);
+    assert_eq!(group.branches[0].terminal.object_index, 0x32);
+    assert_eq!(group.branches[0].suffix, [0x81, 0x58]);
+    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+
+    let mut extended = payload[..payload.len() - 1].to_vec();
+    extended.extend([2, 0x2f, 1, 5]);
+    for object_index in 0x41..0x45 {
+        extended.extend([0xf0, object_index]);
+    }
+    extended.extend([1, 5, 0, 0, 0, 0, 1, 5, 2, 3, 3, 2, 1, 5, 0, 1, 1, 1, 0, 0]);
+    extended.extend([0xff, 1, 2, 0xf0, 0x45, 0, 0x81, 0x48]);
+    extended.extend([0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
+    let group = super::thru_curve_payload_branch_group(super::OperationRecord {
+        bytes: &extended,
+        payload: &extended,
+        ..record
+    })
+    .expect("extended branch state");
+    assert_eq!(group.branches[0].state_lane.len(), 18);
+    assert_eq!(group.branches[0].members.len(), 4);
+    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
 }
 
 #[test]

@@ -575,18 +575,18 @@ construction ownership only.
 
 ### OM-26. `SKIN` and `THRU_CURVE` construction roles
 
-**Question.** Which ordered `SKIN` and `THRU_CURVE` references and `SKIN` branch groups select sections, guides, continuity, and terminal controls?
+**Question.** Which ordered `SKIN` and `THRU_CURVE` references and branch groups select sections, guides, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, ordered references, and the fourteen-block logical payload.
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, counted branch groups, ordered references, and the fourteen-block logical payload.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
 **Conflict.** The `SKIN` envelope preserves fourteen references in order, the
-`THRU_CURVE` envelope preserves nine references in order, and the `SKIN` branch
-groups preserve family, mode, members, and terminal references. These fields
-use shared reference grammars and provide no relation assigning sections,
-guides, continuity, or terminal controls. Scalar pairs and strings are
-payload-owned and do not add those roles.
+`THRU_CURVE` envelope preserves nine references in order, and both operations'
+branch groups preserve modes, state lanes, members, and terminal references.
+These fields use shared reference grammars and provide no relation assigning
+sections, guides, continuity, or terminal controls. Scalar pairs and strings
+are payload-owned and do not add those roles.
 
 ### OM-27. `Studio Surface` construction roles
 
