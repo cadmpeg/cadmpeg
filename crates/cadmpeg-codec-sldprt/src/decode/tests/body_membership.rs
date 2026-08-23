@@ -157,6 +157,42 @@ fn class_root_body_relation_selects_missing_deltas_face() {
 }
 
 #[test]
+fn explicit_delta_body_selector_binds_new_face_through_partition_anchor() {
+    let mut partition = entity51(2, 500, 0x0017, &[700, 1, 1, 1, 1, 1, 1]);
+    partition.extend(entity51(1, 700, 0x0014, &[10, 1, 1, 1, 1, 1]));
+    partition.extend(owned_triangle(0, 700, 0.0));
+
+    let mut deltas = vec![0x00, 0x51];
+    be32(&mut deltas, 2);
+    be16(&mut deltas, 501);
+    be32(&mut deltas, 1);
+    be16(&mut deltas, 0x0017);
+    for reference in [700, 701, 1, 1, 1, 1, 1] {
+        deltas.push(1);
+        be16(&mut deltas, reference);
+    }
+    deltas.push(0);
+    deltas.extend(entity51(1, 701, 0x0014, &[210, 1, 1, 1, 1, 1]));
+    deltas.extend(owned_triangle(200, 701, 2.0));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 2);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.taxonomy() != LossTaxonomy::TopologyNotTransferred));
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+}
+
+#[test]
 fn duplicate_face_uses_emit_one_face() {
     let mut body = triangle_body();
     let first_bridge = body

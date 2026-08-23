@@ -665,6 +665,110 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
     }
 }
 
+fn body_claims_face(
+    body: &entity::BodyRecord,
+    face: &WalkedFace,
+    bridges: &HashMap<u16, Record>,
+) -> bool {
+    body.refs.contains(&face.bridge_attr)
+        || bridges
+            .get(&face.bridge_attr)
+            .and_then(|bridge| bridge.owner)
+            .is_some_and(|owner| body.refs.contains(&owner))
+}
+
+fn selector_reaches_face(
+    selector: &entity::BodyRecord,
+    face: &WalkedFace,
+    bridges: &HashMap<u16, Record>,
+) -> bool {
+    selector.refs.contains(&face.bridge_attr)
+        || bridges
+            .get(&face.bridge_attr)
+            .and_then(|bridge| bridge.owner)
+            .is_some_and(|owner| selector.refs.contains(&owner))
+}
+
+/// Map a final deltas body selector to one partition body.
+///
+/// A selector's body attribute is the primary join. A changed body may carry
+/// a new attribute, so the fallback is a unique intersection of the selector
+/// with face bridge identities already claimed by one partition body. Random
+/// shared entity references, sole-body inference, and geometric proximity do
+/// not qualify as membership evidence.
+fn final_selector_body_group(
+    selector: &entity::BodyRecord,
+    body_records: &[entity::BodyRecord],
+    faces: &[WalkedFace],
+    bridges: &HashMap<u16, Record>,
+) -> Option<usize> {
+    let exact = body_records
+        .iter()
+        .enumerate()
+        .filter(|(_, body)| body.attr == selector.attr)
+        .map(|(group, _)| group)
+        .collect::<Vec<_>>();
+    if let [group] = exact.as_slice() {
+        return Some(*group);
+    }
+    if !exact.is_empty() {
+        return None;
+    }
+
+    let candidates = body_records
+        .iter()
+        .enumerate()
+        .filter(|(_, body)| {
+            faces.iter().any(|face| {
+                body_claims_face(body, face, bridges)
+                    && selector_reaches_face(selector, face, bridges)
+            })
+        })
+        .map(|(group, _)| group)
+        .collect::<Vec<_>>();
+    let [group] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*group)
+}
+
+/// Bind faces that are both selected by a final deltas body relation and
+/// mapped to one partition body. The existing explicit body binding remains
+/// authoritative; this only fills selected delta-only face bridges.
+fn bind_final_selector_faces(
+    body_records: &[entity::BodyRecord],
+    selectors: &[entity::BodyRecord],
+    faces: &[WalkedFace],
+    bridges: &HashMap<u16, Record>,
+    bridge_group: &mut HashMap<u16, usize>,
+) {
+    let selector_groups = selectors
+        .iter()
+        .enumerate()
+        .filter_map(|(selector_index, selector)| {
+            final_selector_body_group(selector, body_records, faces, bridges)
+                .map(|group| (selector_index, group))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for face in faces {
+        if bridge_group.contains_key(&face.bridge_attr) {
+            continue;
+        }
+        let mut groups = selectors
+            .iter()
+            .enumerate()
+            .filter(|(_, selector)| selector_reaches_face(selector, face, bridges))
+            .filter_map(|(selector_index, _)| selector_groups.get(&selector_index).copied())
+            .collect::<Vec<_>>();
+        groups.sort_unstable();
+        groups.dedup();
+        if let [group] = groups.as_slice() {
+            bridge_group.insert(face.bridge_attr, *group);
+        }
+    }
+}
+
 fn sense_of(marker: u8) -> Sense {
     if marker == 0x2d {
         Sense::Reversed
@@ -798,7 +902,13 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             (body, header.schema.as_str(), is_deltas)
         })
         .collect::<Vec<_>>();
-    let final_state_refs = entity::scan_final_bridge_selector(&entity_streams);
+    let final_body_selectors = entity::final_state::scan_final_body_selectors(&entity_streams);
+    let final_state_refs = final_body_selectors.as_ref().map(|selectors| {
+        selectors
+            .iter()
+            .flat_map(|body| body.refs.iter().copied())
+            .collect::<HashSet<_>>()
+    });
     let combined_body_facts =
         (entity_streams.len() > 1).then(|| entity::scan_combined_bodies(&entity_streams));
     for (stream_order, (payload, header)) in ordered.into_iter().enumerate() {
@@ -865,6 +975,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
         }
     }
+    facts.final_body_selectors = final_body_selectors.unwrap_or_default();
     if facts.bodies.is_empty() {
         if let Some((bodies, ambiguous_body_assignments)) = combined_body_facts {
             if !bodies.is_empty() {
@@ -970,6 +1081,7 @@ fn decode_graph(
     let mut body_records = entity_facts.bodies;
     let class_root_bodies = entity_facts.class_root_bodies;
     let cluster_bodies = entity_facts.cluster_bodies;
+    let final_body_selectors = entity_facts.final_body_selectors;
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
     let (face_colors, conflicting_face_colors) =
         unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
@@ -1491,6 +1603,7 @@ fn decode_graph(
     };
     let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
     let mut class_root_selected = false;
+    let mut cluster_selected = false;
     if !class_root_bodies.is_empty() {
         let (root_group, root_shell) = complete_cluster_binding(&class_root_bodies);
         if !root_group.is_empty() {
@@ -1511,7 +1624,17 @@ fn decode_graph(
             body_records = cluster_bodies;
             bridge_group = cluster_group;
             bridge_shell = cluster_shell;
+            cluster_selected = true;
         }
+    }
+    if !class_root_selected && !cluster_selected && !final_body_selectors.is_empty() {
+        bind_final_selector_faces(
+            &body_records,
+            &final_body_selectors,
+            &faces,
+            &t.bridges,
+            &mut bridge_group,
+        );
     }
     if !body_records.is_empty() {
         out.stats.unclaimed_faces += faces

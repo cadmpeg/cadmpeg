@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::layout::class_root_directory_prefix as class_root;
 use crate::layout::entity_common_header as entity_hdr;
 
+pub(crate) mod final_state;
 mod record_lattice;
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,10 @@ pub struct Facts {
     pub face_atoms: Vec<super::attrib::FaceAtom>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub body_modifiers: Vec<super::attrib::BodyModifier>,
+    /// Final-state body relations carried by a deltas stream. These selectors
+    /// retain the body identity and reference closure needed to bind selected
+    /// delta-only face bridges to an existing partition body.
+    pub final_body_selectors: Vec<BodyRecord>,
 }
 
 #[derive(Debug, Clone)]
@@ -434,23 +439,8 @@ fn scan_with_framing(body: &[u8], schema: &str, prefixed: bool) -> Facts {
         face_colors,
         face_atoms: super::attrib::scan(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
+        final_body_selectors: Vec::new(),
     }
-}
-
-/// Reconstruct the bridge selector carried by explicit deltas body relations.
-///
-/// Deltas entity records are ordered after partition records. Equal-sequence
-/// records therefore select the deltas framing while references can still
-/// resolve to unchanged partition records.
-pub fn scan_final_bridge_selector(streams: &[(&[u8], &str, bool)]) -> Option<HashSet<u16>> {
-    let (entities, has_deltas_body_root) = scan_stream_entities(streams);
-    has_deltas_body_root.then(|| {
-        bodies(&entities)
-            .0
-            .into_iter()
-            .flat_map(|body| body.refs)
-            .collect()
-    })
 }
 
 /// Combine body records from related partition and deltas streams.
@@ -520,15 +510,22 @@ fn scan_combined_body_entities(streams: &[(&[u8], &str, bool)]) -> Vec<EntityRec
     );
     partition_entities
 }
-fn scan_stream_entities(streams: &[(&[u8], &str, bool)]) -> (Vec<EntityRecord>, bool) {
+fn scan_stream_entities(streams: &[(&[u8], &str, bool)]) -> (Vec<EntityRecord>, HashSet<u16>) {
     let mut entities = Vec::new();
-    let mut has_deltas_body_root = false;
+    let mut delta_body_attrs = HashSet::new();
     for (body, schema, is_deltas) in streams {
         let scanned = scan_entities(body, schema, *is_deltas);
-        has_deltas_body_root |= *is_deltas && scanned.iter().any(is_explicit_body_root);
+        if *is_deltas {
+            delta_body_attrs.extend(
+                scanned
+                    .iter()
+                    .filter(|record| is_explicit_body_root(record))
+                    .map(|record| record.attr),
+            );
+        }
         entities.extend(scanned);
     }
-    (entities, has_deltas_body_root)
+    (entities, delta_body_attrs)
 }
 
 /// Decode cluster-key chain bodies ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#6-body-records)).
