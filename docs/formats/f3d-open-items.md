@@ -175,6 +175,81 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Need.** A neutral `FaceFromShapes` projection requires a proven mapping from each ordered source identity to its source shape and face-maker semantics. Until that mapping is established, the source carrier remains native data.
 
+### DR-68. Grouped `SurfacePatch` recipe-reference precedence
+
+**Question.** Which field selects the edge reference for each member of a
+grouped `SurfacePatch` boundary when more than one recipe reference has a
+nonempty exact edge-candidate set?
+
+**Known.** Each recipe reference retains its selector, token, Design references,
+source order, and complete exact and alternate candidate sets. Source order does
+not establish that an earlier reference overrides a later reference.
+
+**Need.** We must decode the reference role or selector relation that binds one
+edge to each group member and rejects contradictory references.
+
+**Conflict.** `surface_patch_grouped_recipe_edges` in
+`src/design/edge_resolve.rs` selects the first recipe reference with a nonempty
+exact edge-candidate set. It does not require later nonempty references to select
+the same edge. Two individually unique but contradictory references therefore
+project the edge selected by record order.
+
+### DR-69. Single-member edge-treatment identity
+
+**Question.** Which serialized operand identity binds the sole edge member of a
+`Fillet` or `Chamfer` scope when its recipe and persistent-selection fields do
+not resolve the edge?
+
+**Known.** The complete ASM history transition identifies every predecessor
+edge deleted by the operation. Deletion is operation-level topology evidence;
+it is not by itself an operand-to-edge identity relation.
+
+**Need.** We must decode the operand binding before assigning a deleted
+predecessor edge as the selected treatment edge.
+
+**Conflict.** `bind_edge_operand_history_candidates` in `src/history.rs`
+assigns the sole deleted predecessor edge when the scope contains one edge
+operand and no other proof resolved it. A different edge deleted by the same
+transition can therefore be projected as the treatment operand.
+
+### DR-70. Unstructured edge-recipe selection semantics
+
+**Question.** What do the retained words of an edge-recipe program that does not
+admit the standard structured tail select?
+
+**Known.** The decoder retains the complete recipe program, prefix references,
+selectors, topology triplets, history transition, and before-and-after topology.
+These sources independently constrain candidate edges but do not establish that
+geometric or topology-delta reconstruction is the stored recipe semantics.
+
+**Need.** We must decode the program fields that bind each operand to its
+persistent edge selection and distinguish identity fields from validation or
+topology context.
+
+**Conflict.** The history projection uses reference-set intersections,
+incidence and boundary-count matches, positional triplet combinations, deleted
+edge intersections, perfect assignments, and group cardinality to resolve an
+unstructured recipe. These are candidate-reconstruction policies. They do not
+decode the recipe program and can assign a topology-consistent edge that the
+stored operand did not select.
+
+### DR-71. BREP selection without Design body binding
+
+**Question.** Which container or Design relation selects model geometry when no
+decoded Design body-to-BREP binding is present?
+
+**Known.** Binary ASM headers identify history-partition streams. The archive
+can contain several Design BREP streams, and stream uniqueness does not state
+body ownership or active-model selection.
+
+**Need.** We must decode the model-to-stream binding before treating one
+available BREP as the document's selected model geometry.
+
+**Conflict.** `select_fallback_brep` in `src/container.rs` selects the unique
+history-bearing Design BREP, or otherwise the sole Design BREP, when explicit
+body bindings are absent. This compatibility fallback substitutes archive
+cardinality and a history flag for the missing semantic model binding.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
