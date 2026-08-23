@@ -77,6 +77,28 @@ fn local_system_suffix_row(type_byte: u8, local_system: &[u8], suffix: &[u8]) ->
     payload
 }
 
+fn push_inline_test_negative_coordinate(bytes: &mut Vec<u8>, value: f64) {
+    let raw = value.to_be_bytes();
+    assert_eq!(raw[0], 0xc0, "test coordinate must be negative");
+    bytes.push(0x2d);
+    bytes.extend_from_slice(&raw[1..]);
+}
+
+fn inline_11_10_13_cylinder_row(first_bound: f64, center: f64, second_bound: f64) -> Vec<u8> {
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0, 0x11, 0x10, 0x13, 0x18];
+    push_inline_test_negative_coordinate(&mut payload, first_bound);
+    payload.push(0x10);
+    push_inline_test_negative_coordinate(&mut payload, center);
+    push_inline_test_negative_coordinate(&mut payload, second_bound);
+    payload.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0, 0x0e, 0xf7, 0x17, 0xe3]);
+    payload.extend_from_slice(&[0x10, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x10]);
+    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    payload.push(0x18);
+    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    payload.extend_from_slice(&[0x0f, 0xe3]);
+    payload
+}
+
 fn legacy_planar_cone_suffix_row(local_system: &[u8], suffix: &[u8]) -> Vec<u8> {
     let mut payload = vec![7, 0x25, 4, 0x01, 0, 0, 0x17];
     push_inline_test_scalar(&mut payload, 7.0);
@@ -216,6 +238,33 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(cylinder_frame.radius, 1.0);
     assert_eq!(cylinder_frame.length, None);
     assert!(cylinder.has_inline_non_plane_local_system_suffix(0x24));
+}
+
+#[test]
+fn cylinder_inline_suffix_uses_the_11_10_13_placement_witness() {
+    let record = parameter_records(&inline_11_10_13_cylinder_row(-3.0, -4.0, -5.0)).remove(0);
+    let frame = record
+        .positional_cylinder_frame
+        .expect("placement-witnessed inline cylinder");
+    assert_eq!(frame.origin, [-4.0, 0.0, -4.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, None);
+
+    let mut alternate_replay = inline_11_10_13_cylinder_row(-3.0, -4.0, -5.0);
+    let replay_offset = alternate_replay
+        .windows(2)
+        .position(|window| window == [0xf7, 0x17])
+        .expect("replay trailer");
+    alternate_replay[replay_offset + 1] = 0x40;
+    assert!(parameter_records(&alternate_replay)
+        .remove(0)
+        .positional_cylinder_frame
+        .is_some());
+
+    let inconsistent = parameter_records(&inline_11_10_13_cylinder_row(-2.0, -4.0, -5.0)).remove(0);
+    assert!(inconsistent.positional_cylinder_frame.is_none());
 }
 
 #[test]

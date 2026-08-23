@@ -276,7 +276,7 @@ construct their curves and endpoints.
 
 **Question.** What model-space equation does each positional cylinder body outside the defined local-system, compact axis-aligned, referenced planar-envelope, held-axis axial/radial, and repeated-diameter forms encode?
 
-**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants.
+**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 

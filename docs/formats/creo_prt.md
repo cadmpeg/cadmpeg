@@ -817,6 +817,20 @@ signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
 
+An inline cylinder may use the `11 10 13` placement-witness prefix before the
+local-system suffix. The prefix stores one zero auxiliary slot, transverse
+bounds `b0`, `b1` separated by literal `10`, the other transverse center
+coordinate `c`, one complete `19` or `32` model-reference token, the signed-half
+marker `0e`, and one `f7 <reference>` replay trailer. The omitted axial center
+coordinate is zero. The prefix placement is
+`origin = (midpoint(b0, b1), 0, c)`, `axis = +Z`,
+`ref_direction = sign(b0 - b1) X`, `radius = abs(b0 - b1) / 2`, and no bounded
+axial extent. The `e3` after the replay trailer starts the local-system suffix.
+The suffix must provide one complete finite orthonormal frame and one positive
+radius. Its candidate placement must agree with the prefix origin, +Z axis,
+and radius; the prefix then resolves any compact-image sign ambiguity. A
+missing or conflicting witness retains the row as native data.
+
 A compound-local-system positional cylinder stores one complete twelve-slot
 support frame and one positive radius between two compound closes. Row-local
 control bytes can follow the second close. In its reflected XY support form,

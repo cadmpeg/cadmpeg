@@ -3798,11 +3798,64 @@ fn inline_suffix_witness(
     let prefix_end = local_start.checked_sub(1)?;
     let prefix = body.get(..prefix_end)?;
     match kind {
+        SurfaceKind::Cylinder => {
+            decode_11_10_13_cylinder_witness(prefix, cache).map(InlineSurfaceCarrier::Cylinder)
+        }
         SurfaceKind::Cone => {
             decode_planar_envelope_cone_frame(prefix, cache).map(InlineSurfaceCarrier::Cone)
         }
         _ => None,
     }
+}
+
+/// Decode the placement witness preceding an inline cylinder suffix.
+///
+/// The `11 10 13` prefix stores a zero auxiliary slot, two transverse bounds,
+/// the other transverse center coordinate, a model reference, a signed-half
+/// marker, and a replay reference. The axial center coordinate is omitted and
+/// is zero. The bounds identify the cylinder center and radius; the suffix
+/// supplies the complete local-system frame and confirms the Z-axis family.
+fn decode_11_10_13_cylinder_witness(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x10, 0x13]).then_some(())?;
+    let decode = |cursor| {
+        let (value, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        value.is_finite().then_some((value, next))
+    };
+    let (auxiliary, mut cursor) = decode(3)?;
+    (auxiliary == 0.0).then_some(())?;
+    let (first_bound, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x10)).then_some(())?;
+    cursor += 1;
+    let (center, next) = decode(cursor)?;
+    cursor = next;
+    let (second_bound, next) = decode(cursor)?;
+    cursor = next;
+    matches!(body.get(cursor), Some(0x19 | 0x32)).then_some(())?;
+    let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x0e)).then_some(())?;
+    cursor += 1;
+    (body.get(cursor) == Some(&0xf7)).then_some(())?;
+    let (_, cursor) = psb::reference_id(body, cursor + 1).ok()?;
+    (cursor == body.len()).then_some(())?;
+
+    let scale = [first_bound, second_bound, center]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let radius = 0.5 * (first_bound - second_bound).abs();
+    (radius > EPS_INLINE_WITNESS * scale).then_some(())?;
+    Some(PositionalCylinderFrame {
+        origin: [f64::midpoint(first_bound, second_bound), 0.0, center],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [(first_bound - second_bound).signum(), 0.0, 0.0],
+        radius,
+        length: None,
+    })
 }
 
 fn inline_suffix_witness_agrees(
@@ -3814,6 +3867,30 @@ fn inline_suffix_witness_agrees(
         return false;
     }
     match witness {
+        InlineSurfaceCarrier::Cylinder(witness) => {
+            let matching = candidates
+                .iter()
+                .filter(|candidate| {
+                    let InlineSurfaceCarrier::Cylinder(candidate) = **candidate else {
+                        return false;
+                    };
+                    let axis_dot = witness
+                        .axis
+                        .into_iter()
+                        .zip(candidate.axis)
+                        .map(|(left, right)| left * right)
+                        .sum::<f64>();
+                    witness
+                        .origin
+                        .into_iter()
+                        .zip(candidate.origin)
+                        .all(|(left, right)| inline_close(left, right))
+                        && inline_close(witness.radius, candidate.radius)
+                        && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
+                })
+                .count();
+            matching == 1
+        }
         InlineSurfaceCarrier::Cone(witness) => candidates.iter().all(|candidate| {
             let InlineSurfaceCarrier::Cone(candidate) = *candidate else {
                 return false;
@@ -3827,7 +3904,7 @@ fn inline_suffix_witness_agrees(
             inline_close(witness.half_angle, candidate.half_angle)
                 && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
         }),
-        _ => false,
+        InlineSurfaceCarrier::Torus(_) => false,
     }
 }
 
