@@ -13314,6 +13314,219 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
 }
 
 #[test]
+fn type404_entity_table_boundary_follows_view_and_annotation_lists() {
+    let association = directory_target(1, 212);
+    let annotation = directory_target(3, 212);
+    let property = directory_target(5, 406);
+    let view = directory_target(7, 410);
+    for (form, values, expected_start) in [
+        (
+            0_i64,
+            vec![
+                404_i64.into(),
+                1_i64.into(),
+                7_i64.into(),
+                10_i64.into(),
+                20_i64.into(),
+                1_i64.into(),
+                3_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+            7_usize,
+        ),
+        (
+            1_i64,
+            vec![
+                404_i64.into(),
+                1_i64.into(),
+                7_i64.into(),
+                10_i64.into(),
+                20_i64.into(),
+                TokenValue::Real(0.5),
+                1_i64.into(),
+                3_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+            8,
+        ),
+    ] {
+        let mut source = directory_target(9, 404);
+        source.form = form;
+        let directory = BTreeMap::from([
+            (1, &association),
+            (3, &annotation),
+            (5, &property),
+            (7, &view),
+            (9, &source),
+        ]);
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(9, values), &directory);
+        assert_eq!(analysis.candidate_count, 1, "form={form}");
+        assert_eq!(analysis.valid_candidate_count, 1, "form={form}");
+        let groups = analysis.groups.expect("Type 404 table boundary");
+        assert_eq!(groups.token_start, expected_start, "form={form}");
+        assert_eq!(groups.associations, vec![1], "form={form}");
+        assert_eq!(groups.properties, vec![5], "form={form}");
+    }
+
+    let mut source = directory_target(9, 404);
+    source.form = 0;
+    let directory = BTreeMap::from([
+        (1, &association),
+        (3, &annotation),
+        (5, &property),
+        (7, &view),
+        (9, &source),
+    ]);
+    let analysis = analyze_trailing_pointer_groups(
+        &token_parameter_record(
+            9,
+            vec![
+                404_i64.into(),
+                TokenValue::Omitted,
+                1_i64.into(),
+                3_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                1_i64.into(),
+                5_i64.into(),
+            ],
+        ),
+        &directory,
+    );
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis
+        .groups
+        .expect("Type 404 omitted-count table boundary");
+    assert_eq!(groups.token_start, 4);
+    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type404_table_boundary_precedes_valid_generic_alternative() {
+    let association_1 = directory_target(1, 212);
+    let association_3 = directory_target(3, 212);
+    let annotation = directory_target(2, 212);
+    let property = directory_target(5, 406);
+    let view = directory_target(7, 410);
+    let mut source = directory_target(9, 404);
+    source.form = 0;
+    let directory = BTreeMap::from([
+        (1, &association_1),
+        (2, &annotation),
+        (3, &association_3),
+        (5, &property),
+        (7, &view),
+        (9, &source),
+    ]);
+    let record = token_parameter_record(
+        9,
+        vec![
+            404_i64.into(),
+            1_i64.into(),
+            7_i64.into(),
+            10_i64.into(),
+            20_i64.into(),
+            1_i64.into(),
+            2_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+    );
+    let valid_starts = structural_pointer_group_candidates(&record)
+        .into_iter()
+        .filter(|candidate| {
+            groups_for_candidate(&record, &directory, *candidate)
+                .is_some_and(|groups| groups.fully_valid)
+        })
+        .map(|candidate| candidate.token_start)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_starts, vec![6, 7]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis.groups.expect("Type 404 table boundary");
+    assert_eq!(groups.token_start, 7);
+    assert_eq!(groups.associations, vec![1]);
+    assert_eq!(groups.properties, vec![5]);
+}
+
+#[test]
+fn type404_malformed_counts_or_spans_do_not_enable_generic_recovery() {
+    let association = directory_target(1, 212);
+    let property = directory_target(5, 406);
+    let view = directory_target(7, 410);
+    let mut source = directory_target(9, 404);
+    source.form = 1;
+    let directory = BTreeMap::from([(1, &association), (5, &property), (7, &view), (9, &source)]);
+    let malformed: Vec<Vec<TokenValue>> = vec![
+        vec![
+            404_i64.into(),
+            TokenValue::String(b"bad-view-count".to_vec()),
+            7_i64.into(),
+            10_i64.into(),
+            20_i64.into(),
+            TokenValue::Real(0.5),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![
+            404_i64.into(),
+            (-1_i64).into(),
+            7_i64.into(),
+            10_i64.into(),
+            20_i64.into(),
+            TokenValue::Real(0.5),
+            1_i64.into(),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+        vec![404_i64.into(), 1_i64.into(), 7_i64.into(), 10_i64.into()],
+        vec![
+            404_i64.into(),
+            1_i64.into(),
+            7_i64.into(),
+            10_i64.into(),
+            20_i64.into(),
+            1_i64.into(),
+        ],
+        vec![
+            404_i64.into(),
+            1_i64.into(),
+            7_i64.into(),
+            10_i64.into(),
+            20_i64.into(),
+            1_i64.into(),
+            TokenValue::String(b"bad-annotation-count".to_vec()),
+            1_i64.into(),
+            1_i64.into(),
+            5_i64.into(),
+        ],
+    ];
+    for values in malformed {
+        let analysis =
+            analyze_trailing_pointer_groups(&token_parameter_record(9, values), &directory);
+        assert_eq!(analysis.candidate_count, 0);
+        assert_eq!(analysis.valid_candidate_count, 0);
+        assert!(analysis.groups.is_none());
+    }
+}
+
+#[test]
 fn type141_entity_table_boundary_uses_nested_curve_counts() {
     for (counts, expected_start) in [
         (vec![0_i64], 8_usize),

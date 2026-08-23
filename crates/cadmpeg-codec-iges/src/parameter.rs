@@ -773,6 +773,7 @@ pub(crate) fn entity_primary_end(
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 19) => Some(segmented_visibility_primary_end(record)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
+        (404, 0 | 1) => Some(drawing_primary_end(record, entry.form)),
         (406, 1 | 14) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
         (406, 3) => Some(level_function_primary_end(record)),
@@ -1478,6 +1479,37 @@ fn units_data_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_mul(3))
         .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn drawing_primary_end(record: &ParameterRecord, form: i64) -> usize {
+    let view_width = match form {
+        0 => 3,
+        1 => 4,
+        _ => return record.tokens.len(),
+    };
+    let Some(view_count) = record
+        .integer_or(1, 0)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(annotation_count_index) = view_count
+        .checked_mul(view_width)
+        .and_then(|span| span.checked_add(2))
+    else {
+        return record.tokens.len();
+    };
+    let Some(annotation_count) = record
+        .integer_or(annotation_count_index, 0)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    annotation_count_index
+        .checked_add(1)
+        .and_then(|start| start.checked_add(annotation_count))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }

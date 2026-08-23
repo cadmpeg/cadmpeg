@@ -257,6 +257,8 @@ The decoder now also applies the table boundary to Type 180 Forms 0 and 1, Type 
 
 The decoder now also applies the table boundary to Type 410 Forms 0 and 1, Type 416 Forms 0 through 4, Type 420 Form 0, and Type 430 Forms 0 and 1; the remaining supported layouts still use the generic fallback until their table rules are proven.
 
+Type 404 Forms 0 and 1 are settled. Under [IGES 4.0 §4.3.4](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) and [IGES 5.3 §4.96](https://paulbourke.net/dataformats/iges/IGES.pdf), `N` is at Parameter index 1, each Form 0 view consumes three fields, each Form 1 view consumes four fields, `M` follows the view blocks, and the `M` annotation pointers follow it. The first trailing pointer-group count is token `3 + 3*N + M` for Form 0 or `3 + 4*N + M` for Form 1. Omitted `N` and `M` use the standard zero default. `parameter.rs::entity_primary_end` applies the checked two-list boundary and suppresses generic recovery for negative, wrong-typed, overflowing, or truncated counts and spans. The owner tests `type404_entity_table_boundary_follows_view_and_annotation_lists`, `type404_table_boundary_precedes_valid_generic_alternative`, and `type404_malformed_counts_or_spans_do_not_enable_generic_recovery` cover both forms, an adjacent target-valid generic start, and malformed or truncated counts and spans.
+
 Type 132 Form 0 now uses its fourteen-field table boundary before generic recovery; the remaining supported layouts still use the generic fallback until their table rules are proven.
 
 Type 168 Form 0 now uses its twelve-field table boundary before generic recovery; the remaining supported layouts still use the generic fallback until their table rules are proven.
