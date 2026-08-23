@@ -387,6 +387,52 @@ fn type322_attribute_list_value_follows_the_declared_dialect() {
 }
 
 #[test]
+fn type322_accepts_no_value_and_not_used_data_types() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let parameters = "322,3HROW,0,2,10,0,1,,11,5,1,,;";
+
+    for global in [&global_v4[..], &global_v5[..]] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 322,
+                        form: 1,
+                        label: "ATTRROW".into(),
+                        status: "00000200",
+                        parameters: parameters.into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let definition =
+            &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"][0];
+        assert_eq!(definition.fields()["attributes"][0]["value_data_type"], 0);
+        assert_eq!(definition.fields()["attributes"][1]["value_data_type"], 5);
+        assert_eq!(
+            definition.fields()["attributes"][0]["values"][0]["value"]["kind"],
+            "omitted"
+        );
+        assert_eq!(
+            definition.fields()["attributes"][1]["values"][0]["value"]["kind"],
+            "omitted"
+        );
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(

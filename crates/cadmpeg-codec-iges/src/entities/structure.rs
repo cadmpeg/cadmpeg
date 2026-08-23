@@ -462,9 +462,9 @@ fn attribute_value_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     match (data_type, record.value(index)) {
-        (1, Some(TokenValue::Integer(_)))
-        | (3, Some(TokenValue::String(_)))
-        | (5, Some(TokenValue::Omitted)) => true,
+        (0 | 5, Some(TokenValue::Omitted))
+        | (1, Some(TokenValue::Integer(_)))
+        | (3, Some(TokenValue::String(_))) => true,
         (2, Some(TokenValue::Integer(_) | TokenValue::Real(_))) => {
             record.number(index).is_some_and(f64::is_finite)
         }
@@ -1624,7 +1624,7 @@ pub(super) fn project(
             let attribute_type_valid = record.integer(cursor).is_some();
             let data_type = record
                 .integer(cursor + 1)
-                .filter(|value| matches!(value, 1..=6));
+                .filter(|value| matches!(value, 0..=6));
             let value_count = match record.value(cursor + 2) {
                 None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
                 Some(TokenValue::Integer(value)) => {
