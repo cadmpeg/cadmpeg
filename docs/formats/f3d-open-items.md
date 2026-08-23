@@ -204,6 +204,14 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 **Need.** A neutral `FaceFromShapes` projection requires a proven mapping from each ordered source identity to its source shape and face-maker semantics. Until that mapping is established, the source carrier remains native data.
 
+### DR-68. EntityGenesis member-run head arbitration
+
+**Question.** Which indexed record instance does the paired same-index head reference select when its target record index has multiple frames?
+
+**Known.** `f3d.md` §3.1 "A member-run sketch's `EntityGenesis`-form entity header" gives the paired prefix and the target head record index. The decoder indexes every header for one record index, but `parse_member_run_head_placement` selects the first offset for that index without checking that the index has one valid head frame or using a contextual discriminator. Other candidate-based placement readers enumerate matching frames and require one candidate.
+
+**Need.** A reader must select the referenced head transform without using record order as identity. A writer must emit a reference that remains unambiguous when a stream contains more than one frame for the target index. The deciding discriminator, or a proof that the target index is unique for this carrier, is not established.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
