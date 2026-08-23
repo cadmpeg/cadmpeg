@@ -2234,6 +2234,11 @@ fn build_geometry_ir(
         &histories,
         parameter_identity_lanes(&lanes),
     );
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        lanes.iter().chain(supplemental_config_lanes.iter()),
+    );
     crate::resolved_features::projections::type_display_relation_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3330,6 +3335,11 @@ fn build_metadata_ir(
         &ir.model.features,
         &histories,
         parameter_identity_lanes(&lanes),
+    );
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        lanes.iter().chain(supplemental_config_lanes.iter()),
     );
     crate::resolved_features::projections::type_display_relation_parameters(
         &mut ir.model.parameters,

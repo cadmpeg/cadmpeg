@@ -410,6 +410,47 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             .as_ref(),
         Some(&parameter.id)
     );
+    let mut mismatched_parameter = parameter.clone();
+    mismatched_parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    assert_eq!(
+        relation_parameter_by_display_name(
+            &relation,
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&mismatched_parameter),
+        )
+        .map(|parameter| &parameter.id),
+        None
+    );
+    let mut synthesized_parameters = vec![mismatched_parameter];
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut synthesized_parameters,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&FeatureInputLane {
+            relation_instances: vec![relation.clone()],
+            ..lane.clone()
+        }),
+    );
+    let synthetic = synthesized_parameters
+        .iter()
+        .find(|parameter| {
+            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+        })
+        .expect("display-only relation parameter");
+    assert_eq!(synthetic.value, Some(ParameterValue::Length(Length(12.0))));
+    assert!(synthetic.native_ref.is_none());
+    assert_eq!(
+        owned_relation_parameters(
+            std::slice::from_ref(&feature),
+            &synthesized_parameters,
+            std::slice::from_ref(&FeatureInputLane {
+                relation_instances: vec![relation.clone()],
+                ..lane.clone()
+            }),
+        )["relation"]
+            .as_ref(),
+        Some(&synthetic.id)
+    );
     let mut exact_parameter = parameter.clone();
     exact_parameter.native_ref = Some("scalar".into());
     let mut exact_lane = lane.clone();

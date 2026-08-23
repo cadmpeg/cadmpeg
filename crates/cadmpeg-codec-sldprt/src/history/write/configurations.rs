@@ -46,6 +46,7 @@ use crate::history::parameters::{
     exact_integer_f64, global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
 use crate::history::project::project_configurations;
+use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 /// Resolve neutral/native configuration edit authority before writing.
 ///
@@ -204,6 +205,35 @@ pub(crate) fn sync_configuration_design_state(
             "conflicting neutral and native SLDPRT configuration design-state edits".into(),
         ));
     }
+    let reference_parameters = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| is_reference_relation_parameter(parameter))
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    for configuration in &ir.model.configurations {
+        let Some(current) = current_projection
+            .model
+            .configurations
+            .iter()
+            .find(|candidate| candidate.id == configuration.id)
+        else {
+            continue;
+        };
+        for (parameter_id, desired) in &configuration.parameter_values {
+            let Some(parameter) = reference_parameters.get(parameter_id) else {
+                continue;
+            };
+            let current = current.parameter_values.get(parameter_id);
+            if current != Some(desired) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT display-only relation parameter {} has no writable configuration scalar",
+                    parameter.id.0
+                )));
+            }
+        }
+    }
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
@@ -273,6 +303,9 @@ pub(crate) fn patch_configuration_parameter_scalars(
             let Some(parameter) = parameters.get(parameter_id) else {
                 continue;
             };
+            if is_reference_relation_parameter(parameter) {
+                continue;
+            }
             let Some(feature) = parameter
                 .owner
                 .as_ref()

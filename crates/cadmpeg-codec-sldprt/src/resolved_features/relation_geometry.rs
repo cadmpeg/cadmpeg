@@ -27,8 +27,8 @@ use super::typed_relations::{
 };
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchRelationKind,
+    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
+    SketchInputKind, SketchRelationKind,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
@@ -37,6 +37,21 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchNativeOperand,
 };
 use std::collections::{HashMap, HashSet};
+
+pub(crate) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
+pub(crate) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
+pub(crate) const RELATION_PARAMETER_ROLE_REFERENCE: &str = "reference";
+pub(crate) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
+
+pub(crate) fn is_reference_relation_parameter(
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> bool {
+    parameter
+        .properties
+        .get(RELATION_PARAMETER_ROLE_PROPERTY)
+        .map(String::as_str)
+        == Some(RELATION_PARAMETER_ROLE_REFERENCE)
+}
 
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
@@ -1931,6 +1946,7 @@ pub(crate) fn project_relation_bindings(
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
             let parameter_id = parameter.map(|parameter| parameter.id.clone());
+            let reference_parameter = parameter.is_some_and(is_reference_relation_parameter);
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
                 FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
@@ -1950,7 +1966,7 @@ pub(crate) fn project_relation_bindings(
                 .collect::<Vec<_>>();
             entities.sort_by(|left, right| left.0.cmp(&right.0));
             entities.dedup();
-            let definition = match relation.family {
+            let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
                     profile_axis_for_relation(
@@ -1979,28 +1995,34 @@ pub(crate) fn project_relation_bindings(
                     &markers_by_id,
                     &loci_by_marker,
                 ),
-            }
-            .unwrap_or_else(|| SketchConstraintDefinition::Native {
-                native_kind: native_kind.into(),
-                native_state: None,
-                native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
-                entities,
-                parameter: parameter_id,
-                operands: relation
-                    .operands
-                    .iter()
-                    .map(|operand| SketchNativeOperand {
-                        native_kind: operand_kind_name(operand.kind),
-                        native_field: None,
-                        native_role: None,
-                        object_index: u32::from(operand.entity_index),
-                        native_ref: operand.entity_ref.clone(),
-                    })
-                    .collect(),
-            });
+            };
+            let definition = typed_definition
+                .filter(|definition| {
+                    !(reference_parameter
+                        && relation_constraint_is_inactive(parameter, definition, sketch_entities))
+                })
+                .unwrap_or_else(|| SketchConstraintDefinition::Native {
+                    native_kind: native_kind.into(),
+                    native_state: None,
+                    native_flags: None,
+                    native_properties: std::collections::BTreeMap::new(),
+                    entities,
+                    parameter: parameter_id,
+                    operands: relation
+                        .operands
+                        .iter()
+                        .map(|operand| SketchNativeOperand {
+                            native_kind: operand_kind_name(operand.kind),
+                            native_field: None,
+                            native_role: None,
+                            object_index: u32::from(operand.entity_index),
+                            native_ref: operand.entity_ref.clone(),
+                        })
+                        .collect(),
+                });
             let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
                 .then_some(false);
+            let has_display_scalar = relation_display_scalar(relation, lane).is_some();
             let projected = SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
@@ -2009,7 +2031,11 @@ pub(crate) fn project_relation_bindings(
                 sketch: (*sketch).clone(),
                 definition,
                 name: None,
-                driving: None,
+                driving: relation
+                    .parameter_scalar_ref
+                    .as_ref()
+                    .map(|_| true)
+                    .or_else(|| has_display_scalar.then_some(false)),
                 active,
                 virtual_space: None,
                 visible: None,
@@ -2096,18 +2122,19 @@ pub(crate) fn project_relation_bindings(
     }
 }
 
-pub(crate) fn owned_relation_parameters(
+pub(crate) fn owned_relation_parameters<'a>(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-    lanes: &[FeatureInputLane],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
 ) -> HashMap<String, Option<cadmpeg_ir::features::ParameterId>> {
+    let lanes = lanes.into_iter().collect::<Vec<_>>();
     let parameters_by_scalar = parameters
         .iter()
         .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
         .collect::<HashMap<_, _>>();
     let mut claimed = HashSet::new();
     let mut owned = HashMap::new();
-    for lane in lanes {
+    for lane in &lanes {
         for relation in &lane.relation_instances {
             let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
                 continue;
@@ -2125,7 +2152,7 @@ pub(crate) fn owned_relation_parameters(
             owned.insert(relation.id.clone(), parameter);
         }
     }
-    for lane in lanes {
+    for lane in &lanes {
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref.is_some() {
                 continue;
@@ -2141,16 +2168,17 @@ pub(crate) fn owned_relation_parameters(
                 }
                 continue;
             }
-            let parameter =
-                relation_parameter_by_driving_name(relation, lane, features, parameters)
-                    .or_else(|| {
-                        circle_dimension_handle_driver(relation, lane).and_then(|scalar| {
-                            parameters_by_scalar.get(scalar.id.as_str()).copied()
-                        })
-                    })
-                    .or_else(|| {
-                        relation_parameter_by_display_name(relation, lane, features, parameters)
-                    });
+            let parameter = relation_parameter_by_relation_id(relation, parameters)
+                .or_else(|| {
+                    relation_parameter_by_driving_name(relation, lane, features, parameters)
+                })
+                .or_else(|| {
+                    circle_dimension_handle_driver(relation, lane)
+                        .and_then(|scalar| parameters_by_scalar.get(scalar.id.as_str()).copied())
+                })
+                .or_else(|| {
+                    relation_parameter_by_display_name(relation, lane, features, parameters)
+                });
             let Some(parameter) = parameter else {
                 continue;
             };
@@ -2160,6 +2188,86 @@ pub(crate) fn owned_relation_parameters(
         }
     }
     owned
+}
+
+pub(super) fn relation_display_scalar<'a>(
+    relation: &FeatureInputRelationInstance,
+    lane: &'a FeatureInputLane,
+) -> Option<&'a FeatureInputScalar> {
+    if let Some(display_id) = relation.display_scalar_ref.as_deref() {
+        return lane
+            .scalars
+            .iter()
+            .find(|scalar| scalar.id == display_id)
+            .filter(|scalar| scalar.role == FeatureInputScalarRole::Display);
+    }
+    let candidates = relation
+        .scalar_refs
+        .iter()
+        .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+        .collect::<Vec<_>>();
+    let [scalar] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*scalar)
+}
+
+fn relation_parameter_by_relation_id<'a>(
+    relation: &FeatureInputRelationInstance,
+    parameters: &'a [cadmpeg_ir::features::DesignParameter],
+) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+    let matches = parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) == Some(&relation.id)
+                && is_reference_relation_parameter(parameter)
+        })
+        .collect::<Vec<_>>();
+    let [parameter] = matches.as_slice() else {
+        return None;
+    };
+    Some(*parameter)
+}
+
+fn relation_parameter_matches_display_scalar(
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    family: FeatureInputRelationFamily,
+    scalar: &FeatureInputScalar,
+) -> bool {
+    match family {
+        FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
+            Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
+                same_dimension_angle(value.0, scalar.value)
+            }
+            Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
+                same_dimension_angle(*value, scalar.value)
+            }
+            _ => false,
+        },
+        FeatureInputRelationFamily::CircleDiameter
+        | FeatureInputRelationFamily::LineLineDistance
+        | FeatureInputRelationFamily::PointPointDistance
+        | FeatureInputRelationFamily::PointLineDistance
+        | FeatureInputRelationFamily::PointPointHorizontalDistance
+        | FeatureInputRelationFamily::PointPointVerticalDistance => {
+            match parameter.value.as_ref() {
+                Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
+                    same_dimension_length(value.0, scalar.value * 1000.0)
+                }
+                Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
+                    crate::history::exact_integer_f64(*value)
+                        .is_some_and(|value| same_dimension_length(value, scalar.value * 1000.0))
+                }
+                // An untyped native real is still in the source scalar's SI
+                // units until relation typing applies the family unit.
+                Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
+                    same_dimension_length(*value, scalar.value)
+                }
+                _ => false,
+            }
+        }
+    }
 }
 
 fn relation_parameter_by_driving_name<'a>(
@@ -2215,32 +2323,21 @@ pub(super) fn relation_parameter_by_display_name<'a>(
         .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
         .id
         .clone();
-    let scalars = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<HashMap<_, _>>();
     let names = lane
         .names
         .iter()
         .map(|name| (name.id.as_str(), name.value.as_str()))
         .collect::<HashMap<_, _>>();
     let owner = &owner;
-    let mut matches = relation
-        .scalar_refs
+    let display_scalar = relation_display_scalar(relation, lane)?;
+    let name = names.get(display_scalar.name.as_str()).copied()?;
+    let mut matches = parameters
         .iter()
-        .filter_map(|scalar| scalars.get(scalar.as_str()))
-        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-        .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
-        .flat_map(|name| {
-            parameters.iter().filter(move |parameter| {
-                parameter.owner.as_ref() == Some(owner) && parameter.name == name
-            })
-        });
+        .filter(|parameter| parameter.owner.as_ref() == Some(owner) && parameter.name == name);
     let first = matches.next()?;
-    matches
-        .all(|parameter| parameter.id == first.id)
-        .then_some(first)
+    (matches.all(|parameter| parameter.id == first.id)
+        && relation_parameter_matches_display_scalar(first, relation.family, display_scalar))
+    .then_some(first)
 }
 
 #[cfg(test)]

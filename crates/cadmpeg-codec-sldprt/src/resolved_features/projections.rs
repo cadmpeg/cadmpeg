@@ -8,7 +8,11 @@ use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, 
 use super::holes::feature_object_byte_ranges;
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
-use super::relation_geometry::owned_relation_parameters;
+use super::relation_geometry::{
+    owned_relation_parameters, relation_display_scalar, RELATION_DISPLAY_SCALAR_ID_PROPERTY,
+    RELATION_PARAMETER_ID_PROPERTY, RELATION_PARAMETER_ROLE_PROPERTY,
+    RELATION_PARAMETER_ROLE_REFERENCE,
+};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::selections::{
@@ -22,15 +26,16 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
-    BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FilletGroup, Length,
-    PatternSeed, RadiusSpec, VariableRadius,
+    Angle, BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
+    FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternSeed, RadiusSpec,
+    VariableRadius,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 use cadmpeg_ir::topology::Face;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -293,6 +298,170 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Materialize evaluated relation dimensions that have no driving scalar.
+///
+/// A display scalar is a measurement, not a writable native parameter. Keep
+/// its relation and scalar identities in parameter properties so later
+/// relation projection can join the derived value without assigning a
+/// display record to `native_ref`.
+pub(crate) fn synthesize_display_relation_parameters<'a>(
+    parameters: &mut Vec<DesignParameter>,
+    features: &[cadmpeg_ir::features::Feature],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
+) {
+    let lanes = lanes.into_iter().collect::<Vec<_>>();
+    let owned = owned_relation_parameters(features, parameters, lanes.iter().copied());
+    let features_by_native_ref = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
+        .collect::<HashMap<_, _>>();
+    let mut relation_ids = parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .properties
+                .get(RELATION_PARAMETER_ID_PROPERTY)
+                .cloned()
+        })
+        .collect::<HashSet<_>>();
+    let mut parameter_ids = parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<HashSet<_>>();
+    let mut names_by_owner = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.owner.clone()?, parameter.name.clone())))
+        .collect::<HashSet<_>>();
+    let mut next_ordinals = parameters.iter().fold(
+        HashMap::<cadmpeg_ir::features::FeatureId, u32>::new(),
+        |mut ordinals, parameter| {
+            let Some(owner) = parameter.owner.clone() else {
+                return ordinals;
+            };
+            let next = parameter.ordinal.saturating_add(1);
+            ordinals
+                .entry(owner)
+                .and_modify(|current| *current = (*current).max(next))
+                .or_insert(next);
+            ordinals
+        },
+    );
+
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            if relation.parameter_scalar_ref.is_some()
+                || owned.get(&relation.id).is_some_and(Option::is_some)
+                || relation_ids.contains(&relation.id)
+            {
+                continue;
+            }
+            let Some(scalar) = relation_display_scalar(relation, lane) else {
+                continue;
+            };
+            if !scalar.value.is_finite() {
+                continue;
+            }
+            let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
+                continue;
+            };
+            let Some(source_name) = lane
+                .names
+                .iter()
+                .find(|name| name.id == scalar.name)
+                .map(|name| name.value.as_str())
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+            let (value, display, expression) =
+                relation_display_parameter_value(relation.family, scalar.value);
+            let owner = feature.id.clone();
+            let ordinal = next_ordinals.entry(owner.clone()).or_insert(0);
+            let current_ordinal = *ordinal;
+            *ordinal = match current_ordinal.checked_add(1) {
+                Some(next) => next,
+                None => continue,
+            };
+            let base_name = format!("{source_name}@reference");
+            let mut name = base_name.clone();
+            if names_by_owner.contains(&(owner.clone(), name.clone())) {
+                name = format!("{base_name}:{}", relation.offset);
+                let mut suffix = 0u32;
+                while names_by_owner.contains(&(owner.clone(), name.clone())) {
+                    suffix = suffix.saturating_add(1);
+                    name = format!("{base_name}:{}:{suffix}", relation.offset);
+                }
+            }
+            let id = ParameterId(format!("sldprt:model:parameter#reference:{}", relation.id));
+            if !parameter_ids.insert(id.clone()) {
+                continue;
+            }
+            let mut properties = BTreeMap::new();
+            properties.insert(RELATION_PARAMETER_ID_PROPERTY.into(), relation.id.clone());
+            properties.insert(
+                RELATION_DISPLAY_SCALAR_ID_PROPERTY.into(),
+                scalar.id.clone(),
+            );
+            properties.insert(
+                RELATION_PARAMETER_ROLE_PROPERTY.into(),
+                RELATION_PARAMETER_ROLE_REFERENCE.into(),
+            );
+            properties.insert("source_name".into(), source_name.into());
+            parameters.push(DesignParameter {
+                id,
+                owner: Some(owner.clone()),
+                ordinal: current_ordinal,
+                name: name.clone(),
+                expression,
+                display,
+                value: Some(value),
+                dependencies: Vec::new(),
+                properties,
+                pmi: None,
+                native_ref: None,
+            });
+            names_by_owner.insert((owner, name));
+            relation_ids.insert(relation.id.clone());
+        }
+    }
+}
+
+fn relation_display_parameter_value(
+    family: FeatureInputRelationFamily,
+    value: f64,
+) -> (ParameterValue, Option<DimensionDisplay>, String) {
+    match family {
+        FeatureInputRelationFamily::Angle => (
+            ParameterValue::Angle(Angle(value)),
+            None,
+            crate::history::format_angle_rad(value),
+        ),
+        FeatureInputRelationFamily::CircleDiameter => {
+            let millimetres = value * 1000.0;
+            (
+                ParameterValue::Length(Length(millimetres)),
+                Some(DimensionDisplay::Diameter),
+                format!(
+                    "<MOD-DIAM>{}",
+                    crate::history::format_length_mm(millimetres)
+                ),
+            )
+        }
+        FeatureInputRelationFamily::LineLineDistance
+        | FeatureInputRelationFamily::PointPointDistance
+        | FeatureInputRelationFamily::PointLineDistance
+        | FeatureInputRelationFamily::PointPointHorizontalDistance
+        | FeatureInputRelationFamily::PointPointVerticalDistance => {
+            let millimetres = value * 1000.0;
+            (
+                ParameterValue::Length(Length(millimetres)),
+                None,
+                crate::history::format_length_mm(millimetres),
+            )
         }
     }
 }
