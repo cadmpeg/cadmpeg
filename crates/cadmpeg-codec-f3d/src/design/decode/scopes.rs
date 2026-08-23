@@ -193,6 +193,7 @@ pub fn decode_parameter_scopes(
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
+            bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
@@ -8803,11 +8804,6 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
-    let hem_operation = if kind == "Hem" {
-        exact_hem_operation(bytes, start, paired_at, reference_members)
-    } else {
-        None
-    };
     let ruled_surface_operation = if kind == "SurfaceRuled" {
         exact_ruled_surface_operation(
             bytes,
@@ -8920,7 +8916,7 @@ pub(crate) fn parse_parameter_scope(
         surface_patch_boundaries,
         base_flange_operation,
         edge_flange_operation,
-        hem_operation,
+        hem_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -12607,9 +12603,10 @@ pub(crate) fn exact_hem_operation(
     start: usize,
     paired_at: usize,
     references: &[u32],
+    parameter_source_kinds: &[(u32, &str)],
 ) -> Option<DesignHemOperation> {
-    // The header shift is recovered by agreement, so both candidates are
-    // evaluated and a frame that reads under either one is refused as ambiguous.
+    // The header shift and form are recovered by agreement, so all candidates
+    // are evaluated and a frame that admits more than one is refused.
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
@@ -12619,6 +12616,7 @@ pub(crate) fn exact_hem_operation(
         ]
         .into_iter()
         .flatten()
+        .filter(|candidate| hem_parameter_kinds_match(candidate, parameter_source_kinds))
         {
             if resolved.is_some() {
                 return None;
@@ -12627,6 +12625,87 @@ pub(crate) fn exact_hem_operation(
         }
     }
     resolved
+}
+
+fn hem_parameter_kinds_match(
+    operation: &DesignHemOperation,
+    parameter_source_kinds: &[(u32, &str)],
+) -> bool {
+    let has_kind = |record_index: u32, expected: &str| {
+        let mut matches = parameter_source_kinds
+            .iter()
+            .filter(|(owner, _)| *owner == record_index);
+        matches.next().is_some_and(|(_, kind)| *kind == expected) && matches.next().is_none()
+    };
+    match operation.parameter_owners {
+        DesignHemParameterOwners::GapLength {
+            gap_owner_record_index,
+            length_owner_record_index,
+        } => {
+            has_kind(gap_owner_record_index, "HemGap")
+                && has_kind(length_owner_record_index, "HemLength")
+        }
+        DesignHemParameterOwners::RadiusAngle {
+            radius_owner_record_index,
+            angle_owner_record_index,
+        } => {
+            has_kind(radius_owner_record_index, "HemRadius")
+                && has_kind(angle_owner_record_index, "HemAngle")
+        }
+        DesignHemParameterOwners::GapLengthRadius {
+            gap_owner_record_index,
+            length_owner_record_index,
+            radius_owner_record_index,
+        } => {
+            has_kind(gap_owner_record_index, "HemGap")
+                && has_kind(length_owner_record_index, "HemLength")
+                && has_kind(radius_owner_record_index, "HemRadius")
+        }
+    }
+}
+
+fn bind_hem_operation_from_parameters(
+    bytes: &[u8],
+    scope: &mut DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) {
+    if scope.kind != "Hem" {
+        return;
+    }
+    let Some(stream) = native_stream(&scope.id) else {
+        return;
+    };
+    let parameter_source_kinds = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && scope.reference_members.contains(&owner.record_index)
+        })
+        .flat_map(|owner| {
+            parameters
+                .iter()
+                .filter(move |parameter| {
+                    native_stream(&parameter.id) == Some(stream)
+                        && parameter.record_index == owner.parameter_record_index
+                })
+                .map(move |parameter| (owner.record_index, parameter.source_kind.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let Some(start) = usize::try_from(scope.byte_offset).ok() else {
+        return;
+    };
+    let Some(paired_at) = usize::try_from(scope.paired_byte_offset).ok() else {
+        return;
+    };
+    scope.hem_operation = exact_hem_operation(
+        bytes,
+        start,
+        paired_at,
+        &scope.reference_members,
+        &parameter_source_kinds,
+    );
 }
 
 /// Read the gap-and-length `Hem` fixed operation section for one candidate header
