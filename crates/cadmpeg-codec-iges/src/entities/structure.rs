@@ -1754,7 +1754,8 @@ pub(super) fn project(
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
                 })
         });
-        let directory_valid = entry.status.use_flag == 2
+        let directory_valid = entry.status.subordinate == 0
+            && entry.status.use_flag == 2
             && entry.structure == 0
             && entry.line_font == 0
             && entry.level == 0
@@ -1799,6 +1800,7 @@ pub(super) fn project(
             classes_valid &= item_count.is_some();
         }
         let directory_valid = matches!(entry.form, 5001..=9999)
+            && entry.status.subordinate == 0
             && entry.status.use_flag == 2
             && entry.structure == 0
             && entry.line_font == 0

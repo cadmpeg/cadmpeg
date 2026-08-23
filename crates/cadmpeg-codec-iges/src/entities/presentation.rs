@@ -119,13 +119,15 @@ fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bo
             entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
         }
         Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
-            entry.status.use_flag == 2
+            entry.status.subordinate == 0
+                && entry.status.use_flag == 2
                 && entry.structure == 0
                 && entry.line_font == 0
                 && entry.view == 0
                 && entry.transform == 0
                 && entry.label_display == 0
                 && entry.line_weight == 0
+                && entry.status.hierarchy == 0
         }
     }
 }
@@ -160,7 +162,8 @@ fn text_font_definition(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
     let parameter_end = record.parameter_end();
-    let directory_valid = entry.status.use_flag == 2
+    let directory_valid = entry.status.subordinate == 0
+        && entry.status.use_flag == 2
         && entry.structure == 0
         && entry.line_font == 0
         && entry.level == 0
@@ -434,6 +437,15 @@ pub(super) fn project(
                 continue;
             }
         };
+        let directory_valid = entry.status.subordinate == 0
+            && entry.status.use_flag == 2
+            && entry.structure == 0
+            && entry.line_font == 0
+            && entry.line_weight == 0;
+        if !directory_valid {
+            losses.push(loss(entry, "color definition Directory fields are invalid"));
+            continue;
+        }
         let color = Color {
             r: (components[0] / 100.0) as f32,
             g: (components[1] / 100.0) as f32,

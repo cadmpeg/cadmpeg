@@ -94,6 +94,26 @@ fn text_template_directory_rules_follow_legacy_and_later_dialects() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+
+    for status in ["00010200", "00000201"] {
+        let rejected = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[text_template_entity(status)],
+                    GLOBAL_V5_3,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            rejected
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()),
+            "invalid later Type 312 status {status} was projected"
+        );
+    }
 }
 
 #[test]
@@ -164,7 +184,7 @@ fn color_name_placekeeper_is_4_0_only() {
         entity_type: 314,
         form: 0,
         label: "COLOR".into(),
-        status: "00000000",
+        status: "00000200",
         parameters: "314,20,40,60,0,0;".into(),
     };
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -205,6 +225,54 @@ fn color_name_placekeeper_is_4_0_only() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("optional color name is not a string") }));
+}
+
+#[test]
+fn color_definition_requires_definition_directory_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 314,
+                form: 0,
+                label: "COLOR".into(),
+                status: "00010200",
+                parameters: "314,20,40,60,6Hcustom;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss.message.contains("color definition Directory fields")
+    }));
+    assert!(!result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id.0 == "iges:appearance:color#D1"));
+}
+
+#[test]
+fn text_font_definition_requires_an_independent_directory_entry() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 310,
+                form: 0,
+                label: "FONT".into(),
+                status: "00010200",
+                parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss.message.contains("font header")
+    }));
 }
 
 #[test]

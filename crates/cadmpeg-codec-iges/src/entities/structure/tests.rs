@@ -1491,6 +1491,36 @@ fn decode_types_fundamental_units_and_property_owner() {
 }
 
 #[test]
+fn definition_entities_require_independent_directory_entries() {
+    for (entity_type, form, parameters, description) in [
+        (302, 5001, "302,1,1,1,1,1;", "associativity definition"),
+        (316, 0, "316,1,6HLENGTH,2HKN,1852;", "units data"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                    entity_type,
+                    form,
+                    label: "DEFIN".into(),
+                    status: "00010200",
+                    parameters: parameters.into(),
+                }])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "invalid {description} Directory entry was projected: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn type316_scale_is_scoped_to_the_property_owner() {
     let result = IgesCodec
         .decode(
