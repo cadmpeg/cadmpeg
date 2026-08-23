@@ -435,14 +435,18 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
 
 fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Prim, SatError> {
     if let Some(rest) = field.strip_prefix('$') {
-        if let Ok(index) = rest.parse::<i64>() {
-            return Ok(Prim::Ref(index));
-        }
+        let index = rest.parse::<i64>().map_err(|_| SatError {
+            offset: at,
+            reason: "reference field has no valid decimal index".to_string(),
+        })?;
+        return Ok(Prim::Ref(index));
     }
     if let Some(rest) = field.strip_prefix('@') {
-        if let Ok(len) = rest.parse::<usize>() {
-            return Ok(Prim::Str(reader.read_str_payload(len, at)?));
-        }
+        let len = rest.parse::<usize>().map_err(|_| SatError {
+            offset: at,
+            reason: "string field has no valid decimal byte count".to_string(),
+        })?;
+        return Ok(Prim::Str(reader.read_str_payload(len, at)?));
     }
     if field == "{" {
         return Ok(Prim::Open);
@@ -1583,6 +1587,25 @@ mod tests {
         // The tabled ATTRIB_CUSTOM shape types the trailing value as DOUBLE.
         assert_eq!(stream.records[0].tokens[6], Token::Long(1));
         assert!(matches!(stream.records[0].tokens[7], Token::Double(v) if approx(v, 7.0)));
+    }
+
+    #[test]
+    fn prefixed_fields_require_decimal_operands() {
+        for malformed_field in [
+            "$record",
+            "@length",
+            "$99999999999999999999999999999999999999999999999999",
+            "@99999999999999999999999999999999999999999999999999",
+        ] {
+            let stream = asm_stream(&format!("mystery {malformed_field} #\n"));
+            let field_offset = stream
+                .windows(malformed_field.len())
+                .position(|window| window == malformed_field.as_bytes())
+                .expect("malformed field offset");
+
+            let error = parse(&stream).expect_err("malformed prefixed field must fail");
+            assert_eq!(error.offset, field_offset);
+        }
     }
 
     #[test]

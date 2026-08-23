@@ -664,6 +664,8 @@ Field forms:
 - A boolean is a word. A sense slot writes `forward` for `FALSE` and `reversed` for `TRUE`. A face sides slot writes `single` for `FALSE` and `double` for `TRUE`. A surface v-sense slot writes `forward_v` for `FALSE` and `reverse_v` for `TRUE`. A plain logical slot writes `F` for `FALSE` and `T` for `TRUE`. An optional range bound (§6.3) writes `I` for the absent bound (`FALSE`, no value follows) and `F` for the present bound (`TRUE`, one value follows). The word `F` therefore takes its meaning from the slot class.
 - An enumeration (`ENUM_VALUE`) is a word from the slot's vocabulary. Closure slots write `open` (0), `closed` (1), and `periodic` (2). Singularity slots write `none` (0). Approximation-cache form slots write the `law_spl_sur` selector names: `full` (0), `summary` (1), `none` (2), `historical` (3), and `optimal` (4). Curve extension slots write `UNEXTENDED` (0).
 
+The `$` and `@` prefixes are reserved for references and counted strings. A field that starts with either prefix is malformed when its decimal operand is absent, invalid, or outside the supported integer range.
+
 ### 7.3 Record indexing and stream end
 
 Record indices count records in file order from zero, starting at the first record after the header lines. A stream that begins with an `asmheader` record gives it index 0; a save-format 700 stream stores no `asmheader` record and gives index 0 to its first entity record. `$N` references index this table directly.
