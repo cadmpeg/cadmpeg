@@ -138,6 +138,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_state_journal_uses: Vec<FeatureOperationStateJournalUse>,
     pub(crate) feature_payload_strings: Vec<FeaturePayloadString>,
     pub(crate) feature_symbolic_threads: Vec<FeatureSymbolicThread>,
+    pub(crate) feature_threaded_hole_templates: Vec<FeatureThreadedHoleTemplate>,
     pub(crate) feature_simple_hole_templates: Vec<FeatureSimpleHoleTemplate>,
     pub(crate) feature_simple_hole_repeated_scalar_lanes: Vec<FeatureSimpleHoleRepeatedScalarLane>,
     pub(crate) feature_simple_hole_repeated_scalar_lane_block_references:
@@ -529,6 +530,11 @@ impl NativeModel {
         );
         let feature_payload_strings = feature_payload_strings(container);
         let feature_symbolic_threads = feature_symbolic_threads(container);
+        let feature_threaded_hole_templates = feature_threaded_hole_templates(
+            &feature_operation_labels,
+            &feature_operation_records,
+            &feature_payload_strings,
+        );
         let feature_simple_hole_templates = feature_simple_hole_templates(
             &feature_operation_labels,
             &feature_operation_records,
@@ -1092,6 +1098,7 @@ impl NativeModel {
                 feature_operation_state_journal_uses,
                 feature_payload_strings,
                 feature_symbolic_threads,
+                feature_threaded_hole_templates,
                 feature_simple_hole_templates,
                 feature_simple_hole_repeated_scalar_lanes,
                 feature_simple_hole_repeated_scalar_lane_block_references,

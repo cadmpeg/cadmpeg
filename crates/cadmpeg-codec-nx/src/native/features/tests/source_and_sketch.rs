@@ -467,6 +467,86 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 }
 
 #[test]
+fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
+    use super::{
+        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString, SimpleHoleExtent,
+        ThreadedHoleFamily,
+    };
+
+    let label = FeatureOperationLabel {
+        id: "operation#threaded".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 7,
+        value: "SIMPLE HOLE".to_string(),
+        object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
+        source_offset: 100,
+    };
+    let record = FeatureOperationRecord {
+        id: "record#threaded".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 7,
+        byte_len: 80,
+        sha256: "a".repeat(64),
+        payload_byte_len: 40,
+        payload_sha256: "b".repeat(64),
+        stable_identity: None,
+        payload_source_offset: 120,
+        source_offset: 90,
+    };
+    let string = FeaturePayloadString {
+        id: "payload-string#threaded-0".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        value: "Hole_ThreadedHole_M Profile_Blind".to_string(),
+        source_offset: 130,
+    };
+    let templates = super::feature_threaded_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    );
+    let [template] = templates.as_slice() else {
+        panic!("threaded-hole template was not admitted");
+    };
+    assert_eq!(template.payload_string, string.id);
+    assert_eq!(template.family, ThreadedHoleFamily::MProfile);
+    assert_eq!(template.extent, SimpleHoleExtent::Blind);
+    assert_eq!(template.source_offset, string.source_offset);
+    assert_eq!(
+        super::parse_threaded_hole_template("Hole_ThreadedHole_UNC_Blind"),
+        Some((ThreadedHoleFamily::Unc, SimpleHoleExtent::Blind,))
+    );
+    assert!(super::parse_threaded_hole_template("Hole_ThreadedHole_UNF_Blind").is_none());
+    assert!(super::parse_threaded_hole_template("Hole_ThreadedHole_M Profile_Through").is_none());
+
+    let mut non_simple_label = label.clone();
+    non_simple_label.value = "CBORE_HOLE".to_string();
+    assert!(super::feature_threaded_hole_templates(
+        &[non_simple_label],
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    )
+    .is_empty());
+
+    let mut duplicate = string.clone();
+    duplicate.id = "payload-string#threaded-1".to_string();
+    duplicate.ordinal = 1;
+    duplicate.source_offset += 64;
+    assert!(super::feature_threaded_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), duplicate],
+    )
+    .is_empty());
+
+    let mut unknown = string;
+    unknown.value = "Hole_ThreadedHole_M Profile_Blind_Extra".to_string();
+    assert!(super::feature_threaded_hole_templates(&[label], &[record], &[unknown]).is_empty());
+}
+
+#[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use super::{
         FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,

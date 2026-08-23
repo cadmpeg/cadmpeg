@@ -376,6 +376,23 @@ pub struct FeatureSimpleHoleTemplate {
     pub end_treatment: SimpleHoleEndTreatment,
 }
 
+/// Exact threaded-hole template retained from a `SIMPLE HOLE` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThreadedHoleTemplate {
+    /// Globally unique template identity.
+    pub id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    pub operation_label: String,
+    /// Source string in the native payload-string arena.
+    pub payload_string: String,
+    /// Thread-standard family token.
+    pub family: ThreadedHoleFamily,
+    /// Axial extent token.
+    pub extent: SimpleHoleExtent,
+    /// Absolute file offset of the template string marker.
+    pub source_offset: u64,
+}
+
 /// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSimpleHoleRepeatedScalarLane {
@@ -479,6 +496,16 @@ pub struct FeatureHolePackageConstructionGroupUse {
 pub enum SimpleHoleFamily {
     /// General-hole construction family.
     GeneralHole,
+}
+
+/// Thread-standard family named by a threaded-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadedHoleFamily {
+    /// Metric profile family named by the `M Profile` token.
+    MProfile,
+    /// Unified National Coarse family named by the `UNC` token.
+    Unc,
 }
 
 /// Cross-section named by a simple-hole template.
@@ -3665,6 +3692,57 @@ pub fn feature_simple_hole_templates(
         .collect()
 }
 
+/// Join exact threaded-hole payload templates to their operation identities.
+pub fn feature_threaded_hole_templates(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[FeaturePayloadString],
+) -> Vec<FeatureThreadedHoleTemplate> {
+    let labels_by_id = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label))
+        .collect::<BTreeMap<_, _>>();
+    let records_by_id = records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut templates_by_operation = BTreeMap::<String, Vec<_>>::new();
+    for string in strings {
+        let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
+            continue;
+        };
+        let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
+            continue;
+        };
+        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+            continue;
+        }
+        templates_by_operation
+            .entry(label.id.clone())
+            .or_default()
+            .push((string, *label));
+    }
+    templates_by_operation
+        .into_values()
+        .filter_map(|candidates| {
+            let [(string, label)] = candidates.as_slice() else {
+                return None;
+            };
+            let (family, extent) = parse_threaded_hole_template(&string.value)?;
+            Some(FeatureThreadedHoleTemplate {
+                id: string
+                    .id
+                    .replacen("payload-string", "threaded-hole-template", 1),
+                operation_label: label.id.clone(),
+                payload_string: string.id.clone(),
+                family,
+                extent,
+                source_offset: string.source_offset,
+            })
+        })
+        .collect()
+}
+
 /// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
 pub fn feature_simple_hole_repeated_scalar_lanes(
     container: &Container,
@@ -4003,6 +4081,18 @@ pub(crate) fn parse_simple_hole_template(
         start_treatment,
         end_treatment,
     ))
+}
+
+pub(crate) fn parse_threaded_hole_template(
+    value: &str,
+) -> Option<(ThreadedHoleFamily, SimpleHoleExtent)> {
+    match value {
+        "Hole_ThreadedHole_M Profile_Blind" => {
+            Some((ThreadedHoleFamily::MProfile, SimpleHoleExtent::Blind))
+        }
+        "Hole_ThreadedHole_UNC_Blind" => Some((ThreadedHoleFamily::Unc, SimpleHoleExtent::Blind)),
+        _ => None,
+    }
 }
 
 /// Decode complete body-reference fields from feature-history operations.
