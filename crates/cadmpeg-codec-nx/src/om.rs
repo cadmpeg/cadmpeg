@@ -7339,64 +7339,99 @@ pub fn operation_state_status_table(
     })
 }
 
+fn operation_state_group_header_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<([u8; 2], Option<u8>, u8, usize)> {
+    let opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+    if !matches!(opener, [0x01, 0x00 | 0x01]) {
+        return None;
+    }
+    let count_at = at.checked_add(2)?;
+    let (count_prefix, declared_count, cursor) = match bytes.get(count_at) {
+        Some(0) => (None, 0, count_at + 1),
+        Some(1) => (Some(1), *bytes.get(count_at + 1)?, count_at + 2),
+        _ => return None,
+    };
+    Some((opener, count_prefix, declared_count, cursor))
+}
+
+fn operation_state_group_row_at(
+    bytes: &[u8],
+    cursor: usize,
+    base_offset: usize,
+) -> Option<(OperationStateGroupRow<'_>, usize)> {
+    let tag = *bytes.get(cursor)?;
+    match tag {
+        0x4a => {
+            let object_at = cursor.checked_add(1)?;
+            let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+            object_index.value?;
+            let position_at = object_at.checked_add(object_index.raw.len())?;
+            let position = operation_state_index_at(bytes, position_at, base_offset)?;
+            position.value?;
+            let sentinel_at = position_at.checked_add(position.raw.len())?;
+            let row_end = sentinel_at.checked_add(1)?;
+            (bytes.get(sentinel_at) == Some(&0xff)).then_some((
+                OperationStateGroupRow::List {
+                    offset: base_offset.checked_add(cursor)?,
+                    object_index,
+                    position,
+                },
+                row_end,
+            ))
+        }
+        0x4f | 0x48 => {
+            let first_at = cursor.checked_add(1)?;
+            let first = operation_state_index_at(bytes, first_at, base_offset)?;
+            first.value?;
+            let second_at = first_at.checked_add(first.raw.len())?;
+            let second = operation_state_index_at(bytes, second_at, base_offset)?;
+            second.value?;
+            let sentinels_at = second_at.checked_add(second.raw.len())?;
+            let row_end = sentinels_at.checked_add(2)?;
+            (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
+                OperationStateGroupRow::Pair {
+                    offset: base_offset.checked_add(cursor)?,
+                    tag,
+                    first,
+                    second,
+                },
+                row_end,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn operation_state_group_end_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<usize> {
+    let (_, _, declared_count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+    let member_count = usize::from(declared_count.saturating_sub(1));
+    for _ in 0..member_count {
+        cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
+    }
+    (cursor <= end).then_some(cursor)
+}
+
 fn operation_state_group_at(
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroup<'_>> {
-    let opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
-    if !matches!(opener, [0x01, 0x00 | 0x01]) {
-        return None;
-    }
-    let count_at = at.checked_add(2)?;
-    let (count_prefix, declared_count, mut cursor) = match bytes.get(count_at) {
-        Some(0) => (None, 0, count_at + 1),
-        Some(1) => (Some(1), *bytes.get(count_at + 1)?, count_at + 2),
-        _ => return None,
-    };
+    let (opener, count_prefix, declared_count, mut cursor) =
+        operation_state_group_header_at(bytes, at)?;
     let member_count = usize::from(declared_count.saturating_sub(1));
     let mut rows = Vec::with_capacity(member_count);
     for _ in 0..member_count {
-        let tag = *bytes.get(cursor)?;
-        match tag {
-            0x4a => {
-                let object_at = cursor.checked_add(1)?;
-                let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-                object_index.value?;
-                let position_at = object_at.checked_add(object_index.raw.len())?;
-                let position = operation_state_index_at(bytes, position_at, base_offset)?;
-                position.value?;
-                let sentinel_at = position_at.checked_add(position.raw.len())?;
-                let row_end = sentinel_at.checked_add(1)?;
-                (bytes.get(sentinel_at) == Some(&0xff)).then_some(())?;
-                rows.push(OperationStateGroupRow::List {
-                    offset: base_offset.checked_add(cursor)?,
-                    object_index,
-                    position,
-                });
-                cursor = row_end;
-            }
-            0x4f | 0x48 => {
-                let first_at = cursor.checked_add(1)?;
-                let first = operation_state_index_at(bytes, first_at, base_offset)?;
-                first.value?;
-                let second_at = first_at.checked_add(first.raw.len())?;
-                let second = operation_state_index_at(bytes, second_at, base_offset)?;
-                second.value?;
-                let sentinels_at = second_at.checked_add(second.raw.len())?;
-                let row_end = sentinels_at.checked_add(2)?;
-                (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some(())?;
-                rows.push(OperationStateGroupRow::Pair {
-                    offset: base_offset.checked_add(cursor)?,
-                    tag,
-                    first,
-                    second,
-                });
-                cursor = row_end;
-            }
-            _ => return None,
-        }
+        let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
+        rows.push(row);
+        cursor = row_end;
     }
     (cursor <= end).then_some(OperationStateGroup {
         offset: base_offset.checked_add(at)?,
@@ -7428,19 +7463,16 @@ fn operation_state_group_table_before_counter_map(
         if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
             continue;
         }
-        let Some(group) = operation_state_group_at(bytes, at, map_start, base_offset) else {
+        let Some(end) = operation_state_group_end_at(bytes, at, map_start, base_offset) else {
             continue;
         };
-        let end = group.end_offset.checked_sub(base_offset)?;
-        if end <= map_start {
-            candidates.push((at, group, end));
-        }
+        candidates.push((at, end));
     }
-    candidates.sort_by_key(|(start, _, end)| (*end, *start));
+    candidates.sort_by_key(|(start, end)| (*end, *start));
 
     let mut predecessors = std::iter::repeat_n(None, candidates.len()).collect::<Vec<_>>();
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
-    for (candidate_index, (start, _, end)) in candidates.iter().enumerate() {
+    for (candidate_index, (start, end)) in candidates.iter().enumerate() {
         let previous = best_by_end.get(start).copied();
         let path = GroupPath {
             last_candidate: candidate_index,
@@ -7475,13 +7507,15 @@ fn operation_state_group_table_before_counter_map(
     let last = *path.last()?;
     let groups = path
         .into_iter()
-        .map(|candidate| candidates[candidate].1.clone())
-        .collect();
+        .map(|candidate| {
+            operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some(OperationStateGroupTable {
         offset: base_offset.checked_add(candidates[first].0)?,
         end_offset: base_offset.checked_add(map_start)?,
         groups,
-        trailing_bytes: bytes.get(candidates[last].2..map_start)?,
+        trailing_bytes: bytes.get(candidates[last].1..map_start)?,
     })
 }
 
