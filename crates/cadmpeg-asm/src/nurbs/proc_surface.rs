@@ -3454,11 +3454,9 @@ fn rot_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let (directrix, directrix_end) = toks::marker_positions(span)
-        .into_iter()
-        .find_map(|at| curve_block(span, at))?;
+    let (directrix, directrix_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(directrix_end);
     let parameter_interval = [*directrix.knots.first()?, *directrix.knots.last()?];
-    let mut cur = Cur::at(span, directrix_end);
     let origin = cur.take_position()?;
     let axis_origin = Point3::new(
         origin[0] * LEN_TO_MM,
@@ -3467,15 +3465,11 @@ fn rot_spl_sur(
     );
     let axis = cur.take_vector3()?;
     let axis_direction = normalized(axis)?;
-    let (cache, cache_end) = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| surface_block(span, at))
-        .next_back()?;
+    let (cache, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
     let angular_interval = [*cache.v_knots.first()?, *cache.v_knots.last()?];
-    let cache_fit_tolerance = match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    };
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
             directrix: CurveGeometry::Nurbs(directrix),
