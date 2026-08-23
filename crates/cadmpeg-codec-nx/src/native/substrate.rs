@@ -262,6 +262,11 @@ impl StreamParses {
     pub(crate) fn view_for_geometry(&self) -> &StreamView {
         &self.semantic
     }
+
+    /// Resolve one current semantic XMT identity by fixed family and kernel node id.
+    pub(crate) fn unique_semantic_xmt_by_node_id(&self, kind: u8, node_id: u32) -> Option<u32> {
+        self.semantic.graph.unique_xmt_by_node_id(kind, node_id)
+    }
 }
 
 /// Every expensive per-stream Parasolid parse, once per distinct byte view, indexed by

@@ -63,6 +63,9 @@ pub struct ParasolidGroupMember {
     /// Kernel node identity when the member family carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_node_id: Option<u32>,
+    /// Current semantic XMT identity selected by unique family and kernel node identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_member_xmt: Option<u32>,
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -250,6 +253,7 @@ fn group_members_from_records(
                     member_xmt,
                     member_family: member_family.to_string(),
                     member_node_id,
+                    current_member_xmt: None,
                 })
             },
         ));
@@ -291,8 +295,9 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
 pub(crate) fn parasolid_group_members(
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
+    parsed: &ParsedStreams<'_>,
 ) -> Vec<ParasolidGroupMember> {
-    streams
+    let mut members = streams
         .iter()
         .enumerate()
         .filter(|(_, stream)| stream.kind == crate::parasolid::StreamKind::Partition)
@@ -309,7 +314,34 @@ pub(crate) fn parasolid_group_members(
             ))
         })
         .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
-        .collect()
+        .collect::<Vec<_>>();
+    for member in &mut members {
+        let (Some(kind), Some(node_id), Ok(partition)) = (
+            group_member_kind(&member.member_family),
+            member.member_node_id,
+            usize::try_from(member.partition_stream_ordinal),
+        ) else {
+            continue;
+        };
+        member.current_member_xmt = parsed
+            .stream(partition)
+            .unique_semantic_xmt_by_node_id(kind, node_id);
+    }
+    members
+}
+
+fn group_member_kind(family: &str) -> Option<u8> {
+    Some(match family {
+        "BODY" => 12,
+        "SHELL" => 13,
+        "FACE" => 14,
+        "LOOP" => 15,
+        "FIN" => 17,
+        "EDGE" => 16,
+        "VERTEX" => 18,
+        "REGION" => 19,
+        _ => return None,
+    })
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -3129,6 +3161,7 @@ mod tests {
         assert_eq!(members[0].list_record_xmt, 20);
         assert_eq!(members[0].member_family, "EDGE");
         assert_eq!(members[0].member_node_id, Some(51));
+        assert_eq!(members[0].current_member_xmt, None);
         assert_eq!(members[1].list_record_xmt, 30);
         assert_eq!(members[1].member_family, "FACE");
         assert_eq!(members[1].member_node_id, Some(50));

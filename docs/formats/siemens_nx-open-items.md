@@ -369,6 +369,27 @@ eight-byte fingerprint, and one terminal byte for both class and member
 declarations. The decomposition does not assign a member type, cardinality,
 ownership, or access role.
 
+### OM-08. Feature body-write cross-checks
+
+**Question.** Which serialized extrusion field names the profile body image,
+and how does a blend construction identify the faces created by that blend?
+
+**Known.** A nested operation body-write frame retains the persistent body
+identity, partition-local GROUP node, and write-state body-image object.
+Explicit Boolean operations independently require the body-image object to
+equal the target and exclude every tool. A closed GROUP chain resolves current
+members by topology family and kernel node identity and transfers current FACE,
+EDGE, and VERTEX identities to the feature result state.
+
+**Need.** We must identify the extrusion profile-body lane that independently
+repeats the body-write image and the blend construction relation that assigns
+the created-face subset.
+
+**Conflict.** An extrusion profile reference resolves to a construction data
+block but does not assign that block a profile-body-image role. GROUP membership
+assigns topology to the producing feature but does not by itself identify which
+member faces carry a particular blend-surface construction.
+
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?

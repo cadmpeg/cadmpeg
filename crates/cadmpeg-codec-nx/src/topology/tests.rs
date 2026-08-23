@@ -113,6 +113,23 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
 }
 
 #[test]
+fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
+    let mut stream = topology_partition_stream();
+    let graph = crate::topology::Graph::parse(&stream);
+    let face = graph.get(14, 4).unwrap();
+    let node_id = face.node_id().unwrap();
+    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), Some(4));
+    assert_eq!(graph.unique_xmt_by_node_id(16, node_id), Some(8));
+
+    let mut duplicate = face.bytes.clone();
+    duplicate[3] = 39;
+    stream.extend(duplicate);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.get(14, 39).and_then(Node::node_id), Some(node_id));
+    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), None);
+}
+
+#[test]
 fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let mut stream = topology_partition_stream();
     let shell = stream

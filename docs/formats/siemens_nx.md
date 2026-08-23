@@ -1749,6 +1749,25 @@ GROUP, and every member must be a BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX,
 or REGION record. A cycle, missing record, duplicate XMT, broken reciprocal
 link, cross-GROUP row, or non-topology member rejects the complete chain.
 
+Each GROUP member family except FIN carries a kernel node identity. A current
+member XMT is assigned only when exactly one record of the same topology family
+in the delta-merged partition graph carries that node identity. Node identities
+are not compared across families. A missing node identity, zero same-family
+matches, or multiple same-family matches leaves the historical member XMT
+retained without a current-member identity.
+
+A body-write result state contains the current FACE, EDGE, and VERTEX members
+of its resolved GROUP in GROUP order. These are feature-local intermediate
+topology identities. They do not require the member to survive in the saved
+neutral body. BODY, SHELL, LOOP, FIN, and REGION members remain native GROUP
+evidence because the feature result state has no corresponding member lane.
+
+An explicit Boolean operation admits a body-write output relation only when it
+has exactly one body-write frame, that frame's body-image object equals the
+Boolean target object, and the same object is absent from the ordered tool
+lane. A mismatching or repeated frame remains exact native evidence but does
+not establish feature output lineage.
+
 A direct operation tagged-reference field is `01 02 17, object_index, ff 80 00 00 02`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the tag, object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.
 
 A direct operation data-block reference field is `01 02 03, object_index, 01 00 00 00 00 00`. `object_index` is non-null and uses the canonical feature object-index form. The field retains the object index, exact serialized token, byte length, and absolute offsets. The object index independently resolves to one offset-only OM data block only under the unique-store resolution rule; an unresolved target remains unresolved. The field does not assign a body, operand, input, output, seed, transform, or construction role.

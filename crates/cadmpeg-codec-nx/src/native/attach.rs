@@ -330,6 +330,7 @@ pub(crate) fn attach(
     attach_feature_operations(
         ir,
         &model.features,
+        &model.parasolid.parasolid_group_members,
         &model.om.data_blocks,
         &model.om.expressions,
         &model.segments.segment_body_bindings,
@@ -1069,6 +1070,7 @@ fn attach_initial_segment_bodies(
 fn attach_feature_operations(
     ir: &mut CadIr,
     features: &crate::native::model::FeatureRecords,
+    parasolid_group_members: &[crate::native::parasolid::ParasolidGroupMember],
     data_blocks: &[crate::native::om::DataBlock],
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
@@ -1881,9 +1883,17 @@ fn attach_feature_operations(
                 )
             });
         let mut dependencies = Vec::new();
-        let operation_body_writes = body_writes_by_operation
+        let retained_operation_body_writes = body_writes_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
+        let operation_body_writes = if body_writes_match_boolean_target(
+            retained_operation_body_writes,
+            booleans.get(label.id.as_str()).copied(),
+        ) {
+            retained_operation_body_writes
+        } else {
+            &[]
+        };
         for write in operation_body_writes {
             if let Some(writer) = body_identity_writers.get(&write.body_identity) {
                 if !dependencies.contains(writer) {
@@ -2027,7 +2037,7 @@ fn attach_feature_operations(
             }
         }
         let mut source_properties = BTreeMap::new();
-        for write in operation_body_writes {
+        for write in retained_operation_body_writes {
             let ordinal = write.ordinal;
             source_properties.insert(format!("body_write.{ordinal}"), write.id.clone());
             source_properties.insert(
@@ -3534,6 +3544,11 @@ fn attach_feature_operations(
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
             for write in operation_body_writes {
+                let result_members = operation_body_partition_uses
+                    .iter()
+                    .find(|use_| use_.operation_body_write == write.id)
+                    .map(|use_| feature_result_group_members(use_, parasolid_group_members))
+                    .unwrap_or_default();
                 ir.model
                     .feature_result_topologies
                     .push(FeatureResultTopology {
@@ -3546,9 +3561,9 @@ fn attach_feature_operations(
                             "nx:feature-history:body-identity#{:010}",
                             write.body_identity
                         )],
-                        faces: Vec::new(),
-                        edges: Vec::new(),
-                        vertices: Vec::new(),
+                        faces: result_members.faces,
+                        edges: result_members.edges,
+                        vertices: result_members.vertices,
                         native_ref: Some(write.id.clone()),
                     });
             }
@@ -3610,6 +3625,48 @@ fn attach_feature_operations(
             annotations.derived(&initial_body_id, "outputs");
         }
     }
+}
+
+#[derive(Default)]
+struct FeatureResultGroupMembers {
+    faces: Vec<String>,
+    edges: Vec<String>,
+    vertices: Vec<String>,
+}
+
+fn feature_result_group_members(
+    use_: &crate::native::features::FeatureOperationBodyPartitionUse,
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> FeatureResultGroupMembers {
+    let mut result = FeatureResultGroupMembers::default();
+    for member_id in &use_.parasolid_group_members {
+        let mut matches = members.iter().filter(|member| member.id == *member_id);
+        let Some(member) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        let Some(xmt) = member.current_member_xmt else {
+            continue;
+        };
+        match member.member_family.as_str() {
+            "FACE" => result.faces.push(format!(
+                "nx:s{}:face#{xmt}",
+                member.partition_stream_ordinal
+            )),
+            "EDGE" => result.edges.push(format!(
+                "nx:s{}:edge#{xmt}",
+                member.partition_stream_ordinal
+            )),
+            "VERTEX" => result.vertices.push(format!(
+                "nx:s{}:vertex#{xmt}",
+                member.partition_stream_ordinal
+            )),
+            _ => {}
+        }
+    }
+    result
 }
 
 /// Select the exact native writer identity for one intermediate body result.
@@ -8196,6 +8253,25 @@ fn complete_operation_body_image_outputs(
         outputs.push(body.clone());
     }
     outputs
+}
+
+fn body_writes_match_boolean_target(
+    writes: &[&crate::native::features::FeatureOperationBodyWrite],
+    boolean: Option<&crate::native::features::FeatureBooleanOperation>,
+) -> bool {
+    let Some(boolean) = boolean else {
+        return true;
+    };
+    if writes.is_empty() {
+        return true;
+    }
+    let [write] = writes else {
+        return false;
+    };
+    write.body_image_object_index == boolean.target_object_index
+        && !boolean
+            .tool_object_indices
+            .contains(&write.body_image_object_index)
 }
 
 pub(crate) fn attach_expression_parameters(

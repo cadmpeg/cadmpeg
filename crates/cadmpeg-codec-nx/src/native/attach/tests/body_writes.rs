@@ -89,6 +89,53 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
     assert!(super::complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
 }
 
+fn native_boolean(
+    target_object_index: u32,
+    tool_object_indices: Vec<u32>,
+) -> crate::native::features::FeatureBooleanOperation {
+    crate::native::features::FeatureBooleanOperation {
+        id: "boolean".into(),
+        operation_label: "operation".into(),
+        kind: crate::native::features::FeatureBooleanKind::Subtract,
+        target_object_index,
+        raw_target_object_index: vec![1],
+        target_source_offset: 0,
+        raw_tool_object_indices: vec![vec![2]; tool_object_indices.len()],
+        tool_source_offsets: vec![0; tool_object_indices.len()],
+        tool_object_indices,
+        source_offset: 0,
+    }
+}
+
+#[test]
+fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
+    let mut write = native_body_write("write");
+    write.body_image_object_index = 40;
+    let boolean = native_boolean(40, vec![41, 42]);
+
+    assert!(super::body_writes_match_boolean_target(&[&write], None));
+    assert!(super::body_writes_match_boolean_target(&[], Some(&boolean)));
+    assert!(super::body_writes_match_boolean_target(
+        &[&write],
+        Some(&boolean)
+    ));
+
+    let wrong_target = native_boolean(43, vec![41, 42]);
+    assert!(!super::body_writes_match_boolean_target(
+        &[&write],
+        Some(&wrong_target)
+    ));
+    let target_is_tool = native_boolean(40, vec![40, 41]);
+    assert!(!super::body_writes_match_boolean_target(
+        &[&write],
+        Some(&target_is_tool)
+    ));
+    assert!(!super::body_writes_match_boolean_target(
+        &[&write, &write],
+        Some(&boolean)
+    ));
+}
+
 #[test]
 fn duplicate_body_image_uses_do_not_assign_an_output() {
     let uses = [
@@ -98,6 +145,65 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
     let bodies = BTreeMap::from([("binding-a", vec![BodyId("body-a".into())])]);
 
     assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
+}
+
+fn group_member(
+    id: &str,
+    family: &str,
+    current_member_xmt: Option<u32>,
+) -> crate::native::parasolid::ParasolidGroupMember {
+    crate::native::parasolid::ParasolidGroupMember {
+        id: id.into(),
+        partition_stream_ordinal: 4,
+        group_xmt: 10,
+        group_node_id: 7,
+        ordinal: 0,
+        list_record_xmt: 20,
+        member_xmt: 30,
+        member_family: family.into(),
+        member_node_id: Some(50),
+        current_member_xmt,
+    }
+}
+
+fn group_use(member_ids: &[&str]) -> crate::native::features::FeatureOperationBodyPartitionUse {
+    crate::native::features::FeatureOperationBodyPartitionUse {
+        id: "partition-use".into(),
+        operation_body_write: "write".into(),
+        body_image_segment_use: "image-use".into(),
+        segment_body_binding: "binding".into(),
+        partition_stream_ordinal: 4,
+        group_node: 7,
+        parasolid_group_records: Vec::new(),
+        parasolid_group_members: member_ids.iter().map(|id| (*id).into()).collect(),
+    }
+}
+
+#[test]
+fn result_topology_uses_only_unique_current_group_members() {
+    let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
+    let members = [
+        group_member("face", "FACE", Some(40)),
+        group_member("edge", "EDGE", Some(41)),
+        group_member("vertex", "VERTEX", Some(42)),
+        group_member("historical", "FACE", None),
+        group_member("shell", "SHELL", Some(43)),
+    ];
+    let result = super::feature_result_group_members(&use_, &members);
+
+    assert_eq!(result.faces, ["nx:s4:face#40"]);
+    assert_eq!(result.edges, ["nx:s4:edge#41"]);
+    assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
+
+    let duplicate_members = [
+        group_member("face", "FACE", Some(40)),
+        group_member("face", "FACE", Some(40)),
+    ];
+    assert!(
+        super::feature_result_group_members(&group_use(&["face"]), &duplicate_members,)
+            .faces
+            .is_empty()
+    );
 }
 
 #[test]

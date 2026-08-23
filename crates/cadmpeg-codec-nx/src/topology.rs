@@ -150,6 +150,13 @@ pub struct VertexFields {
 }
 
 impl Node {
+    /// Kernel node identity serialized by fixed topology families.
+    pub fn node_id(&self) -> Option<u32> {
+        matches!(self.kind, 12..=16 | 18..=19)
+            .then(|| self.u32_at(4))
+            .flatten()
+    }
+
     /// Inflated-stream offset of this topology record's attribute-list field.
     pub fn attribute_field_offset(&self) -> Option<usize> {
         match self.kind {
@@ -908,6 +915,16 @@ impl Graph {
             .into_iter()
             .flat_map(|keys| keys.iter())
             .filter_map(|key| self.nodes.get(key))
+    }
+
+    /// Resolve one current XMT identity from a unique kernel node identity.
+    pub(crate) fn unique_xmt_by_node_id(&self, kind: u8, node_id: u32) -> Option<u32> {
+        let mut matches = self
+            .of_kind(kind)
+            .filter(|node| node.node_id() == Some(node_id))
+            .map(|node| node.xmt);
+        let xmt = matches.next()?;
+        matches.next().is_none().then_some(xmt)
     }
 
     /// Curve identities occupying typed curve-reference slots in the fixed
