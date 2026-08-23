@@ -153,6 +153,30 @@ fn operation_body_write_retains_identity_group_and_image() {
     assert_eq!(second.body_image_object_index, 0x694);
 }
 
+#[test]
+fn operation_body_write_resolves_one_unique_image_block() {
+    let body_write = vec![
+        0x01, 0x02, 0x0b, 0x31, 0x97, 0x75, 0x01, 0x02, 0x10, 0x41, 0xff,
+    ];
+    let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload =
+        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]))
+    .expect("synthetic body-image store");
+
+    let writes = super::feature_operation_body_writes(&container);
+
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].body_image_object_index, 65);
+    assert_eq!(
+        writes[0].body_image_data_block.as_deref(),
+        Some("nx:om-data-blocks-0:block#65")
+    );
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,

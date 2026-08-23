@@ -118,6 +118,9 @@ pub struct FeatureOperationBodyWrite {
     pub group_node_source_offset: u64,
     /// Offset-store object containing the body's serialized image.
     pub body_image_object_index: u32,
+    /// Unambiguous offset-store block selected by the body-image object index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_image_data_block: Option<String>,
     /// Exact serialized body-image object token.
     pub raw_body_image_object_index: Vec<u8>,
     /// Absolute offset of the body-image object token.
@@ -3317,6 +3320,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
 
 /// Decode exact body-write frames from bounded feature operations.
 pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperationBodyWrite> {
+    let indexed = container.indexed_om_sections();
     let mut writes = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -3343,6 +3347,10 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
                     group_node_source_offset: entry_offset
                         + write.group_node_offset as u64,
                     body_image_object_index: write.body_image_object_index,
+                    body_image_data_block: unique_offset_data_block(
+                        &indexed,
+                        write.body_image_object_index,
+                    ),
                     raw_body_image_object_index: write.raw_body_image_object_index,
                     body_image_object_index_source_offset: entry_offset
                         + write.body_image_object_index_offset as u64,
