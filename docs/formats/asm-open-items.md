@@ -152,30 +152,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A record with more than one decodable 3D curve can make the writer patch a support or pcurve instead of the writable cache. We need an owner reference, subtype rule, or full-consumption invariant before the first-block selection can be used for writing.
 
-### GC-30. Missing major-axis vector of an analytic cone
-
-**Question.** Is a `cone` record with no valid major-axis vector a valid form? If it is valid, which member gives its radius and reference direction?
-
-**Known.** `asm.md` §6.2 `cone` states that the major-axis vector gives the base radius. It states that `u_scale` is a parameter scale and is not a radius. `decode_surface` in `brep/geometry.rs` accepts a missing or zero-length major-axis vector. It then uses `u_scale` as the radius and `deterministic_ref_direction(axis)` as the reference direction. It records no loss.
-
-If an offset-derived cone has a `u_scale` that differs from its major-axis radius, the emitted radius is wrong. Its zero-azimuth direction is also invented, so an attached cone pcurve can use the wrong chart.
-
-**Need.** We need a valid-record witness or a rule that requires the record to remain native when the major-axis vector is absent.
-
-**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/geometry.rs:98-118`. The fixed layout and the text shape table are counter-evidence against treating the fallback as a conforming form, but they do not justify emitting substitute geometry when the binary reader reaches it.
-
-### GC-31. Missing analytic-surface frame members
-
-**Question.** Which frame does an analytic surface carry when one of its direction vectors is absent?
-
-**Known.** `asm.md` §6.2 gives both frame members for `plane`, `sphere`, and `torus`: plane normal plus reference direction, sphere equator plus polar axis, and torus axis plus reference direction. `decode_surface` in `brep/geometry.rs` synthesizes a plane reference direction when only its normal is present, uses `sphere.dir1` as the polar axis when `dir2` is absent and synthesizes a new equator, and synthesizes a torus reference direction when only its axis is present. It records no loss.
-
-If a one-vector sphere is accepted, the point set is unchanged but the pole and seam frame is rotated: the decoder treats the equator as the polar axis. A pcurve or trim measured in the stored frame then lands on the wrong parameters. The same substitution moves a plane seam or torus zero-azimuth direction.
-
-**Need.** A conforming record carries the complete frame. We need a specimen or an authoritative alternate form that identifies the one stored vector, or the decoder must retain the record without synthesizing a frame.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
-
 ### GC-32. Unadmitted rolling-ball branches
 
 **Question.** Does an `rb_blend_spl_sur` record outside the complete and compact grammars carry another defined layout?

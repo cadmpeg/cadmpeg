@@ -379,6 +379,8 @@ An embedded or face-bound pcurve on a plane stores its first coordinate as a nat
 
 **`torus` (142 B basic / 160 B ranged)**: origin, axis, `major_radius` (f64), **signed** `minor_radius` (f64), `ref_direction`; then a range flag (`0x0b` = full 142-B variant; `0x0a` = 160-B variant with start/end angles). `minor < 0` with `|minor| ≤ |major|` describes an apple/lemon torus. **Inside-out torus rule:** `|minor| > |major|` is self-intersecting. The native frame and minor-radius sign are part of the carrier.
 
+Both direction vectors in each analytic-surface frame are required. A `cone` major-axis vector also has nonzero magnitude; its magnitude is the base radius. A record with an absent required vector or a zero cone major-axis vector does not define an analytic surface. `u_scale` does not substitute for the cone radius or reference direction.
+
 Evaluation formulas for all four carriers follow directly from the frame vectors above.
 
 ### 6.3 Analytic curve byte layouts

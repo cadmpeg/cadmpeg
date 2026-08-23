@@ -73,10 +73,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         "plane" => {
             let normal = *c.vectors.first()?;
             let normal = unit(normal);
-            let u_axis = c
-                .vectors
-                .get(1)
-                .map_or_else(|| deterministic_ref_direction(normal), |axis| unit(*axis));
+            let u_axis = unit(*c.vectors.get(1)?);
             Some((
                 SurfaceGeometry::Plane {
                     origin: scale_point(origin),
@@ -90,7 +87,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let ratio = *c.doubles.first().unwrap_or(&1.0);
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
-            let major = c.vectors.get(1).copied();
+            let major = *c.vectors.get(1)?;
             // Doubles are (ratio, sine, cosine, u_scale). `ratio` is the
             // minor/major radius ratio. `sine` selects cylinder vs cone. The
             // base radius is the major-axis vector's
@@ -101,12 +98,9 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             // points the surface normal toward the axis.
             let sine = *c.doubles.get(1).unwrap_or(&0.0);
             let cosine = *c.doubles.get(2).unwrap_or(&1.0);
-            let u_scale = c.doubles.get(3).copied();
-            let radius = major
-                .map(|vector| norm3(vector) * LEN_TO_MM)
-                .filter(|radius| *radius > f64::EPSILON)
-                .or_else(|| u_scale.map(|r| r * LEN_TO_MM))?;
-            let ref_direction = major.map_or_else(|| deterministic_ref_direction(axis), unit);
+            let radius = norm3(major) * LEN_TO_MM;
+            (radius > f64::EPSILON).then_some(())?;
+            let ref_direction = unit(major);
             if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
                     SurfaceGeometry::Cylinder {
@@ -145,16 +139,8 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "sphere" => {
             let signed = *c.doubles.first()?;
-            let polar_axis = c.vectors.get(1).or_else(|| c.vectors.first()).copied()?;
-            let polar_axis = unit(polar_axis);
-            let equator = c
-                .vectors
-                .first()
-                .filter(|_| c.vectors.len() > 1)
-                .map_or_else(
-                    || deterministic_ref_direction(polar_axis),
-                    |direction| unit(*direction),
-                );
+            let equator = unit(*c.vectors.first()?);
+            let polar_axis = unit(*c.vectors.get(1)?);
             Some((
                 SurfaceGeometry::Sphere {
                     center: scale_point(origin),
@@ -168,10 +154,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         "torus" => {
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
-            let ref_direction = c.vectors.get(1).map_or_else(
-                || deterministic_ref_direction(axis),
-                |direction| unit(*direction),
-            );
+            let ref_direction = unit(*c.vectors.get(1)?);
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
@@ -187,20 +170,6 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         _ => None,
     }
-}
-
-fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
-    let candidates = [
-        Vector3::new(1.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-    ];
-    let basis = candidates
-        .into_iter()
-        .min_by(|a, b| a.dot(axis).abs().total_cmp(&b.dot(axis).abs()))
-        .expect("fixed candidate set is non-empty");
-    let projected = basis - axis.scale(basis.dot(axis));
-    projected.scale(1.0 / projected.norm())
 }
 
 /// The vertex record's point reference. The modern layout stores the
@@ -1101,5 +1070,68 @@ pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
         } else {
             cadmpeg_ir::topology::BodyKind::Sheet
         };
+    }
+}
+
+#[cfg(test)]
+mod analytic_surface_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
+        Record {
+            index: 1,
+            name: format!("{head}-surface"),
+            head: head.into(),
+            tokens: Arc::from(tokens),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn analytic_surfaces_require_complete_serialized_frames() {
+        let origin = Token::Position([0.0, 0.0, 0.0]);
+        let axis = Token::Vector3([0.0, 0.0, 1.0]);
+
+        let plane = surface_record("plane", vec![origin.clone(), axis.clone()]);
+        let cone_without_major = surface_record(
+            "cone",
+            vec![
+                origin.clone(),
+                axis.clone(),
+                Token::Double(1.0),
+                Token::Double(0.0),
+                Token::Double(1.0),
+                Token::Double(7.0),
+            ],
+        );
+        let cone_with_zero_major = surface_record(
+            "cone",
+            vec![
+                origin.clone(),
+                axis.clone(),
+                Token::Vector3([0.0, 0.0, 0.0]),
+                Token::Double(1.0),
+            ],
+        );
+        let sphere = surface_record(
+            "sphere",
+            vec![origin.clone(), Token::Double(2.0), axis.clone()],
+        );
+        let torus = surface_record(
+            "torus",
+            vec![origin, axis, Token::Double(3.0), Token::Double(1.0)],
+        );
+
+        for record in [
+            plane,
+            cone_without_major,
+            cone_with_zero_major,
+            sphere,
+            torus,
+        ] {
+            assert!(decode_surface(&record).is_none());
+        }
     }
 }
