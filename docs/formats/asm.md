@@ -98,6 +98,7 @@ The stream is a tag-typed SAB (ACIS binary) token stream.
 - `0x11` terminates the current top-level record; the next record's name-token chain begins at the following byte.
 - `0x0A`/`0x0B` inside a record are booleans (often `reversed`/`forward`), **never** record boundaries.
 - Positions (`0x13`) and length-bearing vectors are centimetres; see §4.
+- String, identifier, and sub-identifier payloads are valid UTF-8, and their lengths count bytes. An invalid UTF-8 sequence makes the stream malformed at its first invalid byte.
 - The tag space is closed at `0x17`. A byte outside the table at an item position is not an item: it means framing lost synchronization earlier in the stream. The two length prefixes that are `ref_size` rather than fixed — `0x09` and `0x12` — are the usual cause, because reading either as a fixed four bytes in a `ref_size` 8 stream both starts four bytes early and stops four bytes short, leaving the payload's trailing bytes to be read as tags. `0x17` is the one tag whose payload width does not follow `ref_size`; it is 8 bytes in either width.
 
 ### 2.2 Record names and the RecordTable
