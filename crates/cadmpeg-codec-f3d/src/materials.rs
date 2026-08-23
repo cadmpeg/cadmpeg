@@ -1785,7 +1785,7 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
     let _description = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
     skip_catalog_strings(record, &mut position)?;
     skip_catalog_strings(record, &mut position)?;
-    if position != record.len() {
+    if record[position..].iter().any(|byte| *byte != 0) {
         return Err(malformed());
     }
     Ok(DefinitionCatalogRecord {

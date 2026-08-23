@@ -53,4 +53,4 @@ A `DefinitionIteratorProperties.bin` logical record has this sequence:
 7. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
 8. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
 
-The record ends after the last preview path. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and category.
+The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and category.

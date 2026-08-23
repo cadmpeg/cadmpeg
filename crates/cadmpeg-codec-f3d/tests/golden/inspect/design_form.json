@@ -42,11 +42,11 @@
     },
     {
       "attributes": {},
-      "compressed_size": 816,
+      "compressed_size": 898,
       "compression": "stored",
       "name": "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
       "role": "protein-assets",
-      "uncompressed_size": 816
+      "uncompressed_size": 898
     },
     {
       "attributes": {},
