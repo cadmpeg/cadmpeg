@@ -1030,12 +1030,29 @@ pub(super) fn project(
             ));
             continue;
         }
-        let equal_weights = native_weights
-            .first()
-            .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
+        let precision = global.real_precision();
+        let uncertainty =
+            |index: usize, value: f64| record.number_uncertainty(index, value, precision);
+        let equal_within_significance =
+            |left_index: usize, left: f64, right_index: usize, right: f64| {
+                (left - right).abs()
+                    <= uncertainty(left_index, left) + uncertainty(right_index, right)
+            };
+        let equal_weights = native_weights.first().is_some_and(|first| {
+            native_weights.iter().enumerate().all(|(offset, weight)| {
+                equal_within_significance(weight_start, *first, weight_start + offset, *weight)
+            })
+        });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
             losses.push(entity_loss(entry, "polynomial surface has unequal weights"));
+            continue;
+        }
+        if !polynomial && equal_weights {
+            losses.push(entity_loss(
+                entry,
+                "rational surface has equal weights but PROP3 declares rational",
+            ));
             continue;
         }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
@@ -1049,7 +1066,6 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        let precision = global.real_precision();
         let clamp_range =
             |start_index: usize, values: [f64; 2], domain: [f64; 2]| -> Option<[f64; 2]> {
                 let mut clamped = values;

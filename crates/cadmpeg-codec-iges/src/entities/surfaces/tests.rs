@@ -580,3 +580,58 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
+    for global in [
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(),
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(),
+    ] {
+        for (weights, projected, expected_message) in [
+            (
+                "1,1,1,1",
+                false,
+                "rational surface has equal weights but PROP3 declares rational",
+            ),
+            ("1,0.99,1,1", true, ""),
+        ] {
+            let parameters = format!(
+                "128,1,1,1,1,0,0,0,0,0,0,0,1,1,0,0,1,1,{weights},0,0,0,1,0,0,1,0,1,1,0,1,0,1,0,1;"
+            );
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(owned_test_file_with_global(
+                        &[OwnedTestEntity {
+                            entity_type: 128,
+                            form: 0,
+                            label: "SURFACE".into(),
+                            status: "00000000",
+                            parameters,
+                        }],
+                        global,
+                    )),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+
+            assert_eq!(result.ir().model.surfaces.len(), usize::from(projected));
+            if projected {
+                let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+                    &result.ir().model.surfaces[0].geometry
+                else {
+                    panic!("expected a NURBS surface carrier");
+                };
+                assert_eq!(
+                    surface.weights.as_deref(),
+                    Some([1.0, 1.0, 0.99, 1.0].as_slice())
+                );
+            } else {
+                assert!(result
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains(expected_message)));
+            }
+        }
+    }
+}
