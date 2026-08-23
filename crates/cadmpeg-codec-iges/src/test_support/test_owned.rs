@@ -25,7 +25,7 @@ pub(crate) fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
 }
 
 pub(crate) fn owned_test_file_with_raw_parameters(entities: &[OwnedTestEntity]) -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     owned_test_file_with_parameter_layout(
         entities,
         global,
@@ -94,7 +94,7 @@ pub(crate) fn owned_test_file_with_directory_fields(
     line_weights: &[(u32, i64)],
     structures: &[(u32, i64)],
 ) -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     owned_test_file_with_global_and_directory_fields(
         entities,
         global,

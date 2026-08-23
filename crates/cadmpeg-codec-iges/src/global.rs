@@ -130,6 +130,7 @@ pub(crate) struct ResolvedGlobal {
     #[cfg(test)]
     units_flag: Option<i64>,
     precision: RealPrecision,
+    numeric_limits: NumericLimits,
     minimum_resolution: f64,
     #[cfg(test)]
     maximum_coordinate: Option<f64>,
@@ -166,6 +167,17 @@ enum LineWeightMode {
 pub(crate) struct RealPrecision {
     pub(crate) single_significance: u32,
     pub(crate) double_significance: u32,
+}
+
+/// Sender numeric range capabilities declared by Global fields 7, 8, and 10.
+///
+/// An absent or unusable declaration is `None`. It cannot justify a numeric
+/// admission, but it also does not create a substitute sender capability.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NumericLimits {
+    pub(crate) integer_bits: Option<u32>,
+    pub(crate) single_magnitude: Option<i64>,
+    pub(crate) double_magnitude: Option<i64>,
 }
 
 const FIELD_SENDER_PRODUCT: usize = 2;
@@ -831,9 +843,14 @@ impl Resolution {
     }
 
     fn metadata_integer(&mut self, index: usize, admits: fn(i64) -> bool) {
-        let admitted = match self.supplied_integer(index) {
+        let _ = self.metadata_integer_value(index, admits);
+    }
+
+    fn metadata_integer_value(&mut self, index: usize, admits: fn(i64) -> bool) -> Option<i64> {
+        let supplied = self.supplied_integer(index);
+        let admitted = match &supplied {
             Supplied::Absent => true,
-            Supplied::Value(value) => admits(value),
+            Supplied::Value(value) => admits(*value),
             Supplied::Malformed => false,
         };
         if !admitted {
@@ -843,6 +860,10 @@ impl Resolution {
                 Defect::Malformed,
                 METADATA_CONSEQUENCE,
             );
+        }
+        match supplied {
+            Supplied::Value(value) if admitted => Some(value),
+            Supplied::Absent | Supplied::Malformed | Supplied::Value(_) => None,
         }
     }
 
@@ -1059,10 +1080,12 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME);
     resolution.metadata_string(FIELD_NATIVE_SYSTEM);
     resolution.metadata_string(FIELD_PREPROCESSOR_VERSION);
-    resolution.metadata_integer(FIELD_INTEGER_BITS, |_| true);
-    resolution.metadata_integer(FIELD_SINGLE_MAGNITUDE, |_| true);
+    let integer_bits = resolution
+        .metadata_integer_value(FIELD_INTEGER_BITS, |_| true)
+        .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
+    let single_magnitude = resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, |_| true);
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE, dialect);
-    resolution.metadata_integer(FIELD_DOUBLE_MAGNITUDE, |_| true);
+    let double_magnitude = resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, |_| true);
     let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, dialect);
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if dialect.defaults_receiver_product_to_sender() => sender_product.clone(),
@@ -1111,6 +1134,11 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             single_significance,
             double_significance,
         },
+        numeric_limits: NumericLimits {
+            integer_bits,
+            single_magnitude,
+            double_magnitude,
+        },
         minimum_resolution,
         #[cfg(test)]
         maximum_coordinate,
@@ -1138,6 +1166,10 @@ impl ResolvedGlobal {
 
     pub(crate) fn real_precision(&self) -> RealPrecision {
         self.precision
+    }
+
+    pub(crate) fn numeric_limits(&self) -> NumericLimits {
+        self.numeric_limits
     }
 
     #[cfg(test)]

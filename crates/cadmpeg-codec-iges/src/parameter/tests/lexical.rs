@@ -5,8 +5,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::super::{tokenize, ParameterDefect, TokenValue, TokenizeFailure};
-use crate::global::Dialect;
+use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
+use crate::global::{Dialect, NumericLimits};
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
@@ -56,6 +56,97 @@ fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
                 4
             ))
         ));
+    }
+}
+
+fn declared_numeric_limits() -> NumericLimits {
+    NumericLimits {
+        integer_bits: Some(32),
+        single_magnitude: Some(38),
+        double_magnitude: Some(308),
+    }
+}
+
+fn tokenize_with_declared_limits(value: &str) -> Result<Vec<Token>, TokenizeFailure> {
+    super::super::tokenize_with_limits(
+        format!("116,{value};").as_bytes(),
+        &[],
+        b',',
+        b';',
+        Dialect::V5_0,
+        declared_numeric_limits(),
+        None,
+    )
+    .map(|(tokens, _)| tokens)
+}
+
+#[test]
+fn parameter_numeric_tokens_obey_global_integer_and_real_capabilities() {
+    for value in ["2147483647", "-2147483647"] {
+        assert!(tokenize_with_declared_limits(value).is_ok(), "{value}");
+    }
+    for value in ["2147483648", "-2147483648"] {
+        assert!(
+            matches!(
+                tokenize_with_declared_limits(value),
+                Err(TokenizeFailure::Defect(
+                    ParameterDefect::NumericOutOfRange,
+                    4
+                )),
+            ),
+            "{value}"
+        );
+    }
+
+    for value in ["9.9E37", "1E38", "1.1E38", "1.23456", "1.230000"] {
+        assert!(tokenize_with_declared_limits(value).is_ok(), "{value}");
+    }
+    assert!(matches!(
+        tokenize_with_declared_limits("1E39"),
+        Err(TokenizeFailure::Defect(
+            ParameterDefect::NumericOutOfRange,
+            4
+        )),
+    ));
+    assert!(tokenize_with_declared_limits("1.234567D308").is_ok());
+    assert!(matches!(
+        tokenize_with_declared_limits("1D309"),
+        Err(TokenizeFailure::Defect(
+            ParameterDefect::NumericOutOfRange,
+            4
+        )),
+    ));
+}
+
+#[test]
+fn parameter_numeric_capability_checks_are_proven_for_v4_and_v5_0() {
+    for (version, fields) in [
+        (
+            "6",
+            "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,1,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;",
+        ),
+        (
+            "8",
+            "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,1,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;",
+        ),
+    ] {
+        assert!(fields.contains(&format!(",{version},")));
+        let mut bytes = point_file_with_global(fields.as_bytes());
+        let old = b"116,1.0,2.0,3.0;";
+        let new = b"116,1E2,2.0,3.0;";
+        let offset = bytes
+            .windows(old.len())
+            .position(|window| window == old)
+            .expect("point Parameter Data");
+        bytes[offset..offset + old.len()].copy_from_slice(new);
+
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(result.ir().model.points.is_empty(), "version {version}");
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::ParameterDataQuarantined.kind()
+        }), "version {version}: {:#?}", result.report().losses);
     }
 }
 

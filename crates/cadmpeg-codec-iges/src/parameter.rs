@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
-use crate::global::{Dialect, RealPrecision, ResolvedGlobal};
+use crate::global::{Dialect, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -2379,6 +2379,7 @@ pub(crate) enum ParameterDefect {
     NumericContainsBlanks,
     TokenNotAscii,
     TokenNotANumber,
+    NumericOutOfRange,
     DelimiterMissing,
     MacroHeaderMalformed,
     MacroArgumentListMissing,
@@ -2404,6 +2405,7 @@ impl ParameterDefect {
             Self::NumericContainsBlanks => "numeric-contains-blanks",
             Self::TokenNotAscii => "token-not-ascii",
             Self::TokenNotANumber => "token-not-a-number",
+            Self::NumericOutOfRange => "numeric-out-of-range",
             Self::DelimiterMissing => "delimiter-missing",
             Self::MacroHeaderMalformed => "macro-header-malformed",
             Self::MacroArgumentListMissing => "macro-argument-list-missing",
@@ -2433,6 +2435,9 @@ impl ParameterDefect {
             Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",
             Self::TokenNotAscii => "a token is not ASCII",
             Self::TokenNotANumber => "a token is not a number",
+            Self::NumericOutOfRange => {
+                "a numeric token exceeds the sender range declared in Global fields 7, 8, or 10"
+            }
             Self::DelimiterMissing => "a delimiter is missing",
             Self::MacroHeaderMalformed => {
                 "a Type 306 header is not `306,MACRO,entity-type,argument-list`"
@@ -2943,7 +2948,97 @@ fn tokenize_macro(
     Ok((tokens, data.record_end))
 }
 
-fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DecimalShape {
+    order: i64,
+    double_precision: bool,
+    zero: bool,
+}
+
+fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
+    let mut start = 0;
+    if matches!(text.first(), Some(b'+' | b'-')) {
+        start = 1;
+    }
+    let exponent_at = text[start..]
+        .iter()
+        .position(|byte| matches!(byte, b'E' | b'e' | b'D' | b'd'))
+        .map(|offset| start + offset);
+    let (base, exponent_text, double_precision) = match exponent_at {
+        Some(index) => (
+            &text[..index],
+            text.get(index + 1..),
+            matches!(text[index], b'D' | b'd'),
+        ),
+        None => (text, None, false),
+    };
+    let exponent = match exponent_text {
+        Some(value) => std::str::from_utf8(value).ok()?.parse::<i64>().ok()?,
+        None => 0,
+    };
+    let base = base.get(start..)?;
+    let (integer, fraction) = match base.iter().position(|byte| *byte == b'.') {
+        Some(dot) => (base.get(..dot)?, base.get(dot + 1..)?),
+        None => (base, &[][..]),
+    };
+    if integer.is_empty() && fraction.is_empty()
+        || integer
+            .iter()
+            .chain(fraction)
+            .any(|byte| !byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let first_nonzero = integer
+        .iter()
+        .chain(fraction)
+        .position(|byte| *byte != b'0');
+    let Some(first_nonzero) = first_nonzero else {
+        return Some(DecimalShape {
+            order: 0,
+            double_precision,
+            zero: true,
+        });
+    };
+    let integer_digits = i64::try_from(integer.len()).ok()?;
+    let first_nonzero = i64::try_from(first_nonzero).ok()?;
+    let order = integer_digits
+        .checked_sub(1)?
+        .checked_sub(first_nonzero)?
+        .checked_add(exponent)?;
+    Some(DecimalShape {
+        order,
+        double_precision,
+        zero: false,
+    })
+}
+
+fn integer_within_bits(value: i64, bits: u32) -> bool {
+    if bits == 0 || bits > 64 {
+        return true;
+    }
+    let maximum = if bits >= 64 {
+        (1_u128 << 63) - 1
+    } else {
+        (1_u128 << bits.saturating_sub(1)) - 1
+    };
+    u128::from(value.unsigned_abs()) <= maximum
+}
+
+fn real_within_limits(shape: DecimalShape, limits: NumericLimits) -> bool {
+    let magnitude = if shape.double_precision {
+        limits.double_magnitude
+    } else {
+        limits.single_magnitude
+    };
+    shape.zero || magnitude.is_none_or(|maximum| shape.order <= maximum)
+}
+
+fn numeric_with_limits(
+    bytes: &[u8],
+    span: Range<usize>,
+    limits: NumericLimits,
+) -> Result<Token, TokenizeFailure> {
     let start = span.start;
     let raw = &bytes[span.clone()];
     let first = raw
@@ -2970,20 +3065,44 @@ fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
         .bytes()
         .any(|byte| matches!(byte, b'.' | b'E' | b'e' | b'D' | b'd'));
     let value = if real {
+        let shape = decimal_shape(text_bytes).ok_or_else(not_a_number)?;
+        if !real_within_limits(shape, limits) {
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericOutOfRange,
+                start,
+            ));
+        }
         let normalized = text.replace(['D', 'd'], "E");
-        TokenValue::Real(normalized.parse::<f64>().map_err(|_| not_a_number())?)
+        TokenValue::Real(
+            normalized
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(not_a_number)?,
+        )
     } else {
-        TokenValue::Integer(text.parse::<i64>().map_err(|_| not_a_number())?)
+        let value = text.parse::<i64>().map_err(|_| not_a_number())?;
+        if limits
+            .integer_bits
+            .is_some_and(|bits| !integer_within_bits(value, bits))
+        {
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericOutOfRange,
+                start,
+            ));
+        }
+        TokenValue::Integer(value)
     };
     Ok(Token { value, span })
 }
 
-fn tokenize(
+fn tokenize_with_limits(
     bytes: &[u8],
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
     dialect: Dialect,
+    limits: NumericLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
@@ -3041,7 +3160,7 @@ fn tokenize(
                     first_value,
                 ));
             }
-            (numeric(bytes, span)?, end)
+            (numeric_with_limits(bytes, span, limits)?, end)
         };
         charge(ctx)?;
         tokens.push(token);
@@ -3056,6 +3175,26 @@ fn tokenize(
             }
         }
     }
+}
+
+#[cfg(test)]
+fn tokenize(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    dialect: Dialect,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    tokenize_with_limits(
+        bytes,
+        card_boundaries,
+        parameter_delimiter,
+        record_delimiter,
+        dialect,
+        NumericLimits::default(),
+        ctx,
+    )
 }
 
 /// The Directory-declared Parameter Data range, when the declaration is usable.
@@ -3386,12 +3525,13 @@ pub(crate) fn assemble_with_context(
                 ctx,
             )
         } else {
-            tokenize(
+            tokenize_with_limits(
                 &owned_bytes.bytes,
                 &owned_bytes.card_boundaries,
                 global.parameter_delimiter,
                 global.record_delimiter,
                 global.dialect(),
+                global.numeric_limits(),
                 ctx,
             )
         };

@@ -243,6 +243,31 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
 }
 
 #[test]
+fn readable_numeric_capabilities_are_retained_separately_from_projection_precision() {
+    let (parsed, losses) = resolve_global_fields(&valid_global_fields());
+
+    assert_eq!(
+        parsed.numeric_limits().integer_bits,
+        Some(32),
+        "{losses:#?}"
+    );
+    assert_eq!(parsed.numeric_limits().single_magnitude, Some(38));
+    assert_eq!(parsed.numeric_limits().double_magnitude, Some(308));
+
+    let mut fields = valid_global_fields();
+    fields[6].clear();
+    fields[7].clear();
+    fields[8].clear();
+    fields[9].clear();
+    fields[10].clear();
+    let (parsed, _) = resolve_global_fields(&fields);
+    assert_eq!(
+        parsed.numeric_limits(),
+        crate::global::NumericLimits::default()
+    );
+}
+
+#[test]
 fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
     let bytes = point_file_with_field(16, "");
 
