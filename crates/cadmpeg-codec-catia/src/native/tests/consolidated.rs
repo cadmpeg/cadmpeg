@@ -1000,6 +1000,47 @@ fn compact_vertex_identity_is_scoped_by_owner_allocation() {
 }
 
 #[test]
+fn compact_vertex_identity_uses_resolved_allocation_records() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let second_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x09, 0x0d, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let first_vertex_pos = first_edge.len() as u64;
+    let second_vertex_pos = first_vertex_pos + vertex.len() as u64;
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&second_edge);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].allocation_vertex_records,
+        Some([first_vertex_pos, second_vertex_pos])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].allocation_vertex_records,
+        Some([first_vertex_pos, second_vertex_pos])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices,
+        native.consolidated_edge_nodes[1].vertices
+    );
+    assert_eq!(
+        native
+            .consolidated_vertex_identities
+            .iter()
+            .map(|identity| identity.allocation_record)
+            .collect::<Vec<_>>(),
+        vec![Some(first_vertex_pos), Some(second_vertex_pos)]
+    );
+}
+
+#[test]
 fn native_namespace_merges_shared_consolidated_vertex_identity() {
     let mut bytes = a5_native_edge_run_stream(6, 139, 142);
     bytes.extend_from_slice(&a5_native_edge_run_stream(9, 142, 151));

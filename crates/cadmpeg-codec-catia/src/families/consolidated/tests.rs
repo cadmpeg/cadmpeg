@@ -638,6 +638,38 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
 }
 
 #[test]
+fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let second_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x09, 0x0d, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let first_vertex_pos = first_edge.len();
+    let second_vertex_pos = first_vertex_pos + vertex.len();
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&second_edge);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes, &records,
+        );
+
+    assert_eq!(endpoints.len(), 2);
+    assert_eq!(
+        endpoints[0].vertex_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+    assert_eq!(
+        endpoints[1].vertex_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+}
+
+#[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 

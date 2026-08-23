@@ -15,7 +15,8 @@ use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+    allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+    AllocationReferenceEncoding,
 };
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
@@ -188,6 +189,8 @@ pub struct B2CountedOwner {
     pub header_token: u32,
     /// Persistent identities selected by the leading `0x80+n` count.
     pub references: Vec<u32>,
+    /// Addressing form of each count-selected reference.
+    pub reference_encodings: Vec<AllocationReferenceEncoding>,
     /// Nonempty class-specific bytes after the reference lane.
     pub tail: Vec<u8>,
 }
@@ -350,6 +353,8 @@ pub struct B2EdgeNode {
     pub start_parameter_ref: u32,
     /// Allocation-local end-parameter selector.
     pub end_parameter_ref: u32,
+    /// Addressing forms of the five references in payload order.
+    pub reference_encodings: [AllocationReferenceEncoding; 5],
     /// Terminal layout byte following the five references.
     pub tail: u8,
 }
@@ -457,11 +462,13 @@ pub(crate) fn b2_edge_nodes_from_records(
                 return None;
             }
             let mut at = frame.payload;
-            let curve_ref = allocation_ref(data, &mut at)?;
-            let start_vertex_ref = allocation_ref(data, &mut at)?;
-            let end_vertex_ref = allocation_ref(data, &mut at)?;
-            let start_parameter_ref = allocation_ref(data, &mut at)?;
-            let end_parameter_ref = allocation_ref(data, &mut at)?;
+            let references = (0..5)
+                .map(|_| allocation_reference(data, &mut at))
+                .collect::<Option<Vec<_>>>()?;
+            let references: [_; 5] = references.try_into().ok()?;
+            let [curve_ref, start_vertex_ref, end_vertex_ref, start_parameter_ref, end_parameter_ref] =
+                references.map(|reference| reference.value);
+            let reference_encodings = references.map(|reference| reference.encoding);
             let tail = *data.get(at)?;
             (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
                 .then_some(B2EdgeNode {
@@ -472,6 +479,7 @@ pub(crate) fn b2_edge_nodes_from_records(
                     end_vertex_ref,
                     start_parameter_ref,
                     end_parameter_ref,
+                    reference_encodings,
                     tail,
                 })
         })
@@ -593,12 +601,19 @@ pub(crate) fn b2_counted_owners_from_records(
             }
             let mut at = frame.payload + 1;
             let references = (0..count)
-                .map(|_| allocation_ref(data, &mut at))
+                .map(|_| allocation_reference(data, &mut at))
                 .collect::<Option<Vec<_>>>()?;
             (at < frame.end).then(|| B2CountedOwner {
                 pos: frame.pos,
                 header_token: frame.header_token,
-                references,
+                reference_encodings: references
+                    .iter()
+                    .map(|reference| reference.encoding)
+                    .collect(),
+                references: references
+                    .into_iter()
+                    .map(|reference| reference.value)
+                    .collect(),
                 tail: data[at..frame.end].to_vec(),
             })
         })

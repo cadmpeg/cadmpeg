@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 276;
+pub const CATIA_NATIVE_VERSION: u32 = 277;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -783,6 +783,25 @@ pub struct CatiaConsolidatedEdgeRun {
     pub endpoint_loci: Option<[[f64; 3]; 2]>,
 }
 
+/// Wire addressing form of one width-coded allocation reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaAllocationReferenceEncoding {
+    /// `4n+1` backward framed-record distance.
+    BackwardDistance,
+    /// `4n+3` zero-based ordinal in the immediately owned allocation.
+    OwnedChild,
+    /// `4w` followed by a `w`-byte little-endian value.
+    WidthCoded,
+    /// Untagged `4n+2` selector form.
+    Selector2,
+    /// `06 <u8>`.
+    TaggedU8,
+    /// `0a <u16le>`.
+    TaggedU16,
+}
+
 /// One structurally complete width-coded class-`0x5e` edge node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -805,12 +824,18 @@ pub struct CatiaConsolidatedEdgeNode {
     pub allocation_ordinal: Option<u32>,
     /// Allocation-local curve-support reference.
     pub curve_ref: u32,
-    /// Global native endpoint identities in edge direction.
+    /// Raw endpoint-address operands in edge direction.
     pub vertex_refs: [u32; 2],
+    /// Resolved class-`0x5d` allocation records in edge direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_vertex_records: Option<[u64; 2]>,
     /// Retained vertex-identity records in edge direction.
     pub vertices: [String; 2],
     /// Allocation-local endpoint selectors.
     pub parameter_selectors: [u32; 2],
+    /// Wire addressing forms of curve, vertex, and parameter references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
     /// Terminal layout byte.
     pub tail: u8,
     /// Adjacent class-`0x23..=0x25` edge-definition frame.
@@ -901,14 +926,20 @@ pub struct CatiaConsolidatedEdgeUses {
     pub senses: [u8; 2],
 }
 
-/// One global endpoint identity retained by consolidated topology edge nodes.
+/// One endpoint identity retained by consolidated topology edge nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedVertexIdentity {
     /// Stable native-record identity assigned in first-incidence order.
     pub id: String,
-    /// Native endpoint identity within `allocation_owner`, or globally when absent.
+    /// First raw endpoint-address operand associated with this identity.
     pub identity: u32,
+    /// Resolved class-`0x5d` allocation record, when the local walk closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_record: Option<u64>,
+    /// Raw endpoint-address operands associated with this identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_values: Vec<u32>,
     /// Compact allocation scope for the identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allocation_owner: Option<String>,
@@ -6607,6 +6638,18 @@ fn consolidated_edge_nodes(
         .into_iter()
         .map(|owned| (owned.node.pos, (owned.owner_pos, owned.allocation_ordinal)))
         .collect::<HashMap<_, _>>();
+    let compact_endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|binding| {
+            (
+                binding.node.pos,
+                binding.vertex_records.map(|pos| pos as u64),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
         bytes, records,
     )
@@ -6682,8 +6725,13 @@ fn consolidated_edge_nodes(
                 allocation_ordinal: owner.map(|(_, ordinal)| *ordinal),
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
+                allocation_vertex_records: compact_endpoints.get(&node.pos).copied(),
                 vertices: [String::new(), String::new()],
                 parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
+                reference_encodings: Some(
+                    node.reference_encodings
+                        .map(native_allocation_reference_encoding),
+                ),
                 tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
@@ -6705,6 +6753,31 @@ fn native_consolidated_edge_definition(
         header_token: definition.header_token,
         payload: definition.payload,
         data: definition.data,
+    }
+}
+
+fn native_allocation_reference_encoding(
+    encoding: crate::wire::bytes::AllocationReferenceEncoding,
+) -> CatiaAllocationReferenceEncoding {
+    match encoding {
+        crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance => {
+            CatiaAllocationReferenceEncoding::BackwardDistance
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::OwnedChild => {
+            CatiaAllocationReferenceEncoding::OwnedChild
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::WidthCoded => {
+            CatiaAllocationReferenceEncoding::WidthCoded
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::Selector2 => {
+            CatiaAllocationReferenceEncoding::Selector2
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::TaggedU8 => {
+            CatiaAllocationReferenceEncoding::TaggedU8
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::TaggedU16 => {
+            CatiaAllocationReferenceEncoding::TaggedU16
+        }
     }
 }
 
@@ -6733,22 +6806,39 @@ fn native_consolidated_edge_uses(
 fn consolidated_vertex_identities(
     nodes: &mut [CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedVertexIdentity> {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    enum IdentityKey {
+        AllocationRecord(u64),
+        Unresolved(Option<String>, u32),
+    }
+
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
-    let mut identity_indices = HashMap::<(Option<String>, u32), usize>::new();
+    let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let key = (node.allocation_owner.clone(), identity);
+            let allocation_record = node
+                .allocation_vertex_records
+                .map(|records| records[endpoint]);
+            let key = allocation_record.map_or_else(
+                || IdentityKey::Unresolved(node.allocation_owner.clone(), identity),
+                IdentityKey::AllocationRecord,
+            );
             let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
                 let index = identities.len();
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
-                    allocation_owner: key.0,
+                    allocation_record,
+                    reference_values: vec![identity],
+                    allocation_owner: node.allocation_owner.clone(),
                     incident_edge_nodes: Vec::new(),
                 });
                 index
             });
             let vertex = &mut identities[index];
+            if !vertex.reference_values.contains(&identity) {
+                vertex.reference_values.push(identity);
+            }
             node.vertices[endpoint].clone_from(&vertex.id);
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
                 vertex.incident_edge_nodes.push(node.id.clone());

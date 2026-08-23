@@ -507,6 +507,8 @@ fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
 
 #[test]
 fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
     let bytes = [
         0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
     ];
@@ -519,6 +521,16 @@ fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
     assert_eq!(node.end_vertex_ref, 3);
     assert_eq!(node.start_parameter_ref, 1);
     assert_eq!(node.end_parameter_ref, 2);
+    assert_eq!(
+        node.reference_encodings,
+        [
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::BackwardDistance,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+        ]
+    );
     assert_eq!(node.tail, 0x21);
 }
 

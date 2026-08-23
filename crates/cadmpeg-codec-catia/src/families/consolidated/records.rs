@@ -11,9 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-#[cfg(test)]
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use crate::families::a5a8::records::{
@@ -31,6 +29,7 @@ use crate::families::b2::records::{
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
+    AllocationReferenceEncoding,
 };
 use crate::wire::records::{
     consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
@@ -129,6 +128,15 @@ pub struct ConsolidatedOwnedEdgeNode {
     pub allocation_ordinal: u32,
     /// Selected compact edge node.
     pub node: B2EdgeNode,
+}
+
+/// Compact edge endpoints resolved through child and backward allocation links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsolidatedCompactEdgeEndpoints {
+    /// Edge node whose endpoint references closed under the local allocation grammar.
+    pub node: B2EdgeNode,
+    /// Byte offsets of the resolved class-`0x5d` vertex records, in edge order.
+    pub vertex_records: [usize; 2],
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
@@ -780,7 +788,15 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
-        for allocation_ordinal in relation.owner.references {
+        for (allocation_ordinal, encoding) in relation
+            .owner
+            .references
+            .into_iter()
+            .zip(relation.owner.reference_encodings)
+        {
+            if encoding != AllocationReferenceEncoding::OwnedChild {
+                continue;
+            }
             let Some(target_index) = usize::try_from(allocation_ordinal)
                 .ok()
                 .and_then(|ordinal| owner_index.checked_add(1 + ordinal))
@@ -814,6 +830,116 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
         }
     }
     owned
+}
+
+/// Resolve compact edge endpoint references through the framed allocation walk.
+pub(crate) fn consolidated_compact_edge_endpoints_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedCompactEdgeEndpoints> {
+    struct EndpointResolver<'a> {
+        records: &'a [ConsolidatedRecord],
+        nodes: &'a HashMap<usize, B2EdgeNode>,
+        allocation_locations: &'a HashMap<usize, (usize, usize)>,
+        allocation_scopes: &'a [Vec<usize>],
+        active: HashSet<(usize, usize)>,
+        memo: HashMap<(usize, usize), Option<usize>>,
+    }
+
+    impl EndpointResolver<'_> {
+        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Option<usize> {
+            let key = (record_index, endpoint);
+            if let Some(cached) = self.memo.get(&key) {
+                return *cached;
+            }
+            if !self.active.insert(key) {
+                return None;
+            }
+            let result = (|| {
+                let node = self.nodes.get(&record_index)?;
+                let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
+                let encoding = node.reference_encodings[endpoint + 1];
+                let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
+                let target_ordinal =
+                    match encoding {
+                        AllocationReferenceEncoding::OwnedChild => allocation_ordinal
+                            .checked_add(1)?
+                            .checked_add(usize::try_from(reference).ok()?)?,
+                        AllocationReferenceEncoding::BackwardDistance => {
+                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?
+                        }
+                        AllocationReferenceEncoding::WidthCoded
+                        | AllocationReferenceEncoding::Selector2
+                        | AllocationReferenceEncoding::TaggedU8
+                        | AllocationReferenceEncoding::TaggedU16 => return None,
+                    };
+                let target = *self.allocation_scopes.get(scope)?.get(target_ordinal)?;
+                let target_record = self.records.get(target)?;
+                if target_record.family != ConsolidatedFamily::B {
+                    return None;
+                }
+                match target_record.class {
+                    0x5d => Some(target),
+                    0x5e => self.resolve(target, 1),
+                    _ => None,
+                }
+            })();
+            self.active.remove(&key);
+            self.memo.insert(key, result);
+            result
+        }
+    }
+
+    let by_pos = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<HashMap<_, _>>();
+    let nodes = records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| {
+            by_pos
+                .get(&record.range.start)
+                .copied()
+                .map(|node| (index, node))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut allocation_scopes = vec![Vec::new()];
+    let mut allocation_locations = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        if index > 0 && records[index - 1].range.end != record.range.start {
+            allocation_scopes.push(Vec::new());
+        }
+        if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
+            let scope = allocation_scopes.len() - 1;
+            let ordinal = allocation_scopes[scope].len();
+            allocation_scopes[scope].push(index);
+            allocation_locations.insert(index, (scope, ordinal));
+        }
+    }
+    let mut resolver = EndpointResolver {
+        records,
+        nodes: &nodes,
+        allocation_locations: &allocation_locations,
+        allocation_scopes: &allocation_scopes,
+        active: HashSet::new(),
+        memo: HashMap::new(),
+    };
+    let mut endpoints = nodes
+        .iter()
+        .filter_map(|(&record_index, &node)| {
+            let vertices = [0, 1].map(|endpoint| resolver.resolve(record_index, endpoint));
+            let [Some(start), Some(end)] = vertices else {
+                return None;
+            };
+            Some(ConsolidatedCompactEdgeEndpoints {
+                node,
+                vertex_records: [records[start].range.start, records[end].range.start],
+            })
+        })
+        .collect::<Vec<_>>();
+    endpoints.sort_by_key(|binding| binding.node.pos);
+    endpoints
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated

@@ -473,6 +473,13 @@
                 2,
                 1
               ],
+              "reference_encodings": [
+                "backward_distance",
+                "tagged_u8",
+                "tagged_u8",
+                "backward_distance",
+                "backward_distance"
+              ],
               "tail": 33,
               "uses": {
                 "references": [
@@ -663,6 +670,9 @@
               "identity": 139,
               "incident_edge_nodes": [
                 "catia:consolidated:edge-node#0"
+              ],
+              "reference_values": [
+                139
               ]
             },
             {
@@ -670,6 +680,9 @@
               "identity": 142,
               "incident_edge_nodes": [
                 "catia:consolidated:edge-node#0"
+              ],
+              "reference_values": [
+                142
               ]
             }
           ],
@@ -706,7 +719,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 276
+        "version": 277
       }
     },
     "source": {
