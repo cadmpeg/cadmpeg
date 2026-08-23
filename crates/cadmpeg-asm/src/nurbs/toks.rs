@@ -45,6 +45,13 @@ impl<'a> Cur<'a> {
         self.toks.get(self.pos)
     }
 
+    /// Whether the cursor is at the closing token of this complete subtype
+    /// span, with no unconsumed field before or token after it.
+    pub(crate) fn at_scope_end(&self) -> bool {
+        self.pos + 1 == self.toks.len()
+            && matches!(self.toks.get(self.pos), Some(Token::SubtypeClose))
+    }
+
     /// Consume one token of any kind.
     pub(crate) fn bump(&mut self) -> Option<&'a Token> {
         let token = self.toks.get(self.pos)?;
@@ -582,6 +589,21 @@ mod tests {
         let mut cur = Cur::at(&toks, 0);
         assert_eq!(cur.take_float_array(), None);
         assert_eq!(cur.pos(), 0);
+    }
+
+    #[test]
+    fn scope_end_requires_the_terminal_close() {
+        let toks = [Token::SubtypeOpen, ident("x"), Token::SubtypeClose];
+        assert!(Cur::at(&toks, 2).at_scope_end());
+        assert!(!Cur::at(&toks, 1).at_scope_end());
+
+        let trailing = [
+            Token::SubtypeOpen,
+            ident("x"),
+            Token::SubtypeClose,
+            Token::Double(1.0),
+        ];
+        assert!(!Cur::at(&trailing, 2).at_scope_end());
     }
 
     #[test]

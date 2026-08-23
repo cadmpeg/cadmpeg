@@ -1811,6 +1811,7 @@ fn revision_loft(
         discontinuities,
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
@@ -3037,6 +3038,7 @@ fn revision_sweep_sur(
         discontinuities,
         tail_flag: discontinuity_flag,
     } = revision_surface_tail(&mut cur)?;
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind: 0,
@@ -3323,6 +3325,7 @@ fn off_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Offset {
                 support,
@@ -3412,6 +3415,7 @@ fn rot_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        cur.at_scope_end().then_some(())?;
         let cache = toks::marker_positions(span)
             .into_iter()
             .filter_map(|at| surface_block(span, at).map(|(surface, _)| surface))
@@ -3517,6 +3521,7 @@ fn sum_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
+        cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Sum {
                 first: CurveGeometry::Nurbs(first),

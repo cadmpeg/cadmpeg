@@ -116,7 +116,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
 
-**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. A revision-gated `cyl_spl_sur` ends at that tail and requires the subtype close immediately after it. The decoder retains a cylinder carrying another token as opaque data.
+**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. Revision-gated cylinder, loft, sweep, offset, revolution, and sum surfaces end at that tail and require the subtype close immediately after it. The decoder retains one of these constructions with another token as opaque data while continuing to use a valid solved cache as the face carrier.
 
 **Need.** A false logical is the only state with established semantics. Carriers with their own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, still read those fields immediately after either logical value. **Settling specimen:** a document whose shared revision-gated surface tail closes with a true logical shows whether the logical has semantic effect or gates an additional payload in those nonterminal layouts.
 

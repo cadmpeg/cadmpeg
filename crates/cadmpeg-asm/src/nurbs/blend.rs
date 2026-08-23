@@ -79,8 +79,7 @@ pub(crate) fn cyl_spl_sur(
             discontinuities,
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
-        matches!(cur.peek(), Some(Token::SubtypeClose)).then_some(())?;
-        (cur.pos() + 1 == span.len()).then_some(())?;
+        cur.at_scope_end().then_some(())?;
         (
             directrix,
             interval,
@@ -1547,8 +1546,7 @@ pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
     } else {
         None
     };
-    matches!(cur.peek(), Some(Token::SubtypeClose)).then_some(())?;
-    (cur.pos() + 1 == span.len()).then_some(())?;
+    cur.at_scope_end().then_some(())?;
 
     let radius = if offsets[0] == offsets[1] {
         BlendRadiusLaw::Constant {
