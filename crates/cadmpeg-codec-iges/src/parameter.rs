@@ -1100,7 +1100,7 @@ fn view_visibility_primary_end(record: &ParameterRecord, block_width: usize) -> 
         .and_then(|value| usize::try_from(value).ok())
         .filter(|count| *count > 0);
     let entity_count = record
-        .integer(2)
+        .integer_or(2, 0)
         .and_then(|value| usize::try_from(value).ok());
     view_count
         .zip(entity_count)

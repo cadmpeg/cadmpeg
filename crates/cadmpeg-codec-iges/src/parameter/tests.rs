@@ -9900,6 +9900,11 @@ fn type402_view_visibility_forms_follow_counted_view_blocks() {
         (3, vec![402.into(), 1.into(), 0.into(), 3.into()], 4),
         (
             3,
+            vec![402.into(), 1.into(), TokenValue::Omitted, 3.into()],
+            4,
+        ),
+        (
+            3,
             vec![402.into(), 1.into(), 2.into(), 3.into(), 5.into(), 7.into()],
             6,
         ),
@@ -9917,6 +9922,20 @@ fn type402_view_visibility_forms_follow_counted_view_blocks() {
                 0.into(),
                 1.into(),
                 0.into(),
+            ],
+            8,
+        ),
+        (
+            4,
+            vec![
+                402.into(),
+                1.into(),
+                TokenValue::Omitted,
+                3.into(),
+                0.into(),
+                1.into(),
+                0.into(),
+                1.into(),
             ],
             8,
         ),

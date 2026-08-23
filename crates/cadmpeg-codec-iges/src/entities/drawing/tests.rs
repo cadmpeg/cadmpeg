@@ -284,6 +284,49 @@ fn decode_types_view_visibility_and_display_overrides() {
 }
 
 #[test]
+fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
+    for (form, parameters) in [(3, "402,1,,1;"), (4, "402,1,,1,1,0,,1;")] {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 410,
+                form: 0,
+                label: "VIEW".into(),
+                status: "00000000",
+                parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form,
+                label: "VISIBLE".into(),
+                status: "00000000",
+                parameters: parameters.into(),
+            },
+        ]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let visibility = &result.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+        let fields = visibility[0].fields();
+        assert_eq!(fields["declared_view_count"], 1, "form={form}");
+        assert!(fields["declared_entity_count"].is_null(), "form={form}");
+        assert_eq!(
+            fields["displays"].as_array().unwrap().len(),
+            1,
+            "form={form}"
+        );
+        assert!(
+            fields["entities"].as_array().unwrap().is_empty(),
+            "form={form}"
+        );
+        assert!(
+            result.report().losses.is_empty(),
+            "form={form}: {:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
 fn decode_preserves_ordered_segmented_view_display() {
     let result = IgesCodec
         .decode(

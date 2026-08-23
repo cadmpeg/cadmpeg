@@ -4192,8 +4192,9 @@ pub(crate) fn store(
             let view_count = record
                 .and_then(|record| record.count_with_stride_before(1, width, end))
                 .and_then(|view_count| {
-                    let entity_count =
-                        record.and_then(|record| record.count_with_stride_before(2, 1, end))?;
+                    let entity_count = record
+                        .and_then(|record| record.integer_or(2, 0))
+                        .and_then(|value| usize::try_from(value).ok())?;
                     let entity_start = 3_usize.checked_add(view_count.checked_mul(width)?)?;
                     let finish = entity_start.checked_add(entity_count)?;
                     (finish <= end).then_some((view_count, entity_count))

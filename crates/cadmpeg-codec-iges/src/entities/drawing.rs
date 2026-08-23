@@ -432,7 +432,9 @@ pub(super) fn project(
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
-        let entity_count = record.count(2);
+        let entity_count = record
+            .integer_or(2, 0)
+            .and_then(|value| usize::try_from(value).ok());
         let block_width = if entry.form == 3 { 1 } else { 5 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {
@@ -456,7 +458,7 @@ pub(super) fn project(
                     && (entry.form == 3 || {
                         let line_font = record.integer(start + 1);
                         let definition = record.integer(start + 2);
-                        let color = record.integer(start + 3);
+                        let color = record.integer_or(start + 3, 0);
                         let weight = record.integer(start + 4);
                         line_font.is_some_and(|value| value == 0 || standard_line_font_valid(value))
                             && definition.is_some_and(|value| {
