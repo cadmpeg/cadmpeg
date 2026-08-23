@@ -42,6 +42,13 @@ pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Optio
     }
 }
 
+fn connect_point_function_code_valid(value: i64, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 => matches!(value, 0..=5),
+        _ => matches!(value, 0..=49 | 98..=99 | 5001..=9999),
+    }
+}
+
 #[derive(Clone)]
 struct SolidAssembly {
     form: i64,
@@ -2077,7 +2084,7 @@ pub(super) fn project(
         let identifier_valid = record.integer(11).is_some();
         let function_code_valid = record
             .integer_or(12, 0)
-            .is_some_and(|value| matches!(value, 0..=49 | 98..=99 | 5001..=9999));
+            .is_some_and(|value| connect_point_function_code_valid(value, global.dialect()));
         let swap_valid = record
             .integer_or(13, 0)
             .is_some_and(|value| matches!(value, 0..=1));

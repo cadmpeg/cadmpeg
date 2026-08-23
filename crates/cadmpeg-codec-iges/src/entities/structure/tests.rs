@@ -2150,3 +2150,40 @@ fn iges_4_0_rejects_a_post_4_0_connect_point_type_flag() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
+
+#[test]
+fn connect_point_function_code_extension_is_v5_only() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let entity = [OwnedTestEntity {
+        entity_type: 132,
+        form: 0,
+        label: "SIGNALPT".into(),
+        status: "00000400",
+        parameters: "132,0,0,0,0,1,1,2HP1,0,3HPIN,0,1,6,0,0;".into(),
+    }];
+
+    let v4 = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(&entity, global_v4)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(v4
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+
+    let v5 = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(&entity, global_v5)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!v5
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
