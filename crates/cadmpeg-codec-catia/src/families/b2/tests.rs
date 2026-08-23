@@ -489,6 +489,23 @@ fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
 }
 
 #[test]
+fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
+    ];
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("one compact edge node")
+    };
+    assert_eq!(node.curve_ref, 3);
+    assert_eq!(node.start_vertex_ref, 2);
+    assert_eq!(node.end_vertex_ref, 15);
+    assert_eq!(node.start_parameter_ref, 7);
+    assert_eq!(node.end_parameter_ref, 11);
+    assert_eq!(node.tail, 0x21);
+}
+
+#[test]
 fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
     for reference_token in [0x08, 0x0a] {
         let mut stream = b2_revolution_stream();

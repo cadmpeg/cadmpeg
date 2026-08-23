@@ -427,9 +427,8 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
         .collect()
 }
 
-/// Decode length-closed `b2/b3/b4 03 5e` records containing one compact curve
-/// reference, two persistent vertex references, two compact parameter
-/// references, and one terminal byte.
+/// Decode length-closed `b2/b3/b4 03 5e` records containing five
+/// allocation-local references and one terminal byte.
 #[must_use]
 #[cfg(test)]
 pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
@@ -458,11 +457,11 @@ pub(crate) fn b2_edge_nodes_from_records(
                 return None;
             }
             let mut at = frame.payload;
-            let curve_ref = compact_int(data, &mut at)?;
+            let curve_ref = allocation_ref(data, &mut at)?;
             let start_vertex_ref = allocation_ref(data, &mut at)?;
             let end_vertex_ref = allocation_ref(data, &mut at)?;
-            let start_parameter_ref = compact_int(data, &mut at)?;
-            let end_parameter_ref = compact_int(data, &mut at)?;
+            let start_parameter_ref = allocation_ref(data, &mut at)?;
+            let end_parameter_ref = allocation_ref(data, &mut at)?;
             let tail = *data.get(at)?;
             (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
                 .then_some(B2EdgeNode {
