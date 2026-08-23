@@ -64,23 +64,26 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
 }
 
 #[test]
-fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
+fn compressed_and_binary_representations_are_detected_and_binary_is_refused() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
     assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
-    let summary = IgesCodec
+    let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(compressed.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    assert_eq!(summary.container_kind, "compressed-ascii");
+        .unwrap_err();
+    assert_eq!(
+        inspect_error.to_string(),
+        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
+    );
     assert_eq!(
         IgesCodec
             .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
             .unwrap_err()
             .to_string(),
-        "not implemented yet: IGES Compressed ASCII representation decode"
+        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
     );
 
     let mut binary = vec![0_u8; 80];

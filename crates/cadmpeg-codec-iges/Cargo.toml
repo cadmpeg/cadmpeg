@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-iges"
-description = "Inspect and decode IGES 5.3 Fixed ASCII files."
+description = "Inspect and decode IGES Fixed and Compressed ASCII files."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES Fixed ASCII codec. Decode admits every declared version and applies
+//! IGES ASCII codec. Decode admits every declared version and applies
 //! version-specific envelope rules; semantic rules are verified for versions
 //! 5.1, 5.2, and 5.3.
 //!
 //! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-//! for the declared Fixed ASCII mechanical/document envelope. Bounded
+//! for the declared Fixed ASCII mechanical/document envelope, with Compressed
+//! ASCII read normalization. Bounded
 //! semantic writing and independent-producer acceptance are part of the
 //! verified profile.
 
 mod card;
+mod compressed;
 mod directory;
 mod entities;
 mod error;
@@ -107,9 +109,14 @@ impl CodecBackend for IgesCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
         match representation::classify(&mut reader)? {
-            representation::Representation::FixedAscii => reader::inspect(ctx, root.window()),
-            representation @ (representation::Representation::CompressedAscii
-            | representation::Representation::Binary) => {
+            representation::Representation::FixedAscii => {
+                reader::inspect(ctx, root.window(), "fixed-ascii", root.window().len())
+            }
+            representation::Representation::CompressedAscii => {
+                let normalized = compressed::normalize(root.window(), Some(ctx))?;
+                reader::inspect(ctx, &normalized, "compressed-ascii", root.window().len())
+            }
+            representation @ representation::Representation::Binary => {
                 Ok(representation::unsupported_summary(representation))
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
@@ -127,14 +134,28 @@ impl CodecBackend for IgesCodec {
         match representation::classify(&mut source)? {
             representation::Representation::FixedAscii => reader::decode(
                 root.window(),
+                root.window(),
+                "fixed-ascii",
                 DecodeOptions {
                     container_only: ctx.container_only(),
                     policy: *ctx.policy(),
                 },
                 ctx,
             ),
-            representation @ (representation::Representation::CompressedAscii
-            | representation::Representation::Binary) => {
+            representation::Representation::CompressedAscii => {
+                let normalized = compressed::normalize(root.window(), Some(ctx))?;
+                reader::decode(
+                    &normalized,
+                    root.window(),
+                    "compressed-ascii",
+                    DecodeOptions {
+                        container_only: ctx.container_only(),
+                        policy: *ctx.policy(),
+                    },
+                    ctx,
+                )
+            }
+            representation @ representation::Representation::Binary => {
                 Err(representation::unsupported_error(representation))
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
