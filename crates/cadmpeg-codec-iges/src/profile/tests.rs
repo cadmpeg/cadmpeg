@@ -14,12 +14,38 @@ fn matrix_admits(forms: &(Vec<i64>, bool), form: i64) -> bool {
     forms.0.contains(&form) || (forms.1 && matches!(form, 5001..=9999))
 }
 
+fn matrix_range_admits(ranges: &[toml::Value], entity_type: i64, _form: i64) -> bool {
+    ranges.iter().any(|range| {
+        let min = range["min"].as_integer();
+        let max = range["max"].as_integer();
+        min.zip(max)
+            .is_some_and(|(min, max)| (min..=max).contains(&entity_type))
+            && range["forms"].as_str() == Some("any")
+    })
+}
+
 #[test]
 fn envelope_admission_exactly_matches_the_machine_matrix() {
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
     let source = std::fs::read_to_string(matrix_path).unwrap();
     let matrix = toml::from_str::<toml::Value>(&source).unwrap();
+    let ranges = matrix["entity_range"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for range in &ranges {
+        for required in ["name", "domain", "decoder", "destination"] {
+            assert!(range[required]
+                .as_str()
+                .is_some_and(|value| !value.is_empty()));
+        }
+        for required in ["fixture_classes", "assertions"] {
+            assert!(range[required]
+                .as_array()
+                .is_some_and(|values| !values.is_empty()));
+        }
+    }
     let mut admitted = BTreeMap::<i64, (Vec<i64>, bool)>::new();
     for entity in matrix["entity"].as_array().unwrap() {
         let entity_type = entity["type"].as_integer().unwrap();
@@ -55,7 +81,8 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
         for form in -1..=100 {
             let expected = admitted
                 .get(&entity_type)
-                .is_some_and(|forms| matrix_admits(forms, form));
+                .is_some_and(|forms| matrix_admits(forms, form))
+                || matrix_range_admits(&ranges, entity_type, form);
             assert_eq!(
                 crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
@@ -65,7 +92,8 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
     }
     for (&entity_type, forms) in &admitted {
         for form in [101, 5000, 5001, 9999, 10000, i64::MAX] {
-            let expected = matrix_admits(forms, form);
+            let expected =
+                matrix_admits(forms, form) || matrix_range_admits(&ranges, entity_type, form);
             assert_eq!(
                 crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_3),
                 expected,
@@ -73,7 +101,18 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
             );
         }
     }
-    assert!(!crate::profile::envelope_a_admits(601, 5001, Dialect::V5_3));
+    assert!(crate::profile::envelope_a_admits(601, 5001, Dialect::V5_3));
+    assert!(crate::profile::envelope_a_admits(
+        10_000,
+        i64::MAX,
+        Dialect::V5_3
+    ));
+    assert!(!crate::profile::envelope_a_admits(700, 0, Dialect::V5_3));
+    assert!(!crate::profile::envelope_a_admits(
+        100_000,
+        0,
+        Dialect::V5_3
+    ));
     assert!(!crate::profile::envelope_a_admits(
         i64::MAX,
         i64::MAX,
@@ -116,6 +155,8 @@ fn v4_admission_matches_its_entity_and_form_table() {
         (125, 0, true),
         (125, 4, true),
         (125, 5, false),
+        (306, 0, true),
+        (306, 1, false),
         (134, 0, true),
         (134, 1, false),
         (136, 0, true),
@@ -202,6 +243,29 @@ fn standard_fem_forms_are_admitted_in_v4_and_v5() {
 }
 
 #[test]
+fn macro_instance_ranges_are_admitted_in_all_fixed_ascii_dialects() {
+    for dialect in [
+        Dialect::V4_0,
+        Dialect::V5_0,
+        Dialect::V5_1,
+        Dialect::V5_2,
+        Dialect::V5_3,
+    ] {
+        for entity_type in [600, 699, 10_000, 99_999] {
+            assert!(crate::profile::envelope_a_admits(entity_type, 0, dialect));
+            assert!(crate::profile::envelope_a_admits(
+                entity_type,
+                5000,
+                dialect
+            ));
+        }
+        for entity_type in [599, 700, 9999, 100_000] {
+            assert!(!crate::profile::envelope_a_admits(entity_type, 0, dialect));
+        }
+    }
+}
+
+#[test]
 fn type230_form1_is_admitted_from_iges_5_0_onward() {
     assert!(!crate::profile::envelope_a_admits(230, 1, Dialect::V4_0));
     for dialect in [Dialect::V5_0, Dialect::V5_1, Dialect::V5_2, Dialect::V5_3] {
@@ -227,6 +291,7 @@ fn type228_implementor_forms_are_admitted_from_iges_5_0_onward() {
 fn v5_0_admission_is_the_4_0_table_plus_v5_0_ecos() {
     let cases = [
         // V5.0 ECO-created entity additions.
+        (306, 0, true),
         (141, 0, true),
         (143, 0, true),
         (182, 0, true),

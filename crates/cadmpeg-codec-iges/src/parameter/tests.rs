@@ -19,6 +19,7 @@ use crate::IgesCodec;
 
 mod implementor_defined;
 mod lexical;
+mod macros;
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let mut bytes = owned_test_file(&[OwnedTestEntity {

@@ -338,6 +338,16 @@ pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
+    if directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 306)
+    {
+        return TrailingPointerAnalysis {
+            candidate_count: 0,
+            valid_candidate_count: 0,
+            groups: None,
+        };
+    }
     analyze_trailing_pointer_groups_from_end(
         record,
         directory,
@@ -350,6 +360,16 @@ fn analyze_trailing_pointer_groups_with_records(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> TrailingPointerAnalysis {
+    if directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 306)
+    {
+        return TrailingPointerAnalysis {
+            candidate_count: 0,
+            valid_candidate_count: 0,
+            groups: None,
+        };
+    }
     let is_attribute_table_instance = directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
@@ -2298,6 +2318,11 @@ pub(crate) enum ParameterDefect {
     TokenNotAscii,
     TokenNotANumber,
     DelimiterMissing,
+    MacroHeaderMalformed,
+    MacroArgumentListMissing,
+    MacroEntityTypeOutOfRange,
+    MacroStatementEmpty,
+    MacroTerminatorMissing,
     EntityTypeTokenMismatch,
     DeclaredCardMissing,
     NoOwnedCards,
@@ -2318,6 +2343,11 @@ impl ParameterDefect {
             Self::TokenNotAscii => "token-not-ascii",
             Self::TokenNotANumber => "token-not-a-number",
             Self::DelimiterMissing => "delimiter-missing",
+            Self::MacroHeaderMalformed => "macro-header-malformed",
+            Self::MacroArgumentListMissing => "macro-argument-list-missing",
+            Self::MacroEntityTypeOutOfRange => "macro-entity-type-out-of-range",
+            Self::MacroStatementEmpty => "macro-statement-empty",
+            Self::MacroTerminatorMissing => "macro-terminator-missing",
             Self::EntityTypeTokenMismatch => "entity-type-token-mismatch",
             Self::DeclaredCardMissing => "declared-card-missing",
             Self::NoOwnedCards => "no-owned-cards",
@@ -2342,6 +2372,17 @@ impl ParameterDefect {
             Self::TokenNotAscii => "a token is not ASCII",
             Self::TokenNotANumber => "a token is not a number",
             Self::DelimiterMissing => "a delimiter is missing",
+            Self::MacroHeaderMalformed => {
+                "a Type 306 header is not `306,MACRO,entity-type,argument-list`"
+            }
+            Self::MacroArgumentListMissing => "a Type 306 MACRO statement has no argument list",
+            Self::MacroEntityTypeOutOfRange => {
+                "a Type 306 macro entity type is outside the assigned macro ranges"
+            }
+            Self::MacroStatementEmpty => "a Type 306 language statement is empty",
+            Self::MacroTerminatorMissing => {
+                "a Type 306 Parameter Data record has no ENDM statement"
+            }
             Self::EntityTypeTokenMismatch => {
                 "the first token disagrees with the Directory Entry entity type"
             }
@@ -2588,6 +2629,256 @@ fn hollerith(
         },
         end,
     )))
+}
+
+/// The structural parts of one Type 306 Parameter Data record.
+///
+/// Type 306 is the one IGES entity whose Parameter Data is a language stream
+/// rather than a sequence of ordinary numeric and Hollerith fields. The
+/// decoder validates only the framing needed to retain that stream: the
+/// `306,MACRO,<type>,<arguments>;` header, statement delimiters, and the final
+/// `ENDM;`. The macro language itself is not evaluated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MacroParameterData {
+    pub(crate) statement_spans: Vec<Range<usize>>,
+    pub(crate) record_end: usize,
+    pub(crate) defined_entity_type: i64,
+    pub(crate) entity_type_span: Range<usize>,
+    pub(crate) header_payload_start: usize,
+}
+
+fn trim_macro_span(bytes: &[u8], span: Range<usize>) -> Range<usize> {
+    let mut start = span.start;
+    let mut end = span.end;
+    while bytes
+        .get(start)
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        start += 1;
+    }
+    while end > start
+        && bytes
+            .get(end - 1)
+            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        end -= 1;
+    }
+    start..end
+}
+
+fn macro_hollerith_end(
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<usize>, (ParameterDefect, usize)> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .ok()
+        .and_then(|text| text.parse::<usize>().ok())
+        .ok_or((ParameterDefect::HollerithCountUnreadable, start))?;
+    if count == 0 {
+        return Err((ParameterDefect::HollerithCountZero, start));
+    }
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or((ParameterDefect::HollerithPayloadTruncated, start))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or((ParameterDefect::HollerithPayloadTruncated, start))?;
+    if bytes.get(payload_start..payload_end).is_none() {
+        return Err((ParameterDefect::HollerithPayloadTruncated, start));
+    }
+    Ok(Some(payload_end))
+}
+
+fn macro_next_field(
+    bytes: &[u8],
+    start: usize,
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<(Range<usize>, u8, usize), (ParameterDefect, usize)> {
+    let mut cursor = start;
+    while let Some(byte) = bytes.get(cursor) {
+        if matches!(*byte, b' ' | b'\t') {
+            cursor += 1;
+        } else {
+            break;
+        }
+    }
+    let field_start = cursor;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+            cursor = payload_end;
+            continue;
+        }
+        if byte == parameter_delimiter || byte == record_delimiter {
+            let field = trim_macro_span(bytes, field_start..cursor);
+            return Ok((field, byte, cursor + 1));
+        }
+        cursor += 1;
+    }
+    Err((ParameterDefect::MacroHeaderMalformed, field_start))
+}
+
+fn macro_integer(bytes: &[u8], span: &Range<usize>) -> Option<i64> {
+    std::str::from_utf8(bytes.get(span.clone())?)
+        .ok()?
+        .parse::<i64>()
+        .ok()
+}
+
+fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
+    bytes.get(span.clone()).is_some_and(|value| {
+        value
+            .iter()
+            .copied()
+            .filter(|byte| *byte != b' ' && *byte != b'\t')
+            .eq(keyword.iter().copied())
+    })
+}
+
+/// Parse and validate the structural framing of a Type 306 Parameter Data
+/// stream. Statement spans exclude their record delimiters; `record_end`
+/// points immediately after the terminating `ENDM` delimiter, so the caller
+/// can retain any remaining card bytes as the ordinary Parameter Data comment.
+pub(crate) fn macro_parameter_data(
+    bytes: &[u8],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<MacroParameterData, (ParameterDefect, usize)> {
+    let mut statements = Vec::new();
+    let mut start = 0_usize;
+    let mut cursor = 0_usize;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+            cursor = payload_end;
+            continue;
+        }
+        if byte != record_delimiter {
+            cursor += 1;
+            continue;
+        }
+        let raw_statement = start..cursor;
+        if trim_macro_span(bytes, raw_statement.clone()).is_empty() {
+            return Err((ParameterDefect::MacroStatementEmpty, start));
+        }
+        statements.push(raw_statement.clone());
+        let record_end = cursor + 1;
+        if macro_keyword(bytes, &raw_statement, b"ENDM") {
+            let first = statements
+                .first()
+                .cloned()
+                .ok_or((ParameterDefect::MacroHeaderMalformed, start))?;
+            let (entity_type_span, first_delimiter, after_entity_type) =
+                macro_next_field(bytes, first.start, parameter_delimiter, record_delimiter)?;
+            if first_delimiter != parameter_delimiter
+                || macro_integer(bytes, &entity_type_span) != Some(306)
+            {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    entity_type_span.start,
+                ));
+            }
+            let (keyword_span, keyword_delimiter, after_keyword) = macro_next_field(
+                bytes,
+                after_entity_type,
+                parameter_delimiter,
+                record_delimiter,
+            )?;
+            if keyword_delimiter != parameter_delimiter
+                || !macro_keyword(bytes, &keyword_span, b"MACRO")
+            {
+                return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start));
+            }
+            let (defined_type_span, defined_type_delimiter, after_defined_type) =
+                macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter)?;
+            if defined_type_delimiter == record_delimiter {
+                return Err((
+                    ParameterDefect::MacroArgumentListMissing,
+                    defined_type_span.end,
+                ));
+            }
+            if defined_type_delimiter != parameter_delimiter {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    defined_type_span.start,
+                ));
+            }
+            let Some(defined_entity_type) = macro_integer(bytes, &defined_type_span) else {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    defined_type_span.start,
+                ));
+            };
+            if !crate::profile::macro_instance_type(defined_entity_type) {
+                return Err((
+                    ParameterDefect::MacroEntityTypeOutOfRange,
+                    defined_type_span.start,
+                ));
+            }
+            if bytes
+                .get(after_defined_type..first.end)
+                .is_none_or(|arguments| arguments.iter().all(u8::is_ascii_whitespace))
+            {
+                return Err((
+                    ParameterDefect::MacroArgumentListMissing,
+                    after_defined_type,
+                ));
+            }
+            return Ok(MacroParameterData {
+                statement_spans: statements,
+                record_end,
+                defined_entity_type,
+                entity_type_span,
+                header_payload_start: after_entity_type,
+            });
+        }
+        start = record_end;
+        cursor = record_end;
+    }
+    Err((ParameterDefect::MacroTerminatorMissing, start))
+}
+
+fn tokenize_macro(
+    bytes: &[u8],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    let data = macro_parameter_data(bytes, parameter_delimiter, record_delimiter)
+        .map_err(|(defect, offset)| TokenizeFailure::Defect(defect, offset))?;
+    let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
+    let mut tokens = Vec::new();
+    charge(ctx)?;
+    tokens.push(Token {
+        value: TokenValue::Integer(306),
+        span: data.entity_type_span,
+    });
+    if let Some(span) = data
+        .statement_spans
+        .first()
+        .map(|statement| data.header_payload_start..statement.end)
+        .filter(|span| span.start < span.end)
+    {
+        charge(ctx)?;
+        tokens.push(Token {
+            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            span,
+        });
+    }
+    for span in data.statement_spans.iter().skip(1) {
+        charge(ctx)?;
+        tokens.push(Token {
+            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            span: span.clone(),
+        });
+    }
+    Ok((tokens, data.record_end))
 }
 
 fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
@@ -3025,14 +3316,24 @@ pub(crate) fn assemble_with_context(
             continue;
         }
         let owned_bytes = owned_bytes(&owned.cards, &lines);
-        let (tokens, record_end) = match tokenize(
-            &owned_bytes.bytes,
-            &owned_bytes.card_boundaries,
-            global.parameter_delimiter,
-            global.record_delimiter,
-            global.dialect(),
-            ctx,
-        ) {
+        let tokenized = if entry.entity_type == 306 {
+            tokenize_macro(
+                &owned_bytes.bytes,
+                global.parameter_delimiter,
+                global.record_delimiter,
+                ctx,
+            )
+        } else {
+            tokenize(
+                &owned_bytes.bytes,
+                &owned_bytes.card_boundaries,
+                global.parameter_delimiter,
+                global.record_delimiter,
+                global.dialect(),
+                ctx,
+            )
+        };
+        let (tokens, record_end) = match tokenized {
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {

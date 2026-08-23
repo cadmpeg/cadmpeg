@@ -1211,6 +1211,27 @@ pub(crate) struct NativeEntity {
     references: Vec<ReferenceEdge>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct NativeMacroDefinition {
+    id: String,
+    source_entity: String,
+    defined_entity_type: i64,
+    macro_statement: Vec<u8>,
+    language_statements: Vec<Vec<u8>>,
+    end_statement: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeMacroInstance {
+    id: String,
+    source_entity: String,
+    entity_type: i64,
+    form: i64,
+    macro_definition: Option<String>,
+    macro_library: Option<String>,
+    parameters: Vec<NativeToken>,
+}
+
 fn token(token: &Token) -> NativeToken {
     NativeToken {
         start: token.span.start,
@@ -1539,6 +1560,68 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
+    let macro_definitions = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 306)
+        .filter_map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied()?;
+            let data = crate::parameter::macro_parameter_data(
+                &record.bytes,
+                global.parameter_delimiter,
+                global.record_delimiter,
+            )
+            .ok()?;
+            let first = data.statement_spans.first()?.clone();
+            let last = data.statement_spans.last()?.clone();
+            let language_statements = data
+                .statement_spans
+                .iter()
+                .skip(1)
+                .take(data.statement_spans.len().saturating_sub(2))
+                .map(|span| record.bytes[span.clone()].to_vec())
+                .collect();
+            Some(NativeMacroDefinition {
+                id: format!("iges:native:macro-definition#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                defined_entity_type: data.defined_entity_type,
+                macro_statement: record.bytes[first].to_vec(),
+                language_statements,
+                end_statement: record.bytes[last].to_vec(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let macro_instances = directory
+        .iter()
+        .filter(|entry| crate::profile::macro_instance_type(entry.entity_type))
+        .filter_map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied()?;
+            let structure_sequence =
+                crate::graph::resolved_structure_sequence(references, entry.sequence);
+            let macro_definition = structure_sequence
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|target| target.entity_type == 306)
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"));
+            let macro_library = structure_sequence
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|target| target.entity_type == 416)
+                })
+                .map(|sequence| format!("iges:entity:directory#{sequence}"));
+            Some(NativeMacroInstance {
+                id: format!("iges:native:macro-instance#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                entity_type: entry.entity_type,
+                form: entry.form,
+                macro_definition,
+                macro_library,
+                parameters: record.tokens.iter().skip(1).map(token).collect(),
+            })
+        })
+        .collect::<Vec<_>>();
     // The native reading boundary is the retained trailing-group boundary
     // clamped to the entity's primary layout.
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
@@ -4773,6 +4856,8 @@ pub(crate) fn store(
         fem_entities.len(),
         product_occurrences.len(),
         product_occurrence_expansion.len(),
+        macro_definitions.len(),
+        macro_instances.len(),
         quarantined_directory_records.len(),
         quarantined_parameter_records.len(),
     ]
@@ -4825,6 +4910,12 @@ pub(crate) fn store(
     namespace.set_arena_from("fem_entities", fem_entities)?;
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
+    if !macro_definitions.is_empty() {
+        namespace.set_arena_from("macro_definitions", macro_definitions)?;
+    }
+    if !macro_instances.is_empty() {
+        namespace.set_arena_from("macro_instances", macro_instances)?;
+    }
     namespace.set_arena_from(
         "quarantined_directory_records",
         quarantined_directory_records,

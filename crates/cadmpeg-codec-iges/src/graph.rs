@@ -287,7 +287,9 @@ fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> &'static str {
         ReferenceKind::Structure => match source.entity_type {
             422 if matches!(source.form, 0..=1) => "type-322-form-0",
             402 if matches!(source.form, 5001..=9999) => "type-302-matching-form",
-            600..=699 | 10_000..=99_999 => "type-306-or-type-416",
+            entity_type if crate::profile::macro_instance_type(entity_type) => {
+                "type-306-or-type-416"
+            }
             _ => "structure-not-permitted",
         },
         ReferenceKind::LineFont => "type-304",
@@ -307,7 +309,9 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
             402 if matches!(source.form, 5001..=9999) => {
                 target.entity_type == 302 && target.form == source.form
             }
-            600..=699 | 10_000..=99_999 => matches!(target.entity_type, 306 | 416),
+            entity_type if crate::profile::macro_instance_type(entity_type) => {
+                matches!(target.entity_type, 306 | 416)
+            }
             _ => false,
         },
         ReferenceKind::LineFont => target.entity_type == 304 && matches!(target.form, 1 | 2),

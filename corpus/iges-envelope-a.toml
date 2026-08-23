@@ -6,8 +6,9 @@ specification_version = "5.3"
 # `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
 # list is closed and admits only those forms unless `implementor_defined = true`
 # is present. That field adds the same 5001 through 9999 range to the explicit
-# list. Obsolete, electrical/artwork/schematic, and macro/extension branches
-# remain adjacent envelopes. The standard finite-element entity records are
+# list. Obsolete, electrical/artwork/schematic branches remain adjacent
+# envelopes. Macro definitions and user-assigned Macro Instance Entity ranges
+# are retained in typed native macro arenas. The standard finite-element entity records are
 # retained in the typed native FEM arena; they do not project to neutral IR.
 # Type 125
 # is admitted as a geometry location carrier; its artwork shape is retained
@@ -683,6 +684,16 @@ fixture_classes = ["line-fonts"]
 assertions = ["pattern-semantics", "identity", "byte-coverage"]
 
 [[entity]]
+type = 306
+name = "macro-definition"
+forms = [0]
+domain = "extension"
+decoder = "parameter::macro_parameter_data"
+destination = "native.iges.macro_definitions"
+fixture_classes = ["macro-definitions"]
+assertions = ["statement-framing", "assigned-type", "source-bytes"]
+
+[[entity]]
 type = 308
 name = "subfigure-definition"
 forms = [0]
@@ -691,6 +702,28 @@ decoder = "entities::structure::project"
 destination = "native.iges.product"
 fixture_classes = ["subfigures"]
 assertions = ["ordered-members", "identity", "byte-coverage"]
+
+[[entity_range]]
+min = 600
+max = 699
+name = "macro-instance"
+forms = "any"
+domain = "extension"
+decoder = "native::store"
+destination = "native.iges.macro_instances"
+fixture_classes = ["macro-instances"]
+assertions = ["structure-link", "parameter-retention", "source-bytes"]
+
+[[entity_range]]
+min = 10000
+max = 99999
+name = "macro-instance"
+forms = "any"
+domain = "extension"
+decoder = "native::store"
+destination = "native.iges.macro_instances"
+fixture_classes = ["macro-instances"]
+assertions = ["structure-link", "parameter-retention", "source-bytes"]
 
 [[entity]]
 type = 310

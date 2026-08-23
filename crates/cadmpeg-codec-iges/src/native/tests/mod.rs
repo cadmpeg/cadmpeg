@@ -15,6 +15,7 @@ use crate::IgesCodec;
 mod annotations;
 mod counted_lists;
 mod fem;
+mod macros;
 
 fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
     report
