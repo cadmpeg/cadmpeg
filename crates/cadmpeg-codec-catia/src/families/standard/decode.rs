@@ -2476,23 +2476,8 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(evidence));
         }
-        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
-            continue;
-        };
-        let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();
-        for face in &graph.faces {
-            for edge in face
-                .loops
-                .iter()
-                .filter_map(|loop_id| graph.loops.get(loop_id))
-                .flat_map(|loop_| loop_.edges.iter().copied())
-            {
-                stream_edge_faces
-                    .entry(edge)
-                    .or_default()
-                    .insert(face.object_id);
-            }
-        }
+        let stream_edge_faces =
+            crate::families::b5::graph::edge_face_references_from_frames(&stream, &frames);
         for (edge, owners) in stream_edge_faces {
             edge_face_candidates
                 .entry(edge)
@@ -2503,6 +2488,9 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
+        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
+            continue;
+        };
         for &surface_id in tags {
             let Some(evidence) = standard_surface_evidence(&graph, surface_id) else {
                 continue;

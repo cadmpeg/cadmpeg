@@ -322,6 +322,8 @@ For a retained face domain, each non-empty alternate set supplies the possible s
 
 A co-stored `b5 03 5e` edge whose object id equals the standard row `tag` supplies additional face-incidence identity. For each owning B5 face, match its face object id against the standard roster carrier identity: `target` for an analytic record and `tag` for a freeform record. A carrier identity binds a face only when it occurs once in the roster. For a repeated standard face ordinal, exactly one distinct matched owner face fills the unresolved slot before endpoint-cycle completion; absent, repeated, or conflicting matches supply no incidence.
 
+The face-to-loop-to-edge membership in a structurally complete `b5 03 5f` face record and `b5 03 62` loop record is positive owner evidence even when the referenced surface, p-curve, or another graph dependency prevents full object-stream topology transfer. The membership may fill a repeated standard face slot only when it names one distinct alternate carrier; an incomplete graph supplies no negative evidence, so an observed serialized-face owner leaves the second slot unresolved.
+
 The spline row identifies a required 3D curve carrier even when its spline definition is not resolved. It is not a curveless topological edge: the adjacent faces, native endpoint identities, and trim incidence belong to an opaque curve occurrence retained with the B-rep payload.
 
 ### 5.6 Curve carrier and endpoint semantics

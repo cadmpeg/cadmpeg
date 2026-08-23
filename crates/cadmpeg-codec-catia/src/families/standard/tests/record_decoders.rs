@@ -1166,6 +1166,28 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
 }
 
 #[test]
+fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
+    let mut stream = b5_closed_triangle_stream();
+    let face = crate::families::b5::graph::object_stream_frames(&stream)
+        .into_iter()
+        .find(|frame| frame.class == 0x5f)
+        .expect("face frame")
+        .start;
+    stream[face + 10..face + 12].copy_from_slice(&999u16.to_le_bytes());
+
+    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+        [stream],
+        &HashSet::new(),
+        &HashSet::new(),
+    );
+
+    assert_eq!(
+        evidence.edge_owner_faces.get(&300),
+        Some(&HashSet::from([500]))
+    );
+}
+
+#[test]
 fn standard_object_evidence_rejects_repeated_topology_namespaces() {
     let stream = b5_closed_triangle_stream();
     let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(

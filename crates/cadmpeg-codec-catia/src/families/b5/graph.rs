@@ -5483,6 +5483,36 @@ pub(crate) fn face_surface_references_from_frames(
     references
 }
 
+/// Return positive face-to-edge ownership from structurally complete face and
+/// loop records, without requiring their referenced surfaces or p-curves to
+/// resolve into a transferable graph.
+pub(crate) fn edge_face_references_from_frames(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> HashMap<u32, HashSet<u32>> {
+    let records = records_from_frames(bytes, frames);
+    let edge_ids = records
+        .iter()
+        .filter(|record| record.family == 0xb5 && record.class == 0x5e)
+        .map(|record| record.object_id)
+        .collect::<HashSet<_>>();
+    let loops = typed_loop_records_from_records(&records);
+    let mut owners = HashMap::<u32, HashSet<u32>>::new();
+    for (face, record) in typed_face_records_from_records(&records) {
+        for loop_id in record.references.iter().skip(1) {
+            let Some(loop_record) = loops.get(loop_id) else {
+                continue;
+            };
+            for &edge in &loop_record.edges {
+                if edge_ids.contains(&edge) {
+                    owners.entry(edge).or_default().insert(face);
+                }
+            }
+        }
+    }
+    owners
+}
+
 fn parse_loop(
     record: &B5Loop,
     by_id: &HashMap<u32, &B5Record>,
