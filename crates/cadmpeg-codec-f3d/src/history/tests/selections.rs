@@ -1609,7 +1609,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "paired_class_tag": "261", "paired_byte_offset": 0
         }))
         .expect("mirror plane group");
-    let operand: crate::records::DesignEntitySelectionOperand =
+    let mut operand: crate::records::DesignEntitySelectionOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
@@ -1685,9 +1685,45 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         std::slice::from_ref(&history),
     );
 
-    let construction = scope.mirror_construction.expect("mirror construction");
+    let construction = scope
+        .mirror_construction
+        .as_ref()
+        .expect("mirror construction");
     assert_eq!(construction.plane_origin, Some(Point3::new(1.0, 2.0, 3.0)));
     assert_eq!(construction.plane_normal, Some(Vector3::new(0.0, 0.0, 1.0)));
+
+    operand.primary_identity = 44;
+    bind_mirror_selection_planes(
+        std::slice::from_mut(&mut scope),
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&operand),
+        &[],
+        &[],
+        std::slice::from_ref(&history),
+    );
+
+    let construction = scope
+        .mirror_construction
+        .as_ref()
+        .expect("mirror construction");
+    assert_eq!(construction.plane_origin, Some(Point3::new(0.0, 0.0, 0.0)));
+    assert_eq!(construction.plane_normal, Some(Vector3::new(1.0, 0.0, 0.0)));
+}
+
+#[test]
+fn design_geometry_origin_plane_ids_use_coordinate_planes() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    for (identity, normal) in [
+        (42, Vector3::new(0.0, 0.0, 1.0)),
+        (43, Vector3::new(0.0, 1.0, 0.0)),
+        (44, Vector3::new(1.0, 0.0, 0.0)),
+    ] {
+        let plane = design_geometry_mirror_plane(identity).expect("origin plane");
+        assert_eq!(plane.origin, Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(plane.normal, normal);
+    }
+    assert!(design_geometry_mirror_plane(45).is_none());
 }
 
 #[test]

@@ -7022,13 +7022,18 @@ pub(crate) fn bind_mirror_selection_planes(
                 .map_or_else(Vec::new, |identity| {
                     entity_selection_face_candidates(identity.local_id, histories)
                 });
-            let Some(candidate) = unique_mirror_plane_candidate(
-                entity_selection_face_candidates(operand.primary_identity, histories),
-                persistent_candidates,
-            ) else {
-                continue;
-            };
-            historical_mirror_plane(&candidate, previous_state_id, histories)
+            let primary_candidates =
+                entity_selection_face_candidates(operand.primary_identity, histories);
+            if primary_candidates.is_empty() && persistent_candidates.is_empty() {
+                design_geometry_mirror_plane(operand.primary_identity)
+            } else {
+                let Some(candidate) =
+                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
+                else {
+                    continue;
+                };
+                historical_mirror_plane(&candidate, previous_state_id, histories)
+            }
         } else if let [operand] = matching_face_operands.as_slice() {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)
         } else {
@@ -7110,6 +7115,25 @@ fn unique_mirror_plane_candidate(
 struct HistoricalMirrorPlane {
     origin: cadmpeg_ir::math::Point3,
     normal: cadmpeg_ir::math::Vector3,
+}
+
+/// Resolve the three built-in Design Geometry origin planes.
+///
+/// These identities are outside the ASM history namespace. A numeric identity
+/// is admitted here only after both the primary and persistent history lookups
+/// have found no candidate, so a topology identity with the same value keeps
+/// the normal historical-resolution path.
+fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirrorPlane> {
+    let normal = match primary_identity {
+        42 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        43 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        44 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        _ => return None,
+    };
+    Some(HistoricalMirrorPlane {
+        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        normal,
+    })
 }
 
 fn historical_mirror_plane(
