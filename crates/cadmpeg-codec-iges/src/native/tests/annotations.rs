@@ -53,7 +53,7 @@ fn decode_new_general_note_reads_a_final_string_present_in_part() {
         form: 0,
         label: "NOTE".into(),
         status: "00000200",
-        parameters: "213,1,1,0,0,0,0,0,0,0,0,0,2,1,1,1,1,0,1,0,0H,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,1HA,1,1,1,1,0,1,0,0H,2;".into(),
+        parameters: "213,1,1,0,0,0,0,0,0,0,0,0,2,1,1,1,1,0,1,0,,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,1HA,1,1,1,1,0,1,0,,2;".into(),
     }]);
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

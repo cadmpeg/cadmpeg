@@ -27,6 +27,38 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
 }
 
 #[test]
+fn a_zero_hollerith_count_is_not_a_null_string() {
+    assert!(matches!(
+        tokenize(b"116,0H,2,3,0;", &[64], b',', b';', None),
+        Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithCountZero,
+            4
+        ))
+    ));
+
+    let error = super::super::layout_parameter_cards(b"116,0H;").unwrap_err();
+    assert!(error.to_string().contains("count must be positive"));
+}
+
+#[test]
+fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
+    let (tokens, _) = tokenize(b"116, 1,2,3,0;", &[64], b',', b';', None)
+        .unwrap_or_else(|_| panic!("leading blanks are ignored"));
+    assert_eq!(tokens[1].value, TokenValue::Integer(1));
+
+    for field in [b"1  ".as_slice(), b"1 2".as_slice()] {
+        let bytes = [b"116,".as_slice(), field, b",2,3,0;".as_slice()].concat();
+        assert!(matches!(
+            tokenize(&bytes, &[64], b',', b';', None),
+            Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericContainsBlanks,
+                4
+            ))
+        ));
+    }
+}
+
+#[test]
 fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
     let mut payload_crosses = b"116,".to_vec();
     payload_crosses.extend(std::iter::repeat_n(b'0', 56));

@@ -2289,9 +2289,11 @@ fn groups_for_candidate(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParameterDefect {
     HollerithCountUnreadable,
+    HollerithCountZero,
     HollerithPayloadTruncated,
     HollerithHeaderCrossesCard,
     NumericCrossesCard,
+    NumericContainsBlanks,
     TokenNotAscii,
     TokenNotANumber,
     DelimiterMissing,
@@ -2306,9 +2308,11 @@ impl ParameterDefect {
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "hollerith-count-unreadable",
+            Self::HollerithCountZero => "hollerith-count-zero",
             Self::HollerithPayloadTruncated => "hollerith-payload-truncated",
             Self::HollerithHeaderCrossesCard => "hollerith-header-crosses-card",
             Self::NumericCrossesCard => "numeric-crosses-card",
+            Self::NumericContainsBlanks => "numeric-contains-blanks",
             Self::TokenNotAscii => "token-not-ascii",
             Self::TokenNotANumber => "token-not-a-number",
             Self::DelimiterMissing => "delimiter-missing",
@@ -2323,11 +2327,13 @@ impl ParameterDefect {
     fn describe(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "a Hollerith byte count is unreadable",
+            Self::HollerithCountZero => "a Hollerith byte count is zero",
             Self::HollerithPayloadTruncated => "a Hollerith payload is truncated",
             Self::HollerithHeaderCrossesCard => {
                 "a Hollerith count and H delimiter cross a card boundary"
             }
             Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
+            Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",
             Self::TokenNotAscii => "a token is not ASCII",
             Self::TokenNotANumber => "a token is not a number",
             Self::DelimiterMissing => "a delimiter is missing",
@@ -2399,6 +2405,11 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?
         .parse::<usize>()
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is out of range".into()))?;
+    if count == 0 {
+        return Err(CodecError::Malformed(
+            "IGES Hollerith count must be positive".into(),
+        ));
+    }
     let payload_start = cursor
         .checked_add(1)
         .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload offset overflows".into()))?;
@@ -2525,6 +2536,12 @@ fn hollerith(
         .map_err(|_| unreadable_count())?
         .parse::<usize>()
         .map_err(|_| unreadable_count())?;
+    if count == 0 {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithCountZero,
+            start,
+        ));
+    }
     let end = cursor
         .checked_add(1)
         .and_then(|payload_start| payload_start.checked_add(count))
@@ -2544,15 +2561,26 @@ fn hollerith(
 
 fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
     let start = span.start;
-    let text = std::str::from_utf8(&bytes[span.clone()])
-        .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?
-        .trim();
-    if text.is_empty() {
+    let raw = &bytes[span.clone()];
+    let first = raw
+        .iter()
+        .position(|byte| *byte != b' ')
+        .unwrap_or(raw.len());
+    if first == raw.len() {
         return Ok(Token {
             value: TokenValue::Omitted,
             span,
         });
     }
+    let text_bytes = &raw[first..];
+    if text_bytes.contains(&b' ') {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::NumericContainsBlanks,
+            start,
+        ));
+    }
+    let text = std::str::from_utf8(text_bytes)
+        .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?;
     let not_a_number = || TokenizeFailure::Defect(ParameterDefect::TokenNotANumber, start);
     let real = text
         .bytes()

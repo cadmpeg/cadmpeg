@@ -257,7 +257,9 @@ fn every_token_defect_key_names_its_own_failure() {
             "hollerith-count-unreadable",
         ),
         ("116,1,2,64Hshort;", "hollerith-payload-truncated"),
+        ("116,1,2,0H;", "hollerith-count-zero"),
         ("116,1,2,3x4,0;", "token-not-a-number"),
+        ("116,1,2,3 ,0;", "numeric-contains-blanks"),
         ("116,1,2,3,0", "delimiter-missing"),
     ] {
         let result = decode(point_file(parameters));
