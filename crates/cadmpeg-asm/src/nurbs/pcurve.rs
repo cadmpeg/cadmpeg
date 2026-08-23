@@ -1330,6 +1330,64 @@ mod width_tests {
     }
 
     #[test]
+    fn ruled_surface_uses_two_direct_profiles_then_cache() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "rule_sur");
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &tokens,
+                &test_table(&bytes, int_width),
+            )
+            .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
+            let DecodedProceduralSurfaceDefinition::Ruled { first, second } = decoded.definition
+            else {
+                panic!("expected ruled surface");
+            };
+
+            assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
+            assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+            assert!(
+                (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
+                    < f64::EPSILON * 10.0
+            );
+        }
+    }
+
+    #[test]
+    fn ruled_surface_rejects_nested_profile_substitution() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "rule_sur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn surface_cache_resolves_width4_subtype_ref() {
         // Active slice: one named subtype span holding the surface cache.
         let mut active = vec![0x0f, 0x0d, 0x07];
