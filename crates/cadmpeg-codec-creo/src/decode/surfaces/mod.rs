@@ -160,6 +160,74 @@ pub(super) fn fc05_model_frame(
     }
 }
 
+const EPS_FC05_CAP_FRAME: f64 = 1e-9;
+
+#[derive(Clone, Copy)]
+pub(super) struct Fc05CapPairFrame {
+    pub(super) origin: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) axis_index: usize,
+    pub(super) axis_sign: f64,
+    pub(super) translation: f64,
+}
+
+/// Resolve one cap-pair cylinder in model space from its two placed cap planes.
+///
+/// The cap ordinates and the cap-plane origins must describe one translation
+/// along the cap normal. This is the same bounded witness used by B-rep
+/// transfer and is also available to analytic plane-branch selection.
+pub(super) fn fc05_cap_pair_model_frame(
+    scan: &ContainerScan,
+    pair: &crate::curve::Fc05CylinderCapPair,
+) -> Option<Fc05CapPairFrame> {
+    let placed_caps = pair
+        .cap_plane_ids
+        .iter()
+        .zip(&pair.curve_cap_ordinates_row_frame)
+        .filter_map(|(id, ordinate)| {
+            crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
+                .map(|plane| (plane, *ordinate))
+        })
+        .collect::<Vec<_>>();
+    let (first_cap, first_ordinate) = placed_caps.first().copied()?;
+    let axis_index =
+        (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
+    if placed_caps
+        .iter()
+        .any(|(plane, _)| plane.normal != first_cap.normal)
+    {
+        return None;
+    }
+    let translations = placed_caps
+        .iter()
+        .map(|(plane, ordinate)| plane.origin[axis_index] - ordinate)
+        .collect::<Vec<_>>();
+    if translations
+        .iter()
+        .any(|translation| (translation - translations[0]).abs() > EPS_FC05_CAP_FRAME)
+    {
+        return None;
+    }
+    let axis_origin = first_ordinate + translations[0];
+    let axis_sign = -f64::from(pair.parameter_sign);
+    let (origin, axis, ref_direction) = fc05_model_frame(
+        axis_index,
+        axis_origin,
+        pair.center_row_frame,
+        pair.reference_direction_row_frame,
+        axis_sign,
+    );
+    Some(Fc05CapPairFrame {
+        origin,
+        axis,
+        ref_direction,
+        axis_index,
+        axis_sign,
+        translation: translations[0],
+    })
+}
+
 pub(super) fn transfer_fc05_cap_circles(
     scan: &ContainerScan,
     ir: &mut CadIr,

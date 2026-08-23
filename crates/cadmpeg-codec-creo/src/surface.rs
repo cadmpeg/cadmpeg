@@ -1812,7 +1812,7 @@ pub struct PlaneLocalSystem {
     pub origin: Option<[f64; 3]>,
     /// Normalized first in-plane direction from slots 0 through 2.
     pub u_axis: Option<[f64; 3]>,
-    /// Normalized cross product of valid equal-scale in-plane directions.
+    /// Normalized plane normal from the decoded support-frame layout.
     pub normal: Option<[f64; 3]>,
     /// Compact versus raw-preserved chunk classification.
     pub classification: LocalSystemClassification,
@@ -6699,6 +6699,53 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     }
 }
 
+fn plane_direct_frame(slots: &[Option<f64>]) -> PlaneFrame {
+    let triple = |indices: [usize; 3]| {
+        Some([
+            slots.get(indices[0]).copied()??,
+            slots.get(indices[1]).copied()??,
+            slots.get(indices[2]).copied()??,
+        ])
+    };
+    let origin = triple([9, 10, 11]);
+    let (Some(u_axis), Some(zero_rank), Some(normal)) =
+        (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
+    else {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    };
+    let u_magnitude = u_axis.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let normal_magnitude = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = u_magnitude.max(normal_magnitude).max(1.0);
+    let orthogonal = u_axis
+        .into_iter()
+        .zip(normal)
+        .map(|(u, normal)| u * normal)
+        .sum::<f64>();
+    if zero_rank.into_iter().any(|value| value != 0.0)
+        || !u_magnitude.is_finite()
+        || !normal_magnitude.is_finite()
+        || u_magnitude <= EPS_PLANE_FRAME_NONZERO
+        || normal_magnitude <= EPS_PLANE_FRAME_NONZERO
+        || (u_magnitude - normal_magnitude).abs() > EPS_PLANE_FRAME_SCALE * scale
+        || orthogonal.abs() > EPS_PLANE_FRAME_ORTHOGONAL * u_magnitude * normal_magnitude
+    {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    }
+    PlaneFrame {
+        origin,
+        u_axis: Some(u_axis.map(|value| value / u_magnitude)),
+        normal: Some(normal.map(|value| value / normal_magnitude)),
+    }
+}
+
 fn plane_matrix_frame(slots: &[Option<f64>]) -> PlaneFrame {
     let triple = |indices: [usize; 3]| {
         Some([
@@ -6833,6 +6880,9 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
             .as_ref()
             .map_or([None; 12], |(slots, _)| slots.map(Some));
         let frame = match decoded.as_ref().map(|(_, layout)| *layout) {
+            Some(scalar::PlaneSupportFrameLayout::DirectNormalTriples) => {
+                plane_direct_frame(&slots)
+            }
             Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&slots),
             _ => plane_frame(&slots),
         };

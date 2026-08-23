@@ -829,6 +829,21 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
 }
 
 #[test]
+fn explicit_plane_frame_uses_the_stored_normal_triple() {
+    let slots = [
+        0.6, 0.0, 0.8, // parameter direction
+        0.0, 0.0, 0.0, // zero rank
+        0.8, 0.0, -0.6, // stored plane normal
+        2.0, 3.0, 4.0,
+    ];
+
+    let frame = plane_direct_frame(&slots.map(Some));
+    assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
+    assert_eq!(frame.u_axis, Some([0.6, 0.0, 0.8]));
+    assert_eq!(frame.normal, Some([0.8, 0.0, -0.6]));
+}
+
+#[test]
 fn positional_plane_frame_decodes_outline_separator_zero_suffix() {
     let first = [
         0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,

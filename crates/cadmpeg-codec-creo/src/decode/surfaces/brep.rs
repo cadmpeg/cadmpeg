@@ -36,7 +36,7 @@ use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::line_pcurve;
 use super::super::uniqueness::exactly_one;
 
-use super::{fc05_model_frame, native_surface_id};
+use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
 
 const EPS_PARAMETER_AGREE: f64 = 1e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1e-9;
@@ -1840,47 +1840,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
     annotations: &mut AnnotationBuilder,
 ) {
     for pair in &scan.curves.fc05_cylinder_cap_pairs {
-        let placed_caps = pair
-            .cap_plane_ids
-            .iter()
-            .zip(&pair.curve_cap_ordinates_row_frame)
-            .filter_map(|(id, ordinate)| {
-                crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
-                    .map(|plane| (plane, *ordinate))
-            })
-            .collect::<Vec<_>>();
-        let Some((first_cap, first_ordinate)) = placed_caps.first().copied() else {
+        let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - 1e-9)
-        else {
-            continue;
-        };
-        if placed_caps
-            .iter()
-            .any(|(plane, _)| plane.normal != first_cap.normal)
-        {
-            continue;
-        }
-        let translations = placed_caps
-            .iter()
-            .map(|(plane, ordinate)| plane.origin[axis_index] - ordinate)
-            .collect::<Vec<_>>();
-        if translations
-            .iter()
-            .any(|translation| (translation - translations[0]).abs() > 1e-9)
-        {
-            continue;
-        }
-        let axis_origin = first_ordinate + translations[0];
-        let axis_sign = -f64::from(pair.parameter_sign);
-        let (origin, axis, ref_direction) = fc05_model_frame(
-            axis_index,
-            axis_origin,
-            pair.center_row_frame,
-            pair.reference_direction_row_frame,
-            axis_sign,
-        );
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -1896,9 +1858,13 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                axis: Vector3::new(axis[0], axis[1], axis[2]),
-                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
                 radius: pair.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
@@ -1920,15 +1886,15 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
-                        || ordinate + translations[0],
-                        |plane| plane.origin[axis_index],
+                        || ordinate + frame.translation,
+                        |plane| plane.origin[frame.axis_index],
                     );
             let (center, _, _) = fc05_model_frame(
-                axis_index,
+                frame.axis_index,
                 cap_offset,
                 pair.center_row_frame,
                 pair.reference_direction_row_frame,
-                axis_sign,
+                frame.axis_sign,
             );
             let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
             if ir.model.curves.iter().any(|curve| curve.id == id) {
@@ -1950,11 +1916,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 id,
                 geometry: CurveGeometry::Circle {
                     center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
                     ref_direction: Vector3::new(
-                        ref_direction[0],
-                        ref_direction[1],
-                        ref_direction[2],
+                        frame.ref_direction[0],
+                        frame.ref_direction[1],
+                        frame.ref_direction[2],
                     ),
                     radius: pair.radius_mm,
                 },

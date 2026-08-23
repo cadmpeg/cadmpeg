@@ -907,9 +907,59 @@ fn decode_inline_local_system_coordinates(
 pub(crate) enum PlaneSupportFrameLayout {
     /// The decoder expanded a compact or specialized form into support triples.
     SupportTriples,
+    /// The generic form stores the parameter direction, zero rank, and plane
+    /// normal as three consecutive triples.
+    DirectNormalTriples,
     /// The generic form stores a 3x3 frame in row-major bytes, so its columns
     /// are the frame directions.
     MatrixColumns,
+}
+
+const EPS_PLANE_LAYOUT_NONZERO: f64 = 1e-6;
+const EPS_PLANE_LAYOUT_RELATIVE: f64 = 1e-9;
+
+fn valid_equal_scale_orthogonal_directions(first: [f64; 3], second: [f64; 3]) -> bool {
+    let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = first_magnitude.max(second_magnitude).max(1.0);
+    first_magnitude.is_finite()
+        && second_magnitude.is_finite()
+        && first_magnitude > EPS_PLANE_LAYOUT_NONZERO
+        && second_magnitude > EPS_PLANE_LAYOUT_NONZERO
+        && (first_magnitude - second_magnitude).abs() <= EPS_PLANE_LAYOUT_RELATIVE * scale
+        && first
+            .into_iter()
+            .zip(second)
+            .map(|(first, second)| first * second)
+            .sum::<f64>()
+            .abs()
+            <= EPS_PLANE_LAYOUT_RELATIVE * first_magnitude * second_magnitude
+}
+
+fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> PlaneSupportFrameLayout {
+    let direct_zero_rank = values[3..6].iter().all(|value| *value == 0.0);
+    let direct_frame = direct_zero_rank
+        && valid_equal_scale_orthogonal_directions(
+            values[0..3].try_into().expect("three direction slots"),
+            values[6..9].try_into().expect("three direction slots"),
+        );
+    if direct_frame {
+        return PlaneSupportFrameLayout::DirectNormalTriples;
+    }
+
+    let matrix_zero_rank = [values[1], values[4], values[7]]
+        .into_iter()
+        .all(|value| value == 0.0);
+    let matrix_frame = matrix_zero_rank
+        && valid_equal_scale_orthogonal_directions(
+            [values[0], values[3], values[6]],
+            [values[2], values[5], values[8]],
+        );
+    if saw_zero_slot_prefix && matrix_frame {
+        PlaneSupportFrameLayout::MatrixColumns
+    } else {
+        PlaneSupportFrameLayout::SupportTriples
+    }
 }
 
 /// Decode a positional plane support frame and retain its storage layout.
@@ -923,12 +973,13 @@ pub(crate) fn decode_plane_support_local_system(
         } else {
             let prefix =
                 decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)?;
-            let layout = if prefix.saw_zero_slot_prefix
-                && !matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18))
-            {
-                PlaneSupportFrameLayout::MatrixColumns
-            } else {
+            let layout = if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
+                // Compact support prefixes use the same numeric shape as a
+                // direct frame. Their field grammar, not the values alone,
+                // identifies the two in-plane support directions.
                 PlaneSupportFrameLayout::SupportTriples
+            } else {
+                plane_support_layout(&prefix.values, prefix.saw_zero_slot_prefix)
             };
             (prefix.values, prefix.cursor, layout)
         };
@@ -1115,6 +1166,9 @@ fn decode_plane_support_special_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
+    if let Some(frame) = decode_inline_plane_support_image(body, cache) {
+        return Some(frame);
+    }
     if let Some(frame) = decode_normal_x_plane_support(body, cache) {
         return Some(frame);
     }
@@ -1136,6 +1190,32 @@ fn decode_plane_support_special_prefix(
     (body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]).then_some((
         [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         body.len(),
+    ))
+}
+
+/// Expand a compact axis image into the support triples used by the plane-row
+/// solver. The inline image contains two in-plane directions followed by the
+/// model normal; plane support stores the second in-plane direction in its
+/// third triple with a zero rank triple between them.
+fn decode_inline_plane_support_image(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<([f64; 12], usize)> {
+    // The older compact support prefix also matches one of the generic image
+    // templates. It has its own support-frame semantics and must reach the
+    // legacy decoder below instead of being replayed as an inline frame.
+    if !body.starts_with(&[0x18, 0xe4]) {
+        return None;
+    }
+    let (axis, reference_sign, prefix_end) = decode_inline_compact_image(body)?;
+    let inline = compact_inline_frame(axis, reference_sign);
+    let (origin, cursor) = decode_plane_support_origin(body, prefix_end, cache)?;
+    Some((
+        [
+            inline[0], inline[1], inline[2], 0.0, 0.0, 0.0, inline[3], inline[4], inline[5],
+            origin[0], origin[1], origin[2],
+        ],
+        cursor,
     ))
 }
 
@@ -1424,6 +1504,11 @@ fn decode_plane_support_origin(
 ) -> Option<([f64; 3], usize)> {
     let mut origin = [0.0; 3];
     for (index, value) in origin.iter_mut().enumerate() {
+        if body.get(cursor) == Some(&0x0e) {
+            *value = 0.5;
+            cursor += 1;
+            continue;
+        }
         if matches!(body.get(cursor), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
             cursor += 1;
             continue;
@@ -1724,6 +1809,20 @@ mod tests {
     }
 
     #[test]
+    fn plane_support_reuses_the_compact_x_axis_image_as_in_plane_supports() {
+        let mut body = vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
+        body.extend([0x18, 0x18, 0x18]);
+
+        assert_eq!(
+            decode_plane_support_local_system(&body, &ScalarCache::default()),
+            Some((
+                [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
+                PlaneSupportFrameLayout::SupportTriples,
+            ))
+        );
+    }
+
+    #[test]
     fn inline_non_plane_explicit_frames_expand_the_four_slot_fill() {
         let body = [
             0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
@@ -1800,7 +1899,7 @@ mod tests {
     }
 
     #[test]
-    fn plane_support_layout_distinguishes_coordinate_first_matrix_body() {
+    fn plane_support_layout_keeps_an_invalid_generic_frame_unresolved() {
         let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         let mut body = vec![0x46, 0x08, 0, 0, 0, 0, 0, 0];
         body.extend([0x10; 10]);
@@ -1808,12 +1907,36 @@ mod tests {
 
         assert_eq!(
             decode_plane_support_local_system(&body, &cache).map(|(_, layout)| layout),
-            Some(PlaneSupportFrameLayout::MatrixColumns)
+            Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
             decode_plane_support_local_system(&[0x10; 12], &ScalarCache::default())
                 .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
+        );
+        assert_eq!(
+            plane_support_layout(
+                &[
+                    1.0, 0.0, 0.0, // first matrix row
+                    0.0, 0.0, 1.0, // second matrix row
+                    0.0, 0.0, 0.0, // third matrix row
+                    0.0, 0.0, 0.0,
+                ],
+                true,
+            ),
+            PlaneSupportFrameLayout::MatrixColumns
+        );
+        assert_eq!(
+            plane_support_layout(
+                &[
+                    0.6, 0.0, 0.8, // direct parameter direction
+                    0.0, 0.0, 0.0, // direct zero rank
+                    0.8, 0.0, -0.6, // direct plane normal
+                    0.0, 0.0, 0.0,
+                ],
+                true,
+            ),
+            PlaneSupportFrameLayout::DirectNormalTriples
         );
     }
 

@@ -562,6 +562,104 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     assert_eq!(u_axis, [component, 0.0, -component]);
 }
 
+#[test]
+fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
+    const EPS_BRANCH_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Plane),
+        (5, crate::surface::SurfaceKind::Plane),
+        (7, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 5],
+            next_edges: [0; 2],
+            offset: 30,
+        });
+    scan.curves
+        .fc05_cylinder_cap_pairs
+        .push(crate::curve::Fc05CylinderCapPair {
+            surface_id: 7,
+            curve_ids: vec![11, 12],
+            cap_plane_ids: vec![1, 2],
+            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            reference_direction_row_frame: [1.0, 0.0],
+            parameter_sign: 1,
+            cap_ordinates_row_frame: vec![0.0, 38.0],
+            offset: 40,
+        });
+    let origin_z = 17.0 / 8.0;
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 5,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(origin_z),
+        ],
+        origin: Some([0.0, 0.0, origin_z]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([-0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 50,
+        offset: 60,
+    });
+
+    let candidates = plane_candidates(&scan);
+    let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
+        panic!("one tangent branch must be selected");
+    };
+    assert!((candidate.equation.normal[0] - 0.6).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.normal[2] + 0.8).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.chart.expect("stored chart").u_axis[2] - 0.6).abs() < EPS_BRANCH_TEST);
+}
+
 fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
     for id in [1, 2] {
@@ -643,6 +741,10 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let mut invalid = frame.clone();
     invalid.slots[4] = Some(1.0);
     assert!(stored_parameter_normal_candidates(&invalid).is_none());
+
+    let mut compact = frame.clone();
+    compact.classification = LocalSystemClassification::Simple;
+    assert!(stored_parameter_normal_candidates(&compact).is_none());
 }
 
 #[test]
@@ -651,8 +753,8 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
     let candidates = plane_candidates(&scan);
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
-    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
 }
 
 #[test]

@@ -11,7 +11,9 @@ use crate::container::ContainerScan;
 
 use super::super::holes::plane_envelope_corners;
 use super::super::sketch::normalized;
-use super::super::surfaces::intersect_plane_with_carrier_components;
+use super::super::surfaces::{
+    fc05_cap_pair_model_frame, fc05_model_frame, intersect_plane_with_carrier_components,
+};
 
 use super::edges::nurbs_intrinsic_parameter_range;
 use super::equations::{
@@ -27,6 +29,9 @@ const EPS_ORTHO: f64 = 1e-10;
 const EPS_NEAR_ZERO: f64 = 1e-12;
 const EPS_STORED_FRAME_NONZERO: f64 = 1e-6;
 const EPS_STORED_FRAME_RELATIVE: f64 = 1e-9;
+const EPS_FC05_TANGENT_AXIS: f64 = 1e-10;
+const EPS_FC05_TANGENT_RESIDUAL: f64 = 1e-9;
+const EPS_FC05_CAP_AXIS: f64 = 1e-9;
 
 pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
@@ -502,6 +507,9 @@ fn stored_parameter_normal_candidate(
 pub(crate) fn stored_parameter_normal_candidates(
     frame: &crate::surface::PlaneLocalSystem,
 ) -> Option<Vec<PlaneCandidate>> {
+    if frame.classification == crate::surface::LocalSystemClassification::Simple {
+        return None;
+    }
     let slots: [f64; 12] = frame
         .slots
         .iter()
@@ -549,7 +557,7 @@ fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]
     let normal = normalized(chart.normal)?;
     let u_axis = normalized(chart.u_axis)?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
-    let v_axis = cross(normal, u_axis);
+    let v_axis = cross(u_axis, normal);
     let point = std::array::from_fn(|axis| {
         chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
     });
@@ -656,6 +664,151 @@ fn stored_frame_branch_constraints(
     constraints
 }
 
+fn fc05_cylinder_branch_witnesses(
+    scan: &ContainerScan,
+) -> BTreeMap<u32, Vec<super::equations::CylinderEquation>> {
+    let mut cylinder_frames = scan
+        .curves
+        .fc05_cylinder_cap_pairs
+        .iter()
+        .filter_map(|pair| {
+            let frame = fc05_cap_pair_model_frame(scan, pair)?;
+            Some((
+                pair.surface_id,
+                super::equations::CylinderEquation {
+                    origin: frame.origin,
+                    axis: frame.axis,
+                    ref_direction: frame.ref_direction,
+                    radius: pair.radius_mm,
+                },
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for circle in &scan.curves.fc05_circles {
+        let topologies = scan
+            .curves
+            .topology_rows
+            .iter()
+            .find(|row| row.id == circle.curve_id)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let [topology] = topologies.as_slice() else {
+            continue;
+        };
+        let planes = topology
+            .faces
+            .into_iter()
+            .filter(|face| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            })
+            .filter_map(|face| {
+                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
+                    .map(|plane| (face, plane))
+            })
+            .collect::<Vec<_>>();
+        let cylinders = topology
+            .faces
+            .into_iter()
+            .filter(|face| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+            })
+            .collect::<Vec<_>>();
+        let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
+            continue;
+        };
+        let Some(axis_index) =
+            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+        else {
+            continue;
+        };
+        let (reference, axis_sign) = circle
+            .reference_direction_row_frame
+            .zip(circle.parameter_sign)
+            .map_or(
+                (
+                    circle.sample_direction_row_frame,
+                    cap.normal[axis_index].signum(),
+                ),
+                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
+            );
+        let (origin, axis, ref_direction) = fc05_model_frame(
+            axis_index,
+            cap.origin[axis_index],
+            circle.center_row_frame,
+            reference,
+            axis_sign,
+        );
+        cylinder_frames
+            .entry(*cylinder_id)
+            .or_insert_with(|| super::equations::CylinderEquation {
+                origin,
+                axis,
+                ref_direction,
+                radius: circle.radius_mm,
+            });
+    }
+
+    let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
+    for topology in &scan.curves.topology_rows {
+        let Some((cylinder_id, plane_id)) = topology.faces.into_iter().find_map(|first| {
+            let second = topology
+                .faces
+                .into_iter()
+                .find(|candidate| *candidate != first)?;
+            if cylinder_frames.contains_key(&first)
+                && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            {
+                Some((first, second))
+            } else if cylinder_frames.contains_key(&second)
+                && crate::surface::unique_surface_row(&scan.surfaces.rows, first)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            {
+                Some((second, first))
+            } else {
+                None
+            }
+        }) else {
+            continue;
+        };
+        let Some(cylinder) = cylinder_frames.get(&cylinder_id).copied() else {
+            continue;
+        };
+        let entries = witnesses.entry(plane_id).or_default();
+        if !entries.iter().any(|known| {
+            known.origin == cylinder.origin
+                && known.axis == cylinder.axis
+                && known.radius.to_bits() == cylinder.radius.to_bits()
+        }) {
+            entries.push(cylinder);
+        }
+    }
+    witnesses
+}
+
+fn plane_candidate_is_fc05_tangent(
+    candidate: PlaneCandidate,
+    cylinder: super::equations::CylinderEquation,
+) -> bool {
+    let Some(normal) = normalized(candidate.equation.normal) else {
+        return false;
+    };
+    let Some(axis) = normalized(cylinder.axis) else {
+        return false;
+    };
+    if dot(normal, axis).abs() > EPS_FC05_TANGENT_AXIS {
+        return false;
+    }
+    let relative =
+        std::array::from_fn(|index| cylinder.origin[index] - candidate.equation.origin[index]);
+    let signed_distance = dot(normal, relative);
+    (signed_distance.abs() - cylinder.radius).abs()
+        <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
+}
+
 fn select_stored_frame_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
@@ -672,6 +825,25 @@ fn select_stored_frame_branches(
     }
 
     let mut domains = variable_domains.clone();
+    let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
+    for (surface_id, options) in &variable_domains {
+        let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
+            continue;
+        };
+        let retained = options
+            .iter()
+            .copied()
+            .filter(|candidate| {
+                witnesses
+                    .iter()
+                    .copied()
+                    .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
+            })
+            .collect::<Vec<_>>();
+        if retained.len() == 1 {
+            domains.insert(*surface_id, retained);
+        }
+    }
     for (surface_id, known) in candidates.iter() {
         let fixed = if known.len() == 1 {
             known
@@ -694,9 +866,6 @@ fn select_stored_frame_branches(
         }
     }
     let constraints = stored_frame_branch_constraints(scan, &domains);
-    if constraints.is_empty() {
-        return;
-    }
 
     let variable_ids = variable_domains.keys().copied().collect::<BTreeSet<_>>();
     let mut filtered = domains;

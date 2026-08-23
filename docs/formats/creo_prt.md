@@ -1512,20 +1512,27 @@ consumes its complete compound-bounded body. A compact envelope can instead be
 the unique terminal nine-slot scalar frame after a nonempty structural prefix.
 Bytes outside these layouts do not form a plane envelope.
 
-`local_sys` has twelve scalar slots. Plane rows use two storage forms. Compact
-and specialized plane-support bodies expand their direction values into three
-support triples. A generic coordinate-first body starts with a coordinate
-scalar, not one of the control openers `0e`, `0f`, `10`, or `18`, and contains
-an `18` zero-slot prefix at a scalar-token boundary. Its slots 0 through 8
-store the first three rows of a 3x3 matrix in row-major order. In that form,
-columns zero, one, and two are the parameter direction, zero rank, and stored
-plane normal. The two forms use the same origin slots.
+`local_sys` has twelve scalar slots. Plane rows use three storage forms.
+Compact and specialized plane-support bodies expand their direction values into
+three support triples. A generic direct-normal body stores a parameter
+direction, an exact zero-rank triple, and a stored plane normal. A generic
+coordinate-first body starts with a coordinate scalar, not one of the control
+openers `0e`, `0f`, `10`, or `18`, and contains an `18` zero-slot prefix at a
+scalar-token boundary. Its slots 0 through 8 store the first three rows of a
+3x3 matrix in row-major order. In that form, columns zero, one, and two are
+the parameter direction, zero rank, and stored plane normal. All three forms
+use the same origin slots.
 
 ```text
 support-triple form:
 slots 0..2    first support direction
 slots 3..5    second support direction or [0, 0, 0]
 slots 6..8    third support direction
+
+direct-normal form:
+slots 0..2    parameter direction
+slots 3..5    [0, 0, 0]
+slots 6..8    stored plane normal
 
 coordinate-first matrix form:
 slots 0, 3, 6    parameter direction column
@@ -1540,6 +1547,11 @@ In a coordinate-first matrix body, the zero-rank column is exactly zero. The
 parameter and normal columns are finite, nonzero, equal-scale, and
 orthogonal. Normalize those two stored columns to obtain the plane chart. A
 body that does not meet these conditions does not establish a matrix chart.
+
+In a direct-normal body, the zero-rank triple is exactly zero. The parameter
+direction and stored normal are finite, nonzero, equal-scale, and orthogonal.
+Normalize both triples to obtain the plane chart. Use the stored normal as the
+plane normal; do not replace it with a cross product.
 
 In a support-triple body, the slots are:
 
@@ -1572,7 +1584,7 @@ The rank-two body `18 e4 0f e4 18 e5 0f 18 e6` expands to support triples
 `[0, 1, 0]`, `[0, 0, 0]`, and `[1, 0, 0]`, followed by origin `[0, 0, 0]`.
 This image has the same expansion in every twelve-slot local-system field.
 
-When the support-frame guard holds, derive the normal as:
+When the support-frame guard holds, derive the support-triple normal as:
 
 ```text
 first, second = the unique equal-scale orthogonal pair in stored order
