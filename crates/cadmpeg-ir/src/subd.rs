@@ -2,7 +2,7 @@
 //! Subdivision-surface control cages.
 
 use crate::ids::SubdId;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -22,9 +22,59 @@ pub struct SubdSurface {
     pub edges: Vec<SubdEdge>,
     /// Control-cage faces.
     pub faces: Vec<SubdFace>,
+    /// Native editor symmetry blocks projected into control-cage coordinates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symmetries: Vec<SubdSymmetry>,
     /// Native source-object identity and effective display metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<SourceObjectAssociation>,
+}
+
+/// A symmetry plane frame carried by a T-spline editor block.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdPlaneFrame {
+    /// A point on the plane in document length units.
+    pub origin: Point3,
+    /// First unit in-plane axis.
+    pub first_axis: Vector3,
+    /// Second unit in-plane axis.
+    pub second_axis: Vector3,
+}
+
+/// Kind-specific controls for a T-spline symmetry block.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SubdSymmetryKind {
+    /// One-to-one correspondence across the symmetry plane.
+    Correspondence,
+    /// Radial editor symmetry with native segment and sweep controls.
+    Radial {
+        /// Number of radial segments.
+        segments: u32,
+        /// Native radial sweep value.
+        sweep: f64,
+    },
+}
+
+/// Typed editor symmetry state for one subdivision cage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdSymmetry {
+    /// Symmetry mode and its radial controls, when present.
+    pub kind: SubdSymmetryKind,
+    /// Geometric symmetry-plane frame.
+    pub plane: SubdPlaneFrame,
+    /// Forward face correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_pairs: Vec<[u32; 2]>,
+    /// Forward edge correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_pairs: Vec<[u32; 2]>,
+    /// Forward vertex correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_pairs: Vec<[u32; 2]>,
 }
 
 /// Subdivision scheme used by a control cage.

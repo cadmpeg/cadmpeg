@@ -732,6 +732,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     }];
 
@@ -813,6 +814,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     }];
 

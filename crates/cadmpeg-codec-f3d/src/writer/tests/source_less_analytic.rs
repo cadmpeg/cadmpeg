@@ -712,6 +712,7 @@ fn generated_source_less_f3d_rejects_subds() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     });
 

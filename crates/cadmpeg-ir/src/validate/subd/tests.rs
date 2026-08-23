@@ -26,8 +26,9 @@ use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossKind, LossNote, LossTaxonomy, Severity};
 use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdScheme,
-    SubdSecondaryGrip, SubdSurface, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
+    SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
 };
 use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
 use crate::topology::Color;
@@ -43,6 +44,7 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#short".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
@@ -91,6 +93,7 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#grips".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
@@ -130,6 +133,96 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid sector arity")));
+}
+
+#[test]
+fn subd_rejects_invalid_symmetry_carriers() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#symmetry".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: vec![SubdSymmetry {
+            kind: SubdSymmetryKind::Radial {
+                segments: 0,
+                sweep: f64::NAN,
+            },
+            plane: SubdPlaneFrame {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                first_axis: Vector3::new(1.0, 0.0, 0.0),
+                second_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            face_pairs: vec![[0, 1]],
+            edge_pairs: vec![[0, 1]],
+            vertex_pairs: vec![[0, 3]],
+        }],
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(0.0, 1.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![
+            SubdEdge {
+                vertices: [0, 1],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+            SubdEdge {
+                vertices: [1, 2],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+            SubdEdge {
+                vertices: [2, 0],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+        ],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    let findings = validate_neutral(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("plane frame is invalid")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("radial controls are invalid")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("vertex pair 0 is invalid")));
 }
 
 #[test]

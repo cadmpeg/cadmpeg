@@ -5,11 +5,101 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
+use crate::subd::{SubdSurface, SubdSymmetryKind};
 use crate::validate::geometry_payloads::bounds_err;
+
+const SUBD_SYMMETRY_FRAME_EPS: f64 = 1e-9;
 
 fn finite_point(point: &Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn finite_vector(vector: &Vector3) -> bool {
+    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+}
+
+fn check_symmetry_pairs(
+    id: &str,
+    symmetry_index: usize,
+    element: &str,
+    pairs: &[[u32; 2]],
+    count: usize,
+    findings: &mut Vec<Finding>,
+) {
+    let mut sources = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    for (pair_index, [source, target]) in pairs.iter().copied().enumerate() {
+        let source_in_range = usize::try_from(source).map_or(false, |index| index < count);
+        let target_in_range = usize::try_from(target).map_or(false, |index| index < count);
+        let source_unique = sources.insert(source);
+        let target_unique = targets.insert(target);
+        if !source_in_range || !target_in_range || !source_unique || !target_unique {
+            bounds_err(
+                findings,
+                id,
+                &format!("SubD symmetry {symmetry_index} {element} pair {pair_index} is invalid"),
+            );
+        }
+    }
+}
+
+fn check_symmetries(
+    subd: &SubdSurface,
+    vertex_count: usize,
+    edge_count: usize,
+    face_count: usize,
+    findings: &mut Vec<Finding>,
+) {
+    for (symmetry_index, symmetry) in subd.symmetries.iter().enumerate() {
+        let plane = &symmetry.plane;
+        let frame_valid = finite_point(&plane.origin)
+            && finite_vector(&plane.first_axis)
+            && finite_vector(&plane.second_axis)
+            && (plane.first_axis.norm() - 1.0).abs() <= SUBD_SYMMETRY_FRAME_EPS
+            && (plane.second_axis.norm() - 1.0).abs() <= SUBD_SYMMETRY_FRAME_EPS
+            && plane.first_axis.dot(plane.second_axis).abs() <= SUBD_SYMMETRY_FRAME_EPS;
+        if !frame_valid {
+            bounds_err(
+                findings,
+                &subd.id.0,
+                &format!("SubD symmetry {symmetry_index} plane frame is invalid"),
+            );
+        }
+        if let SubdSymmetryKind::Radial { segments, sweep } = symmetry.kind {
+            if segments == 0 || !sweep.is_finite() {
+                bounds_err(
+                    findings,
+                    &subd.id.0,
+                    &format!("SubD symmetry {symmetry_index} radial controls are invalid"),
+                );
+            }
+        }
+        check_symmetry_pairs(
+            &subd.id.0,
+            symmetry_index,
+            "face",
+            &symmetry.face_pairs,
+            face_count,
+            findings,
+        );
+        check_symmetry_pairs(
+            &subd.id.0,
+            symmetry_index,
+            "edge",
+            &symmetry.edge_pairs,
+            edge_count,
+            findings,
+        );
+        check_symmetry_pairs(
+            &subd.id.0,
+            symmetry_index,
+            "vertex",
+            &symmetry.vertex_pairs,
+            vertex_count,
+            findings,
+        );
+    }
 }
 
 fn check_source(
@@ -192,6 +282,7 @@ pub(super) fn check_subds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        check_symmetries(subd, vertex_count, edge_count, face_count, findings);
     }
 }
 

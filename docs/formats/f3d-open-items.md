@@ -278,14 +278,6 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 
 ## 4. T-splines
 
-### TS-04. `105plane` coefficient model
-
-**Question.** What geometric values do the twelve f64 operands of a `105plane` record encode, and which operands use the cage coordinate scale?
-
-**Known.** `f3d.md` §1.1.1 "A `105sym 0` record" gives the record arity and its relationship to the six symmetry correspondence maps. The maps identify the complete face, edge, and vertex involution without using the plane coefficients. Every coefficient is finite.
-
-**Need.** We must identify the coefficient grouping and coordinate scale before projecting the symmetry plane into a neutral geometric plane or writing a new symmetry block from neutral data.
-
 ### TS-05. Compact Form cage-list tail
 
 **Question.** What do bytes 49 through 99 of the compact one-cage cage-list record hold?
@@ -293,5 +285,15 @@ Pair `(2,1)` is the standalone-point form. Its companion has an incident-curve c
 **Known.** `f3d.md` §1.1.1 "A compact one-cage cage-list record is 100 bytes" gives the indexed header, the ten zero bytes, the owning Form scope record index, the one-cage count, the sole cage-object record index, the two zero bytes, and the `0x00fc` member flags. The remaining 51 bytes are retained with the native record and have no assigned semantic field.
 
 **Need.** A writer must know the compact-form tail before it can emit this record from a neutral Form feature. The decoder can bind the sole cage from the settled prefix and retain the tail for source fidelity.
+
+### TS-06. Radial symmetry map namespace
+
+**Question.** Which native element domain do the six radial `105r` map records address, and how do their operands map to neutral cage elements?
+
+**Known.** The `105r` selectors `ef`, `er`, `ff`, `fr`, `vf`, and `vr` carry even-length index runs. Their records occur with the positive `segments` count and finite `sweep` value of a `105sym 1` block. The operands do not consistently address the populated `f`, `e`, or `v` topology slots.
+
+**Need.** A neutral radial symmetry carrier needs typed face, edge, and vertex correspondences or an explicit native-domain representation before a writer can invert the block.
+
+**Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
 
 ## 5. Test evidence

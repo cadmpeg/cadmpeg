@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdScheme,
-    SubdSecondaryGrip, SubdSurface, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
+    SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -17,7 +18,9 @@ use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
+const CAGE_COORDINATE_SCALE: f64 = 10.0;
 const FULL_CREASE_SHARPNESS: f64 = 1.0;
+const SYMMETRY_FRAME_EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy)]
 struct HalfEdge {
@@ -180,6 +183,8 @@ enum SymmetryMode {
 struct SymmetryBlock {
     mode: SymmetryMode,
     plane: Option<[f64; 12]>,
+    radial_segments: Option<u32>,
+    radial_sweep: Option<f64>,
     record_kinds: BTreeSet<String>,
     face_forward: BTreeMap<usize, usize>,
     face_reverse: BTreeMap<usize, usize>,
@@ -194,6 +199,8 @@ impl SymmetryBlock {
         Self {
             mode,
             plane: None,
+            radial_segments: None,
+            radial_sweep: None,
             record_kinds: BTreeSet::new(),
             face_forward: BTreeMap::new(),
             face_reverse: BTreeMap::new(),
@@ -255,6 +262,54 @@ fn validate_symmetry_map(
         }
     }
     Ok(())
+}
+
+fn symmetry_plane(name: &str, values: [f64; 12]) -> Result<SubdPlaneFrame, CodecError> {
+    let origin = Point3::new(
+        values[0] * CAGE_COORDINATE_SCALE,
+        values[1] * CAGE_COORDINATE_SCALE,
+        values[2] * CAGE_COORDINATE_SCALE,
+    );
+    let first_axis = Vector3::new(values[4], values[5], values[6]);
+    let second_axis = Vector3::new(values[8], values[9], values[10]);
+    if (values[3] - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || values[7].abs() > SYMMETRY_FRAME_EPS
+        || values[11].abs() > SYMMETRY_FRAME_EPS
+        || (first_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || (second_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || first_axis.dot(second_axis).abs() > SYMMETRY_FRAME_EPS
+    {
+        return Err(malformed(
+            name,
+            "symmetry plane is not a homogeneous orthonormal frame",
+        ));
+    }
+    Ok(SubdPlaneFrame {
+        origin,
+        first_axis,
+        second_axis,
+    })
+}
+
+fn remap_symmetry_pairs(
+    name: &str,
+    map: &BTreeMap<usize, usize>,
+    ir_indices: &[Option<u32>],
+    element: &str,
+) -> Result<Vec<[u32; 2]>, CodecError> {
+    map.iter()
+        .map(|(&source, &target)| {
+            let source =
+                ir_indices.get(source).copied().flatten().ok_or_else(|| {
+                    malformed(name, format!("{element} symmetry source is deleted"))
+                })?;
+            let target =
+                ir_indices.get(target).copied().flatten().ok_or_else(|| {
+                    malformed(name, format!("{element} symmetry target is deleted"))
+                })?;
+            Ok([source, target])
+        })
+        .collect()
 }
 
 fn direction_offset(direction: SubdGripDirection) -> usize {
@@ -775,9 +830,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 None => grip_points.push(None),
                 x => {
                     let point = Point3::new(
-                        parse_f64(name, x, "grip x")? * 10.0,
-                        parse_f64(name, fields.next(), "grip y")? * 10.0,
-                        parse_f64(name, fields.next(), "grip z")? * 10.0,
+                        parse_f64(name, x, "grip x")? * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip y")? * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip z")? * CAGE_COORDINATE_SCALE,
                     );
                     let weight = parse_f64(name, fields.next(), "grip weight")?;
                     if weight <= 0.0 || fields.next().is_some() {
@@ -874,20 +929,28 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
                 match kind {
                     "segments" => {
-                        if parse_usize(name, fields.next(), "radial symmetry segments")? == 0 {
+                        let segments =
+                            parse_usize(name, fields.next(), "radial symmetry segments")?;
+                        if segments == 0 {
                             return Err(malformed(
                                 name,
                                 "radial symmetry segments is not positive",
                             ));
                         }
+                        block.radial_segments =
+                            Some(u32::try_from(segments).map_err(|_| {
+                                malformed(name, "radial symmetry segments exceed u32")
+                            })?);
                         require_end(name, fields, "radial symmetry segments")?;
                     }
                     "sweep" => {
-                        parse_f64(name, fields.next(), "radial symmetry sweep")?;
+                        block.radial_sweep =
+                            Some(parse_f64(name, fields.next(), "radial symmetry sweep")?);
                         require_end(name, fields, "radial symmetry sweep")?;
                     }
                     "ef" | "er" | "ff" | "fr" | "vf" | "vr" => {
                         parse_pairs(name, fields, "radial symmetry map")?;
+                        unknown_records += 1;
                     }
                     _ => {
                         return Err(malformed(
@@ -959,27 +1022,29 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         if block.plane.is_none() {
             return Err(malformed(name, "symmetry block has no plane"));
         }
-        validate_symmetry_map(
-            name,
-            &block.face_forward,
-            &block.face_reverse,
-            &face_live,
-            "face",
-        )?;
-        validate_symmetry_map(
-            name,
-            &block.edge_forward,
-            &block.edge_reverse,
-            &edge_live,
-            "edge",
-        )?;
-        validate_symmetry_map(
-            name,
-            &block.vertex_forward,
-            &block.vertex_reverse,
-            &vertex_live,
-            "vertex",
-        )?;
+        if block.mode == SymmetryMode::Correspondence {
+            validate_symmetry_map(
+                name,
+                &block.face_forward,
+                &block.face_reverse,
+                &face_live,
+                "face",
+            )?;
+            validate_symmetry_map(
+                name,
+                &block.edge_forward,
+                &block.edge_reverse,
+                &edge_live,
+                "edge",
+            )?;
+            validate_symmetry_map(
+                name,
+                &block.vertex_forward,
+                &block.vertex_reverse,
+                &vertex_live,
+                "vertex",
+            )?;
+        }
     }
     for connectivity in &derived_grips {
         if !vertex_live
@@ -1044,6 +1109,43 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let vertex_ir = compact(vertex_live.iter().copied());
     let edge_ir = compact(edge_roots.iter().map(Option::is_some));
     let face_ir = compact(face_roots.iter().map(Option::is_some));
+    let symmetries = symmetry_blocks
+        .iter()
+        .map(|block| {
+            let plane = symmetry_plane(
+                name,
+                block
+                    .plane
+                    .ok_or_else(|| malformed(name, "symmetry block has no plane"))?,
+            )?;
+            let kind = match block.mode {
+                SymmetryMode::Correspondence => SubdSymmetryKind::Correspondence,
+                SymmetryMode::Radial => SubdSymmetryKind::Radial {
+                    segments: block.radial_segments.ok_or_else(|| {
+                        malformed(name, "radial symmetry block has no segment count")
+                    })?,
+                    sweep: block
+                        .radial_sweep
+                        .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
+                },
+            };
+            let (face_pairs, edge_pairs, vertex_pairs) = match block.mode {
+                SymmetryMode::Correspondence => (
+                    remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
+                    remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
+                ),
+                SymmetryMode::Radial => (Vec::new(), Vec::new(), Vec::new()),
+            };
+            Ok(SubdSymmetry {
+                kind,
+                plane,
+                face_pairs,
+                edge_pairs,
+                vertex_pairs,
+            })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let edge_knot_intervals_ir = edge_knot_intervals
         .iter()
         .copied()
@@ -1214,6 +1316,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             vertices,
             edges,
             faces,
+            symmetries,
             source_object: Some(SourceObjectAssociation {
                 format: "f3d".into(),
                 object_id: name.into(),
@@ -1316,6 +1419,25 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             .iter()
             .all(|wedge| wedge.phantom && wedge.spokes.is_empty()));
         assert!(layout.wedges[1].sector_face.is_none());
+
+        assert_eq!(cage.surface.symmetries.len(), 1);
+        let symmetry = &cage.surface.symmetries[0];
+        assert_eq!(symmetry.kind, cadmpeg_ir::SubdSymmetryKind::Correspondence);
+        assert_eq!(
+            symmetry.plane.origin,
+            cadmpeg_ir::math::Point3::new(0.0, 20.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.first_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.second_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert_eq!(symmetry.face_pairs, vec![[0, 0]]);
+        assert_eq!(symmetry.edge_pairs, vec![[0, 0], [1, 2]]);
+        assert_eq!(symmetry.vertex_pairs, vec![[0, 1]]);
     }
 
     #[test]
@@ -1402,18 +1524,59 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
              105sym 1\n105plane 0 0 0 1 0 1 0 0 0 0 1 0\n\
              105r segments 4\n105r sweep 1\n\
-             105r ef 0 1\n105r er 1 0\n105r ff 0 1\n105r fr 1 0\n\
+             105r ef 0 1\n105r er 1 0\n105r ff 0 0\n105r fr 0 0\n\
              105r vf 0 1\n105r vr 1 0\n\
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
-        assert_eq!(cage.unknown_records, 0);
+        assert_eq!(cage.unknown_records, 6);
         assert_quad(&cage.surface);
+        assert_eq!(cage.surface.symmetries.len(), 1);
+        let symmetry = &cage.surface.symmetries[0];
+        assert_eq!(
+            symmetry.kind,
+            cadmpeg_ir::SubdSymmetryKind::Radial {
+                segments: 4,
+                sweep: 1.0
+            }
+        );
+        assert_eq!(
+            symmetry.plane.origin,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.first_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.second_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert!(symmetry.face_pairs.is_empty());
+        assert!(symmetry.edge_pairs.is_empty());
+        assert!(symmetry.vertex_pairs.is_empty());
 
         let unsupported = source.replace("105sym 1", "105sym 2");
         let error = parse_cage(unsupported.as_bytes()).expect_err("unsupported symmetry mode");
         assert!(
             error.to_string().contains("unsupported symmetry flags"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_nonorthonormal_symmetry_plane() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             105sym 0\n105plane 0 0 0 1 1 0 0 0 1 0 0 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        );
+        let error = parse_cage(source.as_bytes()).expect_err("nonorthonormal symmetry plane");
+        assert!(
+            error
+                .to_string()
+                .contains("symmetry plane is not a homogeneous orthonormal frame"),
             "unexpected error: {error}"
         );
     }

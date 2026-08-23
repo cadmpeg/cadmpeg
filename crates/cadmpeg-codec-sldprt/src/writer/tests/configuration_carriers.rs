@@ -949,6 +949,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     });
 

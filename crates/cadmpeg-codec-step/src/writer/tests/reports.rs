@@ -1048,6 +1048,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: Some(source_object.clone()),
     });
     ir.model

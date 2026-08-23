@@ -296,6 +296,7 @@ pub fn directed_subd_sum() -> CadIr {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:v2:subd#directed".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),

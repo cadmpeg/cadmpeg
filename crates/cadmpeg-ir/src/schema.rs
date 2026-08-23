@@ -493,7 +493,7 @@ impl_entity_schema!(crate::topology::Vertex, Vertex, id.0; id, point, tolerance)
 impl_entity_schema!(crate::topology::Point, Point, id.0; id, position, source_object);
 impl_entity_schema!(crate::geometry::Surface, Surface, id.0; id, geometry, source_object);
 impl_entity_schema!(crate::geometry::Curve, Curve, id.0; id, geometry, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, vertices, edges, faces, source_object);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, vertices, edges, faces, symmetries, source_object);
 impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, wrapper_reversed, native_tail_flags, parameter_range, fit_tolerance);
 impl_entity_schema!(crate::geometry::ProceduralSurface, ProceduralSurface, id.0; id, surface, definition, cache_fit_tolerance, record_bounds);
 impl_entity_schema!(crate::geometry::ProceduralCurve, ProceduralCurve, id.0; id, curve, definition, cache_fit_tolerance);

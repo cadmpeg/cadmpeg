@@ -1027,6 +1027,7 @@ fn materialize(
         vertices,
         edges,
         faces,
+        symmetries: Vec::new(),
         source_object: None,
     })
 }

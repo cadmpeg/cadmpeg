@@ -43,6 +43,7 @@ fn subd_round_trip_and_directed_ring_validation() {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#0".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
