@@ -14,7 +14,9 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::{network_connectivity_valid, signal_string_geometry_target};
+use super::{
+    line_font_property_code_valid, network_connectivity_valid, signal_string_geometry_target,
+};
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
 
@@ -36,6 +38,20 @@ fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
     }
     for (entity_type, form) in [(106, 10), (130, 1), (134, 0), (402, 11)] {
         assert!(!signal_string_geometry_target(entity_type, form));
+    }
+}
+
+#[test]
+fn type406_form19_accepts_only_predefined_line_font_pattern_codes() {
+    for code in [
+        12, 14, 16, 18, 22, 42, 44, 46, 48, 52, 54, 152, 154, 156, 162, 164, 166, 172, 174, 176,
+        178, 192, 194, 198, 200, 203, 206, 223, 227, 230, 232, 237, 239, 240, 253, 270, 330, 355,
+        360, 380, 385, 390, 395, 400, 405, 410, 415, 420, 425, 430, 445, 485,
+    ] {
+        assert!(line_font_property_code_valid(code), "{code}");
+    }
+    for code in [0, 1, 13, 19, 55, 151, 207, 222, 486, 5001] {
+        assert!(!line_font_property_code_valid(code), "{code}");
     }
 }
 
@@ -686,6 +702,28 @@ fn decode_rejects_descending_drilled_hole_layer_range() {
             .and_then(|provenance| provenance.tag.as_deref()),
         Some("directory_entry:D1")
     );
+}
+
+#[test]
+fn decode_rejects_nonstandard_type406_form19_pattern_code() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 406,
+                form: 19,
+                label: "LFPC".into(),
+                status: "00000000",
+                parameters: "406,1,13;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]

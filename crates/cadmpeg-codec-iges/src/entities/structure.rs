@@ -498,6 +498,63 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
     }
 }
 
+fn line_font_property_code_valid(value: i64) -> bool {
+    matches!(
+        value,
+        12 | 14
+            | 16
+            | 18
+            | 22
+            | 42
+            | 44
+            | 46
+            | 48
+            | 52
+            | 54
+            | 152
+            | 154
+            | 156
+            | 162
+            | 164
+            | 166
+            | 172
+            | 174
+            | 176
+            | 178
+            | 192
+            | 194
+            | 198
+            | 200
+            | 203
+            | 206
+            | 223
+            | 227
+            | 230
+            | 232
+            | 237
+            | 239
+            | 240
+            | 253
+            | 270
+            | 330
+            | 355
+            | 360
+            | 380
+            | 385
+            | 390
+            | 395
+            | 400
+            | 405
+            | 410
+            | 415
+            | 420
+            | 425
+            | 430
+            | 445
+            | 485
+    )
+}
+
 fn generic_property_value_valid(
     record: &ParameterRecord,
     index: usize,
@@ -662,7 +719,7 @@ fn property_fields_valid(
                     .number(2)
                     .is_some_and(|value| (0.0..=100.0).contains(&value))
         }
-        19 => exact(1) && record.integer(2).is_some(),
+        19 => exact(1) && record.integer(2).is_some_and(line_font_property_code_valid),
         20 | 21 => exact(1) && integer_range(2, 0..=1),
         22 => {
             exact(9)
