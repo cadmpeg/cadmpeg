@@ -998,7 +998,7 @@ fn compact_owner_does_not_type_unresolved_edge_references_as_vertices() {
 }
 
 #[test]
-fn compact_vertex_identity_uses_resolved_allocation_records() {
+fn compact_vertex_identity_uses_resolved_endpoint_records() {
     let first_edge = [
         0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
     ];
@@ -1017,11 +1017,11 @@ fn compact_vertex_identity_uses_resolved_allocation_records() {
     assert_eq!(native.consolidated_edge_nodes.len(), 2);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(
-        native.consolidated_edge_nodes[0].allocation_vertex_records,
+        native.consolidated_edge_nodes[0].endpoint_records,
         Some([first_vertex_pos, second_vertex_pos])
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1].allocation_vertex_records,
+        native.consolidated_edge_nodes[1].endpoint_records,
         Some([first_vertex_pos, second_vertex_pos])
     );
     assert_eq!(
@@ -1032,9 +1032,63 @@ fn compact_vertex_identity_uses_resolved_allocation_records() {
         native
             .consolidated_vertex_identities
             .iter()
-            .map(|identity| identity.allocation_record)
+            .map(|identity| identity.endpoint_record)
             .collect::<Vec<_>>(),
         vec![Some(first_vertex_pos), Some(second_vertex_pos)]
+    );
+}
+
+#[test]
+fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
+    fn edge(start_distance: u8, end_distance: u8) -> Vec<u8> {
+        vec![
+            0xb2,
+            0x03,
+            0x5e,
+            0x0a,
+            0x05,
+            0x03,
+            0x08,
+            start_distance,
+            0x00,
+            0x08,
+            end_distance,
+            0x00,
+            0x07,
+            0x0b,
+            0x21,
+        ]
+    }
+
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let endpoint = [0xb2, 0x03, 0x18, 0x01, 0x05, 0x01];
+    let mut bytes = edge(4, 5);
+    bytes.extend_from_slice(&edge(3, 4));
+    bytes.extend_from_slice(&filler);
+    bytes.extend_from_slice(&filler);
+    let first_endpoint = bytes.len() as u64;
+    bytes.extend_from_slice(&endpoint);
+    let second_endpoint = bytes.len() as u64;
+    bytes.extend_from_slice(&endpoint);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].endpoint_records,
+        Some([first_endpoint, second_endpoint])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices,
+        native.consolidated_edge_nodes[1].vertices
+    );
+    assert_eq!(
+        native
+            .consolidated_vertex_identities
+            .iter()
+            .map(|identity| identity.endpoint_record)
+            .collect::<Vec<_>>(),
+        [Some(first_endpoint), Some(second_endpoint)]
     );
 }
 

@@ -660,12 +660,58 @@ fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
 
     assert_eq!(endpoints.len(), 2);
     assert_eq!(
-        endpoints[0].vertex_records,
+        endpoints[0].endpoint_records,
         [first_vertex_pos, second_vertex_pos]
     );
     assert_eq!(
-        endpoints[1].vertex_records,
+        endpoints[1].endpoint_records,
         [first_vertex_pos, second_vertex_pos]
+    );
+}
+
+#[test]
+fn width_coded_endpoint_distances_resolve_forward_class18_records() {
+    let edge = [
+        0xb2, 0x03, 0x5e, 0x0a, 0x05, 0x03, 0x08, 0x02, 0x00, 0x08, 0x03, 0x00, 0x07, 0x0b, 0x21,
+    ];
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let endpoint = [0xb2, 0x03, 0x18, 0x01, 0x05, 0x01];
+    let first_endpoint = edge.len() + filler.len();
+    let second_endpoint = first_endpoint + endpoint.len();
+    let mut bytes = edge.to_vec();
+    bytes.extend_from_slice(&filler);
+    bytes.extend_from_slice(&endpoint);
+    bytes.extend_from_slice(&endpoint);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5e, 0x05, 0x18, 0x18]
+    );
+    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records);
+    assert_eq!(nodes.len(), 1);
+    assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes, &records,
+        );
+
+    let [resolved] = endpoints.as_slice() else {
+        panic!("one edge with two forward endpoint records")
+    };
+    assert_eq!(resolved.endpoint_records, [first_endpoint, second_endpoint]);
+
+    let mut wrong_class = bytes;
+    wrong_class[first_endpoint + 2] = 0x19;
+    let records = crate::wire::records::consolidated_records(&wrong_class);
+    assert!(
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &wrong_class,
+            &records,
+        )
+        .is_empty()
     );
 }
 

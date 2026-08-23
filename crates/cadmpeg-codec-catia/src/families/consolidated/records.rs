@@ -130,13 +130,13 @@ pub struct ConsolidatedOwnedEdgeNode {
     pub node: B2EdgeNode,
 }
 
-/// Compact edge endpoints resolved through child and backward allocation links.
+/// Compact edge endpoints resolved through structural allocation references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConsolidatedCompactEdgeEndpoints {
     /// Edge node whose endpoint references closed under the local allocation grammar.
     pub node: B2EdgeNode,
-    /// Byte offsets of the resolved class-`0x5d` vertex records, in edge order.
-    pub vertex_records: [usize; 2],
+    /// Byte offsets of the resolved endpoint records, in edge order.
+    pub endpoint_records: [usize; 2],
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
@@ -860,20 +860,31 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
                 let encoding = node.reference_encodings[endpoint + 1];
                 let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
-                let target_ordinal =
-                    match encoding {
-                        AllocationReferenceEncoding::OwnedChild => allocation_ordinal
-                            .checked_add(1)?
-                            .checked_add(usize::try_from(reference).ok()?)?,
-                        AllocationReferenceEncoding::BackwardDistance => {
-                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?
+                let target = match encoding {
+                    AllocationReferenceEncoding::OwnedChild => allocation_ordinal
+                        .checked_add(1)?
+                        .checked_add(usize::try_from(reference).ok()?)
+                        .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
+                        .copied()?,
+                    AllocationReferenceEncoding::BackwardDistance => {
+                        let target =
+                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
+                        *self.allocation_scopes.get(scope)?.get(target)?
+                    }
+                    AllocationReferenceEncoding::WidthCoded => {
+                        let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
+                        let target_record = self.records.get(target)?;
+                        if target_record.family != ConsolidatedFamily::B
+                            || target_record.class != 0x18
+                        {
+                            return None;
                         }
-                        AllocationReferenceEncoding::WidthCoded
-                        | AllocationReferenceEncoding::Selector2
-                        | AllocationReferenceEncoding::TaggedU8
-                        | AllocationReferenceEncoding::TaggedU16 => return None,
-                    };
-                let target = *self.allocation_scopes.get(scope)?.get(target_ordinal)?;
+                        return Some(target);
+                    }
+                    AllocationReferenceEncoding::Selector2
+                    | AllocationReferenceEncoding::TaggedU8
+                    | AllocationReferenceEncoding::TaggedU16 => return None,
+                };
                 let target_record = self.records.get(target)?;
                 if target_record.family != ConsolidatedFamily::B {
                     return None;
@@ -934,7 +945,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             };
             Some(ConsolidatedCompactEdgeEndpoints {
                 node,
-                vertex_records: [records[start].range.start, records[end].range.start],
+                endpoint_records: [records[start].range.start, records[end].range.start],
             })
         })
         .collect::<Vec<_>>();

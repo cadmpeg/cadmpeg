@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 278;
+pub const CATIA_NATIVE_VERSION: u32 = 279;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -827,9 +827,9 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Middle reference pair. These are endpoint addresses only when an
     /// allocation walk or complete edge-use run proves that layout.
     pub vertex_refs: [u32; 2],
-    /// Resolved class-`0x5d` allocation records in edge direction.
+    /// Resolved structural endpoint records in edge direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_vertex_records: Option<[u64; 2]>,
+    pub endpoint_records: Option<[u64; 2]>,
     /// Retained vertex identities in edge direction. Empty strings mean that
     /// the five-reference layout remains unresolved.
     pub vertices: [String; 2],
@@ -937,9 +937,9 @@ pub struct CatiaConsolidatedVertexIdentity {
     pub id: String,
     /// First raw endpoint-address operand associated with this identity.
     pub identity: u32,
-    /// Resolved class-`0x5d` allocation record, when the local walk closes.
+    /// Resolved structural endpoint record, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_record: Option<u64>,
+    pub endpoint_record: Option<u64>,
     /// Raw endpoint-address operands associated with this identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reference_values: Vec<u32>,
@@ -6649,7 +6649,7 @@ fn consolidated_edge_nodes(
         .map(|binding| {
             (
                 binding.node.pos,
-                binding.vertex_records.map(|pos| pos as u64),
+                binding.endpoint_records.map(|pos| pos as u64),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -6728,7 +6728,7 @@ fn consolidated_edge_nodes(
                 allocation_ordinal: owner.map(|(_, ordinal)| *ordinal),
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
-                allocation_vertex_records: compact_endpoints.get(&node.pos).copied(),
+                endpoint_records: compact_endpoints.get(&node.pos).copied(),
                 vertices: [String::new(), String::new()],
                 parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
                 reference_encodings: Some(
@@ -6811,30 +6811,28 @@ fn consolidated_vertex_identities(
 ) -> Vec<CatiaConsolidatedVertexIdentity> {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     enum IdentityKey {
-        AllocationRecord(u64),
+        EndpointRecord(u64),
         Unresolved(Option<String>, u32),
     }
 
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
-        if node.allocation_vertex_records.is_none() && node.uses.is_none() {
+        if node.endpoint_records.is_none() && node.uses.is_none() {
             continue;
         }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let allocation_record = node
-                .allocation_vertex_records
-                .map(|records| records[endpoint]);
-            let key = allocation_record.map_or_else(
+            let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
+            let key = endpoint_record.map_or_else(
                 || IdentityKey::Unresolved(node.allocation_owner.clone(), identity),
-                IdentityKey::AllocationRecord,
+                IdentityKey::EndpointRecord,
             );
             let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
                 let index = identities.len();
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
-                    allocation_record,
+                    endpoint_record,
                     reference_values: vec![identity],
                     allocation_owner: node.allocation_owner.clone(),
                     incident_edge_nodes: Vec::new(),
