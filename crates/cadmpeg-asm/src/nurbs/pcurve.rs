@@ -1388,6 +1388,78 @@ mod width_tests {
     }
 
     #[test]
+    fn sum_surface_uses_two_direct_curves_origin_then_cache() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "sum_spl_sur");
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [1.0, 0.0, 0.0]));
+            bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [4.0, 0.0, 0.0]));
+            push_position(&mut bytes, [0.5, 1.0, 1.5]);
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                &tokens,
+                &test_table(&bytes, int_width),
+            )
+            .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
+            let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+            let DecodedProceduralSurfaceDefinition::Sum {
+                first,
+                second,
+                basepoint,
+                revision_form: None,
+            } = decoded.definition
+            else {
+                panic!("expected legacy sum surface");
+            };
+            let CurveGeometry::Nurbs(first) = first else {
+                panic!("expected first NURBS curve");
+            };
+            let CurveGeometry::Nurbs(second) = second else {
+                panic!("expected second NURBS curve");
+            };
+
+            assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
+            assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+            assert!((basepoint.x - 5.0).abs() < f64::EPSILON);
+            assert!((basepoint.y - 10.0).abs() < f64::EPSILON);
+            assert!((basepoint.z - 15.0).abs() < f64::EPSILON);
+            assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
+        }
+    }
+
+    #[test]
+    fn sum_surface_rejects_nested_curve_substitution() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "sum_spl_sur");
+            bytes.push(0x0f);
+            push_ident(&mut bytes, "support");
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.extend_from_slice(&curve_block(int_width));
+            push_position(&mut bytes, [0.0, 0.0, 0.0]);
+            bytes.extend_from_slice(&surface_block(int_width));
+            push_f64(&mut bytes, 0.001);
+            bytes.push(0x10);
+
+            let tokens = lex_test_span(&bytes, int_width);
+
+            assert!(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
     fn surface_cache_resolves_width4_subtype_ref() {
         // Active slice: one named subtype span holding the surface cache.
         let mut active = vec![0x0f, 0x0d, 0x07];

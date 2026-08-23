@@ -3549,29 +3549,23 @@ fn sum_spl_sur(
             cache_fit_tolerance: fit_tolerance,
         });
     }
-    let mut decoded_curves = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| curve_block(span, at));
-    let first = decoded_curves.next()?;
-    let (second, second_end) = decoded_curves.next()?;
-    let mut cur = Cur::at(span, second_end);
+    let (first, first_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(first_end);
+    let (second, second_end) = curve_block(span, cur.pos())?;
+    cur.set_pos(second_end);
     let origin = cur.take_position()?;
     let basepoint = Vector3::new(
         origin[0] * LEN_TO_MM,
         origin[1] * LEN_TO_MM,
         origin[2] * LEN_TO_MM,
     );
-    let cache = toks::marker_positions(span)
-        .into_iter()
-        .filter_map(|at| surface_block(span, at))
-        .next_back();
-    let cache_fit_tolerance = cache.and_then(|(_, cache_end)| match span.get(cache_end) {
-        Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
-        _ => None,
-    });
+    let (_, cache_end) = surface_block(span, cur.pos())?;
+    cur.set_pos(cache_end);
+    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+    cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
-            first: CurveGeometry::Nurbs(first.0),
+            first: CurveGeometry::Nurbs(first),
             second: CurveGeometry::Nurbs(second),
             basepoint,
             revision_form: None,
