@@ -72,7 +72,9 @@ current document state. Its transitive exact feature dependencies are also
 active. Each member of this closed graph has `suppressed=false`. The graph is
 rejected atomically when feature identities repeat, a dependency has no
 feature, a dependency is not earlier than its consumer, or any member is
-explicitly suppressed.
+explicitly suppressed. The graph is also absent when no feature writes a
+selected body and no native primary-body closure witness applies. Absence of a
+closure root does not itself encode suppression.
 
 When neutral output projection cannot bind an operation to the selected body,
 the retained-history input may carry a native primary-body closure witness.

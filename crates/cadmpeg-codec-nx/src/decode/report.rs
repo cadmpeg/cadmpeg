@@ -293,15 +293,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     // Require a non-BaseFeature writer before treating body-to-history as proven.
-    let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
-        .filter(|active| {
-            active.iter().any(|id| {
-                ir.model.features.iter().any(|feature| {
-                    feature.id == *id
-                        && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                })
+    let (active_features, closure_rejection) =
+        match crate::native::history::active_feature_closure(ir, &current_body_ids) {
+            Ok(active) => (Some(active), None),
+            Err(rejection) => (None, Some(rejection.code())),
+        };
+    let active_features = active_features.filter(|active| {
+        active.iter().any(|id| {
+            ir.model.features.iter().any(|feature| {
+                feature.id == *id
+                    && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
             })
-        });
+        })
+    });
     let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
     let feature_in_active_scope = |feature: &Feature| {
         active_features
@@ -320,12 +324,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if unresolved_suppression_count != 0 {
+        let closure_detail = closure_rejection
+            .map(|reason| format!(" Active-feature closure rejected with `{reason}`."))
+            .unwrap_or_default();
         losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
             "Suppression state remains unresolved for {unresolved_suppression_count} NX \
                  {suppression_scope}feature history operation(s): no admitted \
                  operation-to-state-object-to-typed-value relation is present. Common-frame \
                  state lanes, saved toggles, OM registry declarations, and topology ObjectState \
-                 values remain non-suppression evidence."
+                 values remain non-suppression evidence.{closure_detail}"
         )));
     }
 

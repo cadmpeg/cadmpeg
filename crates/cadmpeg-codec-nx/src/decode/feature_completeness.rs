@@ -123,8 +123,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
     let active_features = if ir.model.features.is_empty() {
         BTreeSet::new()
     } else {
-        let Some(active_features) = crate::native::history::active_feature_closure(ir, bodies)
-        else {
+        let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
             return true;
         };
         active_features

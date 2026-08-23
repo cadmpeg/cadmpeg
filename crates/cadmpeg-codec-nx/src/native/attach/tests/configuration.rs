@@ -650,13 +650,13 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id = FeatureId("writer".into());
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
     ir.model.features[2].id = FeatureId("unrelated".into());
     ir.model.features[1].suppressed = Some(true);
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
 }
 
 #[test]

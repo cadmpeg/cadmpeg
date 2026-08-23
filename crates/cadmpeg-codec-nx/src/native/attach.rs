@@ -911,7 +911,7 @@ fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBui
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    let Some(active_features) = active_feature_closure(ir, &current_bodies) else {
+    let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
         return;
     };
     let feature_indices = ir
@@ -949,7 +949,7 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
     {
         return;
     }
-    let Some(active_features) = active_feature_closure(ir, &configuration_bodies) else {
+    let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
         return;
     };
     let feature_indices = ir
