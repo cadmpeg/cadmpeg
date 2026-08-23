@@ -108,14 +108,15 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 ## IGES
 
-**Model:** IGES 5.1/5.2/5.3 entity graph
+**Model:** IGES Fixed ASCII entity graph
 
 **Ladder: L9 for the IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document envelope.** Semantic decode is resource-bounded, valid-IR output is admitted atomically, every non-null Directory Entry has retained identity and transfer accounting, and semantic output has target-version and independent-application gates. Compressed ASCII, Binary, other Fixed ASCII versions, and extensions are separate envelopes.
 
 ### Envelopes
 
 - **IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the declared geometry, topology, product, presentation, annotation, drawing, associativity, and property entity matrix; and implementor-defined Type 406 property forms retained as opaque native records. Unchanged documents replay their retained source image. Semantic regeneration is bounded to the documented writer profile and refuses unsupported model or native content.
-- **Other Fixed ASCII versions.** Version-specific legacy or later envelope. Detection and exact version reporting establish identity. Semantic decode admits every declared version, interprets it with the 5.1/5.2/5.3 profile semantics, and reports `iges/source.dialect-unverified`; strict mode refuses that loss.
+- **IGES 4.0 and 5.0 Fixed ASCII profiles.** Detection and exact version reporting establish identity. Decode applies the version-specific Global, Directory, and entity/form envelope rules. Shared semantic rules that have not been verified against the complete release remain recovery semantics; decode reports `iges/source.dialect-unverified` and strict mode refuses that loss.
+- **Other Fixed ASCII versions.** Version-specific legacy or later envelope. Detection and exact version reporting establish identity. Semantic decode retains the declared version, uses the nearest implemented recovery profile, and reports `iges/source.dialect-unverified`; strict mode refuses that loss.
 - **Compressed ASCII.** Distinct representation envelope.
 - **Binary.** Distinct representation envelope.
 - **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable. Its presence holds the Fixed ASCII mechanical/document score at the last level that admits it as opaque.
@@ -133,7 +134,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 ### Read profile
 
-- **Container and versions: Band-wide.** Bounded detection, inspection, and decode cover IGES 5.1, 5.2, and 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Other Fixed ASCII versions decode with the declared version flag recorded verbatim, the effective version reported, and the `iges/source.dialect-unverified` loss charged. Every decode either returns a valid semantic document or a structured classified refusal under the active resource policy.
+- **Container and versions: Band-wide.** Bounded detection, inspection, and decode cover IGES 5.1, 5.2, and 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. The 4.0 and 5.0 profiles apply their own Global, Directory, and entity/form envelope rules but remain outside the L9 declared band while full release-specific semantic verification is open. Other Fixed ASCII versions decode with the declared version flag recorded verbatim, the effective version reported, and the `iges/source.dialect-unverified` loss charged. Every decode either returns a valid semantic document or a structured classified refusal under the active resource policy.
 - **Geometry: Partial with closed admission.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once. Unprojected or unsupported carriers remain native records with stable losses; an invalid projected carrier refuses semantic decode.
 - **Topology: Partial with closed admission.** Type 141/142/143/144 face-local boundaries and Type 186/502/504/508/510/514 records have typed projection paths for shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Edge domains, endpoints, pcurves, ownership, and complete boundary projection are validated before a topology candidate is committed; a failed candidate remains retained with an attributed loss.
 - **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.

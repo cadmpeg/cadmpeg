@@ -224,6 +224,55 @@ fn type228_implementor_forms_are_admitted_from_iges_5_0_onward() {
 }
 
 #[test]
+fn v5_0_admission_is_the_4_0_table_plus_v5_0_ecos() {
+    let cases = [
+        // V5.0 ECO-created entity additions.
+        (141, 0, true),
+        (143, 0, true),
+        (182, 0, true),
+        (204, 0, true),
+        (213, 0, true),
+        (316, 0, true),
+        // V5.0 ECO-created form additions.
+        (214, 12, true),
+        (216, 1, true),
+        (216, 2, true),
+        (218, 1, true),
+        (228, 5001, true),
+        (230, 1, true),
+        (402, 19, true),
+        (402, 20, true),
+        (402, 21, true),
+        (404, 1, true),
+        (406, 19, true),
+        (406, 26, true),
+        (410, 1, true),
+        (416, 3, true),
+        // B-rep and its analytic carriers were held for IGES 5.1.
+        (123, 0, false),
+        (186, 0, false),
+        (190, 0, false),
+        (198, 1, false),
+        (502, 1, false),
+        (514, 1, false),
+        // Later gray-page and post-5.0 forms remain outside the profile.
+        (402, 6, false),
+        (402, 22, false),
+        (406, 4, false),
+        (406, 27, false),
+        (406, 36, false),
+        (416, 4, false),
+    ];
+    for (entity_type, form, expected) in cases {
+        assert_eq!(
+            crate::profile::envelope_a_admits(entity_type, form, Dialect::V5_0),
+            expected,
+            "entity type {entity_type} form {form}"
+        );
+    }
+}
+
+#[test]
 fn implementor_defined_property_forms_are_admitted_in_each_fixed_ascii_dialect() {
     for dialect in [
         Dialect::V4_0,

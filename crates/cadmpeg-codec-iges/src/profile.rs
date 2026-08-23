@@ -39,7 +39,12 @@ pub(crate) fn envelope_a_admits(entity_type: i64, form: i64, dialect: Dialect) -
         514 => matches!(form, 1..=2),
         _ => false,
     };
-    admitted && (!matches!(dialect, Dialect::V4_0) || envelope_a_v4_admits(entity_type, form))
+    admitted
+        && match dialect {
+            Dialect::V4_0 => envelope_a_v4_admits(entity_type, form),
+            Dialect::V5_0 => envelope_a_v5_0_admits(entity_type, form),
+            _ => true,
+        }
 }
 
 fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
@@ -60,6 +65,30 @@ fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
         416 => matches!(form, 0..=2),
         430 => form == 0,
         _ => true,
+    }
+}
+
+/// IGES 5.0 keeps the 4.0 main entity table and adds the ECOs incorporated
+/// into the 5.0 release.  The gray-page application forms are not part of
+/// that release, and the B-rep entity family was held for 5.1.
+fn envelope_a_v5_0_admits(entity_type: i64, form: i64) -> bool {
+    if envelope_a_v4_admits(entity_type, form) {
+        return true;
+    }
+
+    match entity_type {
+        141 | 143 | 182 | 204 | 213 | 316 => form == 0,
+        214 => form == 12,
+        216 => matches!(form, 1..=2),
+        218 => form == 1,
+        228 => implementor_defined_form(form),
+        230 => form == 1,
+        402 => matches!(form, 19..=21),
+        404 => form == 1,
+        406 => matches!(form, 19..=26),
+        410 => form == 1,
+        416 => form == 3,
+        _ => false,
     }
 }
 

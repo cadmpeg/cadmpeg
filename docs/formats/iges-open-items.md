@@ -61,11 +61,11 @@ from a conformant file.
 
 **Question.** Which version-specific physical, Global, Directory, Parameter Data, entity, and transfer rules must be implemented and verified before Global version flag `8` joins the verified set?
 
-**Known.** `iges.md` admits a flag `8` file in salvage mode, interprets it with 5.1/5.2/5.3 semantics, and reports `iges/source.dialect-unverified`. `GL-12` records that the authoritative IGES 5.0 comparison is not complete. Full version-specific decode and strict admission are not established.
+**Known.** `iges.md` admits a flag `8` file in salvage mode and applies the IGES 5.0 Global, Directory, and entity/form envelope. That envelope inherits the IGES 4.0 main entity table and adds the V5.0 ECO forms; it excludes the B-rep family held for IGES 5.1. The decoder still reports `iges/source.dialect-unverified`. `GL-12` records that the authoritative IGES 5.0 comparison is not complete. Full version-specific decode and strict admission are not established.
 
 **Need.** Obtain an authoritative IGES 5.0 specification, compare its complete rules with the settled 5.1/5.2/5.3 model, implement each material difference, and add independent probes for Global defaults, version handling, entity ranges, pointer targets, constraints, and geometry projection. Remove the dialect loss and strict refusal only after valid 5.0 files have full semantic and transfer verification.
 
-**Conflict.** The current read profile describes 5.0 salvage as semantic decode, but no authoritative comparison proves that the 5.1/5.2/5.3 semantics preserve every 5.0 meaning. That is recovery, not full 5.0 support.
+**Conflict.** The current read profile has an exact V5.0 envelope but no authoritative comparison proves that the shared 5.1/5.2/5.3 semantics preserve every V5.0 meaning. That is recovery, not full 5.0 support.
 
 **Note.** Do not use a later IGES draft as a substitute for the 5.0 specification. Keep 5.0 salvage available while this item is open. Closing this item requires updating `iges.md`, `docs/format-support.md`, and the decoder together.
 
