@@ -6,6 +6,7 @@ mod body_selection;
 mod budgets;
 mod component_spaces;
 mod draft;
+mod edge_operands;
 mod hole;
 mod mirror;
 mod recipes;

@@ -5434,15 +5434,6 @@ pub(crate) fn bind_edge_operand_history_candidates(
         .iter()
         .map(|recipe| (recipe.id.as_str(), recipe.record_index))
         .collect::<HashMap<_, _>>();
-    let mut scope_operand_counts = HashMap::<(String, u32), usize>::new();
-    for operand in operands.iter() {
-        let Some(stream) = crate::ids::native_stream(&operand.id) else {
-            continue;
-        };
-        *scope_operand_counts
-            .entry((stream.to_owned(), operand.scope_record_index))
-            .or_default() += 1;
-    }
     let terminal_topologies = histories
         .iter()
         .filter_map(|history| {
@@ -5709,15 +5700,6 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if operand.recipe_structure.is_none() {
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::resolve_edge_operand_candidates(operand);
-        }
-        if operand.resolved_edge_slot.is_none()
-            && stream.is_some_and(|stream| {
-                scope_operand_counts.get(&(stream.to_owned(), operand.scope_record_index))
-                    == Some(&1)
-            })
-            && deleted_edges.len() == 1
-        {
-            operand.resolved_edge_slot = deleted_edges.first().copied();
         }
     }
 }

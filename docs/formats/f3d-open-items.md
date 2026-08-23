@@ -200,15 +200,12 @@ not resolve the edge?
 
 **Known.** The complete ASM history transition identifies every predecessor
 edge deleted by the operation. Deletion is operation-level topology evidence;
-it is not by itself an operand-to-edge identity relation.
+it is not by itself an operand-to-edge identity relation. The decoder retains
+an unresolved sole operand as native even when the complete transition deletes
+one predecessor edge.
 
 **Need.** We must decode the operand binding before assigning a deleted
 predecessor edge as the selected treatment edge.
-
-**Conflict.** `bind_edge_operand_history_candidates` in `src/history.rs`
-assigns the sole deleted predecessor edge when the scope contains one edge
-operand and no other proof resolved it. A different edge deleted by the same
-transition can therefore be projected as the treatment operand.
 
 ### DR-70. Unstructured edge-recipe selection semantics
 
