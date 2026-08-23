@@ -3913,6 +3913,10 @@ pub fn model_surface_point(
             spine,
             native: Some(construction),
         } => cacheless_law_sweep_point(&index, profile, spine, construction, u, v),
+        ProceduralSurfaceDefinition::VariableBlend { construction } => {
+            cacheless_ruled_variable_blend_partials(&index, construction, u, v)
+                .map(|partials| partials.point)
+        }
         _ => None,
     }
 }
@@ -4185,6 +4189,63 @@ fn cacheless_law_sweep_partials(
     })
 }
 
+#[derive(Clone, Copy)]
+struct ContactTrackDifferential {
+    point: Point3,
+    tangent: Vector3,
+}
+
+fn variable_blend_contact_track_differential(
+    index: &crate::index::ModelIndex<'_>,
+    side: &crate::geometry::RollingBallSide,
+    parameter: f64,
+) -> Option<ContactTrackDifferential> {
+    let surface = side.surface.as_ref()?;
+    let pcurve = side.pcurve.as_ref()?;
+    let uv = pcurve_uv(pcurve, parameter)?;
+    let uv_tangent = pcurve_tangent(pcurve, parameter)?;
+    let support = model_surface_partials_by_id(index, surface, uv.u, uv.v)?;
+    Some(ContactTrackDifferential {
+        point: support.point,
+        tangent: vector_sum(&[(uv_tangent.u, support.du), (uv_tangent.v, support.dv)]),
+    })
+}
+
+fn cacheless_ruled_variable_blend_partials(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
+    if construction.tail_enum != 2
+        || !(0.0..=1.0).contains(&u)
+        || !matches!(
+            construction.cross_section,
+            Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius: None })
+        )
+    {
+        return None;
+    }
+    let parameterization = construction.tail_parameterization.as_ref()?;
+    if !sweep_tail_interval_contains(parameterization.u_interval, u)
+        || !sweep_tail_interval_contains(parameterization.v_interval, v)
+    {
+        return None;
+    }
+    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
+    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
+    let chord = Vector3::new(
+        second.point.x - first.point.x,
+        second.point.y - first.point.y,
+        second.point.z - first.point.z,
+    );
+    Some(SurfacePartials {
+        point: offset(first.point, &[(u, chord)]),
+        du: chord,
+        dv: vector_sum(&[(1.0 - u, first.tangent), (u, second.tangent)]),
+    })
+}
+
 /// Evaluate a surface carrier selected by arena id.
 pub fn model_surface_point_by_id(
     index: &crate::index::ModelIndex<'_>,
@@ -4279,6 +4340,14 @@ pub fn model_surface_point_by_id(
                 cacheless_law_sweep_point(index, profile, spine, construction, u, v).map(|point| {
                     SurfaceEvaluation {
                         point,
+                        oriented_normal: None,
+                    }
+                })
+            }
+            Some(ProceduralSurfaceDefinition::VariableBlend { construction }) => {
+                cacheless_ruled_variable_blend_partials(index, construction, u, v).map(|partials| {
+                    SurfaceEvaluation {
+                        point: partials.point,
                         oriented_normal: None,
                     }
                 })
@@ -4383,6 +4452,12 @@ pub fn model_surface_partials_by_id(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
+    if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
+        .procedural_surface_for_surface(&surface.0)
+        .map(|procedural| &procedural.definition)
+    {
+        return cacheless_ruled_variable_blend_partials(index, construction, u, v);
+    }
     if let Some(ProceduralSurfaceDefinition::Sweep {
         profile,
         spine,

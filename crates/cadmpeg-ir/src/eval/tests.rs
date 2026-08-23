@@ -6,9 +6,12 @@ use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceParameterization, Surface,
-    SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction,
-    SweepSurfaceLayout,
+    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceParameterization,
+    RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm,
+    SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
+    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadiusKind,
+    VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
+    VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -761,6 +764,136 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
     let differential = scalar_sweep_law_differential(&law, 3.0).expect("law differential");
     assert_eq!(differential.value, 6.0);
     assert_eq!(differential.derivative, 2.0);
+}
+
+#[test]
+fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
+    let first_surface = SurfaceId("first-support".into());
+    let second_surface = SurfaceId("second-support".into());
+    let blend_surface = SurfaceId("cacheless-variable-blend".into());
+    let slice = CurveId("blend-slice".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: slice.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second_surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(10.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: blend_surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: ProceduralSurfaceId("variable-blend-construction".into()),
+            },
+            source_object: None,
+        },
+    ]);
+    let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
+        support_kind: VariableBlendSupportKind::Surface,
+        surface: Some(surface),
+        surface_ranges: [[None, None], [None, None]],
+        curve: None,
+        curve_range: [None, None],
+        pcurve: Some(PcurveGeometry::Line { origin, direction }),
+        location: Point3::new(0.0, 0.0, 0.0),
+        secondary_pcurve: None,
+        extension: None,
+        tertiary_pcurve: None,
+    };
+    let radius = VariableBlendValue {
+        name: "two_ends".into(),
+        modern_flag: false,
+        discriminator: 0,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::TwoEnds {
+            parameters: [0.0, 1.0],
+            radii: [2.0, 2.0],
+        },
+    };
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("variable-blend-construction".into()),
+        surface: blend_surface.clone(),
+        definition: ProceduralSurfaceDefinition::VariableBlend {
+            construction: Box::new(VariableBlendConstruction {
+                subtype: VariableBlendSurfaceSubtype::VariableBlend,
+                revision: 23100,
+                sides: Box::new([
+                    side(first_surface, Point2::new(1.0, 2.0), Point2::new(2.0, 3.0)),
+                    side(second_surface, Point2::new(4.0, 5.0), Point2::new(6.0, 7.0)),
+                ]),
+                slice,
+                slice_range: [Some(0.0), Some(1.0)],
+                offsets: [0.0, 0.0],
+                radius_kind: VariableBlendRadiusKind::SingleRadius,
+                first_value: radius,
+                second_value: None,
+                cross_section: Some(VariableBlendCrossSection::RoundedChamfer { radius: None }),
+                u_range: [Some(0.0), Some(1.0)],
+                v_range: [Some(0.0), Some(1.0)],
+                shape_prefix: 1,
+                shape_parameter: 0.0,
+                shape_length: 0.0,
+                shape_tail: 0,
+                tail_enum: 2,
+                tail_parameterization: Some(RevisionSurfaceParameterization {
+                    u_interval: [Some(0.0), Some(1.0)],
+                    v_interval: [Some(0.0), Some(1.0)],
+                    ..Default::default()
+                }),
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                tail_flag: false,
+                tail_extensions: [0; 3],
+                secondary_curve: None,
+                secondary_range: [None, None],
+                convexity: VariableBlendConvexity::Convex,
+                render_mode: VariableBlendRenderMode::RollingBallEnvelope,
+                post_range: [None, None],
+                post_curve: None,
+                post_pcurve: None,
+            }),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5),
+        Some(Point3::new(2.0, 3.5, 0.0))
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5),
+        Some(Point3::new(10.0, 7.0, 8.5))
+    );
+    assert_eq!(
+        model_surface_point(&ir, &ir.model.surfaces[2].geometry, 0.25, 0.5),
+        Some(Point3::new(4.0, 4.375, 2.125))
+    );
+    let partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
+        .expect("cacheless ruled variable blend");
+    assert_eq!(partials.point, Point3::new(4.0, 4.375, 2.125));
+    assert_eq!(partials.du, Vector3::new(8.0, 3.5, 8.5));
+    assert_eq!(partials.dv, Vector3::new(1.5, 3.75, 1.75));
 }
 
 #[test]
