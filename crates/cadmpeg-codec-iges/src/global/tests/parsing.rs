@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{report_code_count, strict_options, valid_global_fields};
+use super::{point_file_with_field, report_code_count, strict_options, valid_global_fields};
 use crate::loss::IgesLossCode;
 use crate::test_support::{
     card, directory_card, fixed_ascii_with_global, fixed_ascii_with_global_cards, parameter_card,
@@ -138,6 +138,31 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
     let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
+}
+
+#[test]
+fn global_numeric_fields_reject_embedded_and_trailing_blanks() {
+    for value in ["3 2", "32 "] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(point_file_with_field(6, value)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.points.len(), 1, "{value:?}");
+        assert_eq!(
+            report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+            1,
+            "{value:?}: {:#?}",
+            result.report().losses
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("field 7")));
+    }
 }
 
 #[test]

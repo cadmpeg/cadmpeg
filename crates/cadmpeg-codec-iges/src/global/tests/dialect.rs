@@ -261,6 +261,31 @@ fn the_4_0_global_contract_accepts_twenty_four_fields_and_the_short_date() {
 }
 
 #[test]
+fn the_4_0_string_contract_allows_ascii_control_bytes() {
+    let mut bytes = point_file_with_version_flag("6");
+    let product = bytes
+        .windows(9)
+        .position(|window| window == b"7Hproduct")
+        .expect("sender product");
+    bytes[product + 2] = 0x01;
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["sender_product"],
+        "\u{1}roduct"
+    );
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+        0
+    );
+}
+
+#[test]
 fn the_4_0_global_contract_rejects_the_four_digit_date_and_later_fields() {
     let mut fields = valid_global_fields();
     fields[17] = "15H20260714.000000".into();

@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
-use crate::global::{RealPrecision, ResolvedGlobal};
+use crate::global::{Dialect, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -2292,6 +2292,7 @@ pub(crate) enum ParameterDefect {
     HollerithCountZero,
     HollerithPayloadTruncated,
     HollerithHeaderCrossesCard,
+    HollerithForbiddenByte,
     NumericCrossesCard,
     NumericContainsBlanks,
     TokenNotAscii,
@@ -2311,6 +2312,7 @@ impl ParameterDefect {
             Self::HollerithCountZero => "hollerith-count-zero",
             Self::HollerithPayloadTruncated => "hollerith-payload-truncated",
             Self::HollerithHeaderCrossesCard => "hollerith-header-crosses-card",
+            Self::HollerithForbiddenByte => "hollerith-forbidden-byte",
             Self::NumericCrossesCard => "numeric-crosses-card",
             Self::NumericContainsBlanks => "numeric-contains-blanks",
             Self::TokenNotAscii => "token-not-ascii",
@@ -2331,6 +2333,9 @@ impl ParameterDefect {
             Self::HollerithPayloadTruncated => "a Hollerith payload is truncated",
             Self::HollerithHeaderCrossesCard => {
                 "a Hollerith count and H delimiter cross a card boundary"
+            }
+            Self::HollerithForbiddenByte => {
+                "a Hollerith string contains a byte forbidden by the declared dialect"
             }
             Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
             Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",
@@ -2513,6 +2518,7 @@ fn hollerith(
     bytes: &[u8],
     card_boundaries: &[usize],
     start: usize,
+    dialect: Dialect,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -2550,6 +2556,14 @@ fn hollerith(
         ParameterDefect::HollerithPayloadTruncated,
         start,
     ))?;
+    if payload.iter().copied().any(|byte| {
+        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(dialect, Dialect::V4_0))
+    }) {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithForbiddenByte,
+            start,
+        ));
+    }
     Ok(Some((
         Token {
             value: TokenValue::String(payload.to_vec()),
@@ -2599,6 +2613,7 @@ fn tokenize(
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
+    dialect: Dialect,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
@@ -2620,7 +2635,8 @@ fn tokenize(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor)? {
+        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor, dialect)?
+        {
             value
         } else {
             let end = bytes[cursor..]
@@ -2997,6 +3013,7 @@ pub(crate) fn assemble_with_context(
             &owned_bytes.card_boundaries,
             global.parameter_delimiter,
             global.record_delimiter,
+            global.dialect(),
             ctx,
         ) {
             Ok(value) => value,
