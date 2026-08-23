@@ -1716,6 +1716,84 @@ mod width_tests {
     }
 
     #[test]
+    fn exact_surface_uses_leading_cache_ranges_then_extension() {
+        for int_width in [4usize, 8] {
+            for name in ["exact_spl_sur", "exactsur"] {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, name);
+                bytes.extend_from_slice(&surface_block(int_width));
+                push_f64(&mut bytes, 0.001);
+                for value in [-1.0, 2.0, -3.0, 4.0] {
+                    push_f64(&mut bytes, value);
+                }
+                push_int(&mut bytes, 0x04, 9, int_width);
+                bytes.push(0x10);
+
+                let tokens = lex_test_span(&bytes, int_width);
+                let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    &tokens,
+                    &test_table(&bytes, int_width),
+                )
+                .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
+                let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
+                let DecodedProceduralSurfaceDefinition::Exact {
+                    parameters:
+                        cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
+                    extension,
+                    revision_form: None,
+                } = decoded.definition
+                else {
+                    panic!("expected legacy exact surface");
+                };
+
+                assert!((ranges[0][0] - -1.0).abs() < f64::EPSILON);
+                assert!((ranges[0][1] - 2.0).abs() < f64::EPSILON);
+                assert!((ranges[1][0] - -3.0).abs() < f64::EPSILON);
+                assert!((ranges[1][1] - 4.0).abs() < f64::EPSILON);
+                assert_eq!(extension, 9);
+                assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
+            }
+        }
+    }
+
+    #[test]
+    fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
+        for int_width in [4usize, 8] {
+            for malformed in [0u8, 1] {
+                let mut bytes = vec![0x0f];
+                push_ident(&mut bytes, "exactsur");
+                if malformed == 0 {
+                    bytes.push(0x0f);
+                    push_ident(&mut bytes, "support");
+                }
+                bytes.extend_from_slice(&surface_block(int_width));
+                if malformed == 0 {
+                    bytes.push(0x10);
+                }
+                push_f64(&mut bytes, 0.001);
+                for value in [-1.0, 2.0, -3.0, 4.0] {
+                    push_f64(&mut bytes, value);
+                }
+                push_int(&mut bytes, 0x04, 9, int_width);
+                if malformed == 1 {
+                    bytes.push(0x0b);
+                }
+                bytes.push(0x10);
+
+                let tokens = lex_test_span(&bytes, int_width);
+
+                assert!(
+                    crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                        &tokens,
+                        &test_table(&bytes, int_width),
+                    )
+                    .is_none()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn ruled_surface_uses_two_direct_profiles_then_cache() {
         for int_width in [4usize, 8] {
             let mut bytes = vec![0x0f];
