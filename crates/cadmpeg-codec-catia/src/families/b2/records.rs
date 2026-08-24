@@ -229,6 +229,51 @@ pub enum B2OwnerChartCarrier {
     A32,
 }
 
+/// Closed tail grammar of the class-`0x37` bridge in an owner chart.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2OwnerChartBridgeTail {
+    /// Five-reference layout with one finite positive scalar.
+    Scalar {
+        /// Fixed compact token following the carrier selector.
+        unit_token: u8,
+        /// Finite positive scalar.
+        scalar: f64,
+        /// Two retained control bytes.
+        controls: [u8; 2],
+        /// Final control byte after eight zero bytes.
+        terminal_control: u8,
+    },
+    /// Eight-reference A-family layout without a scalar.
+    Extended {
+        /// Three retained compact control tokens.
+        control_tokens: [u8; 3],
+        /// Final control byte after eight zero bytes.
+        terminal_control: u8,
+    },
+}
+
+/// One allocation-local reference in a class-`0x37` owner-chart bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2OwnerChartBridgeReference {
+    /// Decoded allocation-local value.
+    pub value: u32,
+    /// Wire addressing form retained from the allocation-reference token.
+    pub encoding: AllocationReferenceEncoding,
+}
+
+/// Structurally complete class-`0x37` owner-chart bridge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2OwnerChartBridge {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Counted allocation references in storage order.
+    pub references: Vec<B2OwnerChartBridgeReference>,
+    /// Carrier discriminator (`05`, `09`, or `11`).
+    pub carrier_selector: u8,
+    /// Closed class-specific tail.
+    pub tail: B2OwnerChartBridgeTail,
+}
+
 /// One source-closed carrier chart terminated by a fixed-nine owner packet.
 ///
 /// The relation is admitted only when the four ordered class-`0x18` records
@@ -243,8 +288,8 @@ pub struct B2OwnerChart {
     pub carrier_pos: usize,
     /// Family-and-class carrier production.
     pub carrier: B2OwnerChartCarrier,
-    /// Immediately following class-`0x37` bridge-record offset.
-    pub bridge_pos: usize,
+    /// Immediately following class-`0x37` bridge record.
+    pub bridge: B2OwnerChartBridge,
     /// Axis held constant by selectors `0x05` and `0x09`.
     pub side_axis: B2OwnerChartSideAxis,
     /// Ordered selector records `0x05`, `0x09`, `0x0d`, and `0x11`.
@@ -834,6 +879,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 return None;
             }
             let owner = owners.get(&(owner_record.source_index, owner_record.range.start))?;
+            let bridge = owner_chart_bridge(data, references, carrier_kind)?;
             let points = [side_05, side_09, side_0d, side_11]
                 .map(|record| parameter_points.get(&record.range.start).cloned())
                 .into_iter()
@@ -849,7 +895,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 source_index: owner.source_index,
                 carrier_pos: carrier.range.start,
                 carrier: carrier_kind,
-                bridge_pos: references.range.start,
+                bridge,
                 side_axis: if carrier_kind == B2OwnerChartCarrier::B28 {
                     B2OwnerChartSideAxis::FirstParameter
                 } else {
@@ -859,6 +905,96 @@ pub(crate) fn b2_owner_charts_from_records(
             })
         })
         .collect()
+}
+
+fn owner_chart_bridge(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+    carrier: B2OwnerChartCarrier,
+) -> Option<B2OwnerChartBridge> {
+    let frames = b_family_frames_from_records(std::slice::from_ref(record), 0x37);
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    if frame.header_token != 5 {
+        return None;
+    }
+    let count = match *data.get(frame.payload)? {
+        0x85 => 5,
+        0x88 => 8,
+        _ => return None,
+    };
+    let mut at = frame.payload + 1;
+    let references = (0..count)
+        .map(|_| {
+            let reference = allocation_reference(data, &mut at)?;
+            Some(B2OwnerChartBridgeReference {
+                value: reference.value,
+                encoding: reference.encoding,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if references.first().map(|reference| reference.value) != Some(1) {
+        return None;
+    }
+    let carrier_selector = *data.get(at)?;
+    let expected_selector = match carrier {
+        B2OwnerChartCarrier::B28 => 0x05,
+        B2OwnerChartCarrier::B2b => 0x09,
+        B2OwnerChartCarrier::A32 => 0x11,
+    };
+    if carrier_selector != expected_selector {
+        return None;
+    }
+    at += 1;
+    let tail = if count == 5 {
+        let unit_token = *data.get(at)?;
+        let scalar = f64_le(data, at + 1)?;
+        let controls = [*data.get(at + 9)?, *data.get(at + 10)?];
+        let zeros = data.get(at + 11..at + 19)?;
+        let terminal_control = *data.get(at + 19)?;
+        if unit_token != 0x05
+            || !scalar.is_finite()
+            || scalar <= 0.0
+            || !controls
+                .into_iter()
+                .all(|control| matches!(control, 0x03 | 0x05))
+            || zeros != [0; 8]
+            || !matches!(terminal_control, 0x01 | 0x05)
+            || data.get(at + 20) != Some(&0x05)
+            || at + 21 != frame.end
+        {
+            return None;
+        }
+        B2OwnerChartBridgeTail::Scalar {
+            unit_token,
+            scalar,
+            controls,
+            terminal_control,
+        }
+    } else {
+        let control_tokens: [u8; 3] = data.get(at..at + 3)?.try_into().ok()?;
+        let zeros = data.get(at + 3..at + 11)?;
+        let terminal_control = *data.get(at + 11)?;
+        if control_tokens != [0x09, 0x05, 0x05]
+            || zeros != [0; 8]
+            || terminal_control != 0x01
+            || data.get(at + 12) != Some(&0x05)
+            || at + 13 != frame.end
+        {
+            return None;
+        }
+        B2OwnerChartBridgeTail::Extended {
+            control_tokens,
+            terminal_control,
+        }
+    };
+    Some(B2OwnerChartBridge {
+        pos: frame.pos,
+        references,
+        carrier_selector,
+        tail,
+    })
 }
 
 fn owner_chart_bounds_match(

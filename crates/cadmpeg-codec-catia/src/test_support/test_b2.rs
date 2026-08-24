@@ -162,7 +162,22 @@ pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
         0x32 => vec![0xa5, 0x03, 0x32, 0x00, 0x00, 0x00, 0x00, 0x05],
         _ => panic!("owner-chart fixture requires an admitted analytic carrier"),
     };
-    bytes.extend_from_slice(&b2_reference_list_stream());
+    let carrier_selector = match carrier_class {
+        0x28 => 0x05,
+        0x2b => 0x09,
+        0x32 => 0x11,
+        _ => unreachable!("carrier class checked above"),
+    };
+    let mut bridge = vec![
+        0xb2, 0x03, 0x37, 0, 0x05, 0x85, 0x05, 0x04, 100, 0x03, 0x04, 101, 0x07,
+    ];
+    bridge.extend_from_slice(&[carrier_selector, 0x05]);
+    bridge.extend_from_slice(&1.0f64.to_le_bytes());
+    bridge.extend_from_slice(&[0x03, 0x05]);
+    bridge.extend_from_slice(&[0; 8]);
+    bridge.extend_from_slice(&[0x01, 0x05]);
+    bridge[3] = u8::try_from(bridge.len() - 5).expect("owner-chart bridge length");
+    bytes.extend_from_slice(&bridge);
     let (lower, upper, side_values) = match carrier_class {
         0x28 => (
             [2.0, 3.0],
@@ -211,6 +226,24 @@ pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
     owner.extend_from_slice(&owner_numeric_tail_for(lower, upper));
     owner[3] = u8::try_from(owner.len() - 5).expect("owner-chart packet length");
     bytes.extend_from_slice(&owner);
+    bytes
+}
+
+pub(crate) fn b2_owner_chart_stream_with_extended_bridge() -> Vec<u8> {
+    let mut bytes = b2_owner_chart_stream(0x32);
+    let bridge_pos = bytes
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x37])
+        .expect("owner-chart bridge marker");
+    let bridge_end = bridge_pos + 5 + usize::from(bytes[bridge_pos + 3]);
+    let mut bridge = vec![
+        0xb2, 0x03, 0x37, 0, 0x05, 0x88, 0x05, 0x04, 100, 0x03, 0x04, 101, 0x07, 0x0b, 0x0f, 0x13,
+    ];
+    bridge.extend_from_slice(&[0x11, 0x09, 0x05, 0x05]);
+    bridge.extend_from_slice(&[0; 8]);
+    bridge.extend_from_slice(&[0x01, 0x05]);
+    bridge[3] = u8::try_from(bridge.len() - 5).expect("extended bridge length");
+    bytes.splice(bridge_pos..bridge_end, bridge);
     bytes
 }
 

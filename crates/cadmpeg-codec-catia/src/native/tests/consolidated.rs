@@ -850,8 +850,30 @@ fn native_namespace_retains_source_closed_owner_chart() {
         chart.side_axis,
         crate::native::CatiaOwnerChartSideAxis::SecondParameter
     );
-    assert!(chart.carrier_byte_offset < chart.bridge_byte_offset);
-    assert!(chart.bridge_byte_offset < chart.parameter_point_byte_offsets[0]);
+    assert!(chart.carrier_byte_offset < chart.bridge.byte_offset);
+    assert!(chart.bridge.byte_offset < chart.parameter_point_byte_offsets[0]);
+    assert_eq!(
+        chart
+            .bridge
+            .references
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [1, 100, 0, 101, 1]
+    );
+    assert_eq!(
+        chart.bridge.references[0].encoding,
+        crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+    );
+    assert!(matches!(
+        chart.bridge.tail,
+        crate::native::CatiaOwnerChartBridgeTail::Scalar {
+            unit_token: 0x05,
+            scalar: 1.0,
+            controls: [0x03, 0x05],
+            terminal_control: 0x01,
+        }
+    ));
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
