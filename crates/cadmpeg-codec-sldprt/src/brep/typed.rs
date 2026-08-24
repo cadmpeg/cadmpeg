@@ -136,6 +136,13 @@ pub struct Facts {
     pub faces: Vec<FaceNode>,
 }
 
+type OwnershipMaps = (
+    HashMap<u16, BodyNode>,
+    HashMap<u16, RegionNode>,
+    HashMap<u16, ShellNode>,
+    HashMap<u16, FaceNode>,
+);
+
 impl Facts {
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
@@ -150,13 +157,7 @@ impl Facts {
     /// FACE-to-SHELL closure is checked separately against compact bridge
     /// records because a stream may carry subordinate faces in another site.
     pub fn has_valid_ownership(&self) -> bool {
-        let Some(bodies) = unique_map(&self.bodies, |node| node.attr) else {
-            return false;
-        };
-        let Some(shells) = unique_map(&self.shells, |node| node.attr) else {
-            return false;
-        };
-        let Some(regions) = unique_map(&self.regions, |node| node.attr) else {
+        let Some((bodies, regions, shells, _faces)) = self.ownership_maps() else {
             return false;
         };
         !bodies.is_empty()
@@ -170,12 +171,15 @@ impl Facts {
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
     pub fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
-        let bodies = unique_map(&self.bodies, |node| node.attr)?;
-        let regions = unique_map(&self.regions, |node| node.attr)?;
+        let (bodies, regions, shells, all_faces) = self.ownership_maps()?;
         let faces = if bridge_attrs.is_empty() {
-            unique_map(&self.faces, |node| node.attr)?
+            all_faces
         } else {
-            unique_map_for_attrs(&self.faces, bridge_attrs, |node| node.attr)?
+            unique_map_for_attrs(
+                &all_faces.values().cloned().collect::<Vec<_>>(),
+                bridge_attrs,
+                |node| node.attr,
+            )?
         };
         if bodies.is_empty() {
             return None;
@@ -189,12 +193,6 @@ impl Facts {
                 return None;
             }
         }
-        let shell_attrs = face_shells.values().copied().collect::<HashSet<_>>();
-        let shells = if bridge_attrs.is_empty() {
-            unique_map(&self.shells, |node| node.attr)?
-        } else {
-            unique_map_for_attrs(&self.shells, &shell_attrs, |node| node.attr)?
-        };
         if face_shells
             .values()
             .any(|shell_attr| !shells.contains_key(shell_attr))
@@ -291,6 +289,54 @@ impl Facts {
         }
         Some(out)
     }
+
+    fn ownership_maps(&self) -> Option<OwnershipMaps> {
+        let bodies = unique_map(&self.bodies, |node| node.attr)?;
+        let mut regions = HashMap::new();
+        for region in &self.regions {
+            let Some(body) = u16_from_ref_or_none(region.refs[1]) else {
+                continue;
+            };
+            if !bodies.contains_key(&body) || !matches!(region.kind, b'S' | b'V') {
+                continue;
+            }
+            if regions.insert(region.attr, region.clone()).is_some() {
+                return None;
+            }
+        }
+
+        let mut shells = HashMap::new();
+        for shell in &self.shells {
+            let Some(region) = u16_from_ref_or_none(shell.refs[6]) else {
+                continue;
+            };
+            let Some(region_node) = regions.get(&region) else {
+                continue;
+            };
+            let Some(body) = u16_from_ref(region_node.refs[1]) else {
+                continue;
+            };
+            let shell_body = u16_from_ref_or_none(shell.refs[1]);
+            if shell_body.is_some_and(|shell_body| shell_body != body) {
+                continue;
+            }
+            if shells.insert(shell.attr, shell.clone()).is_some() {
+                return None;
+            }
+        }
+
+        let mut faces = HashMap::new();
+        for face in &self.faces {
+            let shell = u16_from_ref_or_none(face.refs[3]);
+            if !shell.is_some_and(|shell| shells.contains_key(&shell)) {
+                continue;
+            }
+            if faces.insert(face.attr, face.clone()).is_some() {
+                return None;
+            }
+        }
+        Some((bodies, regions, shells, faces))
+    }
 }
 
 fn region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<Vec<RegionNode>> {
@@ -333,7 +379,12 @@ fn region_chain_from_head(
     // in the sentinel form, and each later region points back to its source.
     let (mut next, first_previous) =
         if let Some(attr) = u16_from_ref(head).filter(|attr| regions.contains_key(attr)) {
-            (attr, None)
+            let first = regions.get(&attr)?;
+            // A direct region head names the first node.  A later region in
+            // the chain is not another valid head: its previous pointer must
+            // point back to the preceding region.  The sentinel form below
+            // is the only form that admits a non-null first previous link.
+            (first.refs[3] <= 1).then_some((attr, None))?
         } else {
             let mut candidates = regions
                 .values()
@@ -1060,6 +1111,97 @@ mod tests {
             vec![11, 39]
         );
         assert_eq!(hierarchy[0].faces.as_slice(), &[(100, 7)]);
+    }
+
+    #[test]
+    fn invalid_duplicate_shell_is_filtered_before_identity_checks() {
+        let facts = Facts {
+            bodies: vec![BodyNode {
+                attr: 3,
+                node_id: 7,
+                topology_refs: [8, 1, 1, 1, 1, 1, 1],
+                ownership_refs: vec![41],
+                body_type: 1,
+                offset: 1,
+                end: 2,
+            }],
+            shells: vec![
+                ShellNode {
+                    attr: 8,
+                    node_id: 53,
+                    refs: [1, 3, 1, 1, 1, 1, 41, 1],
+                    offset: 3,
+                    end: 4,
+                },
+                ShellNode {
+                    attr: 8,
+                    node_id: 54,
+                    refs: [28160, 28160, 922_777_600, 12032, 20736, 0, 1025, 21248],
+                    offset: 5,
+                    end: 6,
+                },
+            ],
+            regions: vec![RegionNode {
+                attr: 41,
+                node_id: 52,
+                refs: [1, 3, 1, 1, 8],
+                kind: b'S',
+                offset: 7,
+                end: 8,
+            }],
+            faces: vec![FaceNode {
+                attr: 100,
+                node_id: 55,
+                attribute_chain: 1,
+                refs: [1, 1, 1, 8, 12],
+                sense: 0x2b,
+                offset: 9,
+                end: 10,
+            }],
+        };
+
+        let hierarchy = facts
+            .hierarchies(&HashSet::from([100]))
+            .expect("the invalid byte-window candidate is not an ownership node");
+        assert_eq!(hierarchy.len(), 1);
+        assert_eq!(hierarchy[0].shells.len(), 1);
+        assert_eq!(hierarchy[0].shells[0].node_id, 53);
+        assert_eq!(hierarchy[0].faces.as_slice(), &[(100, 8)]);
+    }
+
+    #[test]
+    fn duplicate_closed_shell_identity_withholds_typed_graph() {
+        let shell = ShellNode {
+            attr: 8,
+            node_id: 53,
+            refs: [1, 3, 1, 1, 1, 1, 41, 1],
+            offset: 3,
+            end: 4,
+        };
+        let facts = Facts {
+            bodies: vec![BodyNode {
+                attr: 3,
+                node_id: 7,
+                topology_refs: [8, 1, 1, 1, 1, 1, 1],
+                ownership_refs: vec![41],
+                body_type: 1,
+                offset: 1,
+                end: 2,
+            }],
+            shells: vec![shell.clone(), shell],
+            regions: vec![RegionNode {
+                attr: 41,
+                node_id: 52,
+                refs: [1, 3, 1, 1, 8],
+                kind: b'S',
+                offset: 5,
+                end: 6,
+            }],
+            ..Default::default()
+        };
+
+        assert!(!facts.has_valid_ownership());
+        assert!(facts.hierarchies(&HashSet::new()).is_none());
     }
 
     #[test]
