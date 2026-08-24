@@ -129,8 +129,12 @@ fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bo
     }
 }
 
-fn directory_display_field_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    !(matches!(dialect, Dialect::V4_0) && entry.entity_type == 406)
+fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 406))
+}
+
+fn directory_line_weight_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
 fn source_sequence(id: &str) -> Option<u32> {
@@ -474,9 +478,10 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory.iter().filter(|entry| {
-        entry.color != 0 && directory_display_field_is_semantic(entry, global.dialect())
-    }) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
+    {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
@@ -499,7 +504,7 @@ pub(super) fn project(
         }
     }
     for entry in directory.iter().filter(|entry| {
-        entry.line_weight != 0 && directory_display_field_is_semantic(entry, global.dialect())
+        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.dialect())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(

@@ -333,6 +333,49 @@ fn v4_property_display_fields_are_ignored_by_presentation_projection() {
 }
 
 #[test]
+fn v4_transformation_and_color_definition_line_weights_are_ignored() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 124,
+                        form: 0,
+                        label: "XFORM".into(),
+                        status: "00000000",
+                        parameters: "124,1,0,0,0,0,1,0,0,0,0,1,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 314,
+                        form: 0,
+                        label: "COLOR".into(),
+                        status: "00000200",
+                        parameters: "314,20,40,60,6Hcustom;".into(),
+                    },
+                ],
+                GLOBAL_V4,
+                &[(1, -5)],
+                &[],
+                &[],
+                &[(1, 999), (3, 999)],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && (loss
+                .message
+                .contains("Directory color number or definition pointer is invalid")
+                || loss
+                    .message
+                    .contains("line-weight number is outside the Global gradation range"))
+    }));
+}
+
+#[test]
 fn color_definition_requires_a_standard_fallback_color() {
     let result = IgesCodec
         .decode(
