@@ -1089,6 +1089,13 @@ The suffix lane uses exact `18` for zero, `0f` for one, and `0e` for one half.
 For type 26, a finite non-negative `radius1` and positive `radius2` define a
 torus; exact `radius1 = 0` selects a sphere whose radius is `radius2`.
 
+A selector envelope stores `<selector0> <v0> <selector1> <v1>` followed by the
+same two XYZ outline corners, optional replay reference, and `e3`. A selector
+is one byte `11`, `14`, `17`, `18`, or `20`, or the three-byte image
+`00 11 13`. Selector bytes do not contribute geometry. The local system and
+family suffix use the ordinary inline grammar. The two stored axial values
+are the local-system axis parameters and the outline is the placement witness.
+
 An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
 DICT or positional row lane, and the `v` bounds use the first

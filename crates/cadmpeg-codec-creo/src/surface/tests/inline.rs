@@ -300,6 +300,38 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
 }
 
 #[test]
+fn selector_envelope_places_a_compact_y_cylinder() {
+    let mut body = vec![0x11];
+    push_inline_test_scalar(&mut body, -2.0);
+    body.push(0x14);
+    push_inline_test_scalar(&mut body, 2.0);
+    for value in [-1.0, -2.0, -1.0, 1.0, 2.0, 1.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18]);
+    for value in [0.0, 0.0, 0.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.extend_from_slice(&[0x0f, 0xe3]);
+
+    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .and_then(|body| body.carrier)
+    .expect("selector envelope resolves the compact frame") else {
+        panic!("inline body resolves a cylinder carrier");
+    };
+    assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(4.0));
+}
+
+#[test]
 fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     let mut local_system = vec![0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe6, 0x0f];
     push_inline_test_scalar(&mut local_system, 2.0);

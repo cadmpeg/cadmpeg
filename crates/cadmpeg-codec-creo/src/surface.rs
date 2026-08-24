@@ -3624,9 +3624,11 @@ fn inline_surface_body(
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
+    let selector_envelope = decode_inline_selector_cylinder_envelope(kind, body, cache);
     let Some(envelope) = standard_envelope
         .or(four_bound_envelope)
         .or(referenced_envelope)
+        .or(selector_envelope)
     else {
         return inline_surface_suffix_body(kind, body, cache);
     };
@@ -4015,6 +4017,40 @@ fn decode_inline_four_bound_cylinder_envelope(
     let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [v_low, v_high],
+        corners,
+        close,
+    })
+}
+
+fn decode_inline_selector_cylinder_envelope(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceEnvelope> {
+    (kind == SurfaceKind::Cylinder).then_some(())?;
+    let selector_end = |cursor: usize| match body.get(cursor..) {
+        Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
+        Some([0x11 | 0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
+        _ => None,
+    };
+    let mut cursor = selector_end(0)?;
+    let (first_axial, next) = decode_row_scalar(kind, body, cursor, cache)?;
+    cursor = selector_end(next)?;
+    let (second_axial, next) = decode_row_scalar(kind, body, cursor, cache)?;
+    cursor = next;
+    (first_axial.is_finite() && second_axial.is_finite() && first_axial != second_axial)
+        .then_some(())?;
+
+    let mut corners = [[0.0; 3]; 2];
+    for coordinate in corners.iter_mut().flatten() {
+        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *coordinate = decoded;
+        cursor = next;
+    }
+    let close = inline_surface_envelope_close(body, cursor)?;
+    Some(InlineSurfaceEnvelope {
+        axial: [first_axial, second_axial],
         corners,
         close,
     })
