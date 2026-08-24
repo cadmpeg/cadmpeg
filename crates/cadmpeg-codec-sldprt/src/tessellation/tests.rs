@@ -1104,6 +1104,7 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
         }],
+        boundary_tolerance: 0.0,
     };
     let mesh = |vertices, triangle| Tessellation {
         id: "mesh".into(),
@@ -1361,4 +1362,74 @@ fn decode_rejects_nonfinite_display_list_values() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir().model.tessellations.is_empty());
+}
+
+#[test]
+fn planar_boundary_accepts_bounded_ellipse_arcs() {
+    const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let surface = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let frame = plane_frame(&surface).unwrap();
+    let curve = CurveGeometry::Ellipse {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 2.0,
+        minor_radius: 1.0,
+    };
+    let (samples, boundary_tolerance) = planar_boundary_samples(
+        &curve,
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        &surface,
+        frame,
+        EPS_DISPLAY_QUANTIZATION,
+        SAMPLE_TOLERANCE,
+    )
+    .unwrap();
+
+    assert!(samples.len() > 1);
+    assert!(boundary_tolerance <= SAMPLE_TOLERANCE);
+    assert_eq!(samples.first(), Some(&Point2::new(2.0, 0.0)));
+    assert!(shortest_arc_span(0.0, std::f64::consts::PI).is_none());
+}
+
+#[test]
+fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
+    const CONTAINMENT_TOLERANCE: f64 = 1.0e-9;
+    let concave = vec![
+        Point2::new(0.0, 0.0),
+        Point2::new(4.0, 0.0),
+        Point2::new(4.0, 4.0),
+        Point2::new(2.0, 4.0),
+        Point2::new(2.0, 2.0),
+        Point2::new(0.0, 2.0),
+    ];
+    assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
+    assert!(polygon_contains(
+        &concave,
+        Point2::new(1.0, 1.0),
+        CONTAINMENT_TOLERANCE
+    ));
+    assert!(polygon_contains(
+        &concave,
+        Point2::new(3.0, 3.0),
+        CONTAINMENT_TOLERANCE
+    ));
+    assert!(!polygon_contains(
+        &concave,
+        Point2::new(1.0, 3.0),
+        CONTAINMENT_TOLERANCE
+    ));
+
+    let crossing = vec![
+        Point2::new(0.0, 0.0),
+        Point2::new(4.0, 4.0),
+        Point2::new(0.0, 4.0),
+        Point2::new(4.0, 0.0),
+    ];
+    assert!(!is_simple_polygon(&crossing, CONTAINMENT_TOLERANCE));
 }

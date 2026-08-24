@@ -20,6 +20,8 @@ const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 const EPS_DISPLAY_QUANTIZATION: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
+const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
+const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
@@ -712,7 +714,8 @@ pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Mod
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
         let quantization_tolerance =
-            coordinate_scale * f64::from(f32::EPSILON) * 8.0 + EPS_DISPLAY_QUANTIZATION;
+            coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
+                + EPS_DISPLAY_QUANTIZATION;
         let mut owners = candidates
             .iter()
             .filter(|candidate| {
@@ -964,6 +967,7 @@ struct PlanarTrim {
     frame: PlaneFrame,
     outer: Option<PlanarOuter>,
     holes: Vec<CircularHole>,
+    boundary_tolerance: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1012,6 +1016,7 @@ impl PlanarTrim {
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
     ) -> bool {
+        let tolerance = tolerance + self.boundary_tolerance;
         let projected = mesh
             .vertices
             .iter()
@@ -1027,7 +1032,7 @@ impl PlanarTrim {
         };
         if projected.iter().any(|point| {
             self.outer.as_ref().is_some_and(|outer| !match outer {
-                PlanarOuter::Polygon(outer) => convex_polygon_contains(outer, *point, tolerance),
+                PlanarOuter::Polygon(outer) => polygon_contains(outer, *point, tolerance),
                 PlanarOuter::Circle(outer) => {
                     point_distance(*point, outer.center) <= outer.radius + tolerance
                 }
@@ -1095,6 +1100,130 @@ fn closed_planar_circle(
     })
 }
 
+fn planar_boundary_samples(
+    curve: &CurveGeometry,
+    start: Point3,
+    end: Point3,
+    surface: &SurfaceGeometry,
+    frame: PlaneFrame,
+    tolerance: f64,
+    sampling_tolerance: f64,
+) -> Option<(Vec<Point2>, f64)> {
+    match curve {
+        CurveGeometry::Line { .. } => Some((vec![frame.project(start)], 0.0)),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let axis = axis.unit()?;
+            if major_direction.dot(axis).abs() > EPS_AXIS_ALIGNMENT {
+                return None;
+            }
+            let major_direction = major_direction.unit()?;
+            let minor_direction = axis.cross(major_direction).unit()?;
+            if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                || !major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || *major_radius <= tolerance
+                || *minor_radius <= tolerance
+                || *major_radius < *minor_radius
+                || analytic_surface_residual(surface, *center)? > tolerance
+            {
+                return None;
+            }
+            let endpoint_tolerance = tolerance.max(sampling_tolerance);
+            let start_parameter = ellipse_parameter(
+                start,
+                *center,
+                major_direction,
+                minor_direction,
+                *major_radius,
+                *minor_radius,
+                endpoint_tolerance,
+            )?;
+            let end_parameter = ellipse_parameter(
+                end,
+                *center,
+                major_direction,
+                minor_direction,
+                *major_radius,
+                *minor_radius,
+                endpoint_tolerance,
+            )?;
+            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            let radius = major_radius.max(*minor_radius);
+            let (segments, boundary_tolerance) =
+                planar_arc_segments(span, radius, sampling_tolerance);
+            let points = (0..segments)
+                .map(|index| {
+                    let parameter = start_parameter
+                        + span * f64::from(index as u32) / f64::from(segments as u32);
+                    let point = center
+                        .translated(major_direction, major_radius * parameter.cos())
+                        .translated(minor_direction, minor_radius * parameter.sin());
+                    (point, frame.project(point))
+                })
+                .collect::<Vec<_>>();
+            if points.iter().any(|(point, _)| {
+                analytic_surface_residual(surface, *point)
+                    .is_none_or(|residual| residual > tolerance)
+            }) {
+                return None;
+            }
+            Some((
+                points.into_iter().map(|(_, projected)| projected).collect(),
+                boundary_tolerance,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn ellipse_parameter(
+    point: Point3,
+    center: Point3,
+    major_direction: Vector3,
+    minor_direction: Vector3,
+    major_radius: f64,
+    minor_radius: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    let delta = point.vector_from(center);
+    let cosine = delta.dot(major_direction) / major_radius;
+    let sine = delta.dot(minor_direction) / minor_radius;
+    let normalization = cosine.hypot(sine);
+    (normalization.is_finite()
+        && (normalization - 1.0).abs() <= tolerance / major_radius.min(minor_radius))
+    .then_some(sine.atan2(cosine).rem_euclid(std::f64::consts::TAU))
+}
+
+fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
+    let forward = (end - start).rem_euclid(std::f64::consts::TAU);
+    let span = if forward <= std::f64::consts::PI {
+        forward
+    } else {
+        forward - std::f64::consts::TAU
+    };
+    (span.abs() > EPS_CYLINDER_ANGLE && span.abs() < std::f64::consts::PI - EPS_CYLINDER_ANGLE)
+        .then_some(span)
+}
+
+fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
+    let cosine = (1.0 - tolerance / radius).clamp(-1.0, 1.0);
+    let maximum_span = 2.0 * cosine.acos();
+    let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
+        (span.abs() / maximum_span).ceil() as usize
+    } else {
+        MAX_PLANAR_TRIM_ARC_SEGMENTS
+    };
+    let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
+    let actual_span = span.abs() / f64::from(segments as u32);
+    (segments, radius * (1.0 - (actual_span / 2.0).cos()))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn planar_trim(
     face: &cadmpeg_ir::topology::Face,
@@ -1108,8 +1237,17 @@ fn planar_trim(
 ) -> Option<PlanarTrim> {
     let frame = plane_frame(surface)?;
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    let coordinate_scale = points
+        .values()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .fold(1.0_f64, f64::max);
+    let sampling_tolerance = tolerance.max(
+        coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
+            + EPS_DISPLAY_QUANTIZATION,
+    );
     let mut polygons = Vec::new();
     let mut circles = Vec::new();
+    let mut boundary_tolerance = 0.0_f64;
     for loop_id in &face.loops {
         let loop_ = *loops.get(loop_id)?;
         if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
@@ -1132,10 +1270,6 @@ fn planar_trim(
                 || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
                 || coedge.previous
                     != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
-                || !matches!(
-                    curves.get(edge.curve.as_ref()?)?,
-                    CurveGeometry::Line { .. }
-                )
             {
                 return None;
             }
@@ -1151,7 +1285,17 @@ fn planar_trim(
             {
                 return None;
             }
-            polygon.push(frame.project(start));
+            let (samples, sample_tolerance) = planar_boundary_samples(
+                curves.get(edge.curve.as_ref()?)?,
+                start,
+                end,
+                surface,
+                frame,
+                tolerance,
+                sampling_tolerance,
+            )?;
+            polygon.extend(samples);
+            boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
         }
@@ -1161,14 +1305,14 @@ fn planar_trim(
         polygons.push(polygon);
     }
     let (outer, holes) = match (polygons.as_slice(), circles.as_slice()) {
-        ([outer], holes) if is_strictly_convex(outer, tolerance) => {
+        ([outer], holes) if is_simple_polygon(outer, sampling_tolerance) => {
             if holes
                 .iter()
-                .any(|hole| !circle_inside_polygon(outer, *hole, tolerance))
+                .any(|hole| !circle_inside_polygon(outer, *hole, sampling_tolerance))
                 || holes.iter().enumerate().any(|(index, left)| {
                     holes[index + 1..].iter().any(|right| {
                         point_distance(left.center, right.center)
-                            < left.radius + right.radius - tolerance
+                            < left.radius + right.radius - sampling_tolerance
                     })
                 })
             {
@@ -1186,6 +1330,7 @@ fn planar_trim(
         frame,
         outer: Some(outer),
         holes,
+        boundary_tolerance,
     })
 }
 
@@ -1225,6 +1370,7 @@ fn planar_hole_trim(
         frame,
         outer: None,
         holes,
+        boundary_tolerance: 0.0,
     })
 }
 
@@ -1469,27 +1615,107 @@ fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
     (middle.u - left.u) * (right.v - middle.v) - (middle.v - left.v) * (right.u - middle.u)
 }
 
-fn is_strictly_convex(polygon: &[Point2], tolerance: f64) -> bool {
+fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
     if polygon.len() < 3 {
         return false;
     }
-    let mut sign = 0.0_f64;
-    for index in 0..polygon.len() {
-        let cross = signed_area_twice(
-            polygon[index],
-            polygon[(index + 1) % polygon.len()],
-            polygon[(index + 2) % polygon.len()],
-        );
-        if cross.abs() <= tolerance * tolerance {
-            return false;
-        }
-        if sign == 0.0 {
-            sign = cross.signum();
-        } else if cross.signum() != sign {
-            return false;
+    let area = (0..polygon.len())
+        .map(|index| {
+            let left = polygon[index];
+            let right = polygon[(index + 1) % polygon.len()];
+            left.u * right.v - left.v * right.u
+        })
+        .sum::<f64>();
+    if !area.is_finite() || area.abs() <= tolerance * tolerance {
+        return false;
+    }
+    for left in 0..polygon.len() {
+        for right in left + 1..polygon.len() {
+            if right == left + 1 || (left == 0 && right + 1 == polygon.len()) {
+                continue;
+            }
+            if segments_intersect(
+                polygon[left],
+                polygon[(left + 1) % polygon.len()],
+                polygon[right],
+                polygon[(right + 1) % polygon.len()],
+                tolerance,
+            ) {
+                return false;
+            }
         }
     }
     true
+}
+
+fn segments_intersect(
+    first_start: Point2,
+    first_end: Point2,
+    second_start: Point2,
+    second_end: Point2,
+    tolerance: f64,
+) -> bool {
+    let bounds_overlap = |left: f64, right: f64, other_left: f64, other_right: f64| {
+        left.min(right) <= other_left.max(other_right) + tolerance
+            && other_left.min(other_right) <= left.max(right) + tolerance
+    };
+    if !bounds_overlap(first_start.u, first_end.u, second_start.u, second_end.u)
+        || !bounds_overlap(first_start.v, first_end.v, second_start.v, second_end.v)
+    {
+        return false;
+    }
+    let scale = point_distance(first_start, first_end)
+        .max(point_distance(second_start, second_end))
+        .max(1.0);
+    let orientation_tolerance = tolerance * scale;
+    let first_left = signed_area_twice(first_start, first_end, second_start);
+    let first_right = signed_area_twice(first_start, first_end, second_end);
+    let second_left = signed_area_twice(second_start, second_end, first_start);
+    let second_right = signed_area_twice(second_start, second_end, first_end);
+    if first_left.abs() <= orientation_tolerance
+        && point_segment_distance(second_start, first_start, first_end) <= tolerance
+    {
+        return true;
+    }
+    if first_right.abs() <= orientation_tolerance
+        && point_segment_distance(second_end, first_start, first_end) <= tolerance
+    {
+        return true;
+    }
+    if second_left.abs() <= orientation_tolerance
+        && point_segment_distance(first_start, second_start, second_end) <= tolerance
+    {
+        return true;
+    }
+    if second_right.abs() <= orientation_tolerance
+        && point_segment_distance(first_end, second_start, second_end) <= tolerance
+    {
+        return true;
+    }
+    (first_left > orientation_tolerance && first_right < -orientation_tolerance
+        || first_left < -orientation_tolerance && first_right > orientation_tolerance)
+        && (second_left > orientation_tolerance && second_right < -orientation_tolerance
+            || second_left < -orientation_tolerance && second_right > orientation_tolerance)
+}
+
+fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    if polygon.iter().enumerate().any(|(index, start)| {
+        point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+    }) {
+        return true;
+    }
+    let mut inside = false;
+    for (index, start) in polygon.iter().enumerate() {
+        let end = polygon[(index + 1) % polygon.len()];
+        if (start.v > point.v) == (end.v > point.v) {
+            continue;
+        }
+        let crossing = start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v);
+        if crossing > point.u {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
@@ -1511,7 +1737,7 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 fn circle_inside_polygon(polygon: &[Point2], hole: CircularHole, tolerance: f64) -> bool {
-    convex_polygon_contains(polygon, hole.center, tolerance)
+    polygon_contains(polygon, hole.center, tolerance)
         && (0..polygon.len()).all(|index| {
             point_segment_distance(
                 hole.center,
