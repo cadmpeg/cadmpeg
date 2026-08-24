@@ -1193,18 +1193,25 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
     let procedural = index
         .procedural_surfaces(construction.0.as_str())
         .filter(|candidate| &candidate.surface == surface)?;
-    if !matches!(
-        procedural.definition,
-        ProceduralSurfaceDefinition::Offset { .. }
-    ) {
+    let ProceduralSurfaceDefinition::Offset {
+        support_extension, ..
+    } = &procedural.definition
+    else {
         return None;
-    }
+    };
+    let linear_extension = matches!(
+        support_extension.as_ref(),
+        Some(OffsetSupportExtension::Linear)
+    );
     let domain = surface_parameter_domain_with_index(index, surface);
+    let derivative_domain = (!linear_extension).then_some(domain).flatten();
     let mut parameters = seed;
     if !parameters.u.is_finite() || !parameters.v.is_finite() {
         return None;
     }
-    clamp_surface_parameters(&mut parameters, domain);
+    if !linear_extension {
+        clamp_surface_parameters(&mut parameters, domain);
+    }
 
     let squared_distance = |position: Point3| {
         let delta = Vector3::new(
@@ -1219,7 +1226,7 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
             index,
             surface,
             parameters,
-            domain,
+            derivative_domain,
             geometry_budget,
         )?;
         let current_distance = squared_distance(position);
@@ -1237,7 +1244,9 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
             }
             let mut candidate =
                 Point2::new(parameters.u - scale * step_u, parameters.v - scale * step_v);
-            clamp_surface_parameters(&mut candidate, domain);
+            if !linear_extension {
+                clamp_surface_parameters(&mut candidate, domain);
+            }
             let candidate_position = model_surface_point_by_id_with_budget(
                 index,
                 surface,
@@ -2466,5 +2475,18 @@ mod tests {
 
         assert!((parameters.u - 3.0).abs() <= fit_tolerance);
         assert!((parameters.v - 0.25).abs() <= fit_tolerance);
+
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let refined = refine_offset_surface_parameters_with_index_and_budget(
+            &index,
+            &offset,
+            target,
+            Point2::new(2.5, 0.25),
+            fit_tolerance,
+            &geometry_budget,
+        )
+        .expect("linear support extension refinement");
+        assert!((refined.u - 3.0).abs() <= fit_tolerance);
+        assert!((refined.v - 0.25).abs() <= fit_tolerance);
     }
 }

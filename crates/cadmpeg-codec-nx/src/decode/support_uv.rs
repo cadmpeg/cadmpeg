@@ -35,8 +35,8 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    CurveGeometry, OffsetSupportExtension, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -447,6 +447,35 @@ fn serialized_support_uv_seed_candidates(
             && !missing_support_parameter(v))
         .then(|| surface_parameters(geometry, [u, v]))?
     })
+}
+
+fn ordered_support_uv_seed_candidates(
+    serialized: [Option<Point2>; 4],
+    retained_pcurve: Option<Point2>,
+    continuation: Option<Point2>,
+    linear_offset_surface: bool,
+) -> [Option<Point2>; 7] {
+    if linear_offset_surface && continuation.is_some() {
+        [
+            continuation,
+            serialized[0],
+            serialized[1],
+            serialized[2],
+            serialized[3],
+            retained_pcurve,
+            None,
+        ]
+    } else {
+        [
+            serialized[0],
+            serialized[1],
+            serialized[2],
+            serialized[3],
+            retained_pcurve,
+            continuation,
+            None,
+        ]
+    }
 }
 
 fn serialized_support_uv_seed_for_side(
@@ -878,6 +907,21 @@ fn complete_support_uv_wave(
                 };
                 let source_chart_available =
                     source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
+                let linear_offset_surface = match &surface.geometry {
+                    SurfaceGeometry::Procedural { construction } => model_index
+                        .procedural_surfaces(construction.0.as_str())
+                        .filter(|procedural| &procedural.surface == surface_id)
+                        .is_some_and(|procedural| {
+                            matches!(
+                                &procedural.definition,
+                                ProceduralSurfaceDefinition::Offset {
+                                    support_extension: Some(OffsetSupportExtension::Linear),
+                                    ..
+                                }
+                            )
+                        }),
+                    _ => false,
+                };
                 let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
                     &model_index,
                     surface_id,
@@ -951,15 +995,15 @@ fn complete_support_uv_wave(
                         side,
                         point_index,
                     );
-                    let seed_candidates = [
-                        serialized_seeds[0],
-                        serialized_seeds[1],
-                        serialized_seeds[2],
-                        serialized_seeds[3],
-                        pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index),
-                        uv.last().copied(),
-                        None,
-                    ]
+                    let continuation_seed = uv.last().copied();
+                    let retained_pcurve_seed =
+                        pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), point_index);
+                    let seed_candidates = ordered_support_uv_seed_candidates(
+                        serialized_seeds,
+                        retained_pcurve_seed,
+                        continuation_seed,
+                        linear_offset_surface,
+                    )
                     .into_iter();
                     let mut attempted_without_seed = false;
                     let mut solved = None;
@@ -2085,6 +2129,43 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linear_offset_continuation_precedes_unvalidated_serialized_seeds() {
+        let serialized = [
+            Some(Point2::new(1.0, 1.0)),
+            Some(Point2::new(2.0, 2.0)),
+            Some(Point2::new(3.0, 3.0)),
+            Some(Point2::new(4.0, 4.0)),
+        ];
+        let retained = Some(Point2::new(5.0, 5.0));
+        let continuation = Some(Point2::new(6.0, 6.0));
+
+        assert_eq!(
+            ordered_support_uv_seed_candidates(serialized, retained, continuation, true),
+            [
+                continuation,
+                serialized[0],
+                serialized[1],
+                serialized[2],
+                serialized[3],
+                retained,
+                None,
+            ]
+        );
+        assert_eq!(
+            ordered_support_uv_seed_candidates(serialized, retained, continuation, false),
+            [
+                serialized[0],
+                serialized[1],
+                serialized[2],
+                serialized[3],
+                retained,
+                continuation,
+                None,
+            ]
+        );
+    }
 
     #[test]
     fn oversized_serialized_lane_is_declined_before_geometry_work() {
