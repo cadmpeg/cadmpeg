@@ -3595,7 +3595,7 @@ struct InlineSurfaceEnvelope {
     /// Axial parameter bounds.
     axial: [f64; 2],
     /// Two model-space outline corners.
-    corners: [[f64; 3]; 2],
+    corners: [[Option<f64>; 3]; 2],
     /// Offset of the envelope close relative to the bounded row body.
     close: usize,
 }
@@ -3968,7 +3968,8 @@ fn decode_inline_surface_envelope(
         corners: [
             [values[3], values[4], values[5]],
             [values[6], values[7], values[8]],
-        ],
+        ]
+        .map(|corner| corner.map(Some)),
         close,
     })
 }
@@ -4017,7 +4018,7 @@ fn decode_inline_four_bound_cylinder_envelope(
     let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [v_low, v_high],
-        corners,
+        corners: corners.map(|corner| corner.map(Some)),
         close,
     })
 }
@@ -4063,8 +4064,7 @@ fn decode_inline_selector_cylinder_envelope(
     }
     let close = inline_surface_envelope_close(body, cursor)?;
     let axial_span = (second_axial - first_axial).abs();
-    let mut spans =
-        std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
+    let spans = std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
     let axial_axes = (0..3)
         .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)))
         .collect::<Vec<_>>();
@@ -4076,22 +4076,12 @@ fn decode_inline_selector_cylinder_envelope(
         .collect::<Vec<_>>()
         .try_into()
         .ok()?;
-    match radial_axes.map(|axis| spans[axis]) {
-        [Some(_), Some(_)] => {}
-        [Some(known), None] => spans[radial_axes[1]] = Some(known),
-        [None, Some(known)] => spans[radial_axes[0]] = Some(known),
-        [None, None] => return None,
-    }
-    for radial_axis in radial_axes {
-        match corners.map(|corner| corner[radial_axis]) {
-            [None, Some(second)] => corners[0][radial_axis] = Some(second - spans[radial_axis]?),
-            [Some(first), None] => corners[1][radial_axis] = Some(first + spans[radial_axis]?),
-            [Some(_), Some(_)] => {}
-            [None, None] => return None,
-        }
-    }
-    let complete_corner = |[x, y, z]: [Option<f64>; 3]| Some([x?, y?, z?]);
-    let corners = [complete_corner(corners[0])?, complete_corner(corners[1])?];
+    (radial_axes
+        .into_iter()
+        .filter(|axis| spans[*axis].is_none())
+        .count()
+        <= 1)
+        .then_some(())?;
     Some(InlineSurfaceEnvelope {
         axial: [first_axial, second_axial],
         corners,
@@ -4127,7 +4117,7 @@ fn decode_inline_referenced_cylinder_envelope(
     let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [bounds[0], bounds[2]],
-        corners,
+        corners: corners.map(|corner| corner.map(Some)),
         close,
     })
 }
@@ -4394,7 +4384,7 @@ fn inline_frame_directions(
         return None;
     }
     if prefix.compact_axis.is_some() {
-        let span = envelope.corners[1][axis_index] - envelope.corners[0][axis_index];
+        let span = envelope.corners[1][axis_index]? - envelope.corners[0][axis_index]?;
         if span.abs() <= EPS_INLINE_WITNESS {
             return None;
         }
@@ -4412,7 +4402,7 @@ fn witnessed_inline_axis_index(
 ) -> Option<usize> {
     let axial_span = (envelope.axial[1] - envelope.axial[0]).abs();
     (axial_span.is_finite() && axial_span > EPS_INLINE_WITNESS).then_some(())?;
-    let hinted_span = (envelope.corners[1][hinted_axis] - envelope.corners[0][hinted_axis]).abs();
+    let hinted_span = (envelope.corners[1][hinted_axis]? - envelope.corners[0][hinted_axis]?).abs();
     hinted_span.is_finite().then_some(hinted_axis)
 }
 
@@ -4423,8 +4413,10 @@ fn solve_inline_axis_endpoint(
     stored_axis_sense: f64,
 ) -> Option<(f64, f64)> {
     let stored_magnitude = stored_axis_origin.abs();
-    let lower = envelope.corners[0][axis_index].min(envelope.corners[1][axis_index]);
-    let upper = envelope.corners[0][axis_index].max(envelope.corners[1][axis_index]);
+    let first_corner = envelope.corners[0][axis_index]?;
+    let second_corner = envelope.corners[1][axis_index]?;
+    let lower = first_corner.min(second_corner);
+    let upper = first_corner.max(second_corner);
     let mut direct = Vec::new();
     let mut crosswise = Vec::new();
     let mut containing = Vec::new();
@@ -4442,9 +4434,7 @@ fn solve_inline_axis_endpoint(
             let first = origin + envelope.axial[0] * direction;
             let second = origin + envelope.axial[1] * direction;
             let candidate = (origin, direction);
-            if inline_close(first, envelope.corners[0][axis_index])
-                && inline_close(second, envelope.corners[1][axis_index])
-            {
+            if inline_close(first, first_corner) && inline_close(second, second_corner) {
                 push_unique(&mut direct, candidate);
             } else if (inline_close(first, lower) && inline_close(second, upper))
                 || (inline_close(first, upper) && inline_close(second, lower))
@@ -4512,8 +4502,29 @@ fn unique_inline_center(
     stored_center: f64,
     radius: f64,
 ) -> Option<f64> {
-    let lower = envelope.corners[0][coordinate].min(envelope.corners[1][coordinate]);
-    let upper = envelope.corners[0][coordinate].max(envelope.corners[1][coordinate]);
+    let bounds = envelope.corners.map(|corner| corner[coordinate]);
+    if let [None, Some(known)] | [Some(known), None] = bounds {
+        let magnitude = stored_center.abs();
+        let mut candidates = Vec::new();
+        for center in [-magnitude, magnitude] {
+            if inline_close((known - center).abs(), radius)
+                && !candidates
+                    .iter()
+                    .any(|candidate| inline_close(*candidate, center))
+            {
+                candidates.push(center);
+            }
+        }
+        let [center] = candidates.as_slice() else {
+            return None;
+        };
+        return Some(*center);
+    }
+    let [Some(first), Some(second)] = bounds else {
+        return None;
+    };
+    let lower = first.min(second);
+    let upper = first.max(second);
     let magnitude = stored_center.abs();
     let mut candidates = Vec::new();
     for center in [-magnitude, magnitude] {

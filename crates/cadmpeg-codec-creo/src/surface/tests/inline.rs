@@ -71,7 +71,13 @@ fn referenced_inline_cylinder_envelope_uses_outer_axial_bounds() {
     )
     .expect("referenced inline envelope");
     assert_eq!(envelope.axial, [2.0, 8.0]);
-    assert_eq!(envelope.corners, [[-1.0, 3.0, 5.0], [1.0, 3.0, 5.0]]);
+    assert_eq!(
+        envelope.corners,
+        [
+            [Some(-1.0), Some(3.0), Some(5.0)],
+            [Some(1.0), Some(3.0), Some(5.0)]
+        ]
+    );
     assert_eq!(envelope.close, body.len() - 1);
 }
 
@@ -376,6 +382,38 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
     assert_eq!(frame.origin, [-3.0, -3.0, 0.0]);
     assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
     assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.length, Some(4.0));
+}
+
+#[test]
+fn selector_placeholder_resolves_from_one_radial_extreme() {
+    let mut body = vec![0x11, 0x18, 0x13];
+    push_inline_test_first_directrix(&mut body, 4.0);
+    body.extend_from_slice(&[0xda, 0, 0, 0, 0, 0, 1]);
+    push_inline_test_first_directrix(&mut body, 5.0);
+    body.push(0x18);
+    for value in [2.0, 3.0, 4.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
+    for value in [4.0, 4.0, 0.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
+
+    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .and_then(|body| body.carrier)
+    .expect("radius-witnessed selector placeholder") else {
+        panic!("selector placeholder resolves a cylinder");
+    };
+    assert_eq!(frame.origin, [-4.0, -4.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 2.0);
     assert_eq!(frame.length, Some(4.0));
 }

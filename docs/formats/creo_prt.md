@@ -1104,8 +1104,11 @@ full radial diameter. The local-system center and family radius must contain
 both spans under the carrier-placement witness.
 `92 <i48>` and `da <i48>` each occupy one outline-coordinate slot. The integer
 payload is not a coordinate. When exactly one transverse coordinate is absent,
-its signed corner span equals the other transverse span. An absent axial
-coordinate or two absent transverse coordinates withhold the envelope.
+defer it until the family radius and stored center are available. The known
+bound must equal one radial extreme for exactly one sign of the stored center
+magnitude; the missing bound is the opposite extreme. An absent axial
+coordinate, two absent transverse coordinates, or a non-unique center sign
+withholds the envelope.
 
 An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
