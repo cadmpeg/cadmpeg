@@ -344,12 +344,12 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let graph = crate::topology::Graph::parse(&stream);
     let points = crate::decode::ordered_point_candidates(&stream, &graph);
     assert_eq!(points.len(), 2);
-    assert_eq!(points[0].0, first);
-    assert_eq!(points[0].1, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(points[0].2.map(|node| node.xmt), Some(11));
-    assert_eq!(points[1].0, stream.len() - 40);
-    assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
-    assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
+    assert_eq!(points[0].1.pos, first);
+    assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(points[0].1.xmt, 11);
+    assert_eq!(points[1].1.pos, stream.len() - 40);
+    assert_eq!(points[1].0, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
+    assert_eq!(points[1].1.xmt, 77);
 }
 
 #[test]
@@ -384,17 +384,34 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     let graph = crate::topology::Graph::parse(&stream);
     let surfaces = crate::decode::ordered_surface_candidates(&stream, &graph);
     assert_eq!(surfaces.len(), 2);
-    assert_eq!(surfaces[0].0, first_surface);
-    assert_eq!(surfaces[0].2.map(|node| node.xmt), Some(6));
-    assert_eq!(surfaces[1].0, second_surface_offset);
-    assert_eq!(surfaces[1].2.map(|node| node.xmt), Some(77));
+    assert_eq!(surfaces[0].1.pos, first_surface);
+    assert_eq!(surfaces[0].1.xmt, 6);
+    assert_eq!(surfaces[1].1.pos, second_surface_offset);
+    assert_eq!(surfaces[1].1.xmt, 77);
 
     let curves = crate::decode::ordered_curve_candidates(&stream, &graph);
     assert_eq!(curves.len(), 2);
-    assert_eq!(curves[0].0, first_curve);
-    assert_eq!(curves[0].2.map(|node| node.xmt), Some(9));
-    assert_eq!(curves[1].0, second_curve_offset);
-    assert_eq!(curves[1].2.map(|node| node.xmt), Some(78));
+    assert_eq!(curves[0].1.pos, first_curve);
+    assert_eq!(curves[0].1.xmt, 9);
+    assert_eq!(curves[1].1.pos, second_curve_offset);
+    assert_eq!(curves[1].1.xmt, 78);
+}
+
+#[test]
+fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
+    let mut plane = record(50, 91);
+    put_ref(&mut plane, 2, 77);
+    plane[18] = b'+';
+    put_vec3(&mut plane, 19, [0.01, 0.02, 0.03]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    let mut stream = plane.clone();
+    stream.extend(plane);
+
+    assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(50, 77).is_none());
+    assert!(crate::decode::ordered_surface_candidates(&stream, &graph).is_empty());
 }
 
 #[test]

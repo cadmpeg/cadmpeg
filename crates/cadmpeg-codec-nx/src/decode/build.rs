@@ -54,7 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) fn ordered_point_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, Point3, Option<&'a Node>)> {
+) -> Vec<(Point3, &'a Node)> {
     ordered_fixed_candidates(
         geometry::points(stream)
             .into_iter()
@@ -68,7 +68,7 @@ pub(crate) fn ordered_point_candidates<'a>(
 pub(crate) fn ordered_surface_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, SurfaceGeometry, Option<&'a Node>)> {
+) -> Vec<(SurfaceGeometry, &'a Node)> {
     ordered_fixed_candidates(
         geometry::surfaces(stream)
             .into_iter()
@@ -82,7 +82,7 @@ pub(crate) fn ordered_surface_candidates<'a>(
 pub(crate) fn ordered_curve_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, CurveGeometry, Option<&'a Node>)> {
+) -> Vec<(CurveGeometry, &'a Node)> {
     ordered_fixed_candidates(
         geometry::curves(stream)
             .into_iter()
@@ -98,23 +98,23 @@ pub(crate) fn ordered_fixed_candidates<T>(
     graph: &Graph,
     kinds: std::ops::RangeInclusive<u8>,
     graph_value: impl Fn(&Node) -> Option<T>,
-) -> Vec<(usize, T, Option<&Node>)> {
+) -> Vec<(T, &Node)> {
     let mut candidates = BTreeMap::new();
     for (offset, value) in fallback {
-        let node = graph
+        let Some(node) = graph
             .at_pos(offset)
-            .filter(|node| graph_value(node).is_some());
+            .filter(|node| graph_value(node).is_some())
+        else {
+            continue;
+        };
         candidates.insert(offset, (value, node));
     }
     for node in kinds.flat_map(|kind| graph.of_kind(kind)) {
         if let Some(value) = graph_value(node) {
-            candidates.insert(node.pos, (value, Some(node)));
+            candidates.insert(node.pos, (value, node));
         }
     }
-    candidates
-        .into_iter()
-        .map(|(offset, (value, node))| (offset, value, node))
-        .collect()
+    candidates.into_values().collect()
 }
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
@@ -290,19 +290,13 @@ pub(crate) fn try_decode_geometry(
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
-        for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, graph)
+        for (pi, (position, node)) in ordered_point_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
-            if let Some(node) = node {
-                annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
-            } else {
-                annotations
-                    .note(&pid, source_stream, position_offset as u64)
-                    .tag("POINT");
-            }
+            annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             annotations.derived(&pid, "position");
             ir.model.points.push(Point {
                 id: pid.clone(),
@@ -314,12 +308,10 @@ pub(crate) fn try_decode_geometry(
                 point: pid.clone(),
                 tolerance: None,
             });
-            if let Some(node) = node {
-                points_by_xmt.insert(node.xmt, pid);
-            }
+            points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
-        for (fi, (offset, geometry, node)) in ordered_surface_candidates(semantic, graph)
+        for (fi, (geometry, node)) in ordered_surface_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -336,28 +328,20 @@ pub(crate) fn try_decode_geometry(
                 | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
-            if let Some(node) = node {
-                annotate_node(
-                    &mut annotations,
-                    &id,
-                    source_stream,
-                    node,
-                    surface_tag(&geometry),
-                );
-            } else {
-                annotations
-                    .note(&id, source_stream, offset as u64)
-                    .tag(surface_tag(&geometry));
-            }
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                surface_tag(&geometry),
+            );
             annotations.derived(&id, "geometry");
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
                 source_object: None,
             });
-            if let Some(node) = node {
-                surfaces_by_xmt.insert(node.xmt, id);
-            }
+            surfaces_by_xmt.insert(node.xmt, id);
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
@@ -510,7 +494,7 @@ pub(crate) fn try_decode_geometry(
             *slots = supports;
         }
 
-        for (ci, (offset, geometry, node)) in ordered_curve_candidates(semantic, graph)
+        for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -529,28 +513,20 @@ pub(crate) fn try_decode_geometry(
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
-            if let Some(node) = node {
-                annotate_node(
-                    &mut annotations,
-                    &id,
-                    source_stream,
-                    node,
-                    curve_tag(&geometry),
-                );
-            } else {
-                annotations
-                    .note(&id, source_stream, offset as u64)
-                    .tag(curve_tag(&geometry));
-            }
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                curve_tag(&geometry),
+            );
             annotations.derived(&id, "geometry");
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry,
                 source_object: None,
             });
-            if let Some(node) = node {
-                curves_by_xmt.insert(node.xmt, id);
-            }
+            curves_by_xmt.insert(node.xmt, id);
         }
         for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
