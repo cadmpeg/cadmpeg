@@ -14,9 +14,10 @@ use crate::IgesCodec;
 
 use super::{
     clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
-    has_in_plane_component, standard_color_valid, standard_line_font_valid, view_directory_valid,
-    views_visible_directory_valid,
+    drawing_property_value, has_in_plane_component, standard_color_valid, standard_line_font_valid,
+    view_directory_valid, views_visible_directory_valid, DrawingPropertyValue,
 };
+use crate::parameter::{ParameterRecord, Token, TokenValue};
 
 fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
@@ -153,6 +154,40 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     assert!(!views_visible_directory_valid(&segmented, Dialect::V4_0));
     assert!(views_visible_directory_valid(&segmented, Dialect::V5_0));
     assert!(views_visible_directory_valid(&segmented, Dialect::V5_3));
+}
+
+#[test]
+fn drawing_size_accepts_finite_zero_extents() {
+    let record = ParameterRecord {
+        directory_sequence: 1,
+        line_range: 1..2,
+        bytes: Vec::new(),
+        tokens: vec![
+            Token {
+                value: TokenValue::Integer(406),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Integer(2),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Real(0.0),
+                span: 0..0,
+            },
+            Token {
+                value: TokenValue::Real(0.0),
+                span: 0..0,
+            },
+        ],
+        parameter_end: 4,
+        comment: Vec::new(),
+    };
+
+    assert_eq!(
+        drawing_property_value(16, &record),
+        Some(DrawingPropertyValue::Size([0.0, 0.0]))
+    );
 }
 
 fn decode_drawing_directory_case(

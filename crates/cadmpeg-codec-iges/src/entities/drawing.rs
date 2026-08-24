@@ -103,13 +103,16 @@ fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
 }
 
 #[derive(Debug, PartialEq)]
-enum DrawingPropertyValue {
+pub(crate) enum DrawingPropertyValue {
     Name(Vec<u8>),
     Size([f64; 2]),
     Units(i64, Vec<u8>),
 }
 
-fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
+pub(crate) fn drawing_property_value(
+    form: i64,
+    record: &ParameterRecord,
+) -> Option<DrawingPropertyValue> {
     match form {
         15 => (record.integer(1) == Some(1))
             .then(|| record.string(2).filter(|value| !value.is_empty()))
@@ -121,7 +124,7 @@ fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<Drawing
             }
             let size = [record.number(2)?, record.number(3)?];
             size.iter()
-                .all(|value| value.is_finite() && *value > 0.0)
+                .all(|value| value.is_finite())
                 .then_some(DrawingPropertyValue::Size(size))
         }
         17 => {
@@ -194,11 +197,7 @@ pub(super) fn project(
         };
         let valid = if entry.form == 16 {
             record.integer(1) == Some(2)
-                && (2..=3).all(|index| {
-                    record
-                        .number(index)
-                        .is_some_and(|value| value.is_finite() && value > 0.0)
-                })
+                && (2..=3).all(|index| record.number(index).is_some_and(f64::is_finite))
         } else {
             record.integer(1) == Some(2)
                 && record

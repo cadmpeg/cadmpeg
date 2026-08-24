@@ -3,6 +3,7 @@
 
 use crate::card::CardScan;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
+use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::{
     array_base_type, flow_join_target_valid, signal_string_geometry_target,
@@ -1123,38 +1124,6 @@ struct NativeDrawing {
     units_name: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     ambiguous_property_forms: Vec<i64>,
-}
-
-#[derive(Debug, PartialEq)]
-enum DrawingPropertyValue {
-    Name(Vec<u8>),
-    Size([f64; 2]),
-    Units(i64, Vec<u8>),
-}
-
-fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
-    match form {
-        15 => (record.integer(1) == Some(1))
-            .then(|| record.string(2).filter(|value| !value.is_empty()))
-            .flatten()
-            .map(|value| DrawingPropertyValue::Name(value.to_vec())),
-        16 => {
-            if record.integer(1) != Some(2) {
-                return None;
-            }
-            let size = [record.number(2)?, record.number(3)?];
-            size.iter()
-                .all(|value| value.is_finite() && *value > 0.0)
-                .then_some(DrawingPropertyValue::Size(size))
-        }
-        17 => {
-            let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
-            let name = record.string(3).filter(|value| !value.is_empty())?;
-            (record.integer(1) == Some(2))
-                .then_some(DrawingPropertyValue::Units(units, name.to_vec()))
-        }
-        _ => None,
-    }
 }
 
 fn drawing_property_candidates(
