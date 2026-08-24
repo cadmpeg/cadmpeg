@@ -3,7 +3,10 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
-use super::geometry::{entity_loss, ProjectionOutcome};
+use super::geometry::{
+    entity_loss, BoundaryEndpoint, BoundaryVertexDerivation, BoundaryVertexSourceEndpoint,
+    ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::loss::IgesLossCode;
@@ -192,14 +195,20 @@ fn cluster_boundary_positions(
 fn create_boundary_vertices(
     candidate: &mut ModelDraft,
     stem: &str,
+    source_entity: &str,
     boundary: usize,
-    positions: &[Point3],
+    source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: f64,
-) -> Result<Vec<VertexId>, BoundaryVertexClusterError> {
-    let clusters = cluster_boundary_positions(positions, tolerance)?;
+) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
+    let positions = source_endpoints
+        .iter()
+        .map(|endpoint| endpoint.position)
+        .collect::<Vec<_>>();
+    let clusters = cluster_boundary_positions(&positions, tolerance)?;
     let mut vertex_ids = (0..positions.len())
         .map(|_| None)
         .collect::<Vec<Option<VertexId>>>();
+    let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
         let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
@@ -213,11 +222,23 @@ fn create_boundary_vertices(
             point: point_id,
             tolerance: Some(tolerance),
         });
+        let source_endpoints = cluster
+            .members
+            .iter()
+            .map(|member| source_endpoints[*member].clone())
+            .collect();
+        derivations.push(BoundaryVertexDerivation {
+            source_entity: source_entity.into(),
+            vertex: vertex_id.clone(),
+            representative: cluster.representative,
+            tolerance,
+            source_endpoints,
+        });
         for member in cluster.members {
             vertex_ids[member] = Some(vertex_id.clone());
         }
     }
-    Ok(vertex_ids.into_iter().flatten().collect())
+    Ok((vertex_ids.into_iter().flatten().collect(), derivations))
 }
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
@@ -711,7 +732,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> (ProjectionOutcome, Vec<BoundaryVertexDerivation>) {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -722,6 +743,7 @@ pub(super) fn project(
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new(ir);
@@ -1059,6 +1081,7 @@ pub(super) fn project(
         let region_id = RegionId(format!("iges:model:region#{stem}"));
         let shell_id = ShellId(format!("iges:model:shell#{stem}"));
         let face_id = FaceId(format!("iges:model:face#{stem}"));
+        let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
         let mut loop_ids = Vec::new();
@@ -1229,18 +1252,32 @@ pub(super) fn project(
             let coedge_ids = (0..items.len())
                 .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
                 .collect::<Vec<_>>();
-            let endpoint_positions = items
+            let source_endpoints = items
                 .iter()
-                .flat_map(|item| [item.start, item.end])
+                .flat_map(|item| {
+                    [
+                        BoundaryVertexSourceEndpoint {
+                            edge: item.source_edge.id.0.clone(),
+                            endpoint: BoundaryEndpoint::Start,
+                            position: item.start,
+                        },
+                        BoundaryVertexSourceEndpoint {
+                            edge: item.source_edge.id.0.clone(),
+                            endpoint: BoundaryEndpoint::End,
+                            position: item.end,
+                        },
+                    ]
+                })
                 .collect::<Vec<_>>();
-            let vertex_ids = match create_boundary_vertices(
+            let (vertex_ids, derivations) = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
+                &format!("iges:entity:directory#{}", entry.sequence),
                 boundary_index,
-                &endpoint_positions,
+                &source_endpoints,
                 sewing_tolerance,
             ) {
-                Ok(vertex_ids) => vertex_ids,
+                Ok(result) => result,
                 Err(BoundaryVertexClusterError::InvalidTolerance) => {
                     losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
                     valid = false;
@@ -1255,6 +1292,7 @@ pub(super) fn project(
                     break;
                 }
             };
+            candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = EdgeId(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
@@ -1359,11 +1397,15 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        staged.push((entry.sequence, candidate));
+        staged.push((
+            entry.sequence,
+            candidate,
+            candidate_boundary_vertex_derivations,
+        ));
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir);
-    for (sequence, candidate) in staged {
+    for (sequence, candidate, derivations) in staged {
         if commit_session.commit_model(candidate, ir).is_err() {
             let entry = entries
                 .get(&sequence)
@@ -1376,9 +1418,13 @@ pub(super) fn project(
             continue;
         }
         decoded.insert(sequence);
+        boundary_vertex_derivations.extend(derivations);
     }
 
-    ProjectionOutcome { decoded, losses }
+    (
+        ProjectionOutcome { decoded, losses },
+        boundary_vertex_derivations,
+    )
 }
 
 #[cfg(test)]

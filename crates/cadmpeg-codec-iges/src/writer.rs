@@ -29,6 +29,7 @@ use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const ALLOWED_NATIVE_ARENAS: &[&str] = &[
+    "boundary_vertex_sewing",
     "cards",
     "copious_data",
     "directions",

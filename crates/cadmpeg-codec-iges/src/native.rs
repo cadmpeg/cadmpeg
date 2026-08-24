@@ -4,7 +4,9 @@
 use crate::card::CardScan;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::entities::drawing::drawing_property_value;
-use crate::entities::geometry::{resolve_transform, Affine};
+use crate::entities::geometry::{
+    resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
+};
 use crate::entities::structure::{
     array_base_type, flow_join_target_valid, signal_string_geometry_target,
 };
@@ -118,6 +120,24 @@ struct NativeCopiousData {
     declared_tuple_count: Option<i64>,
     common_z: Option<f64>,
     tuples: Vec<Vec<Option<f64>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeBoundaryVertexEndpoint {
+    edge: String,
+    endpoint: &'static str,
+    position: [f64; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeBoundaryVertex {
+    id: String,
+    source_entity: String,
+    vertex: String,
+    representative: [f64; 3],
+    tolerance: f64,
+    sewn: bool,
+    source_endpoints: Vec<NativeBoundaryVertexEndpoint>,
 }
 
 fn copious_tuple_layout(form: i64, interpretation: Option<i64>) -> Option<(usize, usize)> {
@@ -1504,6 +1524,7 @@ pub(crate) fn store(
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     quarantine: QuarantinedRecords<'_>,
     structure_admitted: Option<&BTreeSet<u32>>,
+    boundary_vertex_derivations: &[BoundaryVertexDerivation],
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
     limits: ProductOccurrenceLimits,
@@ -4836,6 +4857,48 @@ pub(crate) fn store(
         truncated: !issues.is_empty(),
         issues,
     }];
+    let boundary_vertex_sewing = boundary_vertex_derivations
+        .iter()
+        .map(|derivation| NativeBoundaryVertex {
+            id: format!(
+                "iges:topology:boundary-vertex#{}",
+                derivation
+                    .vertex
+                    .0
+                    .strip_prefix("iges:model:vertex#")
+                    .unwrap_or(&derivation.vertex.0)
+                    .replace(':', "_")
+            ),
+            source_entity: derivation.source_entity.clone(),
+            vertex: derivation.vertex.0.clone(),
+            representative: [
+                derivation.representative.x,
+                derivation.representative.y,
+                derivation.representative.z,
+            ],
+            tolerance: derivation.tolerance,
+            sewn: derivation
+                .source_endpoints
+                .iter()
+                .any(|endpoint| endpoint.position != derivation.representative),
+            source_endpoints: derivation
+                .source_endpoints
+                .iter()
+                .map(|endpoint| NativeBoundaryVertexEndpoint {
+                    edge: endpoint.edge.clone(),
+                    endpoint: match endpoint.endpoint {
+                        BoundaryEndpoint::Start => "start",
+                        BoundaryEndpoint::End => "end",
+                    },
+                    position: [
+                        endpoint.position.x,
+                        endpoint.position.y,
+                        endpoint.position.z,
+                    ],
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
     parameter_resolver.append_to(references);
     for entity in &mut entities {
         entity.links = references
@@ -4889,6 +4952,7 @@ pub(crate) fn store(
         drawings.len(),
         annotations.len(),
         fem_entities.len(),
+        boundary_vertex_sewing.len(),
         product_occurrences.len(),
         product_occurrence_expansion.len(),
         macro_definitions.len(),
@@ -4943,6 +5007,9 @@ pub(crate) fn store(
     namespace.set_arena_from("drawings", drawings)?;
     namespace.set_arena_from("annotations", annotations)?;
     namespace.set_arena_from("fem_entities", fem_entities)?;
+    if !boundary_vertex_sewing.is_empty() {
+        namespace.set_arena_from("boundary_vertex_sewing", boundary_vertex_sewing)?;
+    }
     namespace.set_arena_from("product_occurrences", product_occurrences)?;
     namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
     if !macro_definitions.is_empty() {

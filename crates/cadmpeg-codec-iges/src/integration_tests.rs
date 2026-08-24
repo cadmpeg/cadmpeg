@@ -533,6 +533,36 @@ fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_t
 }
 
 #[test]
+fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
+    let result = decode(bounded_plane_with_significance_gap_file());
+    let records = &result
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("IGES native namespace")
+        .arenas["boundary_vertex_sewing"];
+
+    assert!(records.iter().any(|record| {
+        record.fields()["sewn"] == true
+            && record.fields()["source_endpoints"]
+                .as_array()
+                .is_some_and(|endpoints| endpoints.len() > 1)
+    }));
+    let sewn = records
+        .iter()
+        .find(|record| record.fields()["sewn"] == true)
+        .expect("a boundary coordinate gap is recorded as sewn");
+    let fields = sewn.fields();
+    assert_eq!(fields["source_entity"], "iges:entity:directory#13");
+    assert_eq!(fields["tolerance"], 0.01);
+    let endpoints = fields["source_endpoints"].as_array().unwrap();
+    assert_eq!(endpoints.len(), 2);
+    assert!(endpoints
+        .iter()
+        .any(|endpoint| endpoint["position"] == fields["representative"]));
+}
+
+#[test]
 fn topology_pipeline_composes_manifold_nonmanifold_void_seam_and_boundary_graphs() {
     let (void_solid, _, _, _) = explicit_void_solid_file();
     decode_matrix(vec![

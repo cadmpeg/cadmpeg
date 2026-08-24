@@ -597,6 +597,33 @@ pub(super) struct ProjectionOutcome {
     pub(super) losses: Vec<LossNote>,
 }
 
+/// One source endpoint that participates in a face-local boundary vertex.
+///
+/// Boundary sewing is a topology decision. The endpoint coordinate remains
+/// source evidence and must not be replaced by the neutral representative.
+#[derive(Debug, Clone)]
+pub(crate) struct BoundaryVertexSourceEndpoint {
+    pub(crate) edge: String,
+    pub(crate) endpoint: BoundaryEndpoint,
+    pub(crate) position: Point3,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum BoundaryEndpoint {
+    Start,
+    End,
+}
+
+/// The complete derivation of one neutral vertex created by boundary sewing.
+#[derive(Debug, Clone)]
+pub(crate) struct BoundaryVertexDerivation {
+    pub(crate) source_entity: String,
+    pub(crate) vertex: VertexId,
+    pub(crate) representative: Point3,
+    pub(crate) tolerance: f64,
+    pub(crate) source_endpoints: Vec<BoundaryVertexSourceEndpoint>,
+}
+
 // The `merge_into` drains on the outcome types take `self` by value: every
 // field a sub-projector returns has to be handed to an accumulator, so an
 // outcome field cannot be dropped silently at the merge site. The accumulator
@@ -637,6 +664,7 @@ pub(crate) struct Projection {
     /// these records; membership here is the only suppression channel.
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
+    pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
 }
 
 fn positive_sequence(value: i64) -> Option<u32> {
@@ -853,6 +881,7 @@ pub(crate) fn project_geometry(
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
+    let mut boundary_vertex_derivations = Vec::new();
     let consumed = consumed_support_sequences(directory, &records);
     let analytic_surface_locations = directory
         .iter()
@@ -1725,8 +1754,10 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_wire_topology",
     )?;
-    super::trimming::project(ir, directory, parameters, global, ctx)
-        .merge_into(&mut decoded, &mut losses);
+    let (trimming_projection, trimming_vertex_derivations) =
+        super::trimming::project(ir, directory, parameters, global, ctx);
+    boundary_vertex_derivations.extend(trimming_vertex_derivations);
+    trimming_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
     super::brep::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
@@ -1782,6 +1813,7 @@ pub(crate) fn project_geometry(
         decoded,
         consumed,
         losses,
+        boundary_vertex_derivations,
     })
 }
 

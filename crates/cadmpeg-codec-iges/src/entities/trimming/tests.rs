@@ -4,6 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -12,8 +13,9 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::{
-    cluster_boundary_positions, coordinate_quantum, pcurve_within_declared_bounds,
-    BoundaryVertexClusterError, FaceTolerancePolicy,
+    cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
+    pcurve_within_declared_bounds, BoundaryEndpoint, BoundaryVertexClusterError,
+    BoundaryVertexSourceEndpoint, FaceTolerancePolicy,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -188,6 +190,48 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
             .map(|cluster| cluster.representative)
             .collect::<Vec<_>>(),
         vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+    );
+}
+
+#[test]
+fn boundary_vertex_creation_retains_every_source_endpoint() {
+    let mut candidate = ModelDraft::new();
+    let source_endpoints = vec![
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-a".into(),
+            endpoint: BoundaryEndpoint::Start,
+            position: Point3::new(1.0, 0.0, 0.0),
+        },
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-b".into(),
+            endpoint: BoundaryEndpoint::End,
+            position: Point3::new(0.0, 0.0, 0.0),
+        },
+    ];
+
+    let (vertex_ids, derivations) = create_boundary_vertices(
+        &mut candidate,
+        "D9",
+        "iges:entity:directory#9",
+        0,
+        &source_endpoints,
+        1.0,
+    )
+    .unwrap();
+
+    assert_eq!(vertex_ids[0], vertex_ids[1]);
+    assert_eq!(derivations.len(), 1);
+    assert_eq!(derivations[0].source_entity, "iges:entity:directory#9");
+    assert_eq!(derivations[0].representative, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(derivations[0].tolerance, 1.0);
+    assert_eq!(derivations[0].source_endpoints.len(), 2);
+    assert_eq!(
+        derivations[0].source_endpoints[0].position,
+        Point3::new(1.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        derivations[0].source_endpoints[1].position,
+        Point3::new(0.0, 0.0, 0.0)
     );
 }
 

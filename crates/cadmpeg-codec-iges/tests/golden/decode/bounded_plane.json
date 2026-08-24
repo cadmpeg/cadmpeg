@@ -516,6 +516,136 @@
           "attribute_table_definitions": [],
           "attribute_table_instances": [],
           "boolean_trees": [],
+          "boundary_vertex_sewing": [
+            {
+              "id": "iges:topology:boundary-vertex#D13_0_0",
+              "representative": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "sewn": false,
+              "source_endpoints": [
+                {
+                  "edge": "iges:model:edge#D3",
+                  "endpoint": "start",
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "edge": "iges:model:edge#D9",
+                  "endpoint": "end",
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "source_entity": "iges:entity:directory#13",
+              "tolerance": 0.001,
+              "vertex": "iges:model:vertex#D13:0:0"
+            },
+            {
+              "id": "iges:topology:boundary-vertex#D13_0_1",
+              "representative": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "sewn": false,
+              "source_endpoints": [
+                {
+                  "edge": "iges:model:edge#D3",
+                  "endpoint": "end",
+                  "position": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                {
+                  "edge": "iges:model:edge#D5",
+                  "endpoint": "end",
+                  "position": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ]
+                }
+              ],
+              "source_entity": "iges:entity:directory#13",
+              "tolerance": 0.001,
+              "vertex": "iges:model:vertex#D13:0:1"
+            },
+            {
+              "id": "iges:topology:boundary-vertex#D13_0_2",
+              "representative": [
+                1.0,
+                1.0,
+                0.0
+              ],
+              "sewn": false,
+              "source_endpoints": [
+                {
+                  "edge": "iges:model:edge#D5",
+                  "endpoint": "start",
+                  "position": [
+                    1.0,
+                    1.0,
+                    0.0
+                  ]
+                },
+                {
+                  "edge": "iges:model:edge#D7",
+                  "endpoint": "start",
+                  "position": [
+                    1.0,
+                    1.0,
+                    0.0
+                  ]
+                }
+              ],
+              "source_entity": "iges:entity:directory#13",
+              "tolerance": 0.001,
+              "vertex": "iges:model:vertex#D13:0:2"
+            },
+            {
+              "id": "iges:topology:boundary-vertex#D13_0_3",
+              "representative": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "sewn": false,
+              "source_endpoints": [
+                {
+                  "edge": "iges:model:edge#D7",
+                  "endpoint": "end",
+                  "position": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                },
+                {
+                  "edge": "iges:model:edge#D9",
+                  "endpoint": "start",
+                  "position": [
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                }
+              ],
+              "source_entity": "iges:entity:directory#13",
+              "tolerance": 0.001,
+              "vertex": "iges:model:vertex#D13:0:3"
+            }
+          ],
           "cards": [
             {
               "id": "iges:physical:card#1",

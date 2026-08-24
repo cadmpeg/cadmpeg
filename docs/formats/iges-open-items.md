@@ -101,30 +101,6 @@ Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://w
 
 ## 5. Surfaces and topology
 
-### ST-16. Neutral coordinate selected for a sewn boundary vertex
-
-**Question.** Which neutral point represents IGES boundary endpoints that are
-distinct but fall within the boundary sewing tolerance?
-
-**Known.** Type 141 and Type 142 give model-space and parameter-space boundary
-curves, but they do not give the face-local vertices required by neutral
-topology. `iges.md` defines a sewing tolerance from the Global minimum
-resolution and coordinate significance, takes the transitive
-closure of endpoint proximity, rejects a component whose diameter exceeds that
-tolerance, and assigns the lexicographically smallest endpoint as the component
-representative. `crates/cadmpeg-codec-iges/src/entities/trimming.rs:140-189`
-implements that rule. `create_boundary_vertices` then stores the selected
-endpoint as the coordinate of the one neutral point and gives the resulting
-vertex the sewing tolerance.
-
-**Need.** Sewing establishes topological identity, but it does not make one
-source endpoint the geometric value declared by every curve in the component.
-The lexicographic rule replaces the other endpoint coordinates and makes one
-source value authoritative without an IGES rule. The answer defines a derived
-neutral coordinate and its relation to all source endpoints, or preserves the
-endpoint disagreement so that a consumer can distinguish a sewn vertex from an
-exact shared point.
-
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path
