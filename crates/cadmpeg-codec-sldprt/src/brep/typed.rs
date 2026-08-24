@@ -168,6 +168,14 @@ impl Facts {
             })
     }
 
+    /// Return FACE attributes whose shell pointers close through the validated
+    /// typed ownership maps.  Raw FACE candidates can be byte-window matches
+    /// with a pointer outside the u16 attribute identity space.
+    pub fn valid_face_attrs(&self) -> Option<HashSet<u16>> {
+        let (_, _, _, faces) = self.ownership_maps()?;
+        Some(faces.keys().copied().collect())
+    }
+
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
     pub fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
@@ -291,13 +299,18 @@ impl Facts {
     }
 
     fn ownership_maps(&self) -> Option<OwnershipMaps> {
-        let bodies = unique_map(&self.bodies, |node| node.attr)?;
+        let body_attrs = self
+            .bodies
+            .iter()
+            .filter(|body| body.kind().is_some())
+            .map(|body| body.attr)
+            .collect::<HashSet<_>>();
         let mut regions = HashMap::new();
         for region in &self.regions {
             let Some(body) = u16_from_ref_or_none(region.refs[1]) else {
                 continue;
             };
-            if !bodies.contains_key(&body) || !matches!(region.kind, b'S' | b'V') {
+            if !body_attrs.contains(&body) || !matches!(region.kind, b'S' | b'V') {
                 continue;
             }
             if regions.insert(region.attr, region.clone()).is_some() {
@@ -305,7 +318,7 @@ impl Facts {
             }
         }
 
-        let mut shells = HashMap::new();
+        let mut shell_candidates = Vec::new();
         for shell in &self.shells {
             let Some(region) = u16_from_ref_or_none(shell.refs[6]) else {
                 continue;
@@ -316,8 +329,25 @@ impl Facts {
             let Some(body) = u16_from_ref(region_node.refs[1]) else {
                 continue;
             };
-            let shell_body = u16_from_ref_or_none(shell.refs[1]);
+            let shell_body = if shell.refs[1] <= 1 {
+                None
+            } else {
+                let Some(body) = u16_from_ref(shell.refs[1]) else {
+                    continue;
+                };
+                Some(body)
+            };
             if shell_body.is_some_and(|shell_body| shell_body != body) {
+                continue;
+            }
+            shell_candidates.push(shell.clone());
+        }
+
+        let mut shells = HashMap::new();
+        for shell in &shell_candidates {
+            let region = u16_from_ref(shell.refs[6])?;
+            let region_node = regions.get(&region)?;
+            if !shell_is_reachable_from_region(region_node, shell.attr, &shell_candidates) {
                 continue;
             }
             if shells.insert(shell.attr, shell.clone()).is_some() {
@@ -335,7 +365,48 @@ impl Facts {
                 return None;
             }
         }
+        let bodies = self
+            .bodies
+            .iter()
+            .filter(|body| {
+                body.kind().is_some()
+                    && null_like_or_existing(body.shell(), &shells)
+                    && region_chain(body, &regions).is_some()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let bodies = unique_map(&bodies, |node| node.attr)?;
         Some((bodies, regions, shells, faces))
+    }
+}
+
+fn shell_is_reachable_from_region(
+    region: &RegionNode,
+    target: u16,
+    candidates: &[ShellNode],
+) -> bool {
+    let Some(mut next) = u16_from_ref_or_none(region.refs[4]) else {
+        return false;
+    };
+    let mut seen = HashSet::new();
+    loop {
+        if !seen.insert(next) {
+            return false;
+        }
+        let mut matches = candidates.iter().filter(|shell| shell.attr == next);
+        let Some(shell) = matches.next() else {
+            return false;
+        };
+        if matches.next().is_some() {
+            return false;
+        }
+        if next == target {
+            return true;
+        }
+        let Some(following) = u16_from_ref_or_none(shell.refs[2]) else {
+            return false;
+        };
+        next = following;
     }
 }
 
@@ -812,7 +883,16 @@ pub fn scan(bytes: &[u8]) -> Facts {
             }
         }
         if let Some(face) = parse_face(bytes, offset) {
-            if face_offsets.insert(face.offset) {
+            if let Some(existing) = facts
+                .faces
+                .iter_mut()
+                .find(|existing| existing.offset == face.offset)
+            {
+                // A schema prepass can start at the same byte as a later
+                // tagged node.  The tag carries the complete framing and is
+                // the stronger interpretation.
+                *existing = face;
+            } else if face_offsets.insert(face.offset) {
                 facts.faces.push(face);
             }
         }
@@ -1088,6 +1168,18 @@ mod tests {
     }
 
     #[test]
+    fn tagged_face_replaces_a_schema_prepass_collision() {
+        let mut bytes = vec![0, 0x0e, b'C', b'Z'];
+        bytes.extend(typed_face(100, 900, [1, 1, 1, 8, 12]));
+
+        let facts = scan(&bytes);
+        assert_eq!(facts.faces.len(), 1);
+        assert_eq!(facts.faces[0].offset, 4);
+        assert_eq!(facts.faces[0].attr, 100);
+        assert_eq!(facts.faces[0].node_id, 900);
+    }
+
+    #[test]
     fn typed_hierarchy_uses_previous_region_and_shell_owner() {
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 1));
@@ -1136,7 +1228,7 @@ mod tests {
                 ShellNode {
                     attr: 8,
                     node_id: 54,
-                    refs: [28160, 28160, 922_777_600, 12032, 20736, 0, 1025, 21248],
+                    refs: [28160, 65_536, 922_777_600, 12032, 20736, 0, 41, 21248],
                     offset: 5,
                     end: 6,
                 },
@@ -1167,6 +1259,161 @@ mod tests {
         assert_eq!(hierarchy[0].shells.len(), 1);
         assert_eq!(hierarchy[0].shells[0].node_id, 53);
         assert_eq!(hierarchy[0].faces.as_slice(), &[(100, 8)]);
+    }
+
+    #[test]
+    fn invalid_body_candidate_is_filtered_before_identity_checks() {
+        let facts = Facts {
+            bodies: vec![
+                BodyNode {
+                    attr: 3,
+                    node_id: 7,
+                    topology_refs: [8, 1, 1, 1, 1, 1, 1],
+                    ownership_refs: vec![41],
+                    body_type: 1,
+                    offset: 1,
+                    end: 2,
+                },
+                BodyNode {
+                    attr: 900,
+                    node_id: 70,
+                    topology_refs: [999, 1, 1, 1, 1, 1, 1],
+                    ownership_refs: vec![900],
+                    body_type: 1,
+                    offset: 3,
+                    end: 4,
+                },
+            ],
+            shells: vec![ShellNode {
+                attr: 8,
+                node_id: 53,
+                refs: [1, 3, 1, 1, 1, 1, 41, 1],
+                offset: 5,
+                end: 6,
+            }],
+            regions: vec![RegionNode {
+                attr: 41,
+                node_id: 52,
+                refs: [1, 3, 1, 1, 8],
+                kind: b'S',
+                offset: 7,
+                end: 8,
+            }],
+            ..Default::default()
+        };
+
+        assert!(facts.has_valid_ownership());
+        let hierarchy = facts
+            .hierarchies(&HashSet::new())
+            .expect("the body with no closed shell or region is not an ownership node");
+        assert_eq!(hierarchy.len(), 1);
+        assert_eq!(hierarchy[0].body.attr, 3);
+    }
+
+    #[test]
+    fn invalid_face_shell_pointer_is_not_a_valid_face_identity() {
+        let facts = Facts {
+            bodies: vec![BodyNode {
+                attr: 3,
+                node_id: 7,
+                topology_refs: [8, 1, 1, 1, 1, 1, 1],
+                ownership_refs: vec![41],
+                body_type: 1,
+                offset: 1,
+                end: 2,
+            }],
+            shells: vec![ShellNode {
+                attr: 8,
+                node_id: 53,
+                refs: [1, 3, 1, 1, 1, 1, 41, 1],
+                offset: 3,
+                end: 4,
+            }],
+            regions: vec![RegionNode {
+                attr: 41,
+                node_id: 52,
+                refs: [1, 3, 1, 1, 8],
+                kind: b'S',
+                offset: 5,
+                end: 6,
+            }],
+            faces: vec![
+                FaceNode {
+                    attr: 100,
+                    node_id: 55,
+                    attribute_chain: 1,
+                    refs: [1, 1, 1, 65_536, 12],
+                    sense: 0x2b,
+                    offset: 7,
+                    end: 8,
+                },
+                FaceNode {
+                    attr: 101,
+                    node_id: 56,
+                    attribute_chain: 1,
+                    refs: [1, 1, 1, 8, 12],
+                    sense: 0x2b,
+                    offset: 9,
+                    end: 10,
+                },
+            ],
+        };
+
+        assert_eq!(facts.valid_face_attrs(), Some(HashSet::from([101])));
+        assert!(facts.hierarchies(&HashSet::from([100])).is_none());
+        assert!(facts.hierarchies(&HashSet::from([101])).is_some());
+    }
+
+    #[test]
+    fn region_shell_chain_keeps_all_reachable_shells() {
+        let facts = Facts {
+            bodies: vec![BodyNode {
+                attr: 3,
+                node_id: 7,
+                topology_refs: [8, 1, 1, 1, 1, 1, 1],
+                ownership_refs: vec![41],
+                body_type: 1,
+                offset: 1,
+                end: 2,
+            }],
+            shells: vec![
+                ShellNode {
+                    attr: 8,
+                    node_id: 53,
+                    refs: [1, 3, 9, 1, 1, 1, 41, 1],
+                    offset: 3,
+                    end: 4,
+                },
+                ShellNode {
+                    attr: 9,
+                    node_id: 54,
+                    refs: [1, 3, 1, 1, 1, 1, 41, 1],
+                    offset: 5,
+                    end: 6,
+                },
+            ],
+            regions: vec![RegionNode {
+                attr: 41,
+                node_id: 52,
+                refs: [1, 3, 1, 1, 8],
+                kind: b'S',
+                offset: 7,
+                end: 8,
+            }],
+            ..Default::default()
+        };
+
+        let hierarchy = facts
+            .hierarchies(&HashSet::new())
+            .expect("all shells reachable from the region head are retained");
+        assert_eq!(hierarchy.len(), 1);
+        let mut shell_attrs = hierarchy[0]
+            .shells
+            .iter()
+            .map(|shell| shell.attr)
+            .collect::<Vec<_>>();
+        shell_attrs.sort_unstable();
+        assert_eq!(shell_attrs, vec![8, 9]);
     }
 
     #[test]

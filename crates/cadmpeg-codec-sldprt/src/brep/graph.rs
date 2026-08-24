@@ -824,15 +824,13 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
-    let typed_bridge_attrs = typed_facts
-        .faces
-        .iter()
-        .map(|face| face.attr)
-        .collect::<HashSet<_>>();
-    let selected_bridge_attrs = typed_facts
-        .has_valid_ownership()
-        .then_some(&typed_bridge_attrs);
     let typed_ownership_valid = typed_facts.has_valid_ownership();
+    let typed_bridge_attrs = if typed_ownership_valid {
+        typed_facts.valid_face_attrs().unwrap_or_default()
+    } else {
+        HashSet::new()
+    };
+    let selected_bridge_attrs = typed_ownership_valid.then_some(&typed_bridge_attrs);
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
     {
@@ -842,6 +840,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             stream_typed_facts
                 .faces
                 .iter()
+                .filter(|face| typed_bridge_attrs.contains(&face.attr))
                 .map(|face| face.offset)
                 .collect::<HashSet<_>>()
         } else {
@@ -905,10 +904,12 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
+    let typed_face_attrs = typed_facts.valid_face_attrs().unwrap_or_default();
     let typed_face_offsets = if typed_facts.has_valid_ownership() {
         typed_facts
             .faces
             .iter()
+            .filter(|face| typed_face_attrs.contains(&face.attr))
             .map(|face| face.offset)
             .collect::<HashSet<_>>()
     } else {
