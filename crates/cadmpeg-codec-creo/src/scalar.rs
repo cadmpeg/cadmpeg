@@ -734,10 +734,8 @@ pub(crate) fn decode_inline_surface_suffix_scalar(
 }
 
 fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, f64, usize)> {
-    const X_IMAGES: [&[u8]; 2] = [
-        &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
-        &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4],
-    ];
+    const X_NEGATIVE_Z_IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
+    const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     let sign = |byte| match byte {
         0x0f => Some(1.0),
@@ -768,11 +766,11 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, f64, u
     if body.starts_with(Y_IMAGE) {
         return Some((1, 2, 1.0, 1.0, Y_IMAGE.len()));
     }
-
-    X_IMAGES
-        .into_iter()
-        .find(|image| body.starts_with(image))
-        .map(|image| (0, 1, 1.0, 1.0, image.len()))
+    if body.starts_with(X_NEGATIVE_Z_IMAGE) {
+        return Some((0, 2, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
+    }
+    body.starts_with(X_POSITIVE_Y_IMAGE)
+        .then_some((0, 1, 1.0, 1.0, X_POSITIVE_Y_IMAGE.len()))
 }
 
 fn compact_inline_frame(
@@ -1249,20 +1247,16 @@ fn decode_inline_plane_support_image(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
+    const IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
     // The older compact support prefix also matches one of the generic image
     // templates. It has its own support-frame semantics and must reach the
     // legacy decoder below instead of being replayed as an inline frame.
-    if !body.starts_with(&[0x18, 0xe4]) {
-        return None;
-    }
-    let (axis, reference_coordinate, reference_sign, axis_sign, prefix_end) =
-        decode_inline_compact_image(body)?;
-    let inline = compact_inline_frame(axis, reference_coordinate, reference_sign, axis_sign);
+    body.starts_with(IMAGE).then_some(())?;
+    let prefix_end = IMAGE.len();
     let (origin, cursor) = decode_plane_support_origin(body, prefix_end, cache)?;
     Some((
         [
-            inline[0], inline[1], inline[2], 0.0, 0.0, 0.0, inline[3], inline[4], inline[5],
-            origin[0], origin[1], origin[2],
+            0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, origin[0], origin[1], origin[2],
         ],
         cursor,
     ))
@@ -1845,7 +1839,7 @@ mod tests {
             (
                 vec![0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
                 0,
-                [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ),
         ];
         let cache = ScalarCache::default();

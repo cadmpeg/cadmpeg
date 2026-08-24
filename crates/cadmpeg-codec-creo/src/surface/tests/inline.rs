@@ -33,6 +33,13 @@ fn push_inline_test_subunit(bytes: &mut Vec<u8>, prefix: u8, value: f64) {
     bytes.extend_from_slice(&raw[1..]);
 }
 
+fn push_inline_test_first_directrix(bytes: &mut Vec<u8>, value: f64) {
+    let raw = value.to_be_bytes();
+    assert_eq!(raw[0], 0x40, "test directrix coordinate must be positive");
+    bytes.push(0x2d);
+    bytes.extend_from_slice(&raw[1..]);
+}
+
 fn inline_non_plane_row(
     type_byte: u8,
     axial: [f64; 2],
@@ -247,6 +254,48 @@ fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
     assert_eq!(frame.length, Some(2.0));
+}
+
+#[test]
+fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+    push_inline_test_scalar(&mut payload, 0.0);
+    push_inline_test_first_directrix(&mut payload, 2.0);
+    let u_high_offset = payload.len();
+    push_inline_test_scalar(&mut payload, 1.0);
+    push_inline_test_first_directrix(&mut payload, 6.0);
+    for value in [-1.0, 1.0, 4.0, 1.0, 3.0, 6.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
+    for value in [4.0, 2.0, 5.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x0f, 0xe3]);
+
+    let body = &payload[6..];
+    let InlineSurfaceCarrier::Cylinder(frame) =
+        inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
+            .and_then(|body| body.carrier)
+            .expect("four-bound envelope and compact frame resolve one carrier")
+    else {
+        panic!("cylinder grammar resolves a cylinder carrier");
+    };
+    assert_eq!(frame.origin, [-4.0, 2.0, 5.0]);
+    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(4.0));
+
+    let mut degenerate_u_interval = payload;
+    degenerate_u_interval[u_high_offset] = 0x0f;
+    assert!(decode_inline_four_bound_cylinder_envelope(
+        SurfaceKind::Cylinder,
+        &degenerate_u_interval[6..],
+        &scalar::ScalarCache::default(),
+    )
+    .is_none());
 }
 
 #[test]

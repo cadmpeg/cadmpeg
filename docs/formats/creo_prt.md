@@ -1056,6 +1056,13 @@ The suffix lane uses exact `18` for zero, `0f` for one, and `0e` for one half.
 For type 26, a finite non-negative `radius1` and positive `radius2` define a
 torus; exact `radius1 = 0` selects a sphere whose radius is `radius2`.
 
+An obliquely trimmed cylinder can instead store four consecutive envelope
+bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
+DICT or positional row lane, and the `v` bounds use the first
+tabulated-cylinder directrix-coordinate lane. Six outline coordinates and
+`e3` follow. Both intervals are nondegenerate. A `12` byte inside a bounded
+scalar token is payload and does not select the separated envelope production.
+
 A local-system-suffix row may omit the axial envelope. Its body begins with
 the local system and family suffix, or with an earlier row-local block closed
 by `e3` followed by that local system and suffix. The suffix local system ends
@@ -1091,6 +1098,9 @@ axis is `C` on model Z. The second support is the cross product of the stored
 axis and first support.
 The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
 second support `+X`, and stored axis `+Y`.
+In the inline non-plane grammar, `18 e4 0f 18 0f 18 10 18 e4` expands to
+first support `-Z`, second support `+Y`, and stored axis `+X`. The same byte
+image in a plane support grammar retains that grammar's plane-frame expansion.
 An explicit frame consumes the first five direction coordinates, then
 `18 e5 0f` fills the remaining direction matrix coordinates with
 `[0, 0, 0, 1]`. The reflected form `18 e5 10` fills them with
@@ -1101,8 +1111,10 @@ coordinates and positional surface rows.
 
 The carrier placement is admitted only when the envelope, outline, and stored
 frame provide one witness. The compact image names the axis coordinate, whose
-outline span must equal `abs(v1 - v0)`. Other outline spans may have the same
-length. Solve
+outline span equals `abs(v1 - v0)` in the separated envelope production.
+Other outline spans may have the same length. In the four-bound oblique
+production, the outline interval on that coordinate is strictly contained in
+the axial parameter interval. Solve
 `{o + v0 C, o + v1 C} = {lo, hi}` for
 `o in {+abs(s), -abs(s)}` and `C in {+1, -1}`, where `s` is the stored origin
 component on that coordinate. One solution supplies the model-space axis
@@ -1110,8 +1122,8 @@ origin and direction. When symmetric bounds produce two solutions for the
 same carrier line, the stored frame-axis sign selects one. If that sign does
 not select a solution, the ordered `(v0, first corner)` and `(v1, second
 corner)` correspondence selects one. For each perpendicular coordinate,
-select the unique sign of its stored component for which the outline lies inside
-`[center - R, center + R]`. Use the cylinder radius for `R`; for a cone use
+select the unique sign of its stored component for which the outline lies
+inside `[center - R, center + R]`. Use the cylinder radius for `R`; for a cone use
 `max(abs(v0), abs(v1)) * tan(half_angle)`; for a torus or sphere use
 `radius1 + radius2`. A failed or non-unique witness retains the complete row
 as native data and does not create an analytic carrier.
