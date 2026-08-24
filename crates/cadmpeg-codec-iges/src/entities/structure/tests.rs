@@ -792,7 +792,7 @@ fn decode_types_scalar_and_string_property_forms() {
 
 #[test]
 fn decode_admits_v4_region_fill_property() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file_with_global(
@@ -1648,7 +1648,7 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
 
 #[test]
 fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
         .decode(
             &mut Cursor::new(legacy_associativity_forms_file_with_global(GLOBAL_V4)),

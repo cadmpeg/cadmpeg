@@ -74,6 +74,7 @@ fn point_file_with_version_flag(flag: &str) -> Vec<u8> {
     let mut fields = valid_global_fields();
     fields[22] = flag.into();
     if flag == "6" {
+        fields[11] = "7Hproduct".into();
         fields[17] = "13H260714.000000".into();
         fields.truncate(24);
     } else if flag == "8" {

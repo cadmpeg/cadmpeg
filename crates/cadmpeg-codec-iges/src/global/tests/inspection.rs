@@ -12,6 +12,7 @@ use crate::IgesCodec;
 #[test]
 fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
     let mut fields = valid_global_fields();
+    fields[11] = "7Hproduct".into();
     fields[16] = String::new();
     fields[22] = "6".into();
     let mut global = fields.join(",");

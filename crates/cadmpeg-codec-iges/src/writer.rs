@@ -5240,7 +5240,13 @@ fn generated_global(
         WRITER_SINGLE_PRECISION_SIGNIFICANCE.to_string(),
         WRITER_DOUBLE_PRECISION_MAGNITUDE.to_string(),
         WRITER_DOUBLE_PRECISION_SIGNIFICANCE.to_string(),
-        global_hollerith(""),
+        global_hollerith(match version {
+            crate::IgesVersion::V4_0 => WRITER_SENDER_PRODUCT,
+            crate::IgesVersion::V5_0
+            | crate::IgesVersion::V5_1
+            | crate::IgesVersion::V5_2
+            | crate::IgesVersion::V5_3 => "",
+        }),
         WRITER_MODEL_SPACE_SCALE.to_owned(),
         WRITER_UNITS_FLAG.to_string(),
         global_hollerith(WRITER_UNITS_NAME),

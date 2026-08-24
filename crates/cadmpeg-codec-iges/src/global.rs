@@ -116,6 +116,34 @@ impl Dialect {
     const fn string_byte_is_forbidden(self, byte: u8) -> bool {
         !byte.is_ascii() || (byte.is_ascii_control() && !matches!(self, Self::V4_0))
     }
+
+    /// Whether an empty field has no specification default in this dialect.
+    ///
+    /// The later profiles apply the data-type implicit defaults to their
+    /// required-no-default fields. V4.0 predates that rule and names only
+    /// fields 1, 2, and 23 as defaulted. V5.0's Recommended Practices Guide
+    /// instead marks its unconditional required fields explicitly; conditional
+    /// requirements remain with the consumer that can observe the condition.
+    const fn field_requires_value(self, index: usize) -> bool {
+        match self {
+            Self::V4_0 => {
+                index < self.global_field_count() && !matches!(index, 0 | 1 | FIELD_VERSION_FLAG)
+            }
+            Self::V5_0 => matches!(
+                index,
+                FIELD_SENDER_PRODUCT
+                    | FIELD_NATIVE_SYSTEM
+                    | FIELD_PREPROCESSOR_VERSION
+                    | FIELD_INTEGER_BITS
+                    | FIELD_SINGLE_MAGNITUDE
+                    | FIELD_SINGLE_SIGNIFICANCE
+                    | FIELD_UNITS_FLAG
+                    | FIELD_GENERATION_DATE
+                    | FIELD_MINIMUM_RESOLUTION
+            ),
+            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => false,
+        }
+    }
 }
 
 /// Global field values, fallbacks, and absences after one resolution pass.
@@ -815,8 +843,17 @@ impl Resolution {
         }
     }
 
-    fn metadata_string(&mut self, index: usize) -> Option<String> {
+    fn metadata_string(&mut self, index: usize, dialect: Dialect) -> Option<String> {
         match self.supplied_string(index) {
+            Supplied::Absent if dialect.field_requires_value(index) => {
+                self.charge(
+                    IgesLossCode::GlobalMetadataFieldUnusable,
+                    index,
+                    Defect::Absent,
+                    METADATA_CONSEQUENCE,
+                );
+                None
+            }
             Supplied::Absent => None,
             Supplied::Value(text) => Some(text),
             Supplied::Malformed => {
@@ -832,7 +869,15 @@ impl Resolution {
     }
 
     fn metadata_date(&mut self, index: usize, dialect: Dialect) {
-        if matches!(self.supplied_date(index, dialect), Supplied::Malformed) {
+        let supplied = self.supplied_date(index, dialect);
+        if matches!(&supplied, Supplied::Absent) && dialect.field_requires_value(index) {
+            self.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                index,
+                Defect::Absent,
+                METADATA_CONSEQUENCE,
+            );
+        } else if matches!(&supplied, Supplied::Malformed) {
             self.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 index,
@@ -842,14 +887,20 @@ impl Resolution {
         }
     }
 
-    fn metadata_integer(&mut self, index: usize, admits: fn(i64) -> bool) {
-        let _ = self.metadata_integer_value(index, admits);
+    fn metadata_integer(&mut self, index: usize, dialect: Dialect, admits: fn(i64) -> bool) {
+        let _ = self.metadata_integer_value(index, dialect, admits);
     }
 
-    fn metadata_integer_value(&mut self, index: usize, admits: fn(i64) -> bool) -> Option<i64> {
+    fn metadata_integer_value(
+        &mut self,
+        index: usize,
+        dialect: Dialect,
+        admits: fn(i64) -> bool,
+    ) -> Option<i64> {
         let supplied = self.supplied_integer(index);
+        let absent = matches!(&supplied, Supplied::Absent);
         let admitted = match &supplied {
-            Supplied::Absent => true,
+            Supplied::Absent => !dialect.field_requires_value(index),
             Supplied::Value(value) => admits(*value),
             Supplied::Malformed => false,
         };
@@ -857,7 +908,11 @@ impl Resolution {
             self.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 index,
-                Defect::Malformed,
+                if absent {
+                    Defect::Absent
+                } else {
+                    Defect::Malformed
+                },
                 METADATA_CONSEQUENCE,
             );
         }
@@ -870,6 +925,15 @@ impl Resolution {
     fn maximum_coordinate(&mut self, dialect: Dialect) -> Option<f64> {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
             Supplied::Absent if dialect == Dialect::V5_0 => None,
+            Supplied::Absent if dialect == Dialect::V4_0 => {
+                self.charge(
+                    IgesLossCode::GlobalMetadataFieldUnusable,
+                    FIELD_MAXIMUM_COORDINATE,
+                    Defect::Absent,
+                    METADATA_CONSEQUENCE,
+                );
+                None
+            }
             Supplied::Absent => Some(0.0),
             Supplied::Value(value) if value >= 0.0 => Some(value),
             Supplied::Value(_) | Supplied::Malformed => {
@@ -884,9 +948,8 @@ impl Resolution {
         }
     }
 
-    fn significance(&mut self, index: usize, dialect: Dialect) -> u32 {
+    fn significance(&mut self, index: usize) -> u32 {
         let defect = match self.supplied_integer(index) {
-            Supplied::Absent if matches!(dialect, Dialect::V4_0) => return 0,
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
                 Some(value) => return value,
@@ -905,7 +968,15 @@ impl Resolution {
 
     fn minimum_resolution(&mut self, dialect: Dialect) -> f64 {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
-            Supplied::Absent if matches!(dialect, Dialect::V4_0) => 0.0,
+            Supplied::Absent if matches!(dialect, Dialect::V4_0 | Dialect::V5_0) => {
+                self.charge(
+                    IgesLossCode::GlobalSemanticContextSubstituted,
+                    FIELD_MINIMUM_RESOLUTION,
+                    Defect::Absent,
+                    RESOLUTION_CONSEQUENCE,
+                );
+                FALLBACK_MINIMUM_RESOLUTION
+            }
             Supplied::Absent => FALLBACK_MINIMUM_RESOLUTION,
             Supplied::Value(value) if value >= 0.0 => value,
             Supplied::Value(_) | Supplied::Malformed => {
@@ -994,6 +1065,15 @@ impl Resolution {
                 Supplied::Absent if dialect.defaults_units_name() => {
                     units_flag.and_then(enumerated_unit_name).map(str::to_owned)
                 }
+                Supplied::Absent if dialect.field_requires_value(FIELD_UNITS_NAME) => {
+                    self.charge(
+                        IgesLossCode::GlobalMetadataFieldUnusable,
+                        FIELD_UNITS_NAME,
+                        Defect::Absent,
+                        METADATA_CONSEQUENCE,
+                    );
+                    None
+                }
                 Supplied::Absent => None,
                 Supplied::Value(name) => Some(name),
                 Supplied::Malformed => {
@@ -1076,19 +1156,30 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             )));
     }
 
-    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT);
-    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME);
-    resolution.metadata_string(FIELD_NATIVE_SYSTEM);
-    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION);
+    let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, dialect);
+    let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, dialect);
+    resolution.metadata_string(FIELD_NATIVE_SYSTEM, dialect);
+    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION, dialect);
     let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, |_| true)
+        .metadata_integer_value(FIELD_INTEGER_BITS, dialect, |_| true)
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
-    let single_magnitude = resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE, dialect);
-    let double_magnitude = resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, |_| true);
-    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE, dialect);
+    let single_magnitude =
+        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, dialect, |_| true);
+    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
+    let double_magnitude =
+        resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, dialect, |_| true);
+    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE);
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if dialect.defaults_receiver_product_to_sender() => sender_product.clone(),
+        Supplied::Absent if dialect.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
+            resolution.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                FIELD_RECEIVER_PRODUCT,
+                Defect::Absent,
+                METADATA_CONSEQUENCE,
+            );
+            None
+        }
         Supplied::Absent => None,
         Supplied::Value(value) => Some(value),
         Supplied::Malformed => {
@@ -1111,14 +1202,16 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let maximum_coordinate = resolution.maximum_coordinate(dialect);
     #[cfg(not(test))]
     let _ = resolution.maximum_coordinate(dialect);
-    resolution.metadata_string(FIELD_AUTHOR);
-    resolution.metadata_string(FIELD_ORGANIZATION);
-    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, |value| (0..=7).contains(&value));
+    resolution.metadata_string(FIELD_AUTHOR, dialect);
+    resolution.metadata_string(FIELD_ORGANIZATION, dialect);
+    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, dialect, |value| {
+        (0..=7).contains(&value)
+    });
     if dialect.has_model_date() {
         resolution.metadata_date(FIELD_MODEL_DATE, dialect);
     }
     if dialect.has_application_protocol() {
-        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL);
+        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL, dialect);
     }
 
     let resolved = ResolvedGlobal {
