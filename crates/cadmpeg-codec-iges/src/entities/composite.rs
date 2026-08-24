@@ -25,6 +25,14 @@ const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
 
+fn composite_minimum_child_count(dialect: Dialect) -> usize {
+    if matches!(dialect, Dialect::V4_0) {
+        2
+    } else {
+        1
+    }
+}
+
 fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
     if matches!(dialect, Dialect::V4_0) {
         return matches!(
@@ -959,13 +967,14 @@ pub(super) fn project(
                 None,
             ));
         }
+        let minimum_child_count = composite_minimum_child_count(global.dialect());
         let Some(child_count) = usize::try_from(raw_child_count)
             .ok()
-            .filter(|count| *count > 0)
+            .filter(|count| *count >= minimum_child_count)
         else {
             losses.push(entity_loss(
                 entry,
-                format!("child count is outside 1..={MAX_COMPOSITE_CHILDREN}"),
+                format!("child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"),
             ));
             continue;
         };

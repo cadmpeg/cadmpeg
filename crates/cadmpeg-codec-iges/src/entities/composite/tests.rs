@@ -33,6 +33,13 @@ fn composite_child_types_follow_the_declared_dialect() {
 }
 
 #[test]
+fn composite_child_count_follows_the_declared_dialect() {
+    assert_eq!(composite_minimum_child_count(Dialect::V4_0), 2);
+    assert_eq!(composite_minimum_child_count(Dialect::V5_0), 1);
+    assert_eq!(composite_minimum_child_count(Dialect::V5_3), 1);
+}
+
+#[test]
 fn composite_entity_use_flag_follows_the_declared_dialect() {
     assert!(composite_use_flag_valid(0, Dialect::V4_0));
     for use_flag in [1, 2, 3, 4, 5] {
@@ -206,6 +213,87 @@ fn decode_rejects_a_zero_v4_composite_line_font() {
                 .message
                 .contains("Type 102 Line Font must be nonzero in IGES 4.0")
     }));
+}
+
+#[test]
+fn decode_rejects_a_single_v4_composite_constituent() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 110,
+                        form: 0,
+                        label: "CHILD".into(),
+                        status: "00010000",
+                        parameters: "110,0,0,0,1,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 102,
+                        form: 0,
+                        label: "COMPOSIT".into(),
+                        status: "00000000",
+                        parameters: "102,1,1;".into(),
+                    },
+                ],
+                GLOBAL_V4,
+                &[],
+                &[(1, 1), (3, 1)],
+                &[],
+                &[],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.procedural_curves.is_empty());
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn decode_projects_a_single_v5_composite_constituent() {
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 110,
+                        form: 0,
+                        label: "CHILD".into(),
+                        status: "00010000",
+                        parameters: "110,0,0,0,1,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 102,
+                        form: 0,
+                        label: "COMPOSIT".into(),
+                        status: "00000000",
+                        parameters: "102,1,1;".into(),
+                    },
+                ],
+                GLOBAL_V5_0,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
 }
 
 #[test]
