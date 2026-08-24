@@ -80,6 +80,64 @@ fn decode_fem(global: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
         .unwrap()
 }
 
+fn finite_element_parameters(topology_type: i64, node_count: usize, element_type: &str) -> String {
+    let nodes = (0..node_count).map(|_| "1").collect::<Vec<_>>().join(",");
+    format!(
+        "136,{topology_type},{node_count},{nodes},{name_length}H{element_type};",
+        name_length = element_type.len()
+    )
+}
+
+fn fem_topology_entities(topologies: &[(i64, usize, &str)]) -> Vec<OwnedTestEntity> {
+    let mut entities = vec![OwnedTestEntity {
+        entity_type: 134,
+        form: 0,
+        label: "NODE".into(),
+        status: "00000000",
+        parameters: "134,1.0,2.0,3.0,0;".into(),
+    }];
+    entities.extend(
+        topologies.iter().map(
+            |&(topology_type, node_count, element_type)| OwnedTestEntity {
+                entity_type: 136,
+                form: 0,
+                label: format!("E{topology_type}"),
+                status: "00000000",
+                parameters: finite_element_parameters(topology_type, node_count, element_type),
+            },
+        ),
+    );
+    entities
+}
+
+fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
+    let bytes = owned_test_file_with_global(&fem_topology_entities(topologies), global);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let fem = &result.ir().native.namespace("iges").unwrap().arenas["fem_entities"];
+    assert_eq!(fem.len(), topologies.len() + 1);
+
+    for &(topology_type, node_count, element_type) in topologies {
+        let element = fem
+            .iter()
+            .find(|record| {
+                record.fields()["kind"] == "finite_element"
+                    && record.fields()["topology_type"] == topology_type
+            })
+            .unwrap();
+        assert_eq!(element.fields()["declared_node_count"], node_count);
+        assert_eq!(
+            element.fields()["nodes"].as_array().unwrap().len(),
+            node_count
+        );
+        assert_eq!(
+            element.fields()["element_type"],
+            json!(element_type.as_bytes())
+        );
+    }
+}
+
 fn assert_fem_namespace(global: &[u8]) {
     let result = decode_fem(global);
     let native = result.ir().native.namespace("iges").unwrap();
@@ -170,6 +228,100 @@ fn assert_fem_namespace(global: &[u8]) {
 fn standard_fem_entities_decode_in_iges_4_and_5_0() {
     assert_fem_namespace(GLOBAL_V4);
     assert_fem_namespace(GLOBAL_V5_0);
+}
+
+#[test]
+fn v5_fem_topology_additions_preserve_their_declared_connectivity() {
+    const TOPOLOGIES: &[(i64, usize, &str)] = &[
+        (34, 2, "OMASS"),
+        (35, 4, "OFBEAM"),
+        (36, 3, "PBEAM"),
+        (37, 3, "CBEAM"),
+        (38, 21, "CPSOW"),
+    ];
+    assert_fem_topologies(GLOBAL_V5_0, TOPOLOGIES);
+}
+
+#[test]
+fn implementor_defined_fem_topology_is_retained_in_iges_4_and_5_0() {
+    const TOPOLOGIES: &[(i64, usize, &str)] = &[(5001, 1, "USER")];
+    assert_fem_topologies(GLOBAL_V4, TOPOLOGIES);
+    assert_fem_topologies(GLOBAL_V5_0, TOPOLOGIES);
+}
+
+#[test]
+fn finite_element_missing_node_keeps_its_declared_slot() {
+    let bytes = owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 134,
+                form: 0,
+                label: "NODE".into(),
+                status: "00000000",
+                parameters: "134,1.0,2.0,3.0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 136,
+                form: 0,
+                label: "OMASS".into(),
+                status: "00000000",
+                parameters: "136,34,2,1,0,5HOMASS;".into(),
+            },
+        ],
+        GLOBAL_V5_0,
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let element = result.ir().native.namespace("iges").unwrap().arenas["fem_entities"]
+        .iter()
+        .find(|record| record.fields()["kind"] == "finite_element")
+        .unwrap();
+    assert_eq!(
+        element.fields()["nodes"],
+        json!(["iges:entity:directory#1", null])
+    );
+}
+
+#[test]
+fn finite_element_additional_property_group_is_retained_on_generic_entity() {
+    let bytes = owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 134,
+                form: 0,
+                label: "NODE".into(),
+                status: "00000000",
+                parameters: "134,1.0,2.0,3.0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 406,
+                form: 1,
+                label: "PROPERTY".into(),
+                status: "00000000",
+                parameters: "406,1,1;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 136,
+                form: 0,
+                label: "ELEMENT".into(),
+                status: "00000000",
+                parameters: "136,5001,1,1,4HUSER,0,1,3;".into(),
+            },
+        ],
+        GLOBAL_V5_0,
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        .iter()
+        .find(|record| record.fields()["directory_sequence"] == 5)
+        .unwrap();
+    assert_eq!(
+        entity.fields()["property_links"],
+        json!(["iges:entity:directory#3"])
+    );
 }
 
 #[test]
