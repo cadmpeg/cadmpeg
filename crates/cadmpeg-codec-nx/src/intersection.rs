@@ -343,6 +343,7 @@ pub(crate) fn scan_with_graph(
         &blend_bound_records(stream),
         graph,
         constructions,
+        CrossFormCollision::Reject,
     )
 }
 
@@ -388,9 +389,19 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         &bridges,
         graph,
         constructions,
+        CrossFormCollision::PreferDeltaTwin,
     )
 }
 
+#[derive(Clone, Copy)]
+enum CrossFormCollision {
+    Reject,
+    PreferDeltaTwin,
+}
+
+// Keep each independently keyed auxiliary family and the merge-context policy
+// explicit at the construction-admission boundary.
+#[allow(clippy::too_many_arguments)]
 fn scan_with_auxiliaries(
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
@@ -399,6 +410,7 @@ fn scan_with_auxiliaries(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
+    cross_form_collision: CrossFormCollision,
 ) -> CurveScan {
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
@@ -409,18 +421,22 @@ fn scan_with_auxiliaries(
             .or_default()
             .insert(construction.delta_twin);
     }
-    let ambiguous_xmts = forms_by_xmt
+    let cross_form_xmts = forms_by_xmt
         .into_iter()
         .filter_map(|(xmt, forms)| (forms.len() > 1).then_some(xmt))
         .collect::<BTreeSet<_>>();
     let constructions = constructions
         .into_iter()
         .filter(|construction| {
-            if ambiguous_xmts.contains(&construction.xmt) {
-                result.rejected.add(Rejection::DuplicateIdentity);
-                false
-            } else {
-                true
+            if !cross_form_xmts.contains(&construction.xmt) {
+                return true;
+            }
+            match cross_form_collision {
+                CrossFormCollision::Reject => {
+                    result.rejected.add(Rejection::DuplicateIdentity);
+                    false
+                }
+                CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
             }
         })
         .collect::<Vec<_>>();

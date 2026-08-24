@@ -681,7 +681,7 @@ fn deltas_point_normalizes_to_partition_record_framing() {
 }
 
 #[test]
-fn deltas_intersection_normalizes_before_partition_style_decode() {
+fn deltas_intersection_normalizes_during_full_record_merge() {
     let mut stream = status_framed_deltas_intersection_stream();
     stream[10] = 0;
     let record_len = stream.len();
@@ -691,11 +691,30 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
     assert_eq!(census.records[0].kind, 38);
     assert_eq!(census.bytes_decoded, record_len);
 
-    let residual = crate::deltas::semantic_residual(&stream);
-    let intersections = crate::topology::composite_curves(&residual);
+    let merged = crate::deltas::merge_full_records(&[], &stream);
+    let intersections = crate::topology::composite_curves(&merged);
     assert_eq!(intersections.len(), 1);
     assert_eq!(intersections[0].xmt, 12);
     assert_eq!(intersections[0].references, [6, 7, 20, 21, 22, 23]);
+}
+
+#[test]
+fn merge_replaces_a_partition_intersection_by_exact_xmt() {
+    let partition = charted_intersection_curve_topology_partition_stream();
+    let mut replacement = status_framed_deltas_intersection_stream();
+    let sense = replacement
+        .iter()
+        .position(|byte| *byte == b'+')
+        .expect("intersection sense");
+    replacement[sense] = b'-';
+
+    let merged = crate::deltas::merge_full_records(&partition, &replacement);
+    let [intersection] = crate::topology::composite_curves(&merged)
+        .try_into()
+        .expect("one current intersection");
+
+    assert_eq!(intersection.xmt, 12);
+    assert!(!intersection.sense);
 }
 
 #[test]
@@ -1659,7 +1678,7 @@ fn semantic_residual_with_census_matches_the_standalone_transform() {
 }
 
 #[test]
-fn semantic_residual_masks_historical_interleaved_body_sequences() {
+fn merge_masks_historical_interleaved_body_sequences() {
     let mut first_historical = status_framed_deltas_intersection_stream();
     first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());
     let mut first_current = status_framed_deltas_intersection_stream();
@@ -1679,26 +1698,16 @@ fn semantic_residual_masks_historical_interleaved_body_sequences() {
     deltas.extend_from_slice(&deltas_body_revision(2));
     deltas.extend_from_slice(&second_current);
 
-    let census = crate::deltas::walk(&deltas);
-    let first_current_offset = census.body_revisions[1].offset;
-    let second_sequence_offset = census.body_revisions[2].offset;
-    let second_current_offset = census.body_revisions[3].offset;
-    let residual = crate::deltas::semantic_residual(&deltas);
-    assert!(residual[..first_current_offset]
-        .iter()
-        .all(|byte| *byte == 0xff));
-    assert!(residual[second_sequence_offset..second_current_offset]
-        .iter()
-        .all(|byte| *byte == 0xff));
+    let merged = crate::deltas::merge_full_records(&[], &deltas);
     let mut expected = crate::deltas::walk(&first_current).records[0]
         .canonical_bytes
         .clone();
     expected.extend_from_slice(&crate::deltas::walk(&second_current).records[0].canonical_bytes);
-    assert!(residual.ends_with(&expected));
-    assert!(!residual
+    assert!(merged.ends_with(&expected));
+    assert!(!merged
         .windows(first_historical.len())
         .any(|window| window == first_historical));
-    assert!(!residual
+    assert!(!merged
         .windows(second_historical.len())
         .any(|window| window == second_historical));
 }

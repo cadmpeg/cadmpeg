@@ -2452,7 +2452,7 @@ fn count_unmatched_events(
 fn mergeable_record(record: &Record, kind: u8) -> bool {
     matches!(
         kind,
-        12..=19 | 29..=32 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
+        12..=19 | 29..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
     ) && crate::topology::Graph::parse(&record.canonical_bytes)
         .get(kind, record.xmt)
         .is_some()
@@ -2584,7 +2584,7 @@ pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> V
             let is_current = current_scope_contains(&current_scopes, record.offset);
             let is_semantic = matches!(
                 record.kind,
-                38 | 40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
+                40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
             ) || record.kind == 90
                 && record.canonical_bytes.first() == Some(&0x5a);
             is_current && is_semantic

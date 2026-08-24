@@ -1218,11 +1218,14 @@ following recognized tag.
 CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. When deltas history is merged into its paired partition, a later complete CHART_s record replaces an earlier record with the same XMT before intersection validation.
 
 The stream-local intersection-construction identity is the XMT regardless of
-whether the construction uses the type-38 or `intersection_data` form. A
-type-38 construction and an `intersection_data` construction with one XMT do
-not form a complete typed relation: neither construction enters the joined
-construction or chart-carrier lanes, and the collision remains an opaque
-intersection loss.
+whether the construction uses the type-38 or `intersection_data` form. Within
+one physical stream, a type-38 construction and an `intersection_data`
+construction with one XMT do not form a complete typed relation: neither
+construction enters the joined construction or chart-carrier lanes, and the
+collision remains an opaque intersection loss. During a paired deltas merge,
+the current complete construction replaces the partition construction with the
+same XMT before this uniqueness check. This replacement applies to both the
+status-framed type-38 form and the single-byte `intersection_data` form.
 
 The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are null reference `1`, or all three are non-null. Mixed null and non-null witness slots do not form a type-38 or `intersection_data` construction. Type-38 common-header `attributes` is null reference `1`. Deltas type-38 records append status byte `01` to every reference; transfer removes those status bytes before applying the partition-style construction grammar.
 
@@ -2135,7 +2138,7 @@ the native record retains the remaining ownership and schema fields.
 live = partition ∪ delta_full − tombstones
 ```
 
-- A full record with `xmt ∈ partition` replaces that partition record. Paired streams share one xmt namespace.
+- A full record with `xmt ∈ partition` replaces that partition record. Paired streams share one xmt namespace. This includes status-framed type-38 intersection constructions.
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 

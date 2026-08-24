@@ -286,6 +286,7 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
         &BTreeMap::new(),
         &crate::topology::Graph::default(),
         vec![construction(false, 10), construction(true, 20)],
+        super::CrossFormCollision::Reject,
     );
 
     assert!(scan.source_constructions.is_empty());
@@ -293,6 +294,38 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.duplicate_identity, 2);
     assert_eq!(scan.rejected.total(), 2);
+}
+
+#[test]
+fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
+    let base = charted_intersection_curve_topology_partition_stream();
+    let mut replacement = deltas_intersection_curve_stream();
+    let delta_twin = replacement
+        .iter()
+        .rposition(|byte| *byte == 0x5a)
+        .expect("single-byte intersection replacement");
+    for (ordinal, reference) in [6u16, 7, 20, 21, 22, 23].into_iter().enumerate() {
+        put_ref(&mut replacement, delta_twin + 18 + ordinal * 2, reference);
+    }
+    let mut semantic = base.clone();
+    semantic.extend_from_slice(&crate::deltas::semantic_residual(&replacement));
+
+    let scan =
+        crate::intersection::scan_with_auxiliary_replacements(&semantic, &base, &[&replacement]);
+
+    let [construction] = scan.source_constructions.as_slice() else {
+        panic!("expected one current intersection construction");
+    };
+    assert_eq!(construction.xmt, 12);
+    assert!(construction.delta_twin);
+    let [curve] = scan.curves.as_slice() else {
+        panic!("expected the replacement's charted carrier");
+    };
+    assert_eq!(curve.xmt, 12);
+    assert_eq!(
+        scan.rejected,
+        crate::intersection::RejectionCounts::default()
+    );
 }
 
 #[test]

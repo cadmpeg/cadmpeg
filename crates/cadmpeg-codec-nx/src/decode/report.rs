@@ -222,7 +222,7 @@ pub(crate) fn build_geometry_report(
             losses.push(NxLossCode::DeltasApplied.note(format!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
