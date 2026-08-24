@@ -352,6 +352,34 @@ fn text_font_definition_requires_an_independent_directory_entry() {
 }
 
 #[test]
+fn text_font_definition_ignores_unrelated_directory_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 310,
+                    form: 0,
+                    label: "FONT".into(),
+                    status: "00000200",
+                    parameters: "310,101,4HBASE,,10,2,65,8,0,3,,0,0,0,4,10,0,8,0,66,8,0,0;".into(),
+                }],
+                &[(1, 9)],
+                &[(1, 7)],
+                &[(1, 4)],
+                &[(1, 3)],
+                &[(1, 8)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss.message.contains("font header")
+    }));
+}
+
+#[test]
 fn decode_applies_standard_body_color_and_face_color_override() {
     let result = IgesCodec
         .decode(
@@ -532,15 +560,13 @@ fn decode_types_template_and_visible_blank_line_fonts() {
 }
 
 #[test]
-fn line_font_definition_requires_its_definition_directory_fields() {
+fn line_font_definition_applies_only_status_and_fallback_rules() {
     let cases = [
-        ("subordinate", "00010200", &[][..], &[][..], &[][..]),
-        ("structure", "00000200", &[(1, 7)][..], &[][..], &[][..]),
-        ("line weight", "00000200", &[][..], &[(1, 1)][..], &[][..]),
-        ("color", "00000200", &[][..], &[][..], &[(1, 1)][..]),
+        ("subordinate", "00010200", &[(1, 1)][..]),
+        ("fallback", "00000200", &[][..]),
     ];
 
-    for (name, status, structures, line_weights, colors) in cases {
+    for (name, status, line_fonts) in cases {
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file_with_directory_fields(
@@ -551,11 +577,11 @@ fn line_font_definition_requires_its_definition_directory_fields() {
                         status,
                         parameters: "304,2,1,2,1H3;".into(),
                     }],
-                    colors,
-                    &[(1, 1)],
                     &[],
-                    line_weights,
-                    structures,
+                    line_fonts,
+                    &[],
+                    &[],
+                    &[],
                 )),
                 &DecodeOptions::default(),
             )
@@ -570,6 +596,30 @@ fn line_font_definition_requires_its_definition_directory_fields() {
             result.report().losses
         );
     }
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 304,
+                    form: 2,
+                    label: "PATTERN".into(),
+                    status: "00000200",
+                    parameters: "304,2,1,2,1H3;".into(),
+                }],
+                &[(1, 9)],
+                &[(1, 1)],
+                &[(1, 4)],
+                &[(1, 3)],
+                &[(1, 7)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss.message.contains("line-font definition")
+    }));
 }
 
 #[test]

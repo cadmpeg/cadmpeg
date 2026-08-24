@@ -2079,15 +2079,7 @@ pub(super) fn project(
         }
         let directory_valid = matches!(entry.form, 5001..=9999)
             && entry.status.subordinate == 0
-            && entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.level == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0
-            && entry.color == 0;
+            && entry.status.use_flag == 2;
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
