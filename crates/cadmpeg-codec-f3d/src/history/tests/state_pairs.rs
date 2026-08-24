@@ -153,7 +153,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         blob_name_offset: 0,
         body: None,
     };
-    let scopes = [scope.clone(), next_scope];
+    let scopes = vec![scope.clone(), next_scope];
     let bindings = bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
@@ -261,7 +261,8 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
     successor.history_state_id = Some(10);
     successor.previous_history_state_id = Some(6);
-    let bindings = bind_scope_histories(&[root, successor], &[], &[], &histories);
+    let scopes = vec![root, successor];
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");

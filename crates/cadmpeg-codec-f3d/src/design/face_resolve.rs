@@ -2808,7 +2808,7 @@ mod tests {
         }];
 
         assert_eq!(
-            extrude_start_plane_geometry_candidates(&group, &[operand.clone()], &faces),
+            extrude_start_plane_geometry_candidates(&group, std::slice::from_ref(&operand), &faces,),
             Some(vec![face(10)])
         );
         let mut bound = operand.clone();

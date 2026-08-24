@@ -1825,12 +1825,6 @@ pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         marked_reference(out, record_index);
     }
 
-    let (mut out, mut records) = generated_design_sketch_bulkstream();
-    append_point(&mut out, &mut records, 1300, 1301, 800, [0.0, 0.0]);
-    append_point(&mut out, &mut records, 1302, 1303, 801, [1.0, 0.0]);
-
-    let scope_record_index = 1100_u32;
-
     fn append_owner(
         out: &mut Vec<u8>,
         records: &mut Vec<(u64, u64)>,
@@ -1904,6 +1898,12 @@ pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         companion[42..50].copy_from_slice(&1_700_000_000_000_000_u64.to_le_bytes());
         out.extend_from_slice(&companion);
     }
+
+    let (mut out, mut records) = generated_design_sketch_bulkstream();
+    append_point(&mut out, &mut records, 1300, 1301, 800, [0.0, 0.0]);
+    append_point(&mut out, &mut records, 1302, 1303, 801, [1.0, 0.0]);
+
+    let scope_record_index = 1100_u32;
 
     append_owner(
         &mut out,

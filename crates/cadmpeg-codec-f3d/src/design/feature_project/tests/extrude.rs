@@ -546,7 +546,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.kind = "Sketch".into();
     sketch_scope.extrude_prologue = None;
     sketch_scope.extrude_profile = None;
-    let scopes = [sketch_scope, scope.clone()];
+    let scopes = vec![sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
         std::slice::from_ref(&owner),

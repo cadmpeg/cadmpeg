@@ -12,8 +12,10 @@ pub(super) use super::*;
 
 mod assembly;
 mod combine;
+mod component_insert;
 mod derived_instance;
 mod existing;
+mod extrude_class_296;
 mod extrude_coil;
 mod extrude_extent;
 mod fixed_kind_operations;

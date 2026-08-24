@@ -2372,7 +2372,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         bytes.extend_from_slice(&frame);
         start
     };
-    let taper_start = append_scalar(&mut bytes, 80, 0, -0.013962634015954637);
+    let taper_start = append_scalar(&mut bytes, 80, 0, -0.013_962_634_015_954_637);
     let along_start = append_scalar(&mut bytes, 82, 1, -2.5);
 
     let mut taper_parameter = parse_design_parameter(&parameter_record(
@@ -2381,7 +2381,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         "TaperAngle",
         Some("rad"),
         "taper",
-        -0.013962634015954637,
+        -0.013_962_634_015_954_637,
     ))
     .expect("taper parameter");
     taper_parameter.id = "generated:parameter#81".into();
@@ -2449,7 +2449,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     assert!(matches!(
         fixed.taper_angle,
         Some(DesignFixedExtrudeScalar {
-            value: -0.013962634015954637,
+            value: -0.013_962_634_015_954_637,
             record_index: 80,
             value_offset,
         }) if value_offset == (taper_start + 40) as u64

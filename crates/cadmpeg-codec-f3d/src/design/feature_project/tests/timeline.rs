@@ -56,7 +56,7 @@ fn history_state_predecessors_are_component_qualified() {
         DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#25"), "Fillet", 25);
     second.history_state_id = Some(8);
     second.previous_history_state_id = Some(7);
-    let scopes = [first, local_predecessor.clone(), second.clone()];
+    let scopes = vec![first, local_predecessor.clone(), second.clone()];
     let naming_space =
         |component_record_index, context_uuid: &str| crate::records::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(
@@ -101,7 +101,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     );
     later.byte_offset = 100;
     later.previous_history_state_id = Some(7);
-    let scopes = [later.clone(), earlier.clone()];
+    let scopes = vec![later.clone(), earlier.clone()];
     let timeline = |items| DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
         byte_offset: 10,
@@ -643,7 +643,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         200,
     );
     second.feature_ordinal = 2;
-    let scopes = [second.clone(), first.clone()];
+    let scopes = vec![second.clone(), first.clone()];
     let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
         .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
@@ -651,7 +651,8 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
 
     let mut mixed = second;
     mixed.kind = "Fillet".into();
-    let error = crate::design::feature_project::authored_scope_ordinals(&[first, mixed], &[])
+    let mixed_scopes = vec![first, mixed];
+    let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
@@ -672,7 +673,7 @@ fn authored_scope_validation_orders_independent_streams_separately() {
         10,
     );
     second.feature_ordinal = 1;
-    let scopes = [first, second];
+    let scopes = vec![first, second];
 
     let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
         .expect("independent stream-local orders");
@@ -826,7 +827,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         parameter(54, 55, "Width / 2", "Depth"),
     ];
     let owners = [owner(44, 45, 12), owner(54, 55, 22)];
-    let scopes = [successor, predecessor];
+    let scopes = vec![successor, predecessor];
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
         byte_offset: 0,

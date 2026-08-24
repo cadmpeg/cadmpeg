@@ -161,6 +161,7 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
                 &bytes,
                 &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             )
+            .by_surface
             .get(&8304),
             Some(&Some(entry_name.into()))
         );
@@ -186,6 +187,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
         )
+        .by_surface
         .get(&8304),
         Some(&Some(entry_name.into()))
     );

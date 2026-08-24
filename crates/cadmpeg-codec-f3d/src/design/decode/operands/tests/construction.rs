@@ -1089,13 +1089,13 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 #[test]
 fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
     let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#296536", "Extrude", 296536);
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#296536", "Extrude", 296_536);
     scope.byte_offset = 1000;
     scope.class_tag = "296".into();
     scope.paired_class_tag = "261".into();
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
-    scope.reference_members = (0..13).map(|index| 296500 + index).collect();
+    scope.reference_members = (0..13).map(|index| 296_500 + index).collect();
     scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
@@ -1117,7 +1117,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"323");
-    bytes.extend_from_slice(&296501u32.to_le_bytes());
+    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
@@ -1128,11 +1128,11 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     bytes.extend_from_slice(&0.125f64.to_le_bytes());
     bytes.extend_from_slice(&91u32.to_le_bytes());
     bytes.push(1);
-    bytes.extend_from_slice(&296503u32.to_le_bytes());
+    bytes.extend_from_slice(&296_503_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&[1, 1, 0]);
     bytes.push(1);
-    bytes.extend_from_slice(&296502u32.to_le_bytes());
+    bytes.extend_from_slice(&296_502_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.push(0);
     bytes.push(1);
@@ -1140,13 +1140,13 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"261");
-    bytes.extend_from_slice(&296501u32.to_le_bytes());
+    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
 
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:group#296501".into(),
         byte_offset: 0,
         class_tag: "323".into(),
-        record_index: 296501,
+        record_index: 296_501,
     };
     let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
         .complete()

@@ -11,6 +11,8 @@ use super::prelude::*;
 
 #[test]
 fn dimension_proofs_require_the_evaluated_measurement() {
+    const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
     let dimension = |source_kind: &str, unit: &str| {
         parse_design_parameter(&parameter_record(
             Some(44),
@@ -203,7 +205,6 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         0.0,
     ));
 
-    const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
     let tolerant_center_circle = entity(
         "generated:circle#tolerant-center",
         SketchGeometry::Circle {
