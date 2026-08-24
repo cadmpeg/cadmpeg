@@ -68,7 +68,7 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 
 pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
     let position = reader.stream_position()?;
-    let mut prefix = vec![0; DETECTION_PREFIX_BYTES];
+    let mut prefix = std::iter::repeat_n(0, DETECTION_PREFIX_BYTES).collect::<Vec<_>>();
     let mut count = 0;
     while count < prefix.len() {
         match reader.read(&mut prefix[count..]) {

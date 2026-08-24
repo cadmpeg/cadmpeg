@@ -595,7 +595,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let mut grid = vec![None; pole_count];
+        let mut grid = std::iter::repeat_n(None, pole_count).collect::<Vec<_>>();
         let mut valid = true;
         'patches: for u_patch in 0..u_segments {
             for v_patch in 0..v_segments {

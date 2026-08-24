@@ -3897,7 +3897,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
                 "IGES NURBS surface weight count does not match poles".into(),
             ));
         }
-        None => vec![1.0; pole_count],
+        None => std::iter::repeat_n(1.0, pole_count).collect(),
     };
     let u_range = [nurbs.u_knots[u_degree], nurbs.u_knots[u_count]];
     let v_range = [nurbs.v_knots[v_degree], nurbs.v_knots[v_count]];
@@ -4387,7 +4387,7 @@ fn encode_nurbs(
                 "IGES NURBS weight count does not match control points".into(),
             ));
         }
-        None => vec![1.0; control_count],
+        None => std::iter::repeat_n(1.0, control_count).collect(),
     };
     let polynomial = nurbs.weights.is_none();
     let plane_normal = nurbs_plane_normal(&nurbs.control_points);

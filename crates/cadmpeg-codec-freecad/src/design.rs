@@ -4609,7 +4609,12 @@ fn pattern_locations(
     let intervals = match mode {
         0 => {
             let interval = scalar_named(properties, &name(extent_base))? / f64::from(count - 1);
-            vec![interval; count as usize - 1]
+            cadmpeg_core::decode::alloc_filled(
+                count as usize - 1,
+                interval,
+                "freecad pattern intervals",
+            )
+            .ok()?
         }
         1 => {
             let fallback = scalar_named(properties, &name(offset_base))?;

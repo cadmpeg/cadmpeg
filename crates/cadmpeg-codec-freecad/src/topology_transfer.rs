@@ -1314,7 +1314,7 @@ fn normalize_pcurve_parameter_range(
 }
 
 fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
-    let mut assigned = vec![false; connectivity.len()];
+    let mut assigned = std::iter::repeat_n(false, connectivity.len()).collect::<Vec<_>>();
     let mut components = Vec::new();
     for seed in 0..connectivity.len() {
         if assigned[seed] {

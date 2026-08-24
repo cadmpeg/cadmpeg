@@ -14,9 +14,10 @@ fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<V
     } else {
         (degree..count).find(|index| knots[*index] <= parameter && parameter < knots[*index + 1])?
     };
-    let mut values = vec![0.0; degree + 1];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
+    let mut values =
+        cadmpeg_core::decode::alloc_filled(degree + 1, 0.0, "iges basis values").ok()?;
+    let mut left = cadmpeg_core::decode::alloc_filled(degree + 1, 0.0, "iges basis left").ok()?;
+    let mut right = cadmpeg_core::decode::alloc_filled(degree + 1, 0.0, "iges basis right").ok()?;
     values[0] = 1.0;
     for order in 1..=degree {
         left[order] = parameter - knots[span + 1 - order];
@@ -34,7 +35,7 @@ fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<V
         }
         values[order] = saved;
     }
-    let mut result = vec![0.0; count];
+    let mut result = cadmpeg_core::decode::alloc_filled(count, 0.0, "iges basis result").ok()?;
     for (offset, value) in values.into_iter().enumerate() {
         result[span - degree + offset] = value;
     }

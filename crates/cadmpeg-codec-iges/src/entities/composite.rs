@@ -323,9 +323,15 @@ fn concatenate_nurbs(
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let mut child_weights = curve
-            .weights
-            .unwrap_or_else(|| vec![1.0; curve.control_points.len()]);
+        let mut child_weights = match curve.weights {
+            Some(weights) => weights,
+            None => cadmpeg_core::decode::alloc_filled(
+                curve.control_points.len(),
+                1.0,
+                "iges composite child weights",
+            )
+            .ok()?,
+        };
         if child_weights
             .iter()
             .any(|weight| !weight.is_finite() || *weight <= 0.0)
