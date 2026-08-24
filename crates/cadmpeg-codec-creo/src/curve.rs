@@ -753,11 +753,13 @@ pub(crate) fn expression_records_with_model_name(
                 }
                 evaluation.solve_solutions.clear();
             }
-            synchronize_solve_blocks(
+            if !synchronize_solve_blocks(
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
-            );
+            ) {
+                continue;
+            }
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -789,11 +791,15 @@ pub(crate) fn reevaluate_expression_records(
             }
             evaluation.solve_solutions.clear();
         }
-        synchronize_solve_blocks(
+        if !synchronize_solve_blocks(
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
-        );
+        ) {
+            for block in &mut record.solve_blocks {
+                block.solutions.clear();
+            }
+        }
         record.assignments = evaluation.assignments;
     }
 }
@@ -802,7 +808,7 @@ fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-) {
+) -> bool {
     for block in blocks {
         for assignment in &mut block.assignments {
             if let Some(evaluated) = assignments
@@ -812,14 +818,30 @@ fn synchronize_solve_blocks(
                 *assignment = evaluated.clone();
             }
         }
-        block.solutions = solutions.get(&block.offset).map_or_else(
-            || vec![None; block.variables.len()],
-            |values| values.iter().cloned().map(Some).collect(),
-        );
+        let Ok(empty_solutions) = alloc_filled(
+            block.variables.len(),
+            None,
+            "creo curve-expression solve solutions",
+        ) else {
+            return false;
+        };
+        block.solutions = solutions
+            .get(&block.offset)
+            .map_or(empty_solutions, |values| {
+                values.iter().cloned().map(Some).collect()
+            });
         if block.solutions.len() != block.variables.len() {
-            block.solutions = vec![None; block.variables.len()];
+            let Ok(empty_solutions) = alloc_filled(
+                block.variables.len(),
+                None,
+                "creo curve-expression solve solutions",
+            ) else {
+                return false;
+            };
+            block.solutions = empty_solutions;
         }
     }
+    true
 }
 
 fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
@@ -1115,10 +1137,18 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 program
                     .executable_line_indices
                     .extend(assignment_line_indices);
+                let Ok(solutions) = alloc_filled(
+                    variables.len(),
+                    None,
+                    "creo curve-expression solve solutions",
+                ) else {
+                    program.unresolved_control = true;
+                    continue;
+                };
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
-                    solutions: vec![None; variables.len()],
+                    solutions,
                     variables,
                     offset: block.offset,
                     for_offset: line.offset,
@@ -5360,7 +5390,7 @@ fn parse_depdb_curve_segment(
     };
     let body = segment[prefix.end..*suffix_start].to_vec();
     let (scalar_tokens, references, opaque_spans) =
-        curve_scalar_lane(&body, prefix.type_byte, cache);
+        curve_scalar_lane(&body, prefix.type_byte, cache)?;
     Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
@@ -5487,14 +5517,14 @@ fn curve_scalar_lane(
     body: &[u8],
     type_byte: u8,
     cache: &scalar::ScalarCache,
-) -> (
+) -> Option<(
     Vec<CurveParameterScalar>,
     Vec<CurveParameterReference>,
     Vec<CurveParameterOpaqueSpan>,
-) {
+)> {
     let mut scalars = Vec::new();
     let mut references = Vec::new();
-    let mut claimed = vec![false; body.len()];
+    let mut claimed = alloc_filled(body.len(), false, "creo curve scalar claims").ok()?;
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
@@ -5554,7 +5584,7 @@ fn curve_scalar_lane(
             length: cursor - start,
         });
     }
-    (scalars, references, opaque_spans)
+    Some((scalars, references, opaque_spans))
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
@@ -5583,7 +5613,11 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
             continue;
         }
         let body = row[body_start..suffix_start].to_vec();
-        let (scalar_tokens, references, opaque_spans) = curve_scalar_lane(&body, type_byte, &cache);
+        let Some((scalar_tokens, references, opaque_spans)) =
+            curve_scalar_lane(&body, type_byte, &cache)
+        else {
+            continue;
+        };
         let scalar_values = scalar_tokens.iter().map(|token| token.value).collect();
         let skipped_references = references
             .iter()

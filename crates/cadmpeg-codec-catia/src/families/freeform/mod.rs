@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -1217,6 +1218,13 @@ pub(crate) fn append_freeform_surface_pools(
         if sites.len() != jet.knots.len() {
             continue;
         }
+        let Ok(multiplicities) = alloc_filled(
+            jet.knots.len(),
+            jet.degree + 1,
+            "catia rolling-ball multiplicities",
+        ) else {
+            continue;
+        };
         let surface_index = ir.model.surfaces.len();
         let surface_id = SurfaceId(format!("catia:rolling-ball:surf#{surface_index}"));
         annotate(
@@ -1250,7 +1258,7 @@ pub(crate) fn append_freeform_surface_pools(
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
-                multiplicities: vec![jet.degree + 1; jet.knots.len()],
+                multiplicities,
                 knots: jet.knots,
                 sites,
             },

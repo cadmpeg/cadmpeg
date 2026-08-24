@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -2171,6 +2172,12 @@ pub(super) fn sequential_tessellation(
     }
     let triangle_count = u32::try_from(mesh.triangles.len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
+    let strip_lengths = alloc_filled(
+        triangle_count as usize,
+        3_u32,
+        "SLDPRT tessellation triangle strips",
+    )?;
+    let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
@@ -2178,9 +2185,9 @@ pub(super) fn sequential_tessellation(
         chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
-        triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
+        triangles,
         feature_edges: Vec::new(),
-        strip_lengths: vec![3; triangle_count as usize],
+        strip_lengths,
         normals,
         corner_normals: Vec::new(),
         triangle_groups: Vec::new(),

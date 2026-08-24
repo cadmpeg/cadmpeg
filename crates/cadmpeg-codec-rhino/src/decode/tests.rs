@@ -622,7 +622,8 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
 
 #[test]
 fn disconnected_incidence_produces_deterministic_shell_groups() {
-    let grouping = region_shell_groups_without_records(&[1, 0, 1, 0]);
+    let grouping =
+        region_shell_groups_without_records(&[1, 0, 1, 0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
     assert_eq!(grouping.region_labels, vec![0, 1]);
@@ -752,7 +753,7 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
         ],
         vec![region(0, 0), region(1, 1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]);
+    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
     assert_eq!(grouping.region_labels, vec![1]);
@@ -780,7 +781,7 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
         ],
         vec![region(0, 0), region(1, 1), region(2, 1)],
     );
-    let grouping = region_shell_groups(&raw, &[0]);
+    let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(grouping.region_labels, vec![0]);
     assert_eq!(grouping.shell_faces, vec![vec![0]]);

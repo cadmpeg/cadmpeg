@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section-equation coordinate constraints and linear solvers.
 
+use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_dimension_table_complete;
@@ -510,7 +511,13 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = vec![BTreeSet::new(); variables.len()];
+    let Ok(mut adjacency) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section equation adjacency",
+    ) else {
+        return BTreeMap::new();
+    };
     let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
         for &first in &members {
             adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
@@ -823,8 +830,20 @@ pub(crate) fn solve_section_coordinate_equations(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = vec![BTreeSet::new(); variables.len()];
-    let mut variable_equations = vec![BTreeSet::new(); variables.len()];
+    let Ok(mut adjacency) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section coordinate adjacency",
+    ) else {
+        return BTreeMap::new();
+    };
+    let Ok(mut variable_equations) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section coordinate equation membership",
+    ) else {
+        return BTreeMap::new();
+    };
     for (equation_index, equation) in equations.iter().enumerate() {
         let members = equation
             .terms

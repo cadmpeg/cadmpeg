@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5888,7 +5888,8 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
 /// smaller than every following metadata value.
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?;
-    let mut suffix_minima = vec![u32::MAX; values.len()];
+    let mut suffix_minima =
+        alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
         suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
     }

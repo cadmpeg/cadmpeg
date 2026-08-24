@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -1382,7 +1383,11 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{suffix}").into();
     let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{suffix}").into();
     let mut trim_paths = Vec::new();
-    let mut face_trim_indices = vec![Vec::new(); brep.faces.len()];
+    let mut face_trim_indices = alloc_filled(
+        brep.faces.len(),
+        Vec::<usize>::new(),
+        "Rhino legacy Brep face trim indices",
+    )?;
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {

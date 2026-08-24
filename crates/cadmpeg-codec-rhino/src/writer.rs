@@ -3,6 +3,7 @@
 
 use std::io::{Seek, SeekFrom, Write};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
@@ -1347,7 +1348,7 @@ fn planar_sheet_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino planar mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = 0_i32.to_le_bytes();
@@ -2027,7 +2028,7 @@ fn multi_face_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = if body.kind == BodyKind::Solid {

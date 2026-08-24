@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -5648,7 +5648,7 @@ fn pattern_locations(
     let intervals = match mode {
         0 => {
             let interval = scalar_named(properties, &name(extent_base))? / f64::from(count - 1);
-            vec![interval; count as usize - 1]
+            alloc_filled(count as usize - 1, interval, "freecad pattern intervals").ok()?
         }
         1 => {
             let fallback = scalar_named(properties, &name(offset_base))?;

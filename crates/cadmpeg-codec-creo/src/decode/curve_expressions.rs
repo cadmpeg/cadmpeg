@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
@@ -30,6 +31,8 @@ const EPS_HELIX_BASIS_LENGTH: f64 = 1.0e-12;
 const EPS_HELIX_BASIS_ORIGIN: f64 = 1.0e-12;
 const EPS_HELIX_UV_EQUAL: f64 = 1.0e-9;
 const EPS_HELIX_UV_ORTHO: f64 = 1.0e-9;
+
+type CurveExpressionParameterOrder = (Vec<u32>, BTreeSet<(usize, usize)>);
 
 pub(crate) fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,
@@ -129,7 +132,7 @@ pub(crate) fn expression_dependency_reaches(
 pub(crate) fn curve_expression_parameter_order(
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
-) -> (Vec<u32>, BTreeSet<(usize, usize)>) {
+) -> Option<CurveExpressionParameterOrder> {
     let dependencies = record
         .assignments
         .iter()
@@ -155,7 +158,12 @@ pub(crate) fn curve_expression_parameter_order(
             }
         }
     }
-    let mut ordinals = vec![u32::MAX; dependencies.len()];
+    let mut ordinals = alloc_filled(
+        dependencies.len(),
+        u32::MAX,
+        "creo curve-expression parameter ordinals",
+    )
+    .ok()?;
     for ordinal in 0..dependencies.len() {
         let index = (0..dependencies.len())
             .find(|&candidate| {
@@ -168,7 +176,7 @@ pub(crate) fn curve_expression_parameter_order(
             .expect("removing cyclic edges leaves an acyclic assignment graph");
         ordinals[index] = ordinal as u32;
     }
-    (ordinals, cyclic_edges)
+    Some((ordinals, cyclic_edges))
 }
 
 pub(crate) fn curve_expression_parameter_names(
@@ -243,8 +251,11 @@ pub(crate) fn transfer_curve_expression_features(
             .iter()
             .filter_map(|(name, index)| index.map(|index| (name.clone(), index)))
             .collect::<BTreeMap<_, _>>();
-        let (parameter_ordinals, cyclic_edges) =
-            curve_expression_parameter_order(record, &unique_assignment_indices);
+        let Some((parameter_ordinals, cyclic_edges)) =
+            curve_expression_parameter_order(record, &unique_assignment_indices)
+        else {
+            continue;
+        };
         let parameter_names = curve_expression_parameter_names(&record.assignments);
         let mut emitted_assignment_indices = record
             .assignments

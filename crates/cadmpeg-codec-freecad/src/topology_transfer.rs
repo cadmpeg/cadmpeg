@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -682,7 +682,7 @@ impl<'a> Builder<'a> {
             connectivity.push(keys);
         }
 
-        Ok(connected_components(&connectivity))
+        connected_components(&connectivity)
     }
 
     fn append_face(
@@ -1313,8 +1313,12 @@ fn normalize_pcurve_parameter_range(
     Some(range)
 }
 
-fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
-    let mut assigned = vec![false; connectivity.len()];
+fn connected_components(connectivity: &[HashSet<String>]) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut assigned = alloc_filled(
+        connectivity.len(),
+        false,
+        "freecad connected-component assignment",
+    )?;
     let mut components = Vec::new();
     for seed in 0..connectivity.len() {
         if assigned[seed] {
@@ -1337,7 +1341,7 @@ fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
         component.sort_unstable();
         components.push(component);
     }
-    components
+    Ok(components)
 }
 
 fn transformed_pcurve_geometry(

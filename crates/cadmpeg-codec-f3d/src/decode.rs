@@ -17,7 +17,7 @@
 
 use crate::native::{F3dNative, F3D_NATIVE_VERSION};
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
@@ -2854,7 +2854,11 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles = vec![Vec::new(); textures.len()];
+    let mut triangles = alloc_filled(
+        textures.len(),
+        Vec::new(),
+        "f3d mesh texture triangle lists",
+    )?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         if *texture_id == 0 {
             continue;

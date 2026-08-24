@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
+use cadmpeg_core::decode::alloc_filled;
 
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
@@ -104,7 +105,19 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if !mesh.triangle_groups.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let Ok(mut memberships) = alloc_filled(
+                mesh.triangles.len(),
+                0_u32,
+                "IR tessellation triangle-group memberships",
+            ) else {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "cannot allocate tessellation triangle-group memberships".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+                continue;
+            };
             let mut source_ids = std::collections::BTreeSet::new();
             let valid = mesh.triangle_groups.iter().all(|group| {
                 !group.triangles.is_empty()
@@ -135,7 +148,19 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if !mesh.texture_assignments.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let Ok(mut memberships) = alloc_filled(
+                mesh.triangles.len(),
+                0_u32,
+                "IR tessellation texture memberships",
+            ) else {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "cannot allocate tessellation texture memberships".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+                continue;
+            };
             let mut source_ids = std::collections::BTreeSet::new();
             let mut anonymous_textures = std::collections::BTreeSet::new();
             let valid = mesh.texture_assignments.iter().all(|assignment| {

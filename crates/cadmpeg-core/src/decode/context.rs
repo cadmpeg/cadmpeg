@@ -55,7 +55,8 @@ impl<'a> DecodeContext<'a> {
             buffer
                 .try_reserve(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve as u64))?;
-            let mut chunk = vec![0u8; 256 * 1024].into_boxed_slice();
+            let mut chunk =
+                alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
             while (buffer.len() as u64) < cap {
                 let remaining = cap.saturating_sub(buffer.len() as u64);
                 let want =

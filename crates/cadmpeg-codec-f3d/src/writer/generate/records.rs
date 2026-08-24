@@ -5,6 +5,7 @@ use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
     SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
 };
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -478,7 +479,7 @@ fn encode_sketch_point(
             point.id
         ))
     })?;
-    let mut record = vec![0u8; 105 + shift];
+    let mut record = alloc_filled(105 + shift, 0_u8, "f3d sketch point record")?;
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
@@ -554,7 +555,7 @@ fn encode_sketch_point_companion(
         CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
-    let mut record = vec![0u8; prefix_len];
+    let mut record = alloc_filled(prefix_len, 0_u8, "f3d sketch point companion record")?;
     encode_sketch_record_header(&mut record, class_tag, record_index)?;
     if prefix_present_zero {
         record[20] = 1;
@@ -580,7 +581,7 @@ fn encode_sketch_curve_identity(
         ))
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
-    let mut record = vec![0u8; 133 + shift];
+    let mut record = alloc_filled(133 + shift, 0_u8, "f3d sketch curve record")?;
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());

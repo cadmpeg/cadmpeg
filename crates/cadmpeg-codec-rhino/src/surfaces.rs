@@ -4,6 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -479,10 +480,17 @@ fn revolution_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    let profile_weights = profile
-        .weights
-        .clone()
-        .unwrap_or_else(|| vec![1.0; profile_count]);
+    let profile_weights = match profile.weights.clone() {
+        Some(weights) => weights,
+        None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights").map_err(
+            |error| {
+                GeometryError::malformed(
+                    offset,
+                    format!("revolution profile weight allocation refused: {error}"),
+                )
+            },
+        )?,
+    };
     let mut control_points = Vec::with_capacity(angular_count * profile_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
@@ -543,8 +551,26 @@ fn sum_nurbs(
     u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
-    let first_weights = first.weights.clone().unwrap_or_else(|| vec![1.0; u_count]);
-    let second_weights = second.weights.clone().unwrap_or_else(|| vec![1.0; v_count]);
+    let first_weights = match first.weights.clone() {
+        Some(weights) => weights,
+        None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights").map_err(|error| {
+            GeometryError::malformed(
+                offset,
+                format!("sum-surface first-weight allocation refused: {error}"),
+            )
+        })?,
+    };
+    let second_weights = match second.weights.clone() {
+        Some(weights) => weights,
+        None => {
+            alloc_filled(v_count, 1.0, "Rhino sum-surface second weights").map_err(|error| {
+                GeometryError::malformed(
+                    offset,
+                    format!("sum-surface second-weight allocation refused: {error}"),
+                )
+            })?
+        }
+    };
     let rational = first.weights.is_some() || second.weights.is_some();
     let mut control_points = Vec::with_capacity(u_count * v_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));

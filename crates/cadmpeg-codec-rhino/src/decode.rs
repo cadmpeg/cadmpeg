@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::annotations::{ExactnessNote, StreamProvenance};
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -4194,8 +4195,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         edge_ids.push(id);
     }
     let components = face_components(raw);
-    let grouping = region_shell_groups(raw, &components);
-    let free_vertex_indices = brep_free_vertex_indices(raw);
+    let grouping = region_shell_groups(raw, &components)?;
+    let free_vertex_indices = brep_free_vertex_indices(raw)?;
     if !free_vertex_indices.is_empty() && grouping.shell_faces.len() != 1 {
         return Ok(finish_brep_fallback(
             staged,
@@ -4968,8 +4969,20 @@ fn face_components(raw: &crate::brep::RawBrep) -> Vec<usize> {
         .collect()
 }
 
-fn brep_free_vertex_indices(raw: &crate::brep::RawBrep) -> Vec<usize> {
-    let mut attached = vec![false; raw.vertices.len()];
+fn brep_free_vertex_indices(
+    raw: &crate::brep::RawBrep,
+) -> Result<Vec<usize>, crate::curves::GeometryError> {
+    let mut attached = alloc_filled(
+        raw.vertices.len(),
+        false,
+        "Rhino Brep free-vertex attachment flags",
+    )
+    .map_err(|error| {
+        crate::curves::GeometryError::malformed(
+            0,
+            format!("Brep free-vertex allocation refused: {error}"),
+        )
+    })?;
     for (index, vertex) in raw.vertices.iter().enumerate() {
         if !vertex.edges.is_empty() {
             attached[index] = true;
@@ -4980,11 +4993,11 @@ fn brep_free_vertex_indices(raw: &crate::brep::RawBrep) -> Vec<usize> {
             attached[trim.vertices[0] as usize] = true;
         }
     }
-    attached
+    Ok(attached
         .into_iter()
         .enumerate()
         .filter_map(|(index, attached)| (!attached).then_some(index))
-        .collect()
+        .collect())
 }
 
 struct ShellGrouping {
@@ -4994,14 +5007,25 @@ struct ShellGrouping {
     fallback: bool,
 }
 
-fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> ShellGrouping {
+fn region_shell_groups(
+    raw: &crate::brep::RawBrep,
+    components: &[usize],
+) -> Result<ShellGrouping, crate::curves::GeometryError> {
     if raw.minor < 3 || raw.regions.is_empty() {
         let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (face, component) in components.iter().copied().enumerate() {
             groups.entry(component).or_default().push(face);
         }
         let mut shell_faces = Vec::new();
-        let mut face_groups = vec![0; components.len()];
+        let mut face_groups =
+            alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups").map_err(
+                |error| {
+                    crate::curves::GeometryError::malformed(
+                        0,
+                        format!("Brep face-group allocation refused: {error}"),
+                    )
+                },
+            )?;
         let mut region_labels = Vec::new();
         for (group, (component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
@@ -5011,12 +5035,12 @@ fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> Shel
             shell_faces.push(faces);
             region_labels.push(group as i32);
         }
-        return ShellGrouping {
+        return Ok(ShellGrouping {
             face_groups,
             region_labels,
             shell_faces,
             fallback: false,
-        };
+        });
     }
     let mut grouped: BTreeMap<(i32, usize), Vec<usize>> = BTreeMap::new();
     let solid_regions: BTreeSet<i32> = raw
@@ -5042,7 +5066,13 @@ fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> Shel
             .or_default()
             .push(face);
     }
-    let mut face_groups = vec![0; components.len()];
+    let mut face_groups = alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")
+        .map_err(|error| {
+        crate::curves::GeometryError::malformed(
+            0,
+            format!("Brep face-group allocation refused: {error}"),
+        )
+    })?;
     let mut region_labels = Vec::new();
     let mut shell_faces = Vec::new();
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
@@ -5052,20 +5082,30 @@ fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> Shel
         region_labels.push(region);
         shell_faces.push(faces);
     }
-    ShellGrouping {
+    Ok(ShellGrouping {
         face_groups,
         region_labels,
         shell_faces,
         fallback: false,
-    }
+    })
 }
 
-fn region_shell_groups_without_records(components: &[usize]) -> ShellGrouping {
+fn region_shell_groups_without_records(
+    components: &[usize],
+) -> Result<ShellGrouping, crate::curves::GeometryError> {
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (face, component) in components.iter().copied().enumerate() {
         groups.entry(component).or_default().push(face);
     }
-    let mut face_groups = vec![0; components.len()];
+    let mut face_groups =
+        alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups").map_err(
+            |error| {
+                crate::curves::GeometryError::malformed(
+                    0,
+                    format!("Brep face-group allocation refused: {error}"),
+                )
+            },
+        )?;
     let mut region_labels = Vec::new();
     let mut shell_faces = Vec::new();
     for (group, (_component, faces)) in groups.into_iter().enumerate() {
@@ -5075,12 +5115,12 @@ fn region_shell_groups_without_records(components: &[usize]) -> ShellGrouping {
         region_labels.push(group as i32);
         shell_faces.push(faces);
     }
-    ShellGrouping {
+    Ok(ShellGrouping {
         face_groups,
         region_labels,
         shell_faces,
         fallback: true,
-    }
+    })
 }
 
 fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {

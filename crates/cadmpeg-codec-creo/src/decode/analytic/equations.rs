@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier equation types and vector/quadric/conic algebra.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -375,7 +376,16 @@ pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
 }
 
 pub fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
-    let mut product = vec![0.0; first.len() + second.len() - 1];
+    let Some(count) = first
+        .len()
+        .checked_add(second.len())
+        .and_then(|len| len.checked_sub(1))
+    else {
+        return Vec::new();
+    };
+    let Ok(mut product) = alloc_filled(count, 0.0, "creo polynomial product") else {
+        return Vec::new();
+    };
     for (first_power, first_coefficient) in first.iter().enumerate() {
         for (second_power, second_coefficient) in second.iter().enumerate() {
             product[first_power + second_power] += first_coefficient * second_coefficient;

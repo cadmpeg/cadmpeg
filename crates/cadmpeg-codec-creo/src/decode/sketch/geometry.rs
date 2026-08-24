@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
@@ -789,7 +790,10 @@ pub(crate) fn saved_profile_chains(
             Some((*external_id, saved_geometry_endpoints(geometry)?))
         })
         .collect::<Vec<_>>();
-    let mut mates = vec![[None; 2]; rows.len()];
+    let Ok(mut mates) = alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")
+    else {
+        return profiles;
+    };
     for (row_index, (_, endpoints)) in rows.iter().enumerate() {
         for endpoint_index in 0..2 {
             let matches = rows

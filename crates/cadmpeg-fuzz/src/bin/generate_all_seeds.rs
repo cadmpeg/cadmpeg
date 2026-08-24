@@ -8,6 +8,8 @@ use std::path::Path;
 
 include!("../seed_paths.rs");
 
+use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 use zip::write::SimpleFileOptions;
@@ -16,15 +18,16 @@ use zip::CompressionMethod;
 const SEED_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const SEED_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
-fn main() {
+fn main() -> Result<(), CodecError> {
     generate_f3d_seeds();
     generate_sldprt_seeds();
     generate_catia_seeds();
     generate_creo_seeds();
-    generate_nx_seeds();
+    generate_nx_seeds()?;
     generate_ir_seeds();
     generate_mutated_seeds();
     println!("All seeds generated.");
+    Ok(())
 }
 
 // ============================================================================
@@ -1034,14 +1037,14 @@ mod creo {
 // NX seeds
 // ============================================================================
 
-fn generate_nx_seeds() {
+fn generate_nx_seeds() -> Result<(), CodecError> {
     let dir = seed_dir("seeds/nx_container");
     fs::create_dir_all(&dir).unwrap();
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_magic", nx::just_magic()),
-        ("single_part", nx::single_part_prt()),
+        ("single_part", nx::single_part_prt()?),
         ("assembly", nx::assembly_prt()),
     ];
 
@@ -1049,6 +1052,7 @@ fn generate_nx_seeds() {
         fs::write(dir.join(name), &data).unwrap();
         println!("  nx/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod nx {
@@ -1072,14 +1076,14 @@ mod nx {
         rec[at..at + 8].copy_from_slice(&be_f64(v));
     }
 
-    fn record(tag: u8, len: usize) -> Vec<u8> {
-        let mut r = vec![0u8; len];
+    fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
+        let mut r = alloc_filled(len, 0_u8, "NX seed record")?;
         r[0] = 0x00;
         r[1] = tag;
-        r
+        Ok(r)
     }
 
-    fn partition_stream() -> Vec<u8> {
+    fn partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
         s.extend_from_slice(
@@ -1087,28 +1091,28 @@ mod nx {
         );
         s.extend_from_slice(b"SCH_TEST_1_9999\x00");
 
-        let mut pt = record(0x1d, 40);
+        let mut pt = record(0x1d, 40)?;
         put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]);
         s.extend_from_slice(&pt);
 
-        let mut pl = record(0x32, 91);
+        let mut pl = record(0x32, 91)?;
         put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]);
         put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
         put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&pl);
 
-        let mut cy = record(0x33, 99);
+        let mut cy = record(0x33, 99)?;
         put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
         put_f64(&mut cy, 67, 0.004_05);
         s.extend_from_slice(&cy);
 
-        let mut ln = record(0x1e, 67);
+        let mut ln = record(0x1e, 67)?;
         put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
         put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&ln);
 
-        s
+        Ok(s)
     }
 
     fn zlib_compress(raw: &[u8]) -> Vec<u8> {
@@ -1121,7 +1125,7 @@ mod nx {
         MAGIC.to_vec()
     }
 
-    pub fn single_part_prt() -> Vec<u8> {
+    pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
         let mut f = Vec::new();
         f.extend_from_slice(MAGIC);
         f.push(0x06);
@@ -1136,13 +1140,13 @@ mod nx {
         f.extend_from_slice(&(name.len() as u32).to_le_bytes());
         f.extend_from_slice(name);
 
-        let blob = zlib_compress(&partition_stream());
+        let blob = zlib_compress(&partition_stream()?);
         let dir_end = f.len() + 16;
         let blob_off = dir_end as u64;
         f.extend_from_slice(&blob_off.to_le_bytes());
         f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
         f.extend_from_slice(&blob);
-        f
+        Ok(f)
     }
 
     pub fn assembly_prt() -> Vec<u8> {

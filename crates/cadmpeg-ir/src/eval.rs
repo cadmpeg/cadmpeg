@@ -212,7 +212,12 @@ fn insert_homogeneous_knot(
     if multiplicity >= degree {
         return Some(());
     }
-    let mut inserted = vec![[0.0; 4]; count + 1];
+    let mut inserted = alloc_filled(
+        count.checked_add(1)?,
+        [0.0; 4],
+        "IR homogeneous knot insertion",
+    )
+    .ok()?;
     inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
     inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
     for index in span - degree + 1..=span - multiplicity {
@@ -504,7 +509,12 @@ fn rational_patch_parameter_segment(
         })
         .collect::<Option<Vec<_>>>()?;
     let degree = patch.u_degree + patch.v_degree;
-    let mut diagonal = vec![[0.0; 4]; degree + 1];
+    let mut diagonal = alloc_filled(
+        degree.checked_add(1)?,
+        [0.0; 4],
+        "IR rational surface diagonal",
+    )
+    .ok()?;
     for (u, row) in restricted.iter().enumerate() {
         for (v, control) in row.iter().enumerate() {
             let index = u + v;
@@ -1184,15 +1194,15 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 }
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
-fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     let mut values = vec![1.0];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
+    let mut left = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis left").ok()?;
+    let mut right = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis right").ok()?;
     for j in 1..=degree {
         left[j] = t - knots[span + 1 - j];
         right[j] = knots[span + j] - t;
         let mut saved = 0.0;
-        let mut next = vec![0.0; j + 1];
+        let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
             let factor = if denominator == 0.0 {
@@ -1206,14 +1216,14 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> 
         next[j] = saved;
         values = next;
     }
-    values
+    Some(values)
 }
 
-fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     if degree == 0 {
-        return vec![0.0];
+        return Some(vec![0.0]);
     }
-    let lower = bspline_basis(knots, degree - 1, span, t);
+    let lower = bspline_basis(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
     (0..=degree)
         .map(|local| {
@@ -1239,14 +1249,25 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
             };
             left - right
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
-fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
+fn bspline_basis_second_derivative(
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+) -> Option<Vec<f64>> {
     if degree < 2 {
-        return vec![0.0; degree + 1];
+        return alloc_filled(
+            degree.checked_add(1)?,
+            0.0,
+            "IR B-spline second-derivative basis",
+        )
+        .ok();
     }
-    let lower = bspline_basis_derivative(knots, degree - 1, span, t);
+    let lower = bspline_basis_derivative(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
     (0..=degree)
         .map(|local| {
@@ -1272,7 +1293,8 @@ fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t:
             };
             left - right
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
@@ -1285,7 +1307,7 @@ pub fn nurbs_curve_point(
 ) -> Option<Point3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
     let mut x = 0.0;
     let mut y = 0.0;
     let mut z = 0.0;
@@ -1885,9 +1907,9 @@ fn nurbs_pcurve_differential(
 ) -> Option<PcurveDifferential> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let derivative = bspline_basis_derivative(knots, degree, span, t);
-    let second_derivative = bspline_basis_second_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let derivative = bspline_basis_derivative(knots, degree, span, t)?;
+    let second_derivative = bspline_basis_second_derivative(knots, degree, span, t)?;
     let mut u = 0.0;
     let mut v = 0.0;
     let mut weight_sum = 0.0;
@@ -2071,8 +2093,8 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
     let mut x = 0.0;
     let mut y = 0.0;
     let mut z = 0.0;
@@ -2155,7 +2177,7 @@ pub fn nurbs_surface_isocurve(
         fixed_parameter,
     )?;
     let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
-    let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter);
+    let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter)?;
     let varying_count = match fixed_axis {
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
@@ -2293,12 +2315,12 @@ pub fn nurbs_surface_second_partials(
     )?;
     let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
     let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at);
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at);
-    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at);
-    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at);
-    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at);
-    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at);
+    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
+    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
     let mut weighted = [0.0; 3];
     let mut weighted_u = [0.0; 3];
     let mut weighted_v = [0.0; 3];
@@ -2571,8 +2593,8 @@ fn nurbs_curve_tangent(
 ) -> Option<Vector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let derivatives = bspline_basis_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let derivatives = bspline_basis_derivative(knots, degree, span, t)?;
     let mut weighted = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_derivative = Vector3::new(0.0, 0.0, 0.0);
     let mut weight = 0.0;
@@ -2612,9 +2634,9 @@ fn nurbs_curve_second_derivative(
 ) -> Option<Vector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
-    let basis = bspline_basis(knots, degree, span, t);
-    let first_basis = bspline_basis_derivative(knots, degree, span, t);
-    let second_basis = bspline_basis_second_derivative(knots, degree, span, t);
+    let basis = bspline_basis(knots, degree, span, t)?;
+    let first_basis = bspline_basis_derivative(knots, degree, span, t)?;
+    let second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
     let mut weighted = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_first = Vector3::new(0.0, 0.0, 0.0);
     let mut weighted_second = Vector3::new(0.0, 0.0, 0.0);

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
@@ -2522,7 +2522,7 @@ fn build_one(
             );
         }
         let components =
-            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices);
+            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices)?;
         if components.len() > 1 {
             let note = StepLossCode::ShellDisconnectedFaces.note(format!(
                     "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
@@ -2718,7 +2718,7 @@ fn connected_face_components(
     loops: &[Loop],
     coedges: &[Coedge],
     edge_vertices: &BTreeMap<String, (String, String)>,
-) -> Vec<Vec<usize>> {
+) -> Option<Vec<Vec<usize>>> {
     let face_indices = face_ids
         .iter()
         .enumerate()
@@ -2761,7 +2761,12 @@ fn connected_face_components(
         }
     }
 
-    let mut neighbors = vec![BTreeSet::new(); face_ids.len()];
+    let mut neighbors = alloc_filled(
+        face_ids.len(),
+        BTreeSet::new(),
+        "STEP connected-face neighbors",
+    )
+    .ok()?;
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for &face in group {
             neighbors[face].extend(group.iter().copied().filter(|other| *other != face));
@@ -2786,7 +2791,7 @@ fn connected_face_components(
         component.sort_unstable();
         components.push(component);
     }
-    components
+    Some(components)
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
