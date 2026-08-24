@@ -7422,7 +7422,10 @@ fn operation_state_block_before_boundary(
     }
 
     let span = end - start;
-    let mut opaque_ends = std::iter::repeat_n(usize::MAX, span).collect::<Vec<usize>>();
+    let span_with_terminal = span.checked_add(1)?;
+    let mut opaque_ends =
+        cadmpeg_core::decode::alloc_filled(span, usize::MAX, "nx operation-state opaque-end index")
+            .ok()?;
     let mut next_lane_end = usize::MAX;
     for at in (start..end).rev() {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
@@ -7431,10 +7434,30 @@ fn operation_state_block_before_boundary(
         opaque_ends[at - start] = next_lane_end;
     }
 
-    let mut status_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
-    let mut status_ends = std::iter::repeat_n(usize::MAX, span + 1).collect::<Vec<usize>>();
-    let mut message_lengths = std::iter::repeat_n(0usize, span + 1).collect::<Vec<usize>>();
-    let mut message_ends = std::iter::repeat_n(usize::MAX, span + 1).collect::<Vec<usize>>();
+    let mut status_lengths = cadmpeg_core::decode::alloc_filled(
+        span_with_terminal,
+        0usize,
+        "nx operation-state status path lengths",
+    )
+    .ok()?;
+    let mut status_ends = cadmpeg_core::decode::alloc_filled(
+        span_with_terminal,
+        usize::MAX,
+        "nx operation-state status path ends",
+    )
+    .ok()?;
+    let mut message_lengths = cadmpeg_core::decode::alloc_filled(
+        span_with_terminal,
+        0usize,
+        "nx operation-state message path lengths",
+    )
+    .ok()?;
+    let mut message_ends = cadmpeg_core::decode::alloc_filled(
+        span_with_terminal,
+        usize::MAX,
+        "nx operation-state message path ends",
+    )
+    .ok()?;
     for at in (start..end).rev() {
         let relative = at - start;
         if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
@@ -7925,7 +7948,12 @@ fn operation_state_group_table_before_counter_map(
     }
     candidates.sort_by_key(|(start, end)| (*end, *start));
 
-    let mut predecessors = std::iter::repeat_n(None, candidates.len()).collect::<Vec<_>>();
+    let mut predecessors = cadmpeg_core::decode::alloc_filled(
+        candidates.len(),
+        None,
+        "nx operation-state group predecessors",
+    )
+    .ok()?;
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
     for (candidate_index, (start, end)) in candidates.iter().enumerate() {
         let previous = best_by_end.get(start).copied();
