@@ -46,6 +46,9 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
 ];
 const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
+// Roundoff guard for geometric plane classification. This is not serialized
+// as an IGES tolerance and never supplies a normal for a non-unique plane.
+const NURBS_PLANE_COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = 1.0e-8;
 const PHYSICALLY_DEPENDENT_STATUS: &str = "00010000";
 const PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS: &str = "00010001";
@@ -4727,9 +4730,7 @@ fn encode_nurbs(
 }
 
 fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
-    let Some(origin) = points.first().copied() else {
-        return Some(Vector3::new(0.0, 0.0, 1.0));
-    };
+    let origin = points.first().copied()?;
     let distances = points
         .iter()
         .map(|point| point.distance(origin))
@@ -4738,7 +4739,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         return None;
     }
     let scale = distances.into_iter().fold(1.0, f64::max);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = NURBS_PLANE_COMPUTATION_TOLERANCE * scale;
     let mut first_direction = None;
     for point in points.iter().skip(1) {
         let direction = point.vector_from(origin);
@@ -4751,10 +4752,8 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
             break;
         }
     }
-    let Some(first_direction) = first_direction else {
-        return Some(Vector3::new(0.0, 0.0, 1.0));
-    };
-    let normal_threshold = 1.0e-12 * scale * first_direction.norm();
+    let first_direction = first_direction?;
+    let normal_threshold = NURBS_PLANE_COMPUTATION_TOLERANCE * scale * first_direction.norm();
     let mut normal = None;
     for point in points.iter().skip(1) {
         let candidate = first_direction.cross(point.vector_from(origin));
@@ -4767,22 +4766,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
             break;
         }
     }
-    let Some(normal) = normal else {
-        let axes = [
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        ];
-        let reference = axes.into_iter().min_by(|left, right| {
-            first_direction
-                .dot(*left)
-                .abs()
-                .total_cmp(&first_direction.dot(*right).abs())
-        })?;
-        let normal = first_direction.cross(reference);
-        let length = normal.norm();
-        return (length.is_finite() && length > f64::EPSILON).then(|| normal.scale(1.0 / length));
-    };
+    let normal = normal?;
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
         return None;

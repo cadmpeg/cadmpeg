@@ -134,6 +134,21 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 weights: None,
                 periodic: false,
             },
+            [0, 0, 1, 0],
+        ),
+        (
+            "unique-planar-open",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
             [1, 0, 1, 0],
         ),
         (
@@ -165,7 +180,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 weights: None,
                 periodic: false,
             },
-            [1, 1, 1, 0],
+            [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
@@ -176,7 +191,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 weights: Some(vec![2.0, 2.0]),
                 periodic: false,
             },
-            [1, 0, 1, 0],
+            [0, 0, 1, 0],
         ),
     ];
     for (name, nurbs, expected) in cases {
@@ -223,6 +238,19 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or_else(|| panic!("{name}: missing Type 126 plane normal"));
             assert_eq!(normal, vec![0.0, 0.0, 1.0], "{name}: Type 126 plane normal");
+        } else {
+            let normal = parameters
+                .get(parameters.len().saturating_sub(3)..)
+                .unwrap_or_default()
+                .iter()
+                .map(|parameter| parameter["value"]["value"].as_f64())
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_else(|| panic!("{name}: missing Type 126 ignored normal fields"));
+            assert_eq!(
+                normal,
+                vec![0.0, 0.0, 0.0],
+                "{name}: Type 126 ignored normal"
+            );
         }
         assert!(
             decoded.report().losses.is_empty(),

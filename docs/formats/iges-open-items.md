@@ -104,25 +104,3 @@ Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://w
 ## 6. Product structure, annotation, and presentation
 
 ## 7. Write path
-
-### WR-16. Type 126 plane and normal inferred from control points
-
-**Question.** Which neutral declaration supplies the Type 126 planar flag and
-unit normal during semantic export?
-
-**Known.** Type 126 stores a planar flag and, for a planar curve, a unit normal.
-The neutral NURBS curve does not store either value.
-`crates/cadmpeg-codec-iges/src/writer.rs:4668-4702` calls
-`nurbs_plane_normal`, uses the presence of its result as the planar flag, and
-writes the returned normal. `crates/cadmpeg-codec-iges/src/writer.rs:4719-4784`
-classifies the control points with relative constants `1e-10` and `1e-12`. For
-coincident control points it writes +Z. For collinear control points it chooses
-the global axis least aligned with the first usable control-polygon direction
-and constructs a perpendicular normal.
-
-**Need.** The fixed thresholds are not a neutral curve tolerance or an IGES
-declaration. Coincident and collinear control points also define no unique
-plane normal. The writer therefore creates source semantics that the neutral
-model does not contain. The answer adds explicit planarity and normal semantics
-to the neutral curve, or emits a Type 126 declaration that does not claim an
-inferred unique plane.
