@@ -370,6 +370,14 @@ fn compact_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_variant_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = compact_parameter_owner_frame();
+    frame[4..7].copy_from_slice(b"299");
+    frame[78] = 1;
+    frame[79] = 0;
+    frame
+}
+
 fn legacy_parameter_owner_68_frame(class_tag: &str) -> Vec<u8> {
     let mut frame = vec![0; 68];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -629,7 +637,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.owned_ordinal, 290);
     assert_eq!(parsed.evaluated_value, 0.0);
 
-    for class_tag in ["268", "282", "289", "336", "325", "297"] {
+    for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(
             parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
                 .is_some()
@@ -729,6 +737,17 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
     assert_eq!(parsed.owned_ordinal, 73);
     assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
+    let parsed = parse_parameter_owner(&compact_variant_parameter_owner_frame())
+        .expect("compact scalar variant parameter owner");
+    assert_eq!(parsed.frame_length, 103);
+    assert_eq!(parsed.class_tag, "299");
+    assert_eq!(parsed.variant, Some(0));
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
 }
 
 #[test]

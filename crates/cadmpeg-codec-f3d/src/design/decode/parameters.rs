@@ -390,7 +390,7 @@ pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
 pub(crate) fn is_legacy_parameter_owner_68_class(class_tag: &str) -> bool {
     matches!(
         class_tag,
-        "268" | "284" | "282" | "289" | "336" | "325" | "297"
+        "268" | "282" | "284" | "289" | "297" | "299" | "325" | "336"
     )
 }
 
@@ -574,10 +574,25 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             && frame.get(at + 13) == Some(&0))
         .then_some((at, Some(variant)))
     });
-    if without_variant.is_some() == with_variant.is_some() {
+    let with_compact_variant = companion_marker.checked_sub(13).and_then(|at| {
+        let variant = *frame.get(at + 12)?;
+        (frame.get(at) == Some(&1)
+            && View::u32_le_at(frame, at + 1) == Some(scope_record_index)
+            && frame.get(at + 5..at + 11) == Some(&[0; 6])
+            && frame.get(at + 11) == Some(&1)
+            && variant <= 1)
+            .then_some((at, Some(variant)))
+    });
+    if [without_variant, with_variant, with_compact_variant]
+        .into_iter()
+        .flatten()
+        .count()
+        != 1
+    {
         return None;
     }
-    let (repeated_scope_marker, variant) = without_variant.or(with_variant)?;
+    let (repeated_scope_marker, variant) =
+        without_variant.or(with_variant).or(with_compact_variant)?;
 
     let owned_ordinal_offset = repeated_scope_marker.checked_sub(8)?;
     let parameter_marker = owned_ordinal_offset.checked_sub(11)?;
