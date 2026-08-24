@@ -272,16 +272,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph or a uniquely referenced ownership or carrier node. It can still reject a valid unowned fixed frame.
 
-### PS-32. Direct and escaped record-form selection
-
-**Question.** Which serialized condition selects the direct or escaped reading of a Parasolid deltas record when both readings are structurally possible?
-
-**Known.** `siemens_nx.md` §3.1 defines compact and extended XMT references and the `0xff` envelope ambiguity. Section 4.2 defines deltas records as self-delimiting typed productions. Bytes belonging to the following record do not define the current record's form.
-
-**Need.** We must select the form from the current record's schema, field sequence, and enclosing boundary. The identity of the following record family must not participate in this selection.
-
-**Conflict.** Several admitted deltas families choose between direct and escaped candidates by requiring the candidate end to precede a recognized next record kind. An unrecognized but valid successor can therefore suppress the correct reading, and marker-shaped payload bytes can favor the wrong reading.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

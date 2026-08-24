@@ -741,7 +741,7 @@ reference uses the compact encoding `0001`; the final reference ends at the
 inflated-stream boundary. When both suffix lengths match, the four-reference
 form applies.
 
-Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A unique complete family field grammar delimits the record; the following bytes need not begin with a recognized node type. When direct and escaped interpretations are both complete, exactly one must end before a recognized node type. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
+Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A unique complete family field grammar delimits the record; the following bytes need not begin with a recognized node type. In a topology or geometry fixed node, an `ff` byte at the XMT slot belongs to the direct extended XMT form when both the direct and one-byte-shifted field grammars are complete. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
 
 A terminal zero reference status may also serve as the high zero byte of the
 following record type. The following record begins at that shared byte and must
@@ -768,6 +768,8 @@ native value.
 
 Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The record XMT is non-null and `flag` is binary. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
 
+Types 45, 67, 70, 74, 90, 91, 101, and 141 use an explicit optional `ff` envelope before their body. When `ff` follows the type tag, a complete escaped body owns that byte. The direct body applies only when the escaped family grammar is incomplete. This decision uses no bytes after the selected body.
+
 Status-framed type-38 `INTERSECTION` records end after their six construction references and do not require a following recognized tag. Single-byte `5a` `INTERSECTION_DATA` records use the layout in section 6.3 and end after their sixth construction reference. Both participate in the deltas byte ledger and remain in the semantic lane.
 
 A complete type-101 record whose start lies inside a fixed-record candidate and
@@ -785,7 +787,7 @@ Type 67 has the complete deltas record
 ref 00, 2b, ref 01, value[4]:f64 BE`. The XMT identity and the final four
 non-null references are non-null. Every value is finite and either zero or
 normal. The optional `ff` envelope byte precedes the XMT identity. The record
-ends after the fourth value at an admitted record boundary, participates in
+ends after the fourth value, participates in
 the deltas byte ledger, and remains in the semantic lane.
 
 Type 70 has the complete deltas record `0046 [ff], xmt, node_id:u32 BE, 04, (01 ref)[4], count:u16 BE, 00000014, 00000001, ref 00, ref 00`. The XMT identity and duplicated trailing reference are non-null, the count is nonzero, and the two trailing references are equal. Each reference uses compact or extended XMT encoding. The optional `ff` envelope byte precedes the record identity. The record ends after the second trailing status byte and participates in the deltas byte ledger.
@@ -795,11 +797,12 @@ Type 45 has the complete deltas record
 `count + 1`. The count is nonzero, the XMT identity is non-null, and every
 value is finite and either zero or normal. When both cardinalities fit the
 remaining bytes, a complete NURBS auxiliary record occupying the candidate
-extra value owns those bytes and selects the shorter form. Otherwise, a complete
-admitted record beginning after `count` values selects the shorter form unless
-the longer form also ends at an admitted record boundary. The optional `ff`
-envelope byte precedes the count. The record ends after its selected value
-lane, participates in the deltas byte ledger, and remains in the semantic lane.
+extra-value start owns those bytes and selects the shorter form. Otherwise, the
+`count + 1` lane applies when it is complete; the `count` lane applies when the
+extra eight bytes are absent. Present non-finite extra bytes invalidate both
+lanes. The optional `ff` envelope byte precedes the count. The record ends after
+its selected value lane, participates in the deltas byte ledger, and remains in
+the semantic lane.
 
 Type 74 `ATTDEF_LIST` has the complete deltas record `004a [ff], slot_count:u32 BE, xmt, active_count:u32 BE, zero:u32 BE, ref(1) 01, slot[slot_count]`. Each slot is an encoded XMT followed by status `01`. The first `active_count` slots are non-null references and the remaining slots are null reference `1`; `active_count <= slot_count`. The XMT identity and slot count are non-null. The optional `ff` envelope byte precedes the slot count. The record ends after the declared slot lane, participates in the deltas byte ledger, and does not replace topology or geometry records.
 
@@ -1009,15 +1012,12 @@ the remaining logical fields and extends the frame by two bytes. The complete
 frame therefore establishes every shifted field offset and the first byte after
 the record.
 
-Any fixed record may place an envelope escape byte `ff` between its type and xmt
-fields. The xmt begins one byte later and all logical payload offsets shift by
-one. When the first xmt byte is also `ff`, both the escaped and unescaped
-large-index forms are structurally possible; the complete family field grammar
-and the following frame boundary disambiguate them.
-
-When both readings are complete, exactly one reading must end at the stream
-boundary or immediately before a complete recognized fixed-record tag. If both
-readings or neither reading has that boundary, neither candidate is a node.
+Any topology or geometry fixed node may place an envelope escape byte `ff`
+between its type and XMT fields. The XMT begins one byte later and all logical
+payload offsets shift by one. When the direct extended XMT also begins with
+`ff`, both shifted field grammars can be complete. The direct XMT owns the byte
+in that case. The escaped reading applies only when the direct family grammar
+is incomplete. Bytes after the selected family frame do not select its form.
 
 Topology node layouts (logical offsets, pre-shift):
 

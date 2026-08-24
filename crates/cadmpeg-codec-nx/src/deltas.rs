@@ -2615,17 +2615,15 @@ pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> V
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
     let direct = fixed_layout(stream, offset, kind, signature, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| fixed_layout(stream, offset, kind, signature, 1))
         .flatten();
-    let record = match (direct, escaped) {
-        (Some(direct), Some(escaped)) => unique_layout(
-            plausible_next(stream, direct.end).then_some(direct),
-            plausible_next(stream, escaped.end).then_some(escaped),
-        ),
-        (Some(record), None) | (None, Some(record)) => Some(record),
-        (None, None) => None,
-    }?;
+    let record = if escaped_marker {
+        direct.or(escaped)?
+    } else {
+        direct?
+    };
     let shadows_type_101 = (record.offset + 1..record.end)
         .any(|offset| consume_type_101(stream, offset).is_some_and(|later| later.end > record.end));
     (!shadows_type_101).then_some(record)
@@ -2773,10 +2771,12 @@ fn is_value_family(kind: u16) -> bool {
 fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(90)).then_some(())?;
     let direct = group_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| group_layout(stream, offset, 1))
         .flatten();
-    let (xmt, node_id, references, _, _, end) = unique_layout(direct, escaped)?;
+    let (xmt, node_id, references, _, _, end) =
+        select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 90,
         xmt,
@@ -2801,11 +2801,12 @@ pub(crate) struct GroupControls {
 pub(crate) fn group_controls(record: &Record) -> Option<GroupControls> {
     (record_family_name(record) == Some("GROUP")).then_some(())?;
     let direct = group_layout(&record.canonical_bytes, 0, 0);
-    let escaped = (record.canonical_bytes.get(2) == Some(&0xff))
+    let escaped_marker = record.canonical_bytes.get(2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| group_layout(&record.canonical_bytes, 0, 1))
         .flatten();
     let (xmt, node_id, references, selector, linked_reference_status, end) =
-        unique_layout(direct, escaped)?;
+        select_enveloped_layout(escaped_marker, direct, escaped)?;
     (xmt == record.xmt
         && Some(node_id) == record.node_id
         && references == record.references
@@ -2819,10 +2820,11 @@ pub(crate) fn group_controls(record: &Record) -> Option<GroupControls> {
 fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
     let direct = attdef_list_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| attdef_list_layout(stream, offset, 1))
         .flatten();
-    let (xmt, references, end) = unique_layout(direct, escaped)?;
+    let (xmt, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 74,
         xmt,
@@ -2838,10 +2840,11 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
 fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(70)).then_some(())?;
     let direct = type_70_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_70_layout(stream, offset, 1))
         .flatten();
-    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+    let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 70,
         xmt,
@@ -2911,10 +2914,11 @@ fn type_70_body(
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(101)).then_some(())?;
     let direct = type_101_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_101_layout(stream, offset, 1))
         .flatten();
-    let (references, end) = unique_layout(direct, escaped)?;
+    let (references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 101,
         xmt: 2,
@@ -3109,10 +3113,11 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
 fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
     let direct = type_45_layout(stream, offset, 0);
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_45_layout(stream, offset, 1))
         .flatten();
-    let (xmt, end) = unique_layout(direct, escaped)?;
+    let (xmt, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 45,
         xmt,
@@ -3127,13 +3132,12 @@ fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
 
 fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(67)).then_some(())?;
-    let direct =
-        type_67_layout(stream, offset, 0).filter(|(_, _, _, end)| plausible_next(stream, *end));
-    let escaped = (stream.get(offset + 2) == Some(&0xff))
+    let direct = type_67_layout(stream, offset, 0);
+    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+    let escaped = escaped_marker
         .then(|| type_67_layout(stream, offset, 1))
-        .flatten()
-        .filter(|(_, _, _, end)| plausible_next(stream, *end));
-    let (xmt, node_id, references, end) = unique_layout(direct, escaped)?;
+        .flatten();
+    let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
         kind: 67,
         xmt,
@@ -3202,21 +3206,15 @@ fn type_45_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(
             .then_some(end)
     };
     let exact_end = finite_end(count);
-    let successor_end = count.checked_add(1).and_then(finite_end);
+    let successor_count = count.checked_add(1)?;
+    let successor_extent = data_at.checked_add(successor_count.checked_mul(8)?)?;
+    let successor_end = finite_end(successor_count);
     let end = match (exact_end, successor_end) {
-        (Some(exact), Some(successor))
-            if crate::nurbs::auxiliary_record_at(stream, exact)
-                .is_some_and(|record| record.end == successor) =>
-        {
-            exact
-        }
-        (Some(exact), Some(successor))
-            if plausible_next(stream, exact) && !plausible_next(stream, successor) =>
-        {
+        (Some(exact), Some(_)) if crate::nurbs::auxiliary_record_at(stream, exact).is_some() => {
             exact
         }
         (_, Some(successor)) => successor,
-        (Some(exact), None) if plausible_next(stream, exact) => exact,
+        (Some(exact), None) if successor_extent > stream.len() => exact,
         (Some(_) | None, None) => return None,
     };
     Some((xmt, end))
@@ -3244,10 +3242,15 @@ fn type_141_layout(
     Some((xmt, references, at))
 }
 
-fn unique_layout<T>(direct: Option<T>, escaped: Option<T>) -> Option<T> {
-    match (direct, escaped) {
-        (Some(record), None) | (None, Some(record)) => Some(record),
-        _ => None,
+fn select_enveloped_layout<T>(
+    escaped_marker: bool,
+    direct: Option<T>,
+    escaped: Option<T>,
+) -> Option<T> {
+    if escaped_marker {
+        escaped.or(direct)
+    } else {
+        direct
     }
 }
 
@@ -3487,6 +3490,37 @@ mod type_67_record_tests {
     }
 
     #[test]
+    fn retains_type_67_before_an_unknown_successor() {
+        let mut bytes = record(true);
+        let record_end = bytes.len();
+        bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let parsed = consume_type_67(&bytes, 0).expect("complete current-record grammar");
+
+        assert_eq!(parsed.end, record_end);
+        assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
+    }
+
+    #[test]
+    fn escaped_marker_selects_the_complete_escaped_form() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Candidate(&'static str);
+
+        assert_eq!(
+            select_enveloped_layout(
+                true,
+                Some(Candidate("coincidental direct")),
+                Some(Candidate("escaped")),
+            ),
+            Some(Candidate("escaped"))
+        );
+        assert_eq!(
+            select_enveloped_layout(false, Some(Candidate("direct")), None),
+            Some(Candidate("direct"))
+        );
+    }
+
+    #[test]
     fn rejects_incomplete_or_noncanonical_type_67_records() {
         let bytes = record(true);
         for end in 0..bytes.len() {
@@ -3501,6 +3535,26 @@ mod type_67_record_tests {
         let value_at = subnormal_value.len() - 32;
         subnormal_value[value_at..value_at + 8].copy_from_slice(&1u64.to_be_bytes());
         assert!(consume_type_67(&subnormal_value, 0).is_none());
+    }
+}
+
+#[cfg(test)]
+mod type_45_record_tests {
+    use super::*;
+
+    #[test]
+    fn declared_lane_ends_before_an_unknown_successor() {
+        let mut bytes = 45u16.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&3u16.to_be_bytes());
+        bytes.extend_from_slice(&1.0f64.to_be_bytes());
+        let record_end = bytes.len();
+        bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let parsed = consume_type_45(&bytes, 0).expect("complete declared value lane");
+
+        assert_eq!(parsed.end, record_end);
+        assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
     }
 }
 
