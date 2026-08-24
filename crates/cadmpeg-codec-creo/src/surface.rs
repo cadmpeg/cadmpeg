@@ -7400,54 +7400,80 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
         };
         let parameter = unique_surface_parameter(&parameters, row.id)
             .filter(|parameter| parameter.offset == row.offset);
-        let envelope_close = first_compound_close(payload, envelope_start, row_end).or_else(|| {
-            parameter
-                .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
-                .map(|parameter| parameter.body_offset + parameter.body.len())
-        });
-        let Some(envelope_close) = envelope_close else {
-            continue;
-        };
-        let chunk_start = envelope_close + 1;
-        let Some(chunk_end) = first_compound_close(payload, chunk_start, row_end) else {
-            continue;
-        };
-        if chunk_end <= chunk_start {
-            continue;
-        }
-        let body = payload[chunk_start..chunk_end].to_vec();
-        let decoded = complete_plane_local_system(&body, &cache);
-        let slots = decoded
-            .as_ref()
-            .map_or([None; 12], |(slots, _)| slots.map(Some));
-        let frame = match decoded.as_ref().map(|(_, layout)| *layout) {
-            Some(scalar::PlaneSupportFrameLayout::DirectNormalTriples) => {
-                plane_direct_frame(&slots)
+        let parameter_close = parameter
+            .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
+            .map(|parameter| parameter.body_offset + parameter.body.len());
+        let scanner_close = first_compound_close(payload, envelope_start, row_end);
+        let mut envelope_closes = scanner_close
+            .into_iter()
+            .chain(parameter_close)
+            .collect::<Vec<_>>();
+        envelope_closes.sort_unstable();
+        envelope_closes.dedup();
+        let mut row_systems = Vec::new();
+        for envelope_close in envelope_closes {
+            let chunk_start = envelope_close + 1;
+            let Some(chunk_end) = first_compound_close(payload, chunk_start, row_end) else {
+                continue;
+            };
+            if chunk_end <= chunk_start {
+                continue;
             }
-            Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&slots),
-            _ => plane_frame(&slots),
-        };
-        let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
-        let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
-            && frame_body.len() <= 24
-            && !frame_body
-                .iter()
-                .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
-        systems.push(PlaneLocalSystem {
-            surface_id: row.id,
-            body,
-            slots: slots.to_vec(),
-            origin: frame.origin,
-            u_axis: frame.u_axis,
-            normal: frame.normal,
-            classification: if simple {
-                LocalSystemClassification::Simple
-            } else {
-                LocalSystemClassification::Unclassified
+            let body = payload[chunk_start..chunk_end].to_vec();
+            let decoded = complete_plane_local_system(&body, &cache);
+            let slots = decoded
+                .as_ref()
+                .map_or([None; 12], |(slots, _)| slots.map(Some));
+            let frame = match decoded.as_ref().map(|(_, layout)| *layout) {
+                Some(scalar::PlaneSupportFrameLayout::DirectNormalTriples) => {
+                    plane_direct_frame(&slots)
+                }
+                Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&slots),
+                _ => plane_frame(&slots),
+            };
+            let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
+            let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
+                && frame_body.len() <= 24
+                && !frame_body
+                    .iter()
+                    .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
+            row_systems.push((
+                decoded.is_some(),
+                Some(envelope_close) == scanner_close,
+                Some(envelope_close) == scanner_close.or(parameter_close),
+                PlaneLocalSystem {
+                    surface_id: row.id,
+                    body,
+                    slots: slots.to_vec(),
+                    origin: frame.origin,
+                    u_axis: frame.u_axis,
+                    normal: frame.normal,
+                    classification: if simple {
+                        LocalSystemClassification::Simple
+                    } else {
+                        LocalSystemClassification::Unclassified
+                    },
+                    row_offset: row.offset,
+                    offset: chunk_start,
+                },
+            ));
+        }
+        let has_complete = row_systems.iter().any(|(complete, _, _, _)| *complete);
+        let has_complete_scanner = row_systems
+            .iter()
+            .any(|(complete, scanner_owned, _, _)| *complete && *scanner_owned);
+        systems.extend(row_systems.into_iter().filter_map(
+            |(complete, scanner_owned, fallback_owned, system)| {
+                (if has_complete_scanner {
+                    complete && scanner_owned
+                } else if has_complete {
+                    complete
+                } else {
+                    fallback_owned
+                })
+                .then_some(system)
             },
-            row_offset: row.offset,
-            offset: chunk_start,
-        });
+        ));
     }
     systems
 }

@@ -758,6 +758,23 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
 }
 
 #[test]
+fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
+    let mut scan = stored_frame_branch_scan(true);
+    let mut later = scan.planes.local_systems[0].clone();
+    later.offset += 1;
+    later.slots[9] = Some(5.0);
+    later.slots[10] = Some(5.0);
+    later.origin = Some([5.0, 5.0, 0.0]);
+    scan.planes.local_systems.push(later);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.origin, [0.0, 0.0, 0.0]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+}
+
+#[test]
 fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
     let mut scan = stored_frame_branch_scan(false);
     scan.curves

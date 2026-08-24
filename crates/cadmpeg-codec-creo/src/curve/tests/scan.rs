@@ -309,6 +309,31 @@ fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
 }
 
 #[test]
+fn scan_decodes_held_scalar_slots_in_pcurve_endpoint_frames() {
+    let held_value = [0x29, 0xf6, 0x49];
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x00\x04\x01\xf6");
+    payload.extend_from_slice(&[0x0f, 0xd7, 0xe8, 0x03]);
+    payload.extend_from_slice(&held_value);
+    payload.extend_from_slice(&[0x1e, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0xe4]);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    let held = crate::psb::short_form_float(&held_value, 0)
+        .expect("complete held scalar")
+        .0;
+    assert_eq!(scan.curves.pcurves.len(), 1);
+    assert_eq!(
+        scan.curves.pcurves[0].face_0_endpoints,
+        [[0.0, held], [0.0, 1.0]]
+    );
+    assert_eq!(
+        scan.curves.pcurves[0].face_1_endpoints,
+        [[0.0, 1.0], [0.0, 1.0]]
+    );
+}
+
+#[test]
 fn scan_withholds_nine_slot_pcurve_endpoint_frames() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");

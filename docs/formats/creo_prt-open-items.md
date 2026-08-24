@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body and its endpoint order.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
 

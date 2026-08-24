@@ -6005,11 +6005,26 @@ fn uniquely_bounded_parameter_records(
 }
 
 fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
+    const HELD_SCALAR_OPEN: &[u8] = &[0xd7, 0xe8, 0x03];
+    const HELD_SCALAR_CLOSE: u8 = 0x1e;
+
     record.references.is_empty().then_some(())?;
     let mut tokens = record.scalar_tokens.iter().peekable();
     let mut values = Vec::with_capacity(8);
     let mut cursor = 0;
     while cursor < record.body.len() {
+        if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
+            cursor += HELD_SCALAR_OPEN.len();
+            let token = tokens.next().filter(|token| token.offset == cursor)?;
+            (token.length != 0
+                && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
+            .then_some(())?;
+            values.push(token.value);
+            cursor += token.length;
+            (record.body.get(cursor) == Some(&HELD_SCALAR_CLOSE)).then_some(())?;
+            cursor += 1;
+            continue;
+        }
         if let Some(token) = tokens.peek().filter(|token| token.offset == cursor) {
             (token.length != 0
                 && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))

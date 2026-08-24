@@ -832,7 +832,15 @@ fn select_stored_frame_branches(
         let Some(options) = stored_parameter_normal_candidates(frame) else {
             continue;
         };
-        variable_domains.insert(frame.surface_id, options);
+        let known = variable_domains.entry(frame.surface_id).or_default();
+        for option in options {
+            if !known
+                .iter()
+                .any(|candidate| plane_candidates_equivalent(*candidate, option))
+            {
+                known.push(option);
+            }
+        }
     }
     if variable_domains.is_empty() {
         return;
