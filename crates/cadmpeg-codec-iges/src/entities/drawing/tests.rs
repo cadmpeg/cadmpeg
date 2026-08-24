@@ -111,7 +111,7 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     assert!(view_directory_valid(&view, Dialect::V4_0));
     assert!(view_directory_valid(&view, Dialect::V5_3));
 
-    for form in [3, 4, 19] {
+    for form in [3, 4] {
         let mut visible = directory_entry(402, form);
         assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
         assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
@@ -148,6 +148,11 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
         assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
     }
+
+    let segmented = directory_entry(402, 19);
+    assert!(!views_visible_directory_valid(&segmented, Dialect::V4_0));
+    assert!(views_visible_directory_valid(&segmented, Dialect::V5_0));
+    assert!(views_visible_directory_valid(&segmented, Dialect::V5_3));
 }
 
 fn decode_drawing_directory_case(

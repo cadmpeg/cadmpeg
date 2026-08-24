@@ -83,7 +83,10 @@ fn view_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
 
 fn views_visible_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
     entry.entity_type == 402
-        && matches!(entry.form, 3 | 4 | 19)
+        && match dialect {
+            Dialect::V4_0 => matches!(entry.form, 3 | 4),
+            _ => matches!(entry.form, 3 | 4 | 19),
+        }
         && entry.status.subordinate == 0
         && (!matches!(
             dialect,
