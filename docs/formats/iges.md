@@ -145,6 +145,8 @@ IGES 4.0 [Table 3](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f7095
 
 The same IGES 4.0 Table 3 Entity Use Flag values apply to the base geometry group: Types 100, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 126, 128, 130, 140, 142, and 144 admit only `00`, `01`, `02`, and `05`. Effective IGES 5.0 admits the later `00` through `06` range.
 
+Type 106 Forms 20, 21, 31 through 38, and 40 are presentation geometry and require Entity Use Flag `01` under the Directory Table 3 annotation group.
+
 IGES 4.0 Table 3 requires Entity Use Flag `00` for Type 102 Composite Curve entries.
 
 IGES 4.0 Type 102 entries require a nonzero Line Font field unless Hierarchy is `01`, which ignores the display-attribute fields. Effective IGES 5.0 accepts Line Font `0` as “no line font specified” under Edit Change Order E504 in the [IGES 5.0 Recommended Practices Guide](https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir4600.pdf).

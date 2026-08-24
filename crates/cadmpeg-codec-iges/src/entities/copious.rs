@@ -53,6 +53,10 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
+fn presentation_use_flag_valid(form: i64, use_flag: u8) -> bool {
+    !presentation_form(form) || use_flag == 1
+}
+
 fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     IgesLossCode::DisplayDataNotProjected
         .note(format!(
@@ -244,6 +248,13 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag) {
+            losses.push(entity_loss(
+                entry,
+                "Type 106 presentation forms require Entity Use Flag 01",
+            ));
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
