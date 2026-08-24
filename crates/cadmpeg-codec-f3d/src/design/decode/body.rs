@@ -374,7 +374,7 @@ struct LocalReferenceCandidate {
 fn local_reference_candidates(
     bytes: &[u8],
     at: usize,
-    allow_extra_ordinary_zero: bool,
+    allow_extra_zero: bool,
 ) -> Vec<LocalReferenceCandidate> {
     let mut candidates = Vec::new();
     let mut end = at;
@@ -388,7 +388,7 @@ fn local_reference_candidates(
                     inline_type_guid: inline_type_guid.clone(),
                     trailing_zeros: 2,
                 });
-                if allow_extra_ordinary_zero && bytes.get(end) == Some(&0) {
+                if allow_extra_zero && bytes.get(end) == Some(&0) {
                     candidates.push(LocalReferenceCandidate {
                         target,
                         end: end + 1,
@@ -408,6 +408,14 @@ fn local_reference_candidates(
                     inline_type_guid: None,
                     trailing_zeros: 0,
                 });
+                if allow_extra_zero && bytes.get(end) == Some(&0) {
+                    candidates.push(LocalReferenceCandidate {
+                        target,
+                        end: end + 1,
+                        inline_type_guid: None,
+                        trailing_zeros: 0,
+                    });
+                }
             }
         }
     }
@@ -718,7 +726,8 @@ fn body_map_records(
 
             let mut matched = None;
             for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
-                let Some(bindings) = parse_body_map_frame(bytes, start, end, prefix_len)? else {
+                let Some(bindings) = parse_body_map_frame(bytes, meta, start, end, prefix_len)?
+                else {
                     continue;
                 };
                 if matched.replace(bindings).is_some() {
@@ -827,6 +836,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
 
 fn parse_body_map_frame(
     bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
     start: usize,
     end: usize,
     prefix_len: usize,
@@ -860,28 +870,42 @@ fn parse_body_map_frame(
     else {
         return Ok(None);
     };
-    let Some(name_at) = pairs_end.checked_add(12) else {
-        return Ok(None);
+    let decode_name = |name_at: usize| {
+        let max_name_chars = name_at
+            .checked_add(4)
+            .and_then(|payload| end.checked_sub(payload))?
+            / 2;
+        let (blob_name, name_end) = lp_utf16_bounded(bytes, name_at, 0..=max_name_chars)?;
+        (name_end == end
+            && ((pair_count == 0 && blob_name.is_empty())
+                || (pair_count > 0
+                    && is_brep_blob_basename(&blob_name)
+                    && blob_name.ends_with(".smbh"))))
+        .then_some((name_at, blob_name))
     };
-    if View::u64_le_at(bytes, pairs_end).is_none()
-        || View::u32_le_at(bytes, pairs_end + 8) != Some(0)
-    {
-        return Ok(None);
-    }
-    let Some(max_name_chars) = name_at
-        .checked_add(4)
-        .and_then(|payload| end.checked_sub(payload))
-        .map(|remaining| remaining / 2)
-    else {
-        return Ok(None);
-    };
-    let Some((blob_name, _name_end)) =
-        lp_utf16_bounded(bytes, name_at, 0..=max_name_chars).filter(|(name, name_end)| {
-            *name_end == end
-                && ((pair_count == 0 && name.is_empty())
-                    || (pair_count > 0 && is_brep_blob_basename(name) && name.ends_with(".smbh")))
+    let mut typed_names = local_reference_candidates(bytes, pairs_end, true)
+        .into_iter()
+        .filter(|reference| {
+            reference_has_type(
+                meta,
+                reference,
+                crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            )
         })
-    else {
+        .filter_map(|reference| decode_name(reference.end));
+    let typed_name = typed_names.next();
+    if typed_names.next().is_some() {
+        return Err(crate::error::malformed(
+            "F3D Design body-map frame has ambiguous typed reference tails",
+        ));
+    }
+    let fixed_name = || {
+        (View::u64_le_at(bytes, pairs_end).is_some()
+            && View::u32_le_at(bytes, pairs_end + 8) == Some(0))
+        .then(|| pairs_end.checked_add(12).and_then(decode_name))
+        .flatten()
+    };
+    let Some((name_at, blob_name)) = typed_name.or_else(fixed_name) else {
         return Ok(None);
     };
 
@@ -1248,21 +1272,52 @@ mod tests {
         out
     }
 
+    fn body_map_bytes_with_typed_tail(prefix_len: usize, pairs: &[(u64, u64)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        push_indexed_header(&mut out, "256", 900);
+        out.extend(std::iter::repeat_n(0, prefix_len));
+        out.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
+        for (key, suffix) in pairs {
+            out.extend_from_slice(&key.to_le_bytes());
+            out.extend_from_slice(&suffix.to_le_bytes());
+        }
+        push_snapshot_reference(
+            &mut out,
+            700,
+            crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+            1,
+        );
+        out.push(0);
+        out.extend(lp_utf16_bytes("BREP.synthetic.smbh"));
+        out
+    }
+
     fn body_map_metadata() -> crate::metastream::MetaStream {
         crate::metastream::MetaStream {
-            types: vec![crate::records::SegmentType {
-                id: String::new(),
-                byte_offset: 0,
-                type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
-                type_guid_offset: 0,
-                base_type_guid: Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into()),
-                base_type_guid_offset: Some(0),
-                version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-                version_offset: 0,
-                module: DESIGN_MODULE_BODY.into(),
-                entity_ids: vec![900],
-                entity_id_offsets: vec![0],
-            }],
+            types: vec![
+                crate::records::SegmentType {
+                    id: String::new(),
+                    byte_offset: 0,
+                    type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
+                    type_guid_offset: 0,
+                    base_type_guid: Some(
+                        crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                    ),
+                    base_type_guid_offset: Some(0),
+                    version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                    version_offset: 0,
+                    module: DESIGN_MODULE_BODY.into(),
+                    entity_ids: vec![900],
+                    entity_id_offsets: vec![0],
+                },
+                presentation_type(
+                    crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
+                    None,
+                    0,
+                    DESIGN_MODULE_BODY,
+                    vec![700],
+                ),
+            ],
             records: vec![crate::metastream::RecordIndexEntry {
                 entity_id: 900,
                 bulk_offset: 0,
@@ -1402,6 +1457,19 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_body_map_accepts_padded_doubled_companion() {
+        let mut bytes = snapshot_body_map_bytes(2);
+        let companion_end = 4 + 3 + 8 + 6 + 2 + 8;
+        bytes.insert(companion_end, 0);
+
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("padded doubled companion");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
+        assert_eq!(records[0].bindings.len(), 1);
+    }
+
+    #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
         metadata.types[2].entity_ids.clear();
@@ -1473,12 +1541,24 @@ mod tests {
     }
 
     #[test]
+    fn body_map_accepts_typed_container_reference_tail() {
+        let bytes = body_map_bytes_with_typed_tail(10, &[(2291, 7492), (2292, 7534)]);
+        let bindings = body_bindings(&bytes, &body_map_metadata()).expect("typed reference tail");
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].asm_key, 2291);
+        assert_eq!(bindings[0].entity_suffix, 7492);
+        assert_eq!(bindings[1].asm_key, 2292);
+        assert_eq!(bindings[1].entity_suffix, 7534);
+    }
+
+    #[test]
     fn both_empty_body_map_prefixes_have_no_pairs_or_brep_basename() {
         for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
             let bytes = body_map_bytes(prefix_len, 0, &[]);
-            let frame = parse_body_map_frame(&bytes, 0, bytes.len(), prefix_len)
-                .expect("empty body-map frame")
-                .expect("supported empty body-map variant");
+            let frame =
+                parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
+                    .expect("empty body-map frame")
+                    .expect("supported empty body-map variant");
             assert!(frame.is_empty());
             assert!(body_bindings(&bytes, &body_map_metadata())
                 .expect("empty typed body map")
