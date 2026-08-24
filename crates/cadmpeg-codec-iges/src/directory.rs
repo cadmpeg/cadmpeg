@@ -75,6 +75,7 @@ impl DirectoryEntry {
 pub(crate) enum DirectoryDefect {
     FieldNotAscii(&'static str),
     FieldNotAnInteger(&'static str),
+    FieldBlankNotAllowed(&'static str),
     StatusNumberInvalid,
     RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
     UnpairedCard,
@@ -85,6 +86,7 @@ impl DirectoryDefect {
         match self {
             Self::FieldNotAscii(_) => "field-not-ascii",
             Self::FieldNotAnInteger(_) => "field-not-an-integer",
+            Self::FieldBlankNotAllowed(_) => "field-blank-not-allowed",
             Self::StatusNumberInvalid => "status-number-invalid",
             Self::RepeatedEntityTypeMismatch { .. } => "repeated-entity-type-mismatch",
             Self::UnpairedCard => "unpaired-card",
@@ -96,6 +98,9 @@ impl DirectoryDefect {
             Self::FieldNotAscii(name) => format!("the {name} field is not ASCII"),
             Self::FieldNotAnInteger(name) => {
                 format!("the {name} field is not a decimal integer")
+            }
+            Self::FieldBlankNotAllowed(name) => {
+                format!("the {name} field is blank and IGES 4.0 defines no default")
             }
             Self::StatusNumberInvalid => {
                 "the status number is neither blank nor an eight-digit decimal integer".to_owned()
@@ -162,6 +167,21 @@ fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
         .map_err(|_| DirectoryDefect::FieldNotAnInteger(name))
 }
 
+fn directory_integer(
+    field: [u8; 8],
+    name: &'static str,
+    number: u8,
+    dialect: Dialect,
+) -> Result<i64, DirectoryDefect> {
+    if matches!(dialect, Dialect::V4_0)
+        && matches!(number, 1 | 2 | 11 | 14)
+        && field.iter().all(|byte| *byte == b' ')
+    {
+        return Err(DirectoryDefect::FieldBlankNotAllowed(name));
+    }
+    integer(field, name)
+}
+
 fn status(field: [u8; 8], dialect: Dialect) -> Result<Status, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(Status {
@@ -209,8 +229,8 @@ fn parse_pair(
     let sequence = first.sequence.unwrap_or_default();
     let first_fields = fields(first);
     let second_fields = fields(second);
-    let entity_type = integer(first_fields[0], "entity type")?;
-    let repeated_type = integer(second_fields[0], "repeated entity type")?;
+    let entity_type = directory_integer(first_fields[0], "entity type", 1, dialect)?;
+    let repeated_type = directory_integer(second_fields[0], "repeated entity type", 11, dialect)?;
     if entity_type != repeated_type {
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
@@ -221,21 +241,26 @@ fn parse_pair(
         source_offset: first.offset,
         sequence,
         entity_type,
-        parameter_start: integer(first_fields[1], "Parameter Data start")?,
-        structure: integer(first_fields[2], "structure")?,
-        line_font: integer(first_fields[3], "line font")?,
-        level: integer(first_fields[4], "level")?,
-        view: integer(first_fields[5], "view")?,
-        transform: integer(first_fields[6], "transformation")?,
-        label_display: integer(first_fields[7], "label display")?,
+        parameter_start: directory_integer(first_fields[1], "Parameter Data start", 2, dialect)?,
+        structure: directory_integer(first_fields[2], "structure", 3, dialect)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, dialect)?,
+        level: directory_integer(first_fields[4], "level", 5, dialect)?,
+        view: directory_integer(first_fields[5], "view", 6, dialect)?,
+        transform: directory_integer(first_fields[6], "transformation", 7, dialect)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, dialect)?,
         status: status(first_fields[8], dialect)?,
-        line_weight: integer(second_fields[1], "line weight")?,
-        color: integer(second_fields[2], "color")?,
-        parameter_line_count: integer(second_fields[3], "Parameter Data count")?,
-        form: integer(second_fields[4], "form")?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, dialect)?,
+        color: directory_integer(second_fields[2], "color", 13, dialect)?,
+        parameter_line_count: directory_integer(
+            second_fields[3],
+            "Parameter Data count",
+            14,
+            dialect,
+        )?,
+        form: directory_integer(second_fields[4], "form", 15, dialect)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: integer(second_fields[8], "entity subscript")?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, dialect)?,
     })
 }
 
