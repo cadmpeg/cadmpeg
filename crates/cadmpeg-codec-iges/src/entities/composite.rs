@@ -38,6 +38,13 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -
     )
 }
 
+fn composite_use_flag_valid(use_flag: u8, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 => use_flag == 0,
+        _ => use_flag <= 6,
+    }
+}
+
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
         .note(format!(
@@ -905,6 +912,13 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
+        if !composite_use_flag_valid(entry.status.use_flag, global.dialect()) {
+            losses.push(entity_loss(
+                entry,
+                "Type 102 Entity Use Flag must be 00 in IGES 4.0",
+            ));
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
