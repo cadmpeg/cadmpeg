@@ -1814,6 +1814,11 @@ pub(crate) fn exact_component_insert_construction(
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
+            (257 | 261 | 267, "264") if scope.class_tag == "414" => (
+                identity_matrix(),
+                None,
+                exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
+            ),
             (257, "262") if scope.class_tag == "283" => {
                 exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
             }
@@ -1914,6 +1919,14 @@ pub(crate) fn exact_component_insert_construction(
             (carrier_record_index, vec![(role, role_offset, None)])
         } else if scope.class_tag == "434" && scope.paired_class_tag == "266" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
+                bytes,
+                carrier_at,
+                relation_at,
+                carrier_record_index,
+            )?;
+            (carrier_record_index, vec![(role, role_offset, None)])
+        } else if scope.class_tag == "414" && scope.paired_class_tag == "264" {
+            let (role, role_offset) = crate::xref::repeated_target_component_insert_identity(
                 bytes,
                 carrier_at,
                 relation_at,

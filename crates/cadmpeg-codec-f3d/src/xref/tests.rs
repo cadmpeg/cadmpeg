@@ -193,11 +193,27 @@ fn repeated_target_occurrence_record(
     envelope_discriminator: u32,
     transform: Option<[[f64; 4]; 4]>,
 ) -> Vec<u8> {
+    repeated_target_occurrence_record_with_path_role(
+        role,
+        role,
+        entity_id,
+        envelope_discriminator,
+        transform,
+    )
+}
+
+fn repeated_target_occurrence_record_with_path_role(
+    path_role: &str,
+    role: &str,
+    entity_id: u64,
+    envelope_discriminator: u32,
+    transform: Option<[[f64; 4]; 4]>,
+) -> Vec<u8> {
     let component_guid = "11111111-2222-3333-4444-555555555555";
     let type_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
-    let mut bytes = occurrence_record(role, entity_id, &[1], None);
+    let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
     let path_end = super::occurrence_path(&bytes).expect("synthetic path").2;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
@@ -250,6 +266,24 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, Some(matrix)]
+    );
+
+    let retained_role = format!("{role}_urn:example:component");
+    let path_role = "11112222-3333-4444-5555-666677778888_urn:example:path-component";
+    let local_carrier =
+        repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 12, 1, None);
+    let (decoded_role, role_offset) = super::repeated_target_component_insert_identity(
+        &local_carrier,
+        0,
+        local_carrier.len(),
+        12,
+    )
+    .expect("identity carrier with an independent retained role");
+    assert_eq!(decoded_role, retained_role);
+    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role);
+    assert_eq!(
+        &local_carrier[role_offset - 4..role_offset - 4 + encoded_role.len()],
+        encoded_role
     );
 }
 

@@ -678,6 +678,19 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
 /// Parse the placement generation that repeats the target identity after the
 /// standard path and stores the identity flag beside that repeated target.
 fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+    repeated_target_occurrence_placement_details(body).map(|details| details.placement)
+}
+
+struct RepeatedTargetPlacementDetails {
+    placement: OccurrencePlacement,
+    role: String,
+    role_offset: usize,
+    transform_offset: Option<usize>,
+}
+
+fn repeated_target_occurrence_placement_details(
+    body: &[u8],
+) -> Option<RepeatedTargetPlacementDetails> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
     let (link_names, discriminators, mut at) = occurrence_path(body)?;
     if !matches!(View::u32_le_at(body, at)?, 1 | 5) {
@@ -710,13 +723,9 @@ fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlaceme
         return None;
     }
     at = next;
+    let role_offset = at;
     let (role, next) = lp_utf16_bounded(body, at, 36..=256)?;
-    if !is_guid_prefix(&role)
-        || (!link_names.is_empty()
-            && !link_names
-                .iter()
-                .any(|link_name| link_name.eq_ignore_ascii_case(&role)))
-    {
+    if !is_guid_prefix(&role) {
         return None;
     }
     at = next;
@@ -724,6 +733,7 @@ fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlaceme
         return None;
     }
     at += 1;
+    let mut transform_offset = None;
     let transform = match *body.get(at)? {
         1 => {
             at += 1;
@@ -731,6 +741,7 @@ fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlaceme
         }
         0 => {
             at += 1;
+            transform_offset = Some(at);
             let matrix = decode_rigid_matrix(body, at)?;
             at = at.checked_add(128)?;
             Some(matrix)
@@ -751,11 +762,35 @@ fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlaceme
     }
     at += 1;
     take_reference(body, &mut at)?;
-    (at == body.len()).then_some(OccurrencePlacement {
-        link_names,
-        discriminators,
-        transform,
+    (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+        placement: OccurrencePlacement {
+            link_names,
+            discriminators,
+            transform,
+        },
+        role,
+        role_offset: role_offset + 4,
+        transform_offset,
     })
+}
+
+/// Bind a repeated-target occurrence carrier to an identity Component Insert
+/// scope through its relation record.
+pub(crate) fn repeated_target_component_insert_identity(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<(String, usize)> {
+    let body = bytes.get(carrier_at..relation_at)?;
+    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
+        return None;
+    }
+    let details = repeated_target_occurrence_placement_details(body)?;
+    if details.placement.transform.is_some() || details.transform_offset.is_some() {
+        return None;
+    }
+    Some((details.role, carrier_at + details.role_offset))
 }
 
 /// Parse the grouped identity carrier used by the compact `Component Insert`
