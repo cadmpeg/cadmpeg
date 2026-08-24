@@ -116,6 +116,7 @@ pub fn decode_component_naming_spaces(
             for uuid_offset in prefix_len..bytes.len().saturating_sub(4) {
                 let marker = uuid_offset - prefix_len;
                 if bytes[marker] != 1
+                    || (marker > 0 && bytes[marker - 1] == 1)
                     || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
                 {
                     continue;

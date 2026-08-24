@@ -98,6 +98,23 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     assert_eq!(space.context_uuid, CONTEXT_UUID);
     assert_eq!(space.byte_offset, typed_marker as u64);
 
+    let mut overlapping_reference = vec![1];
+    binding(
+        &mut overlapping_reference,
+        17,
+        2,
+        "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
+    );
+    typed_binding(&mut overlapping_reference, 17, CONTEXT_UUID);
+    let decoded = with_scan(&archive(&overlapping_reference), |scan| {
+        crate::design::decode::meta::decode_component_naming_spaces(scan)
+    })
+    .expect("typed binding beside an overlapping 01 01 reference");
+    let [space] = decoded.as_slice() else {
+        panic!("expected one component naming space");
+    };
+    assert_eq!(space.context_uuid, CONTEXT_UUID);
+
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);
     binding(
