@@ -15,6 +15,8 @@ use crate::design::decode::scopes::extrude_sheet_metal::{
     is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
 };
 use crate::design::decode::scopes::legacy_class_415;
+use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
+use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
@@ -151,6 +153,38 @@ fn valid_assembly_operand_path_link(
         && link.wrapper_reference_offset == wrapper_reference_offset
         && link.wrapper_byte_offset > path.byte_offset
         && link.path_reference_offset == path_reference_offset
+}
+
+fn valid_class_363_operand_path_link(
+    scope: &records::DesignParameterScope,
+    frame: &records::DesignAssemblyOperandFrame,
+    path: &records::DesignAssemblyOperandPath,
+) -> bool {
+    let link = &path.link;
+    link.locator_class_tag == "363"
+        && link.wrapper_class_tag == "388"
+        && path.class_tag == "386"
+        && link.locator_record_index == frame.reference_record_index
+        && link.locator_reference_offset == frame.reference_offset
+        && link.locator_scope_reference_offset
+            == link.locator_byte_offset
+                + u64::try_from(class_363_carrier::SCOPE_REFERENCE + 1).unwrap_or(u64::MAX)
+        && link.path_reference_offset
+            == link.wrapper_byte_offset
+                + u64::try_from(class_363_identity::OCCURRENCE_GUID + 4).unwrap_or(u64::MAX)
+        && link.wrapper_reference_offset < link.wrapper_byte_offset
+        && link.locator_scope_reference_offset > link.locator_byte_offset
+        && link.locator_reference_offset >= scope.byte_offset
+        && link.locator_reference_offset < scope.paired_byte_offset
+        && path.byte_offset < link.locator_byte_offset
+        && path.occurrence_guids.len() == 1
+        && path.occurrence_guid_offsets.len() == 1
+        && path.identity_guids.len() == 1
+        && path.identity_guid_offsets.len() == 1
+        && path.occurrence_guid_offsets[0] == link.path_reference_offset
+        && path.identity_guid_offsets[0] > path.occurrence_guid_offsets[0]
+        && crate::bytes::is_guid_relaxed(&path.occurrence_guids[0])
+        && crate::bytes::is_guid_relaxed(&path.identity_guids[0])
 }
 
 fn valid_sketch_profile_region_selection(
@@ -2766,100 +2800,116 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         alignment.legacy_operand_carriers.is_some()
                     }
                     (Some(_), None, None) => axial_frames,
-                    (Some(_), Some(paths), None) => {
-                        let locator_offsets = design::assembly::operand_path_locator_offsets(
-                            scope.frame_length,
-                            &scope.class_tag,
-                            &scope.paired_class_tag,
-                        );
-                        let first_start = paths[0].link.locator_byte_offset;
-                        let second_start = paths[1].link.locator_byte_offset;
-                        let envelope_ends = paths.each_ref().map(|path| {
-                            let continuation_count = if variable_reference {
-                                path.link
-                                    .wrapper_record_index
-                                    .checked_sub(path.link.locator_record_index)?
-                                    .checked_sub(2)?
-                            } else {
-                                0
-                            };
-                            u64::try_from(path_wrapper::LEN)
-                                .ok()?
-                                .checked_add(u64::from(continuation_count).checked_mul(11)?)
-                                .and_then(|length| {
-                                    path.link.wrapper_byte_offset.checked_add(length)
+                    (Some(frames), Some(paths), None) => {
+                        let class_363_carriers = paths
+                            .iter()
+                            .all(|path| path.link.locator_class_tag == "363");
+                        if class_363_carriers {
+                            !axial_frames
+                                && paths[0].link.locator_record_index
+                                    != paths[1].link.locator_record_index
+                                && paths.iter().zip(frames).all(|(path, frame)| {
+                                    valid_class_363_operand_path_link(scope, frame, path)
                                 })
-                        });
-                        !axial_frames
-                            && locator_offsets.is_some_and(|offsets| {
-                                paths.iter().zip(offsets).all(|(path, offset)| {
-                                    valid_assembly_operand_path_link(scope, path, offset)
+                        } else {
+                            let locator_offsets = design::assembly::operand_path_locator_offsets(
+                                scope.frame_length,
+                                &scope.class_tag,
+                                &scope.paired_class_tag,
+                            );
+                            let first_start = paths[0].link.locator_byte_offset;
+                            let second_start = paths[1].link.locator_byte_offset;
+                            let envelope_ends = paths.each_ref().map(|path| {
+                                let continuation_count = if variable_reference {
+                                    path.link
+                                        .wrapper_record_index
+                                        .checked_sub(path.link.locator_record_index)?
+                                        .checked_sub(2)?
+                                } else {
+                                    0
+                                };
+                                u64::try_from(path_wrapper::LEN)
+                                    .ok()?
+                                    .checked_add(u64::from(continuation_count).checked_mul(11)?)
+                                    .and_then(|length| {
+                                        path.link.wrapper_byte_offset.checked_add(length)
+                                    })
+                            });
+                            !axial_frames
+                                && locator_offsets.is_some_and(|offsets| {
+                                    paths.iter().zip(offsets).all(|(path, offset)| {
+                                        valid_assembly_operand_path_link(scope, path, offset)
+                                    })
                                 })
-                            })
-                            && paths[0].link.locator_record_index
-                                != paths[1].link.locator_record_index
-                            && matches!(envelope_ends, [Some(first_end), Some(second_end)]
+                                && paths[0].link.locator_record_index
+                                    != paths[1].link.locator_record_index
+                                && matches!(envelope_ends, [Some(first_end), Some(second_end)]
                                 if !(first_start < second_end && second_start < first_end))
-                            && paths.iter().all(|path| {
-                                !path.occurrence_guids.is_empty()
-                                    && path.occurrence_guids.len()
-                                        == path.occurrence_guid_offsets.len()
-                                    && matches!(
-                                        path.class_tag.as_str(),
-                                        "294" | "299" | "307" | "329" | "330" | "386" | "390"
-                                    )
-                                    && path.identity_guids.len() == path.identity_guid_offsets.len()
-                                    && match path.class_tag.as_str() {
-                                        "294" | "299" | "307" | "386" | "390" => {
-                                            path.identity_guids.len() == 4
+                                && paths.iter().all(|path| {
+                                    !path.occurrence_guids.is_empty()
+                                        && path.occurrence_guids.len()
+                                            == path.occurrence_guid_offsets.len()
+                                        && matches!(
+                                            path.class_tag.as_str(),
+                                            "294" | "299" | "307" | "329" | "330" | "386" | "390"
+                                        )
+                                        && path.identity_guids.len()
+                                            == path.identity_guid_offsets.len()
+                                        && match path.class_tag.as_str() {
+                                            "294" | "299" | "307" | "386" | "390" => {
+                                                path.identity_guids.len() == 4
+                                            }
+                                            "329" => {
+                                                path.identity_guids.is_empty()
+                                                    || path.identity_guids.len() == 4
+                                            }
+                                            "330" => {
+                                                !path.identity_guids.is_empty()
+                                                    && path.identity_guids.len().is_multiple_of(4)
+                                            }
+                                            _ => false,
                                         }
-                                        "329" => {
-                                            path.identity_guids.is_empty()
-                                                || path.identity_guids.len() == 4
-                                        }
-                                        "330" => {
-                                            !path.identity_guids.is_empty()
-                                                && path.identity_guids.len().is_multiple_of(4)
-                                        }
-                                        _ => false,
-                                    }
-                                    && path
-                                        .identity_guids
-                                        .iter()
-                                        .all(|guid| crate::bytes::is_guid_relaxed(guid))
-                                    && path
-                                        .identity_guid_offsets
-                                        .windows(2)
-                                        .all(|offsets| offsets[0] < offsets[1])
-                                    && path
-                                        .identity_guid_offsets
-                                        .iter()
-                                        .all(|offset| *offset > path.byte_offset)
-                                    && path
-                                        .occurrence_guid_offsets
-                                        .windows(2)
-                                        .all(|offsets| offsets[0] < offsets[1])
-                                    && path
-                                        .occurrence_guid_offsets
-                                        .iter()
-                                        .all(|offset| *offset > path.byte_offset)
-                                    && (matches!(
-                                        path.class_tag.as_str(),
-                                        "294" | "299" | "307" | "330" | "386"
-                                    ) || path.occurrence_guids.first().is_some_and(|guid| {
-                                        native
-                                            .design_component_occurrences
+                                        && path
+                                            .identity_guids
                                             .iter()
-                                            .filter(|occurrence| {
-                                                design_stream(&occurrence.id) == native_stream
-                                                    && occurrence
-                                                        .occurrence_guid
-                                                        .eq_ignore_ascii_case(guid)
-                                            })
-                                            .count()
-                                            == 1
-                                    }))
-                            })
+                                            .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                                        && path
+                                            .identity_guid_offsets
+                                            .windows(2)
+                                            .all(|offsets| offsets[0] < offsets[1])
+                                        && path
+                                            .identity_guid_offsets
+                                            .iter()
+                                            .all(|offset| *offset > path.byte_offset)
+                                        && path
+                                            .occurrence_guid_offsets
+                                            .windows(2)
+                                            .all(|offsets| offsets[0] < offsets[1])
+                                        && path
+                                            .occurrence_guid_offsets
+                                            .iter()
+                                            .all(|offset| *offset > path.byte_offset)
+                                        && (matches!(
+                                            path.class_tag.as_str(),
+                                            "294" | "299" | "307" | "330" | "386"
+                                        ) || path.occurrence_guids.first().is_some_and(
+                                            |guid| {
+                                                native
+                                                    .design_component_occurrences
+                                                    .iter()
+                                                    .filter(|occurrence| {
+                                                        design_stream(&occurrence.id)
+                                                            == native_stream
+                                                            && occurrence
+                                                                .occurrence_guid
+                                                                .eq_ignore_ascii_case(guid)
+                                                    })
+                                                    .count()
+                                                    == 1
+                                            },
+                                        ))
+                                })
+                        }
                     }
                     (Some(frames), None, Some(targets)) => {
                         axial_frames

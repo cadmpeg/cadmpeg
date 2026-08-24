@@ -1233,6 +1233,201 @@ Unstated regions:
 - `286..290` (4 B): The class-378 carrier payload before its repeated child reference is outside this table.
 - `323..399` (76 B): The class-378 carrier payload before its scope backlink is outside this table.
 
+## `assembly_class_363_264_frame_360_leading`
+
+Spec §Assembly operands · layout: byte offsets · size: 188 B
+
+Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 188.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its 188-byte leading form |
+| 70 | 11 | `identity_reference` | `bytes[11]` | little | spec | A class-360 node references its class-388 identity at +70 |
+| 177 | 11 | `scope_reference` | `bytes[11]` | little | spec | references the scope at +177 |
+
+Unstated regions:
+
+- `11..70` (59 B): Fixed payload before the identity reference.
+- `81..177` (96 B): Fixed payload before the scope backlink.
+
+## `assembly_class_363_264_frame_360_child`
+
+Spec §Assembly operands · layout: byte offsets · size: 199 B
+
+Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 199.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its 199-byte child form |
+| 70 | 11 | `identity_reference` | `bytes[11]` | little | spec | A class-360 node references its class-388 identity at +70 |
+| 81 | 11 | `leading_reference` | `bytes[11]` | little | spec | references the leading class-360 node at +81 |
+| 188 | 11 | `scope_reference` | `bytes[11]` | little | spec | and the scope at +188 |
+
+Unstated regions:
+
+- `11..70` (59 B): Fixed payload before the identity reference.
+- `92..188` (96 B): Fixed payload before the scope backlink.
+
+## `assembly_class_363_264_frame_386_terminal`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Offsets are relative to the class-386 primary indexed header; the paired class-264 header starts at offset 215.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A terminal class-386 node is 215 bytes |
+| 97 | 11 | `identity_reference` | `bytes[11]` | little | spec | it references its class-388 identity at +97 |
+| 204 | 11 | `scope_reference` | `bytes[11]` | little | spec | and the scope at +204 |
+
+Unstated regions:
+
+- `11..97` (86 B): Fixed payload before the identity reference.
+- `108..204` (96 B): Fixed payload before the scope backlink.
+
+## `assembly_class_363_264_frame_388_identity`
+
+Spec §Assembly operands · layout: byte offsets · size: 614 B
+
+Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 614.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its compact form is 614 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-388 identity stores the occurrence GUID at +37 |
+| 113 | 76 | `component_identity_guid` | `bytes[76]` | little | spec | component identity GUID at +113 |
+| 603 | 11 | `scope_reference` | `bytes[11]` | little | spec | backlinks at +603 |
+
+Unstated regions:
+
+- `11..37` (26 B): Fixed identity prefix.
+- `189..603` (414 B): Typed external-identity payload before the scope backlink.
+
+## `assembly_class_363_264_frame_388_identity_short`
+
+Spec §Assembly operands · layout: byte offsets · size: 612 B
+
+Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 612.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its short compact form is 612 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-388 identity stores the occurrence GUID at +37 |
+| 113 | 76 | `component_identity_guid` | `bytes[76]` | little | spec | component identity GUID at +113 |
+| 601 | 11 | `scope_reference` | `bytes[11]` | little | spec | backlinks to the scope at +601 |
+
+Unstated regions:
+
+- `11..37` (26 B): Fixed identity prefix.
+- `189..601` (412 B): Short typed external-identity payload before the scope backlink.
+
+## `assembly_class_363_264_frame_388_identity_extended`
+
+Spec §Assembly operands · layout: byte offsets · size: 690 B
+
+Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 690.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its extended form is 690 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-388 identity stores the occurrence GUID at +37 |
+| 113 | 76 | `component_identity_guid` | `bytes[76]` | little | spec | component identity GUID at +113 |
+| 679 | 11 | `scope_reference` | `bytes[11]` | little | spec | backlinks at +679 |
+
+Unstated regions:
+
+- `11..37` (26 B): Fixed identity prefix.
+- `189..679` (490 B): Extended typed external-identity payload before the scope backlink.
+
+## `assembly_class_363_264_frame_388_identity_reduced_490`
+
+Spec §Assembly operands · layout: byte offsets · size: 490 B
+
+Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 490.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Two reduced forms are 490 and 501 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-388 identity stores the occurrence GUID at +37 |
+| 113 | 76 | `component_identity_guid` | `bytes[76]` | little | spec | component identity GUID at +113 |
+| 479 | 11 | `scope_reference` | `bytes[11]` | little | spec | their scope backlinks are at +479 and +490 |
+
+Unstated regions:
+
+- `11..37` (26 B): Fixed identity prefix.
+- `189..479` (290 B): Reduced typed identity payload before the scope backlink.
+
+## `assembly_class_363_264_frame_388_identity_reduced_501`
+
+Spec §Assembly operands · layout: byte offsets · size: 501 B
+
+Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 501.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Two reduced forms are 490 and 501 bytes |
+| 37 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | A class-388 identity stores the occurrence GUID at +37 |
+| 113 | 76 | `component_identity_guid` | `bytes[76]` | little | spec | component identity GUID at +113 |
+| 490 | 11 | `scope_reference` | `bytes[11]` | little | spec | their scope backlinks are at +479 and +490 |
+
+Unstated regions:
+
+- `11..37` (26 B): Fixed identity prefix.
+- `189..490` (301 B): Reduced typed identity payload before the scope backlink.
+
+## `assembly_class_363_264_frame_363_carrier`
+
+Spec §Assembly operands · layout: byte offsets · size: 389 B
+
+Offsets are relative to the class-363 primary indexed header; the paired class-264 header starts at offset 389.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-363 frame is 389 bytes |
+| 49 | 128 | `transform` | `f64[16]` | little | spec | Its rigid transform starts at +49 |
+| 197 | 11 | `leading_reference` | `bytes[11]` | little | spec | References at +197 and +213 name a leading class-360 node |
+| 213 | 11 | `terminal_reference` | `bytes[11]` | little | spec | and a terminal class-386 node |
+| 232 | 44 | `placement_owner_references` | `bytes[44]` | little | spec | Four placement-owner references occupy +232 through +275 |
+| 280 | 11 | `repeated_leading_reference` | `bytes[11]` | little | spec | The leading and terminal references repeat at +280 and +291 |
+| 291 | 11 | `repeated_terminal_reference` | `bytes[11]` | little | spec | The leading and terminal references repeat at +280 and +291 |
+| 378 | 11 | `scope_reference` | `bytes[11]` | little | spec | The owning-scope backlink is at +378 |
+
+Unstated regions:
+
+- `11..49` (38 B): Fixed carrier prefix.
+- `177..197` (20 B): Fixed payload before the node references.
+- `208..213` (5 B): Fixed separator before the terminal reference.
+- `224..232` (8 B): Fixed counts before the placement-owner references.
+- `276..280` (4 B): Fixed count before repeated references.
+- `302..378` (76 B): Fixed carrier payload before the scope backlink.
+
 ## `assembly_variable_reference_operand_path_locator`
 
 Spec §Assembly operands · layout: byte offsets · size: 180 B

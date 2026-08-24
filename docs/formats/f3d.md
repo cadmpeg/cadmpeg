@@ -1591,6 +1591,25 @@ The 705- and 772-byte forms store no occurrence paths. Every other form stores a
 
 The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
 
+The class-363 carrier subform uses the operand-frame reference as its locator.
+The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid
+transform starts at +49 and equals the operand-frame transform. References at
++197 and +213 name a leading class-360 node and a terminal class-386 node.
+Four placement-owner references occupy +232 through +275. The leading and
+terminal references repeat at +280 and +291. The owning-scope backlink is at
++378. A class-360 node references its class-388 identity at +70. Its 188-byte
+leading form references the scope at +177. Its 199-byte child form references
+the leading class-360 node at +81 and the scope at +188. A terminal class-386 node is 215 bytes;
+it references its class-388 identity at +97 and the scope at +204. Both have
+paired class-264 headers. A class-388 identity stores the occurrence GUID at
++37 and component identity GUID at +113. Its short compact form is 612 bytes
+and backlinks to the scope at +601. Its compact form is 614 bytes and
+backlinks at +603. Its extended form is 690 bytes and backlinks at +679. All
+forms have a paired class-264 header. Two reduced forms are 490 and 501 bytes;
+their scope backlinks are at +479 and +490. The two identities of one
+carrier contain equal GUIDs. The occurrence GUID qualifies the operand and the
+component identity GUID identifies its external component.
+
 An operand-path locator is a fixed 190-byte indexed record with record index `N`. Its eleven-byte header is followed by ten zero bytes, a nonzero marked same-segment reference at offset 21, one zero byte at offset 32, a row-major rigid 4×4 transform at offset 33, one zero byte at offset 161, a marked backlink to the assembly-operation scope at offset 162, a marked reference to record index `N+2` at offset 173, u32 value 2 at offset 184, and two zero bytes at offset 188. The occurrence-path record starts at locator offset 190 and has record index `N+1`. The next indexed record is its wrapper at record index `N+2`. The wrapper is exactly 37 bytes: its eleven-byte indexed header, ten zero bytes, byte value 1 at offset 21, u32 value 1 at offset 22, and a marked reference to path record `N+1` at offset 26. The next indexed record starts at wrapper offset 37.
 
 The class-388/266 legacy locator run uses class `451` for each 190-byte locator and class `369` for each wrapper. A class-451 locator keeps the same fixed offsets and backlinks as the common locator. Its wrapper reference names the class-369 record at `N + count + 1`, where `count` is the class-369 path count. A class-369 wrapper stores ten zero bytes, byte value 1 at offset 21, and path count 1 or 2 at offset 22. A class-369 wrapper stores marker 1 and its path count. A class-369 wrapper with path count 1 is 37 bytes. A class-369 wrapper with path count 2 is 48 bytes. Count 1 uses one marked path reference at offset 26 and a 37-byte span. Count 2 adds a marked path reference at offset 37 and has a 48-byte span. A class-369 wrapper stores one marked path reference at offset 26. A class-369 wrapper stores two marked path references at offsets 26 and 37. The referenced class-412 path records have consecutive indexes `N + 1` through `N + count` and each has a 425-byte span. A class-412 path record is 425 bytes in the class-388 legacy envelope. The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24. A class-412 path stores one occurrence GUID followed by four identity GUIDs. The class-412 path stores u64 value 2 between its identity pairs. The class-412 path stores u32 value 2 before its zero tail. The wrapper order is the occurrence order. The occurrence GUIDs from all wrapper members form the ordered occurrence path; the four identity GUIDs from the final wrapper member form the identity suffix.

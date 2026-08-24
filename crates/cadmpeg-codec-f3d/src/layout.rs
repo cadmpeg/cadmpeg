@@ -1598,6 +1598,190 @@ pub(crate) mod assembly_class_383_258_frame_378_carrier {
     pub(crate) const SCOPE_REFERENCE: usize = 399;
 }
 
+/// Byte offsets for the `assembly_class_363_264_frame_360_leading` record.
+///
+/// Spec §Assembly operands. Record length 188 B.
+///
+/// ```text
+/// Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 188.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_360_leading {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 188;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `identity_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_REFERENCE: usize = 70;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 177;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_360_child` record.
+///
+/// Spec §Assembly operands. Record length 199 B.
+///
+/// ```text
+/// Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 199.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_360_child {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 199;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `identity_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_REFERENCE: usize = 70;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const LEADING_REFERENCE: usize = 81;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 188;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_386_terminal` record.
+///
+/// Spec §Assembly operands. Record length 215 B.
+///
+/// ```text
+/// Offsets are relative to the class-386 primary indexed header; the paired class-264 header starts at offset 215.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_386_terminal {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `identity_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_REFERENCE: usize = 97;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 204;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_388_identity` record.
+///
+/// Spec §Assembly operands. Record length 614 B.
+///
+/// ```text
+/// Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 614.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_388_identity {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 614;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 37;
+    /// Offset of `component_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY_GUID: usize = 113;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 603;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_388_identity_short` record.
+///
+/// Spec §Assembly operands. Record length 612 B.
+///
+/// ```text
+/// Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 612.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_388_identity_short {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 612;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 37;
+    /// Offset of `component_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY_GUID: usize = 113;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 601;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_388_identity_extended` record.
+///
+/// Spec §Assembly operands. Record length 690 B.
+///
+/// ```text
+/// Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 690.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_388_identity_extended {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 690;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 37;
+    /// Offset of `component_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY_GUID: usize = 113;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 679;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_388_identity_reduced_490` record.
+///
+/// Spec §Assembly operands. Record length 490 B.
+///
+/// ```text
+/// Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 490.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_388_identity_reduced_490 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 490;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 37;
+    /// Offset of `component_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY_GUID: usize = 113;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 479;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_388_identity_reduced_501` record.
+///
+/// Spec §Assembly operands. Record length 501 B.
+///
+/// ```text
+/// Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 501.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_388_identity_reduced_501 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 501;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const OCCURRENCE_GUID: usize = 37;
+    /// Offset of `component_identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const COMPONENT_IDENTITY_GUID: usize = 113;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 490;
+}
+
+/// Byte offsets for the `assembly_class_363_264_frame_363_carrier` record.
+///
+/// Spec §Assembly operands. Record length 389 B.
+///
+/// ```text
+/// Offsets are relative to the class-363 primary indexed header; the paired class-264 header starts at offset 389.
+/// ```
+pub(crate) mod assembly_class_363_264_frame_363_carrier {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 389;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 49;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const LEADING_REFERENCE: usize = 197;
+    /// Offset of `terminal_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const TERMINAL_REFERENCE: usize = 213;
+    /// Offset of `placement_owner_references` (`bytes[44]`). Spec §Assembly operands.
+    pub(crate) const PLACEMENT_OWNER_REFERENCES: usize = 232;
+    /// Offset of `repeated_leading_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REPEATED_LEADING_REFERENCE: usize = 280;
+    /// Offset of `repeated_terminal_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REPEATED_TERMINAL_REFERENCE: usize = 291;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_REFERENCE: usize = 378;
+}
+
 /// Byte offsets for the `assembly_variable_reference_operand_path_locator` record.
 ///
 /// Spec §Assembly operands. Record length 180 B.

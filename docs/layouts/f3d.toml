@@ -3871,6 +3871,463 @@ source = "spec"
 anchor = "the owning scope at +399"
 
 [[record]]
+name = "assembly_class_363_264_frame_360_leading"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Its 188-byte leading form"
+size = 188
+note = "Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 188."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its 188-byte leading form"
+
+[[record.gap]]
+offset = 11
+size = 59
+note = "Fixed payload before the identity reference."
+
+[[record.field]]
+name = "identity_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-360 node references its class-388 identity at +70"
+
+[[record.gap]]
+offset = 81
+size = 96
+note = "Fixed payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 177
+type = "bytes[11]"
+source = "spec"
+anchor = "references the scope at +177"
+
+[[record]]
+name = "assembly_class_363_264_frame_360_child"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Its 199-byte child form references the leading class-360 node at +81"
+size = 199
+note = "Offsets are relative to the class-360 primary indexed header; the paired class-264 header starts at offset 199."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its 199-byte child form"
+
+[[record.gap]]
+offset = 11
+size = 59
+note = "Fixed payload before the identity reference."
+
+[[record.field]]
+name = "identity_reference"
+offset = 70
+type = "bytes[11]"
+source = "spec"
+anchor = "A class-360 node references its class-388 identity at +70"
+
+[[record.field]]
+name = "leading_reference"
+offset = 81
+type = "bytes[11]"
+source = "spec"
+anchor = "references the leading class-360 node at +81"
+
+[[record.gap]]
+offset = 92
+size = 96
+note = "Fixed payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 188
+type = "bytes[11]"
+source = "spec"
+anchor = "and the scope at +188"
+
+[[record]]
+name = "assembly_class_363_264_frame_386_terminal"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A terminal class-386 node is 215 bytes"
+size = 215
+note = "Offsets are relative to the class-386 primary indexed header; the paired class-264 header starts at offset 215."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A terminal class-386 node is 215 bytes"
+
+[[record.gap]]
+offset = 11
+size = 86
+note = "Fixed payload before the identity reference."
+
+[[record.field]]
+name = "identity_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "it references its class-388 identity at +97"
+
+[[record.gap]]
+offset = 108
+size = 96
+note = "Fixed payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 204
+type = "bytes[11]"
+source = "spec"
+anchor = "and the scope at +204"
+
+[[record]]
+name = "assembly_class_363_264_frame_388_identity"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Its compact form is 614 bytes"
+size = 614
+note = "Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 614."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its compact form is 614 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "Fixed identity prefix."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-388 identity stores the occurrence GUID at +37"
+
+[[record.field]]
+name = "component_identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "component identity GUID at +113"
+
+[[record.gap]]
+offset = 189
+size = 414
+note = "Typed external-identity payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 603
+type = "bytes[11]"
+source = "spec"
+anchor = "backlinks at +603"
+
+[[record]]
+name = "assembly_class_363_264_frame_388_identity_short"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Its short compact form is 612 bytes"
+size = 612
+note = "Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 612."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its short compact form is 612 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "Fixed identity prefix."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-388 identity stores the occurrence GUID at +37"
+
+[[record.field]]
+name = "component_identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "component identity GUID at +113"
+
+[[record.gap]]
+offset = 189
+size = 412
+note = "Short typed external-identity payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 601
+type = "bytes[11]"
+source = "spec"
+anchor = "backlinks to the scope at +601"
+
+[[record]]
+name = "assembly_class_363_264_frame_388_identity_extended"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Its extended form is 690 bytes"
+size = 690
+note = "Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 690."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its extended form is 690 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "Fixed identity prefix."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-388 identity stores the occurrence GUID at +37"
+
+[[record.field]]
+name = "component_identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "component identity GUID at +113"
+
+[[record.gap]]
+offset = 189
+size = 490
+note = "Extended typed external-identity payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 679
+type = "bytes[11]"
+source = "spec"
+anchor = "backlinks at +679"
+
+[[record]]
+name = "assembly_class_363_264_frame_388_identity_reduced_490"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Two reduced forms are 490 and 501 bytes"
+size = 490
+note = "Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 490."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Two reduced forms are 490 and 501 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "Fixed identity prefix."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-388 identity stores the occurrence GUID at +37"
+
+[[record.field]]
+name = "component_identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "component identity GUID at +113"
+
+[[record.gap]]
+offset = 189
+size = 290
+note = "Reduced typed identity payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 479
+type = "bytes[11]"
+source = "spec"
+anchor = "their scope backlinks are at +479 and +490"
+
+[[record]]
+name = "assembly_class_363_264_frame_388_identity_reduced_501"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Two reduced forms are 490 and 501 bytes"
+size = 501
+note = "Offsets are relative to the class-388 primary indexed header; the paired class-264 header starts at offset 501."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Two reduced forms are 490 and 501 bytes"
+
+[[record.gap]]
+offset = 11
+size = 26
+note = "Fixed identity prefix."
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 37
+type = "bytes[76]"
+source = "spec"
+anchor = "A class-388 identity stores the occurrence GUID at +37"
+
+[[record.field]]
+name = "component_identity_guid"
+offset = 113
+type = "bytes[76]"
+source = "spec"
+anchor = "component identity GUID at +113"
+
+[[record.gap]]
+offset = 189
+size = 301
+note = "Reduced typed identity payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 490
+type = "bytes[11]"
+source = "spec"
+anchor = "their scope backlinks are at +479 and +490"
+
+[[record]]
+name = "assembly_class_363_264_frame_363_carrier"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The class-363 frame is 389 bytes"
+size = 389
+note = "Offsets are relative to the class-363 primary indexed header; the paired class-264 header starts at offset 389."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-363 frame is 389 bytes"
+
+[[record.gap]]
+offset = 11
+size = 38
+note = "Fixed carrier prefix."
+
+[[record.field]]
+name = "transform"
+offset = 49
+type = "f64[16]"
+source = "spec"
+anchor = "Its rigid transform starts at +49"
+
+[[record.gap]]
+offset = 177
+size = 20
+note = "Fixed payload before the node references."
+
+[[record.field]]
+name = "leading_reference"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "References at +197 and +213 name a leading class-360 node"
+
+[[record.gap]]
+offset = 208
+size = 5
+note = "Fixed separator before the terminal reference."
+
+[[record.field]]
+name = "terminal_reference"
+offset = 213
+type = "bytes[11]"
+source = "spec"
+anchor = "and a terminal class-386 node"
+
+[[record.gap]]
+offset = 224
+size = 8
+note = "Fixed counts before the placement-owner references."
+
+[[record.field]]
+name = "placement_owner_references"
+offset = 232
+type = "bytes[44]"
+source = "spec"
+anchor = "Four placement-owner references occupy +232 through +275"
+
+[[record.gap]]
+offset = 276
+size = 4
+note = "Fixed count before repeated references."
+
+[[record.field]]
+name = "repeated_leading_reference"
+offset = 280
+type = "bytes[11]"
+source = "spec"
+anchor = "The leading and terminal references repeat at +280 and +291"
+
+[[record.field]]
+name = "repeated_terminal_reference"
+offset = 291
+type = "bytes[11]"
+source = "spec"
+anchor = "The leading and terminal references repeat at +280 and +291"
+
+[[record.gap]]
+offset = 302
+size = 76
+note = "Fixed carrier payload before the scope backlink."
+
+[[record.field]]
+name = "scope_reference"
+offset = 378
+type = "bytes[11]"
+source = "spec"
+anchor = "The owning-scope backlink is at +378"
+
+[[record]]
 name = "assembly_variable_reference_operand_path_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

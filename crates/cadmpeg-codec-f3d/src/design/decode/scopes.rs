@@ -19,6 +19,15 @@ use crate::ids::{self, native_stream};
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
+use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
+use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
+use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
+use crate::layout::assembly_class_363_264_frame_386_terminal as class_363_terminal;
+use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
+use crate::layout::assembly_class_363_264_frame_388_identity_extended as class_363_identity_extended;
+use crate::layout::assembly_class_363_264_frame_388_identity_reduced_490 as class_363_identity_reduced_490;
+use crate::layout::assembly_class_363_264_frame_388_identity_reduced_501 as class_363_identity_reduced_501;
+use crate::layout::assembly_class_363_264_frame_388_identity_short as class_363_identity_short;
 use crate::layout::assembly_class_383_258_frame_359_identity as class_383_identity;
 use crate::layout::assembly_class_383_258_frame_378_carrier as class_383_carrier;
 use crate::layout::assembly_class_383_258_frame_387_child as class_383_child;
@@ -165,6 +174,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+mod assembly_carrier_paths;
 pub(crate) mod extrude_sheet_metal;
 pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;
@@ -1640,6 +1650,19 @@ pub(crate) fn exact_assembly_alignment(
                 })
             } else if legacy_class_388 {
                 exact_legacy_class_388_operand_paths(bytes, records, scope)
+            } else if crate::design::assembly::variable_reference_assembly_generation(
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            ) {
+                alignment
+                    .operand_frames
+                    .as_ref()
+                    .and_then(|frames| {
+                        assembly_carrier_paths::exact_class_363_operand_paths(
+                            bytes, records, scope, frames,
+                        )
+                    })
+                    .or_else(|| exact_assembly_operand_paths(bytes, records, scope))
             } else {
                 exact_assembly_operand_paths(bytes, records, scope)
             };
