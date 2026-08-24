@@ -1751,6 +1751,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 legacy_loft_body_carriers: &[],
                 placements: &[],
                 body_bindings: &[],
+                component_naming_spaces: &[],
                 histories: &[],
             },
         )

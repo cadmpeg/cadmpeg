@@ -1314,6 +1314,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        &native.design_component_naming_spaces,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {

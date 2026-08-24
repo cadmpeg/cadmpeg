@@ -717,6 +717,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                 legacy_loft_body_carriers: &[],
                 placements: &[],
                 body_bindings: &[],
+                component_naming_spaces: &[],
                 histories: &[],
             },
         )

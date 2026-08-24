@@ -317,6 +317,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )

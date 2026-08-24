@@ -1146,6 +1146,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        &native.design_component_naming_spaces,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
@@ -2412,6 +2413,7 @@ impl<'a> F3dDecodeSession<'a> {
                     legacy_loft_body_carriers: &self.native.design_loft_legacy_body_carriers,
                     placements: &self.native.design_sketch_placements,
                     body_bindings: &self.native.design_body_bindings,
+                    component_naming_spaces: &self.native.design_component_naming_spaces,
                     histories: &self.native.asm_histories,
                 },
             )?;

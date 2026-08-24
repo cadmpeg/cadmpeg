@@ -152,6 +152,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
@@ -216,6 +217,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let offset_definition =
@@ -265,6 +267,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let multi_definition =
@@ -302,6 +305,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let per_edge_definition =
@@ -335,6 +339,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     assert!(
@@ -376,6 +381,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let two_sided_definition =
@@ -589,6 +595,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
@@ -659,6 +666,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         legacy_loft_body_carriers: &[],
         placements: &[],
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     };
     assert!(crate::design::feature_project::project_edge_flange(&scope, &inputs).is_none());
@@ -976,6 +984,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         };
         crate::design::feature_project::project_hem(&scope, &inputs).expect("typed Hem definition")

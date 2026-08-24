@@ -73,6 +73,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) legacy_loft_body_carriers: &'a [DesignLoftLegacyBodyCarrier],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
+    pub(crate) component_naming_spaces: &'a [crate::records::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
 }
 
@@ -286,11 +287,19 @@ pub(crate) enum ScopeHistoryPredecessor<'a> {
     Ambiguous,
 }
 
-/// History-state index qualified by Design stream and bound ASM history.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ComponentHistoryNamespace {
+    Aggregate,
+    Component(u64),
+}
+
+/// History-state index qualified by component-local Design and ASM history.
 pub(crate) struct ScopeHistoryGraph<'a> {
     histories_present: bool,
     bound_histories: HashMap<String, String>,
-    scopes_by_state: HashMap<(String, String, i64), Vec<&'a DesignParameterScope>>,
+    component_namespaces: HashMap<String, ComponentHistoryNamespace>,
+    scopes_by_state:
+        HashMap<(String, ComponentHistoryNamespace, String, i64), Vec<&'a DesignParameterScope>>,
 }
 
 impl<'a> ScopeHistoryGraph<'a> {
@@ -298,6 +307,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
+        component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
         let bound_histories = crate::history::bind_scope_histories(
@@ -307,6 +317,13 @@ impl<'a> ScopeHistoryGraph<'a> {
             histories,
         );
         let histories_present = !histories.is_empty();
+        let component_namespaces = scopes
+            .iter()
+            .filter_map(|scope| {
+                Self::component_namespace(scope, component_naming_spaces)
+                    .map(|namespace| (scope.id.clone(), namespace))
+            })
+            .collect::<HashMap<_, _>>();
         let mut scopes_by_state = HashMap::new();
         for scope in scopes {
             let (Some(stream), Some(state_id)) = (native_stream(&scope.id), scope.history_state_id)
@@ -321,16 +338,43 @@ impl<'a> ScopeHistoryGraph<'a> {
             } else {
                 String::new()
             };
+            let Some(component_namespace) = component_namespaces.get(&scope.id) else {
+                continue;
+            };
             scopes_by_state
-                .entry((stream.to_owned(), history_id, state_id))
+                .entry((
+                    stream.to_owned(),
+                    *component_namespace,
+                    history_id,
+                    state_id,
+                ))
                 .or_insert_with(Vec::new)
                 .push(scope);
         }
         Self {
             histories_present,
             bound_histories,
+            component_namespaces,
             scopes_by_state,
         }
+    }
+
+    fn component_namespace(
+        scope: &DesignParameterScope,
+        component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
+    ) -> Option<ComponentHistoryNamespace> {
+        let stream = native_stream(&scope.id)?;
+        let mut stream_spaces = component_naming_spaces
+            .iter()
+            .filter(|space| native_stream(&space.id) == Some(stream))
+            .peekable();
+        if stream_spaces.peek().is_none() {
+            return Some(ComponentHistoryNamespace::Aggregate);
+        }
+        stream_spaces
+            .filter(|space| space.component_record_index <= u64::from(scope.record_index))
+            .max_by_key(|space| space.component_record_index)
+            .map(|space| ComponentHistoryNamespace::Component(space.component_record_index))
     }
 
     fn history_id(&self, scope: &DesignParameterScope) -> Option<&str> {
@@ -345,9 +389,10 @@ impl<'a> ScopeHistoryGraph<'a> {
         &self,
         scope: &DesignParameterScope,
         state_id: i64,
-    ) -> Option<(String, String, i64)> {
+    ) -> Option<(String, ComponentHistoryNamespace, String, i64)> {
         Some((
             native_stream(&scope.id)?.to_owned(),
+            *self.component_namespaces.get(&scope.id)?,
             self.history_id(scope)?.to_owned(),
             state_id,
         ))
@@ -375,10 +420,15 @@ impl<'a> ScopeHistoryGraph<'a> {
         };
         let mut visited = HashSet::new();
         loop {
-            let Some(candidates) =
-                self.scopes_by_state
-                    .get(&(stream.to_owned(), history_id.to_owned(), state_id))
-            else {
+            let Some(component_namespace) = self.component_namespaces.get(&scope.id) else {
+                return Ok(ScopeHistoryPredecessor::Ambiguous);
+            };
+            let Some(candidates) = self.scopes_by_state.get(&(
+                stream.to_owned(),
+                *component_namespace,
+                history_id.to_owned(),
+                state_id,
+            )) else {
                 return Ok(ScopeHistoryPredecessor::None);
             };
             let [candidate] = candidates.as_slice() else {
@@ -513,6 +563,7 @@ pub fn project_parameter_design(
         legacy_loft_body_carriers: &[],
         placements,
         body_bindings: &[],
+        component_naming_spaces: &[],
         histories: &[],
     })
     .expect("test projection has a synthetic exact timeline")
@@ -550,6 +601,7 @@ pub fn project_parameter_design_with_edge_identities(
         legacy_loft_body_carriers,
         placements,
         body_bindings,
+        component_naming_spaces,
         histories,
         ..
     } = inputs;
@@ -1398,8 +1450,13 @@ pub fn project_parameter_design_with_edge_identities(
             }
         })
         .collect::<Vec<_>>();
-    let scope_history =
-        ScopeHistoryGraph::new(scopes, body_bindings, body_recipe_operands, histories);
+    let scope_history = ScopeHistoryGraph::new(
+        scopes,
+        body_bindings,
+        body_recipe_operands,
+        component_naming_spaces,
+        histories,
+    );
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -1472,8 +1529,10 @@ pub fn project_parameter_design_with_edge_identities(
             }
         }
     }
-    let mut history_state_features =
-        HashMap::<(String, String, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+    let mut history_state_features = HashMap::<
+        (String, ComponentHistoryNamespace, String, i64),
+        Option<cadmpeg_ir::features::FeatureId>,
+    >::new();
     for scope in scopes {
         let Some(state_id) = scope.history_state_id else {
             continue;

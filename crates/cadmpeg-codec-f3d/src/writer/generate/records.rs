@@ -133,6 +133,7 @@ pub(crate) fn encode_design_bulkstream(
                 legacy_loft_body_carriers: &native.design_loft_legacy_body_carriers,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
+                component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
             },
         )?;

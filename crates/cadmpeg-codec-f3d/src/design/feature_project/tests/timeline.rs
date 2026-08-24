@@ -20,10 +20,68 @@ fn work_point_history_state_keys_are_history_qualified() {
             (scope_a.id.clone(), "f3d:history#a".to_owned()),
             (scope_b.id.clone(), "f3d:history#b".to_owned()),
         ]),
+        component_namespaces: HashMap::from([
+            (
+                scope_a.id.clone(),
+                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
+            ),
+            (
+                scope_b.id.clone(),
+                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
+            ),
+        ]),
         scopes_by_state: HashMap::new(),
     };
 
     assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
+}
+
+#[test]
+fn history_state_predecessors_are_component_qualified() {
+    let bulk_stream = "Design/BulkStream.dat";
+    let stream = format!("f3d:{bulk_stream}");
+    let mut first = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#15"),
+        "Extrude",
+        15,
+    );
+    first.history_state_id = Some(7);
+    let mut local_predecessor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#22"),
+        "Extrude",
+        22,
+    );
+    local_predecessor.history_state_id = Some(7);
+    let mut second =
+        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#25"), "Fillet", 25);
+    second.history_state_id = Some(8);
+    second.previous_history_state_id = Some(7);
+    let scopes = [first, local_predecessor.clone(), second.clone()];
+    let naming_space =
+        |component_record_index, context_uuid: &str| crate::records::DesignComponentNamingSpace {
+            id: crate::ids::native_design_component_naming_space_id(
+                bulk_stream,
+                component_record_index,
+            ),
+            byte_offset: component_record_index,
+            component_record_index,
+            context_uuid: context_uuid.into(),
+            context_uuid_offset: component_record_index + 12,
+        };
+    let naming_spaces = [
+        naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
+        naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
+    ];
+    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
+
+    let predecessor = graph
+        .predecessor(&second, |_| true)
+        .expect("component-qualified state chain");
+    let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
+    else {
+        panic!("component-local predecessor");
+    };
+    assert_eq!(predecessor.id, local_predecessor.id);
 }
 
 #[test]
@@ -77,6 +135,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
                 legacy_loft_body_carriers: &[],
                 placements: &[],
                 body_bindings: &[],
+                component_naming_spaces: &[],
                 histories: &[],
             },
         )
@@ -140,6 +199,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -231,6 +291,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -325,6 +386,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -367,6 +429,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -484,6 +547,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     );
@@ -551,6 +615,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -793,6 +858,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )

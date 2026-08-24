@@ -492,6 +492,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
