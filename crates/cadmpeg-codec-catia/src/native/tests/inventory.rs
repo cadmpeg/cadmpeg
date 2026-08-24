@@ -10,18 +10,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::CatiaCodec;
 
-fn grouped_surface_alias_stream(lead: u32, tag: u32, group_id: u32) -> Vec<u8> {
-    let mut bytes = vec![0x02, 0x00];
-    bytes.extend_from_slice(&0xafu32.to_le_bytes());
-    bytes.extend_from_slice(&group_id.to_le_bytes());
-    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
-    let mut alias = surface_alias_stream();
-    alias[..4].copy_from_slice(&lead.to_le_bytes());
-    alias[8..12].copy_from_slice(&tag.to_le_bytes());
-    bytes.extend(alias);
-    bytes
-}
-
 #[test]
 fn decode_persists_external_references_in_native_namespace() {
     let mut file = standard_catpart();

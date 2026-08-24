@@ -3711,10 +3711,7 @@ impl CatiaNative {
             &finjpl_segments,
             &value_blocks,
         )?;
-        validate_alias_surface_tags(
-            &alias_rows,
-            namespace.version >= CATIA_ALIAS_SURFACE_TAG_VERSION,
-        )?;
+        validate_alias_links(&alias_rows, &consolidated_owner_packets, namespace.version)?;
         Ok(Self {
             version: namespace.version,
             alias_rows,

@@ -865,13 +865,12 @@ fn native_namespace_retains_source_closed_owner_chart() {
     assert!(*byte_offset < chart.parameter_point_byte_offsets[0]);
     assert_eq!(
         [
-            *carrier_surface,
-            support_surfaces[0],
-            support_surfaces[1],
-            support_pcurves[0],
-            support_pcurves[1],
-        ]
-        .map(|reference| reference.value),
+            carrier_surface.value,
+            support_surfaces[0].value,
+            support_surfaces[1].value,
+            support_pcurves[0].value,
+            support_pcurves[1].value,
+        ],
         [1, 100, 0, 101, 1]
     );
     assert_eq!(
@@ -890,6 +889,130 @@ fn native_namespace_retains_source_closed_owner_chart() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA owner chart"),
         native
     );
+}
+
+#[test]
+fn owner_chart_width_coded_supports_select_unique_alias_rows() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
+    bytes.extend(grouped_surface_alias_stream(1, 200, 0x148));
+    let mut pcurve_alias = surface_alias_stream();
+    pcurve_alias[8..12].copy_from_slice(&101u32.to_le_bytes());
+    bytes.extend(pcurve_alias);
+    let mut local_collision = surface_alias_stream();
+    local_collision[8..12].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend(local_collision);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let chart = native.consolidated_owner_packets[0]
+        .owner_chart
+        .as_ref()
+        .expect("owner chart");
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        carrier_surface,
+        support_surfaces,
+        support_pcurves,
+        ..
+    } = &chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    let surface_alias = native
+        .alias_rows
+        .iter()
+        .find(|alias| alias.tag == 100)
+        .expect("support-surface alias");
+    let pcurve_alias = native
+        .alias_rows
+        .iter()
+        .find(|alias| alias.tag == 101)
+        .expect("support-pcurve alias");
+    assert_eq!(
+        support_surfaces[0].alias_row.as_deref(),
+        Some(surface_alias.id.as_str())
+    );
+    assert_eq!(support_surfaces[0].canonical_surface_tag, Some(200));
+    assert_eq!(
+        support_pcurves[0].alias_row.as_deref(),
+        Some(pcurve_alias.id.as_str())
+    );
+    assert_eq!(support_pcurves[0].canonical_surface_tag, Some(101));
+    assert_ne!(
+        support_pcurves[1].encoding,
+        crate::native::CatiaAllocationReferenceEncoding::WidthCoded
+    );
+    assert_eq!(support_pcurves[1].alias_row, None);
+    assert_eq!(support_pcurves[1].canonical_surface_tag, None);
+    assert_eq!(carrier_surface.alias_row, None);
+    assert_eq!(carrier_surface.canonical_surface_tag, None);
+
+    let mut legacy = native.clone();
+    let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart.as_mut() else {
+        panic!("owner chart")
+    };
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces,
+        support_pcurves,
+        ..
+    } = &mut chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    for reference in support_surfaces.iter_mut().chain(support_pcurves) {
+        reference.alias_row = None;
+        reference.canonical_surface_tag = None;
+    }
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    legacy
+        .store(&mut namespace)
+        .expect("store legacy chart links");
+    namespace.version = crate::native::CATIA_OWNER_CHART_ALIAS_VERSION - 1;
+    crate::native::CatiaNative::load(&namespace).expect("load legacy chart links");
+
+    let mut invalid = native;
+    let Some(chart) = invalid.consolidated_owner_packets[0].owner_chart.as_mut() else {
+        panic!("owner chart")
+    };
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces, ..
+    } = &mut chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    support_surfaces[0].canonical_surface_tag = Some(100);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid support alias");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn owner_chart_duplicate_alias_tags_remain_unresolved() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    for lead in [1u32, 0x8e] {
+        let mut alias = surface_alias_stream();
+        alias[..4].copy_from_slice(&lead.to_le_bytes());
+        alias[8..12].copy_from_slice(&100u32.to_le_bytes());
+        bytes.extend(alias);
+    }
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let chart = native.consolidated_owner_packets[0]
+        .owner_chart
+        .as_ref()
+        .expect("owner chart");
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces, ..
+    } = &chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    assert_eq!(support_surfaces[0].alias_row, None);
+    assert_eq!(support_surfaces[0].canonical_surface_tag, None);
 }
 
 #[test]

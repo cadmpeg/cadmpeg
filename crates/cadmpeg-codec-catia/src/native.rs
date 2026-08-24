@@ -22,7 +22,10 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 285;
+pub const CATIA_NATIVE_VERSION: u32 = 286;
+/// Native schema version that links width-coded owner-chart supports to alias rows.
+#[cfg(test)]
+pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
 /// Native schema version that resolves grouped aliases to persistent surface tags.
 #[cfg(test)]
 pub(crate) const CATIA_ALIAS_SURFACE_TAG_VERSION: u32 = 285;
@@ -292,13 +295,19 @@ pub enum CatiaOwnerChartCarrier {
 }
 
 /// One allocation-local reference in an owner-chart bridge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerChartBridgeReference {
     /// Decoded allocation-local value.
     pub value: u32,
     /// Wire addressing form retained from the allocation-reference token.
     pub encoding: CatiaAllocationReferenceEncoding,
+    /// Exact outer alias row selected by a unique width-coded support tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_row: Option<String>,
+    /// Canonical persistent surface tag selected through the alias row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_surface_tag: Option<u32>,
 }
 
 /// Structurally complete class-`0x37` owner-chart bridge.
@@ -6626,6 +6635,8 @@ fn consolidated_owner_packets(
                     CatiaOwnerChartBridgeReference {
                         value: reference.value,
                         encoding: native_allocation_reference_encoding(reference.encoding),
+                        alias_row: None,
+                        canonical_surface_tag: None,
                     }
                 };
             (
@@ -7334,6 +7345,47 @@ fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
     }
 }
 
+fn resolve_owner_chart_support_aliases(
+    packets: &mut [CatiaConsolidatedOwnerPacket],
+    aliases: &[CatiaAliasRow],
+) {
+    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
+    for alias in aliases {
+        unique_by_tag
+            .entry(alias.tag)
+            .and_modify(|unique| *unique = None)
+            .or_insert(Some(alias));
+    }
+    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
+        reference.alias_row = None;
+        reference.canonical_surface_tag = None;
+        if reference.encoding != CatiaAllocationReferenceEncoding::WidthCoded {
+            return;
+        }
+        let Some(alias) = unique_by_tag.get(&reference.value).copied().flatten() else {
+            return;
+        };
+        reference.alias_row = Some(alias.id.clone());
+        reference.canonical_surface_tag = alias.canonical_surface_tag;
+    };
+    for packet in packets {
+        let Some(chart) = packet.owner_chart.as_mut() else {
+            continue;
+        };
+        let CatiaOwnerChartBridge::SupportedSurface {
+            support_surfaces,
+            support_pcurves,
+            ..
+        } = &mut chart.bridge
+        else {
+            continue;
+        };
+        for reference in support_surfaces.iter_mut().chain(support_pcurves) {
+            resolve(reference);
+        }
+    }
+}
+
 #[cfg(test)]
 fn validate_alias_surface_tags(
     rows: &[CatiaAliasRow],
@@ -7355,6 +7407,36 @@ fn validate_alias_surface_tags(
             "alias rows have invalid canonical surface tags".to_string(),
         ))
     }
+}
+
+#[cfg(test)]
+fn validate_owner_chart_support_aliases(
+    packets: &[CatiaConsolidatedOwnerPacket],
+    aliases: &[CatiaAliasRow],
+    required: bool,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    if !required {
+        return Ok(());
+    }
+    let mut expected = packets.to_vec();
+    resolve_owner_chart_support_aliases(&mut expected, aliases);
+    if packets == expected {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "owner-chart support references have invalid alias links".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+fn validate_alias_links(
+    rows: &[CatiaAliasRow],
+    packets: &[CatiaConsolidatedOwnerPacket],
+    version: u32,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    validate_alias_surface_tags(rows, version >= CATIA_ALIAS_SURFACE_TAG_VERSION)?;
+    validate_owner_chart_support_aliases(packets, rows, version >= CATIA_OWNER_CHART_ALIAS_VERSION)
 }
 
 impl CatiaNative {
@@ -7702,7 +7784,9 @@ impl CatiaNative {
         let consolidated_embedded_cylinders =
             consolidated_embedded_cylinders(bytes, consolidated_records, &consolidated_groups);
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
-        let consolidated_owner_packets = consolidated_owner_packets(bytes, consolidated_records);
+        let mut consolidated_owner_packets =
+            consolidated_owner_packets(bytes, consolidated_records);
+        resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =
