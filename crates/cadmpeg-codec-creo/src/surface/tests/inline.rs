@@ -518,6 +518,44 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
 }
 
 #[test]
+fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
+    let mut body = Vec::new();
+    push_inline_test_scalar(&mut body, 0.0);
+    body.push(0x18);
+    push_inline_test_scalar(&mut body, 1.0);
+    push_inline_test_first_directrix(&mut body, 3.0);
+
+    let first_x = 5.75_f64.to_be_bytes();
+    assert_eq!(first_x[..2], [0x40, 0x17]);
+    body.push(0xa2);
+    body.extend_from_slice(&first_x[2..]);
+    for value in [5.0, 5.0, 3.75, 3.0, 2.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.extend_from_slice(&[0xf7, 0x17, 0xe3]);
+    body.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
+    for value in [4.75, 4.0, 5.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.extend_from_slice(&[0x0f, 0xe3]);
+
+    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .and_then(|body| body.carrier)
+    .expect("directrix-DICT outline and compact frame resolve one carrier") else {
+        panic!("inline body resolves a cylinder carrier");
+    };
+    assert_eq!(frame.origin, [-4.75, -4.0, -5.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(3.0));
+}
+
+#[test]
 fn inline_envelope_rejects_lane_aliases_by_geometry() {
     let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
     push_inline_test_scalar(&mut payload, 0.0);

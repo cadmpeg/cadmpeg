@@ -265,6 +265,9 @@ construct their curves and endpoints.
 The selector-corner interval family reconstructs its unique axis line, radius,
 and extent from two directrix parameters, two XYZ corners, and the selector
 pair. Its split-selector and one-placeholder variants use the same equation.
+The four-bound inline family selects either the positional row outline lane or
+the signed first-directrix outline lane from its first outline token. Both
+forms reconstruct a complete carrier from the inline local-system suffix.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 

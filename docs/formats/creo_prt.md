@@ -1118,11 +1118,15 @@ withholds the envelope.
 An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
 DICT or positional row lane, and the `v` bounds use the first
-tabulated-cylinder directrix-coordinate lane. Six outline coordinates and
-`e3` follow. One complete `f7 <reference-id>` replay reference may occur
-between the outline coordinates and `e3`; it does not contribute geometry.
-Both intervals are nondegenerate. A `12` byte inside a bounded scalar token is
-payload and does not select the separated envelope production.
+tabulated-cylinder directrix-coordinate lane; bare `18` in either `v` slot is
+exact zero and consumes one byte. Six outline coordinates and `e3` follow.
+The outline uses the positional row lane when its first slot is defined in
+that lane. Otherwise, all six slots use the first directrix-coordinate lane
+and each decoded value is negated to obtain its model-space coordinate. One
+complete `f7 <reference-id>` replay reference may occur between the outline
+coordinates and `e3`; it does not contribute geometry. Both intervals are
+nondegenerate. A `12` byte inside a bounded scalar token is payload and does
+not select the separated envelope production.
 
 A local-system-suffix row may omit the axial envelope. Its body begins with
 the local system and family suffix, or with an earlier row-local block closed

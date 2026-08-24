@@ -3994,13 +3994,19 @@ fn decode_inline_four_bound_cylinder_envelope(
         scalar::decode_positive_dict(body, cursor)
             .or_else(|| decode_row_scalar(kind, body, cursor, cache))
     };
+    let decode_v = |cursor| {
+        if body.get(cursor) == Some(&0x18) {
+            return Some((0.0, cursor + 1));
+        }
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+    };
     let (u_low, next) = decode_u(cursor)?;
     cursor = next;
-    let (v_low, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    let (v_low, next) = decode_v(cursor)?;
     cursor = next;
     let (u_high, next) = decode_u(cursor)?;
     cursor = next;
-    let (v_high, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    let (v_high, next) = decode_v(cursor)?;
     cursor = next;
     [u_low, v_low, u_high, v_high]
         .into_iter()
@@ -4008,9 +4014,16 @@ fn decode_inline_four_bound_cylinder_envelope(
         .then_some(())?;
     (u_high > u_low && v_high != v_low).then_some(())?;
 
+    let directrix_outline = decode_row_scalar(kind, body, cursor, cache).is_none();
     let mut corners = [[0.0; 3]; 2];
     for value in corners.iter_mut().flatten() {
-        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        let (decoded, next) = if directrix_outline {
+            let (stored, next) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+            (-stored, next)
+        } else {
+            decode_row_scalar(kind, body, cursor, cache)?
+        };
         decoded.is_finite().then_some(())?;
         *value = decoded;
         cursor = next;
