@@ -248,9 +248,11 @@ A type-admitted occurrence placement whose target path parses but whose remainin
 
 ### 1.5 Multi-document archives (`.f3z`)
 
-A `.f3z` is a ZIP archive holding `Manifest.json`, `DesignDescription.json`, and one `.f3d` member per document.
+A `.f3z` is a ZIP archive holding `Manifest.json`, `DesignDescription.json`, and one member per document. A 3D design member has extension `.f3d`. A drawing member has extension `.f2d`.
 
 `Manifest.json` is the single-member object `{"root":"<file>.f3d"}` naming the root document's member.
+
+The root member can instead be an F2D drawing. In this form, the root design object has `contentType` `f2d` and one `DERIVED` reference to the design object whose `contentType` is `f3d`. That referenced object's `relativePath` names the archive's derived 3D model member. The drawing payload and the derived model are separate documents. The model does not contain the drawing sheets, views, dimensions, or annotations.
 
 `DesignDescription.json` is `{"name":"Autodesk Design Description","version":"0.1","designDescription":{...}}`. The `designDescription` object carries `id`, `name`, `currentVersion`, and `designGraphs`, an array of graphs. A graph carries `creationDate`, `creatingService`, `rootIds` (the root design-object ids), `designObjectRefs`, and `designObjects`. A design object carries: `id` (integer), `version`, `about` (version URN), `lineage` (lineage URN), `from` (an `urn:adsk.objects:os.object:` URN), `relativePath` and `downloadAs` (both equal to the document's archive member name), `friendlyName`, `displayName`, `zipped`, `rootFile`, `contentType` (`f3d`), `shareInfo`, `references`, `metadata`, and `createdAt`. The `metadata.docstruct` string holds the JSON docstruct mirrored in the member's `Properties.dat` (§1.2), and `metadata.rootFileName` the document's display file name. A referencing design object's `references` is `[{"type":"XREF","ids":[...],"relationships":[...]}]`, where `ids` lists the referenced design-object ids and each relationship is `{"id":<design-object id>,"metadata":{"neutronRole":"<guid>"}}` with the same occurrence-role GUID as the member's `RedirectionsStream.dat` reference (§1.4). A leaf design object's `references` is the empty array.
 

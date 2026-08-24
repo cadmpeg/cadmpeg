@@ -34,6 +34,8 @@ pub enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// Non-root `ACT` component links stay source-only; product role is unresolved.
     ActComponentLinkUnresolved,
+    /// An F3Z drawing root was omitted while its derived 3D model transferred.
+    DrawingDocumentOmitted,
     /// ASM history binding work exceeded the decoder safety budget.
     HistoryBindingBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
@@ -174,6 +176,7 @@ impl F3dLossCode {
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
+        Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
@@ -254,6 +257,7 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
@@ -359,6 +363,7 @@ impl F3dLossCode {
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::DrawingDocumentOmitted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -474,6 +479,7 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
+                "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
