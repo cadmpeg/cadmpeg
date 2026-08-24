@@ -817,8 +817,8 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
     let candidates = plane_candidates(&scan);
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
-    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
 }
 
 #[test]
@@ -835,7 +835,7 @@ fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.origin, [0.0, 0.0, 0.0]);
-    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
 }
 
 #[test]
@@ -852,8 +852,8 @@ fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
     let candidates = plane_candidates(&scan);
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
-    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
 }
 
 #[test]

@@ -598,7 +598,7 @@ fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]
     let normal = normalized(chart.normal)?;
     let u_axis = normalized(chart.u_axis)?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
-    let v_axis = cross(u_axis, normal);
+    let v_axis = cross(normal, u_axis);
     let point = std::array::from_fn(|axis| {
         chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
     });
