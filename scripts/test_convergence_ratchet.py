@@ -81,6 +81,27 @@ class StripCfgTest(unittest.TestCase):
         stripped = ratchet.strip_cfg_test_items(text)
         self.assertEqual(ratchet.FROM_ENDIAN.findall(stripped), ["from_le_bytes"])
 
+    def test_ignores_braces_in_cfg_test_literals(self) -> None:
+        text = (
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    fn t() { let value = r#\"{ tolerance: 1e-10 }\"#; }\n"
+            "}\n"
+            "fn prod() { let value = 1e-9; }\n"
+        )
+        stripped = ratchet.strip_cfg_test_items(text)
+        self.assertEqual(ratchet.BARE_TOLERANCE.findall(stripped), ["1e-9"])
+
+    def test_lexical_mask_ignores_comments_and_literals(self) -> None:
+        text = (
+            "// 1e-6 from_le_bytes()\n"
+            "let raw = r#\"1e-7 from_be_bytes()\"#;\n"
+            "let tolerance = 1e-8;\n"
+        )
+        masked = ratchet.mask_rust_non_code(text)
+        self.assertEqual(ratchet.BARE_TOLERANCE.findall(masked), ["1e-8"])
+        self.assertEqual(ratchet.FROM_ENDIAN.findall(masked), [])
+
     def test_elides_cfg_test_items_without_blank_lines(self) -> None:
         text = (
             "fn prod() {}\n"

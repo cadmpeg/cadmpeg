@@ -109,14 +109,19 @@ def is_production_rs(path: Path) -> bool:
     return "src" in parts
 
 
-def strip_cfg_test_items(text: str) -> str:
+def strip_cfg_test_items(text: str, masked_text: str | None = None) -> str:
     """Remove ``#[cfg(test)]``-attributed items and their bodies when practical."""
     lines = text.splitlines(keepends=True)
+    masked = (
+        masked_text.splitlines(keepends=True)
+        if masked_text is not None
+        else masked_lines(lines)
+    )
     out: list[str] = []
     i = 0
     while i < len(lines):
         line = lines[i]
-        if CFG_TEST_ATTR.search(line.split("//", 1)[0]):
+        if CFG_TEST_ATTR.search(masked[i]):
             out.append("\n" if line.endswith("\n") else "")
             i += 1
             while i < len(lines):
@@ -133,13 +138,13 @@ def strip_cfg_test_items(text: str) -> str:
             if i >= len(lines):
                 break
             item = lines[i]
-            if "{" not in item:
+            if "{" not in masked[i]:
                 out.append("\n" if item.endswith("\n") else "")
                 i += 1
                 continue
             depth = 0
             while i < len(lines):
-                for ch in lines[i]:
+                for ch in masked[i]:
                     if ch == "{":
                         depth += 1
                     elif ch == "}":
@@ -157,6 +162,7 @@ def strip_cfg_test_items(text: str) -> str:
 def elide_cfg_test_items(text: str) -> str:
     """Remove cfg(test) items and their bodies without leaving blank lines."""
     lines = text.splitlines(keepends=True)
+    masked = masked_lines(lines)
     out: list[str] = []
     i = 0
     while i < len(lines):
@@ -170,7 +176,7 @@ def elide_cfg_test_items(text: str) -> str:
         while i < len(lines):
             stripped = lines[i].lstrip()
             if stripped.startswith("#["):
-                attr, i = collect_attribute(lines, i)
+                attr, i = collect_attribute(lines, i, masked)
                 attrs.append(attr)
                 continue
             if is_trivia_line(stripped):
@@ -182,7 +188,7 @@ def elide_cfg_test_items(text: str) -> str:
             continue
         if i >= len(lines):
             break
-        i = skip_item(lines, i)
+        i = skip_item(lines, i, masked)
     return "".join(out)
 
 
@@ -190,10 +196,46 @@ def iter_src_files(glob: str) -> list[Path]:
     return sorted(p for p in ROOT.glob(glob) if is_production_rs(p))
 
 
+def metric_source_text(path: Path) -> str:
+    """Return production Rust code with test-only items and non-code masked."""
+
+    masked = mask_rust_non_code(path.read_text(encoding="utf-8", errors="replace"))
+    return strip_cfg_test_items(masked, masked)
+
+
+def count_legacy_metrics() -> dict[str, int]:
+    counts = {
+        "from_endian_bytes": 0,
+        "codec_error_malformed_format": 0,
+        "loss_note_struct_literals": 0,
+        "bare_tolerance_literals": 0,
+        "nonliteral_vec_repeat": 0,
+    }
+    for path in iter_src_files("crates/**/src/**/*.rs"):
+        text = metric_source_text(path)
+        counts["from_endian_bytes"] += len(FROM_ENDIAN.findall(text))
+        counts["codec_error_malformed_format"] += len(MALFORMED_FORMAT.findall(text))
+        for line in text.splitlines():
+            if not LOSS_NOTE_LIT.search(line):
+                continue
+            if (
+                LOSS_NOTE_RETURN.search(line)
+                or LOSS_NOTE_STRUCT.search(line)
+                or LOSS_NOTE_IMPL.search(line)
+            ):
+                continue
+            counts["loss_note_struct_literals"] += 1
+        counts["bare_tolerance_literals"] += len(BARE_TOLERANCE.findall(text))
+        for match in VEC_REPEAT.finditer(text):
+            if not VEC_REPEAT_LITERAL.fullmatch(match.group(1).strip()):
+                counts["nonliteral_vec_repeat"] += 1
+    return counts
+
+
 def count_from_endian_bytes() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += len(FROM_ENDIAN.findall(text))
     return total
 
@@ -201,7 +243,7 @@ def count_from_endian_bytes() -> int:
 def count_malformed_format() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += len(MALFORMED_FORMAT.findall(text))
     return total
 
@@ -209,15 +251,14 @@ def count_malformed_format() -> int:
 def count_loss_note_literals() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         for line in text.splitlines():
-            code = line.split("//", 1)[0]
-            if not LOSS_NOTE_LIT.search(code):
+            if not LOSS_NOTE_LIT.search(line):
                 continue
             if (
-                LOSS_NOTE_RETURN.search(code)
-                or LOSS_NOTE_STRUCT.search(code)
-                or LOSS_NOTE_IMPL.search(code)
+                LOSS_NOTE_RETURN.search(line)
+                or LOSS_NOTE_STRUCT.search(line)
+                or LOSS_NOTE_IMPL.search(line)
             ):
                 continue
             total += 1
@@ -227,7 +268,7 @@ def count_loss_note_literals() -> int:
 def count_bare_tolerances() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += len(BARE_TOLERANCE.findall(text))
     return total
 
@@ -235,7 +276,7 @@ def count_bare_tolerances() -> int:
 def count_nonliteral_vec_repeat() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         for match in VEC_REPEAT.finditer(text):
             count_expr = match.group(1).strip()
             if VEC_REPEAT_LITERAL.fullmatch(count_expr):
@@ -299,14 +340,52 @@ def is_trivia_line(stripped: str) -> bool:
     )
 
 
-def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
+RUST_NON_CODE = re.compile(
+    r"//[^\r\n]*"
+    r"|/\*(?:[^*]|\*(?!/))*\*/"
+    r'|(?:br|r)(?P<raw_hashes>#+)"(?:(?!"(?P=raw_hashes)).)*"(?P=raw_hashes)'
+    r'|(?:br|r)"(?:\\.|[^"\\])*"'
+    r'|"(?:\\.|[^"\\])*"'
+    r"|'(?:\\.|[^'\\\r\n])*'",
+    re.DOTALL,
+)
+
+
+def mask_rust_non_code(text: str) -> str:
+    """Blank comments and literals while preserving source positions.
+
+    The legacy counters inspect Rust source text with regular expressions. A
+    lexical mask keeps those expressions from treating a tolerance in a
+    comment, string, or raw string as a Rust expression. Newlines are retained
+    so line-oriented diagnostics remain useful.
+    """
+
+    def blank(match: re.Match[str]) -> str:
+        return "".join(
+            character if character in "\r\n" else " " for character in match.group(0)
+        )
+
+    return RUST_NON_CODE.sub(blank, text)
+
+
+def masked_lines(lines: list[str]) -> list[str]:
+    """Return a lexical mask with the same line boundaries as ``lines``."""
+
+    return mask_rust_non_code("".join(lines)).splitlines(keepends=True)
+
+
+def collect_attribute(
+    lines: list[str], start: int, masked: list[str] | None = None
+) -> tuple[str, int]:
     depth = 0
     pieces: list[str] = []
+    masked = masked or [mask_rust_non_code(lines[start])]
     i = start
     while i < len(lines):
         line = lines[i]
         pieces.append(line)
-        for ch in line:
+        masked_line = masked[i] if i < len(masked) else mask_rust_non_code(line)
+        for ch in masked_line:
             if ch == "[":
                 depth += 1
             elif ch == "]":
@@ -330,12 +409,15 @@ def path_attr_target(attr: str) -> str | None:
     return match.group(1) if match is not None else None
 
 
-def skip_item(lines: list[str], start: int) -> int:
+def skip_item(
+    lines: list[str], start: int, masked: list[str] | None = None
+) -> int:
     saw_brace = False
     depth = 0
+    masked = masked or masked_lines(lines)
     i = start
     while i < len(lines):
-        for ch in lines[i]:
+        for ch in masked[i]:
             if ch == "{":
                 depth += 1
                 saw_brace = True
@@ -350,11 +432,14 @@ def skip_item(lines: list[str], start: int) -> int:
     return i
 
 
-def find_matching_brace_end(lines: list[str], start: int) -> int:
+def find_matching_brace_end(
+    lines: list[str], start: int, masked: list[str] | None = None
+) -> int:
     saw_brace = False
     depth = 0
+    masked = masked or masked_lines(lines)
     for i in range(start, len(lines)):
-        for ch in lines[i]:
+        for ch in masked[i]:
             if ch == "{":
                 depth += 1
                 saw_brace = True
@@ -398,8 +483,14 @@ def scan_block(
     scanned_prod_files: set[Path],
     known_test_files: set[Path],
     counted_test_files: set[Path],
+    masked_text: str | None = None,
 ) -> None:
     lines = text.splitlines(keepends=True)
+    masked = (
+        masked_text.splitlines(keepends=True)
+        if masked_text is not None
+        else masked_lines(lines)
+    )
     i = 0
     pending_attrs: list[str] = []
     pending_start = 0
@@ -408,7 +499,7 @@ def scan_block(
         if stripped.startswith("#["):
             if not pending_attrs:
                 pending_start = i
-            attr, i = collect_attribute(lines, i)
+            attr, i = collect_attribute(lines, i, masked)
             pending_attrs.append(attr)
             continue
         if is_trivia_line(stripped):
@@ -454,10 +545,11 @@ def scan_block(
                     )
             i += 1
             continue
-        end = find_matching_brace_end(lines, i)
+        end = find_matching_brace_end(lines, i, masked)
         block_text = "".join(lines[i : end + 1])
-        open_index = block_text.find("{")
-        close_index = block_text.rfind("}")
+        masked_block_text = "".join(masked[i : end + 1])
+        open_index = masked_block_text.find("{")
+        close_index = masked_block_text.rfind("}")
         body = (
             block_text[open_index + 1 : close_index]
             if open_index >= 0 and close_index > open_index
@@ -490,6 +582,9 @@ def scan_block(
             scanned_prod_files,
             known_test_files,
             counted_test_files,
+            masked_block_text[open_index + 1 : close_index]
+            if open_index >= 0 and close_index > open_index
+            else "",
         )
         i = end + 1
 
@@ -597,13 +692,7 @@ def collect_placement_contributors() -> dict[str, list[dict[str, object]]]:
 
 
 def measure_all() -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
-    counts = {
-        "from_endian_bytes": count_from_endian_bytes(),
-        "codec_error_malformed_format": count_malformed_format(),
-        "loss_note_struct_literals": count_loss_note_literals(),
-        "bare_tolerance_literals": count_bare_tolerances(),
-        "nonliteral_vec_repeat": count_nonliteral_vec_repeat(),
-    }
+    counts = count_legacy_metrics()
     contributors = collect_placement_contributors()
     counts.update(
         {
