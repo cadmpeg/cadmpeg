@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 283;
+pub const CATIA_NATIVE_VERSION: u32 = 284;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -288,31 +288,6 @@ pub enum CatiaOwnerChartCarrier {
     A32,
 }
 
-/// Closed class-specific tail of an owner-chart bridge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CatiaOwnerChartBridgeTail {
-    /// Five-reference layout with one finite positive scalar.
-    Scalar {
-        /// Fixed compact token following the carrier selector.
-        unit_token: u8,
-        /// Finite positive scalar.
-        scalar: f64,
-        /// Two retained control bytes.
-        controls: [u8; 2],
-        /// Final control byte after eight zero bytes.
-        terminal_control: u8,
-    },
-    /// Eight-reference A-family layout without a scalar.
-    Extended {
-        /// Three retained compact control tokens.
-        control_tokens: [u8; 3],
-        /// Final control byte after eight zero bytes.
-        terminal_control: u8,
-    },
-}
-
 /// One allocation-local reference in an owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -326,15 +301,34 @@ pub struct CatiaOwnerChartBridgeReference {
 /// Structurally complete class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaOwnerChartBridge {
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Counted allocation references in storage order.
-    pub references: Vec<CatiaOwnerChartBridgeReference>,
-    /// Carrier discriminator (`05`, `09`, or `11`).
-    pub carrier_selector: u8,
-    /// Closed class-specific tail.
-    pub tail: CatiaOwnerChartBridgeTail,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaOwnerChartBridge {
+    /// Five-reference supported-surface construction.
+    SupportedSurface {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Constructed carrier surface.
+        carrier_surface: CatiaOwnerChartBridgeReference,
+        /// Two supporting surfaces.
+        support_surfaces: [CatiaOwnerChartBridgeReference; 2],
+        /// Pcurves on the supporting surfaces.
+        support_pcurves: [CatiaOwnerChartBridgeReference; 2],
+        /// Six construction controls in storage order.
+        controls: [u8; 6],
+        /// Positive construction radius.
+        construction_radius: f64,
+    },
+    /// Eight-reference A-family production without an assigned object role.
+    Extended {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Counted allocation references in storage order.
+        references: [CatiaOwnerChartBridgeReference; 8],
+        /// Four controls before the zero lane.
+        controls: [u8; 4],
+        /// Two terminal controls after the zero lane.
+        terminal_controls: [u8; 2],
+    },
 }
 
 /// Source-closed carrier chart terminated by an owner packet.
@@ -6621,6 +6615,13 @@ fn consolidated_owner_packets(
     let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
         .into_iter()
         .map(|chart| {
+            let native_reference =
+                |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
+                    CatiaOwnerChartBridgeReference {
+                        value: reference.value,
+                        encoding: native_allocation_reference_encoding(reference.encoding),
+                    }
+                };
             (
                 (chart.source_index, chart.owner_pos),
                 CatiaOwnerChartRelation {
@@ -6636,37 +6637,32 @@ fn consolidated_owner_packets(
                             CatiaOwnerChartCarrier::A32
                         }
                     },
-                    bridge: CatiaOwnerChartBridge {
-                        byte_offset: chart.bridge.pos as u64,
-                        references: chart
-                            .bridge
-                            .references
-                            .into_iter()
-                            .map(|reference| CatiaOwnerChartBridgeReference {
-                                value: reference.value,
-                                encoding: native_allocation_reference_encoding(reference.encoding),
-                            })
-                            .collect(),
-                        carrier_selector: chart.bridge.carrier_selector,
-                        tail: match chart.bridge.tail {
-                            crate::families::b2::records::B2OwnerChartBridgeTail::Scalar {
-                                unit_token,
-                                scalar,
-                                controls,
-                                terminal_control,
-                            } => CatiaOwnerChartBridgeTail::Scalar {
-                                unit_token,
-                                scalar,
-                                controls,
-                                terminal_control,
-                            },
-                            crate::families::b2::records::B2OwnerChartBridgeTail::Extended {
-                                control_tokens,
-                                terminal_control,
-                            } => CatiaOwnerChartBridgeTail::Extended {
-                                control_tokens,
-                                terminal_control,
-                            },
+                    bridge: match chart.bridge {
+                        crate::families::b2::records::B2OwnerChartBridge::SupportedSurface {
+                            pos,
+                            carrier_surface,
+                            support_surfaces,
+                            support_pcurves,
+                            controls,
+                            construction_radius,
+                        } => CatiaOwnerChartBridge::SupportedSurface {
+                            byte_offset: pos as u64,
+                            carrier_surface: native_reference(carrier_surface),
+                            support_surfaces: support_surfaces.map(native_reference),
+                            support_pcurves: support_pcurves.map(native_reference),
+                            controls,
+                            construction_radius,
+                        },
+                        crate::families::b2::records::B2OwnerChartBridge::Extended {
+                            pos,
+                            references,
+                            controls,
+                            terminal_controls,
+                        } => CatiaOwnerChartBridge::Extended {
+                            byte_offset: pos as u64,
+                            references: references.map(native_reference),
+                            controls,
+                            terminal_controls,
                         },
                     },
                     side_axis: match chart.side_axis {

@@ -229,29 +229,6 @@ pub enum B2OwnerChartCarrier {
     A32,
 }
 
-/// Closed tail grammar of the class-`0x37` bridge in an owner chart.
-#[derive(Debug, Clone, PartialEq)]
-pub enum B2OwnerChartBridgeTail {
-    /// Five-reference layout with one finite positive scalar.
-    Scalar {
-        /// Fixed compact token following the carrier selector.
-        unit_token: u8,
-        /// Finite positive scalar.
-        scalar: f64,
-        /// Two retained control bytes.
-        controls: [u8; 2],
-        /// Final control byte after eight zero bytes.
-        terminal_control: u8,
-    },
-    /// Eight-reference A-family layout without a scalar.
-    Extended {
-        /// Three retained compact control tokens.
-        control_tokens: [u8; 3],
-        /// Final control byte after eight zero bytes.
-        terminal_control: u8,
-    },
-}
-
 /// One allocation-local reference in a class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct B2OwnerChartBridgeReference {
@@ -263,15 +240,33 @@ pub struct B2OwnerChartBridgeReference {
 
 /// Structurally complete class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2OwnerChartBridge {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Counted allocation references in storage order.
-    pub references: Vec<B2OwnerChartBridgeReference>,
-    /// Carrier discriminator (`05`, `09`, or `11`).
-    pub carrier_selector: u8,
-    /// Closed class-specific tail.
-    pub tail: B2OwnerChartBridgeTail,
+pub enum B2OwnerChartBridge {
+    /// Five-reference supported-surface construction.
+    SupportedSurface {
+        /// Record byte offset.
+        pos: usize,
+        /// Constructed carrier surface.
+        carrier_surface: B2OwnerChartBridgeReference,
+        /// Two supporting surfaces.
+        support_surfaces: [B2OwnerChartBridgeReference; 2],
+        /// Pcurves on the two supporting surfaces.
+        support_pcurves: [B2OwnerChartBridgeReference; 2],
+        /// Six construction controls in storage order.
+        controls: [u8; 6],
+        /// Positive construction radius.
+        construction_radius: f64,
+    },
+    /// Eight-reference A-family production without an assigned object role.
+    Extended {
+        /// Record byte offset.
+        pos: usize,
+        /// Counted allocation references in storage order.
+        references: [B2OwnerChartBridgeReference; 8],
+        /// Four controls before the zero lane.
+        controls: [u8; 4],
+        /// Two terminal controls after the zero lane.
+        terminal_controls: [u8; 2],
+    },
 }
 
 /// One source-closed carrier chart terminated by a fixed-nine owner packet.
@@ -947,16 +942,15 @@ fn owner_chart_bridge(
         return None;
     }
     at += 1;
-    let tail = if count == 5 {
+    if count == 5 {
         let unit_token = *data.get(at)?;
-        let scalar = f64_le(data, at + 1)?;
-        let controls = [*data.get(at + 9)?, *data.get(at + 10)?];
+        let construction_radius = f64_le(data, at + 1)?;
+        let middle_controls = [*data.get(at + 9)?, *data.get(at + 10)?];
         let zeros = data.get(at + 11..at + 19)?;
         let terminal_control = *data.get(at + 19)?;
         if unit_token != 0x05
-            || !scalar.is_finite()
-            || scalar <= 0.0
-            || !controls
+            || construction_radius <= 0.0
+            || !middle_controls
                 .into_iter()
                 .all(|control| matches!(control, 0x03 | 0x05))
             || zeros != [0; 8]
@@ -966,12 +960,23 @@ fn owner_chart_bridge(
         {
             return None;
         }
-        B2OwnerChartBridgeTail::Scalar {
-            unit_token,
-            scalar,
-            controls,
-            terminal_control,
-        }
+        let [carrier_surface, support_surface_0, support_surface_1, support_pcurve_0, support_pcurve_1]: [B2OwnerChartBridgeReference; 5] =
+            references.try_into().ok()?;
+        Some(B2OwnerChartBridge::SupportedSurface {
+            pos: frame.pos,
+            carrier_surface,
+            support_surfaces: [support_surface_0, support_surface_1],
+            support_pcurves: [support_pcurve_0, support_pcurve_1],
+            controls: [
+                carrier_selector,
+                unit_token,
+                middle_controls[0],
+                middle_controls[1],
+                terminal_control,
+                0x05,
+            ],
+            construction_radius,
+        })
     } else {
         let control_tokens: [u8; 3] = data.get(at..at + 3)?.try_into().ok()?;
         let zeros = data.get(at + 3..at + 11)?;
@@ -984,17 +989,18 @@ fn owner_chart_bridge(
         {
             return None;
         }
-        B2OwnerChartBridgeTail::Extended {
-            control_tokens,
-            terminal_control,
-        }
-    };
-    Some(B2OwnerChartBridge {
-        pos: frame.pos,
-        references,
-        carrier_selector,
-        tail,
-    })
+        Some(B2OwnerChartBridge::Extended {
+            pos: frame.pos,
+            references: references.try_into().ok()?,
+            controls: [
+                carrier_selector,
+                control_tokens[0],
+                control_tokens[1],
+                control_tokens[2],
+            ],
+            terminal_controls: [terminal_control, 0x05],
+        })
+    }
 }
 
 fn owner_chart_bounds_match(

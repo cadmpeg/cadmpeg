@@ -341,7 +341,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
 #[test]
 fn owner_chart_requires_exact_source_closed_selector_rectangle() {
     use crate::families::b2::records::{
-        B2OwnerChartBridgeTail, B2OwnerChartCarrier, B2OwnerChartSideAxis,
+        B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,
     };
 
     for (carrier_class, carrier, carrier_selector, side_axis) in [
@@ -374,29 +374,34 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         assert_eq!(chart.source_index, 0);
         assert_eq!(chart.carrier, carrier);
         assert_eq!(chart.side_axis, side_axis);
+        let B2OwnerChartBridge::SupportedSurface {
+            carrier_surface,
+            support_surfaces,
+            support_pcurves,
+            controls,
+            construction_radius,
+            ..
+        } = chart.bridge
+        else {
+            panic!("five-reference supported surface")
+        };
         assert_eq!(
-            chart
-                .bridge
-                .references
-                .iter()
-                .map(|reference| reference.value)
-                .collect::<Vec<_>>(),
+            [
+                carrier_surface,
+                support_surfaces[0],
+                support_surfaces[1],
+                support_pcurves[0],
+                support_pcurves[1]
+            ]
+            .map(|reference| reference.value),
             [1, 100, 0, 101, 1]
         );
         assert_eq!(
-            chart.bridge.references[0].encoding,
+            carrier_surface.encoding,
             crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
         );
-        assert_eq!(chart.bridge.carrier_selector, carrier_selector);
-        assert!(matches!(
-            chart.bridge.tail,
-            B2OwnerChartBridgeTail::Scalar {
-                unit_token: 0x05,
-                scalar: 1.0,
-                controls: [0x03, 0x05],
-                terminal_control: 0x01,
-            }
-        ));
+        assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
+        assert_eq!(construction_radius, 1.0);
         assert_eq!(
             chart.parameter_points.map(|point| point.prefix),
             [0x05, 0x09, 0x0d, 0x11]
@@ -418,30 +423,28 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
 
 #[test]
 fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
-    use crate::families::b2::records::B2OwnerChartBridgeTail;
+    use crate::families::b2::records::B2OwnerChartBridge;
 
     let bytes = b2_owner_chart_stream_with_extended_bridge();
     let records = crate::wire::records::consolidated_records(&bytes);
     let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
         .try_into()
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
+    let B2OwnerChartBridge::Extended {
+        references,
+        controls,
+        terminal_controls,
+        ..
+    } = chart.bridge
+    else {
+        panic!("eight-reference extended bridge")
+    };
     assert_eq!(
-        chart
-            .bridge
-            .references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
+        references.map(|reference| reference.value),
         [1, 100, 0, 101, 1, 2, 3, 4]
     );
-    assert_eq!(chart.bridge.carrier_selector, 0x11);
-    assert!(matches!(
-        chart.bridge.tail,
-        B2OwnerChartBridgeTail::Extended {
-            control_tokens: [0x09, 0x05, 0x05],
-            terminal_control: 0x01,
-        }
-    ));
+    assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
+    assert_eq!(terminal_controls, [0x01, 0x05]);
 }
 
 #[test]

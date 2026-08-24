@@ -850,30 +850,36 @@ fn native_namespace_retains_source_closed_owner_chart() {
         chart.side_axis,
         crate::native::CatiaOwnerChartSideAxis::SecondParameter
     );
-    assert!(chart.carrier_byte_offset < chart.bridge.byte_offset);
-    assert!(chart.bridge.byte_offset < chart.parameter_point_byte_offsets[0]);
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        byte_offset,
+        carrier_surface,
+        support_surfaces,
+        support_pcurves,
+        controls,
+        construction_radius,
+    } = &chart.bridge
+    else {
+        panic!("supported-surface owner bridge")
+    };
+    assert!(chart.carrier_byte_offset < *byte_offset);
+    assert!(*byte_offset < chart.parameter_point_byte_offsets[0]);
     assert_eq!(
-        chart
-            .bridge
-            .references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
+        [
+            *carrier_surface,
+            support_surfaces[0],
+            support_surfaces[1],
+            support_pcurves[0],
+            support_pcurves[1],
+        ]
+        .map(|reference| reference.value),
         [1, 100, 0, 101, 1]
     );
     assert_eq!(
-        chart.bridge.references[0].encoding,
+        carrier_surface.encoding,
         crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
     );
-    assert!(matches!(
-        chart.bridge.tail,
-        crate::native::CatiaOwnerChartBridgeTail::Scalar {
-            unit_token: 0x05,
-            scalar: 1.0,
-            controls: [0x03, 0x05],
-            terminal_control: 0x01,
-        }
-    ));
+    assert_eq!(*controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
+    assert_eq!(*construction_radius, 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
