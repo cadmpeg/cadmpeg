@@ -2032,16 +2032,7 @@ pub(super) fn project(
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
                 })
         });
-        let directory_valid = entry.status.subordinate == 0
-            && entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.level == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0
-            && entry.color == 0;
+        let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {

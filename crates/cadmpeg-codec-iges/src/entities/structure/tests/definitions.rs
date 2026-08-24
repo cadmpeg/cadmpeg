@@ -36,3 +36,30 @@ fn associativity_definition_ignores_unrelated_directory_fields() {
             && loss.message.contains("associativity definition")
     }));
 }
+
+#[test]
+fn units_data_ignores_unrelated_directory_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 316,
+                    form: 0,
+                    label: "UNITS".into(),
+                    status: "00000200",
+                    parameters: "316,1,6HLENGTH,2HKN,1852;".into(),
+                }],
+                &[(1, 9)],
+                &[(1, 7)],
+                &[(1, 4)],
+                &[(1, 3)],
+                &[(1, 8)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind() && loss.message.contains("units")
+    }));
+}
