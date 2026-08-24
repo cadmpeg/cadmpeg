@@ -50,15 +50,30 @@ fn point_display_symbol_valid(
     }
 }
 
-fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
+fn base_geometry_table_entry(entity_type: i64, form: i64) -> bool {
     match entity_type {
-        106 => matches!(form, 11..=13 | 63),
-        116 => false,
-        100 | 104 | 108 | 110 | 112 | 114 | 118 | 120 | 122 | 126 | 128 | 130 | 140 | 142 | 144 => {
-            true
-        }
+        106 => matches!(form, 1..=3 | 11..=13 | 63),
+        100 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140 | 142
+        | 144 => true,
         _ => false,
     }
+}
+
+fn base_geometry_use_flag_valid(
+    entity_type: i64,
+    form: i64,
+    use_flag: u8,
+    dialect: Dialect,
+) -> bool {
+    !base_geometry_table_entry(entity_type, form)
+        || !matches!(dialect, Dialect::V4_0)
+        || matches!(use_flag, 0 | 1 | 2 | 5)
+}
+
+fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
+    base_geometry_table_entry(entity_type, form)
+        && !matches!(entity_type, 116)
+        && !(entity_type == 106 && matches!(form, 1..=3))
 }
 
 fn base_geometry_line_font_valid(
@@ -772,6 +787,12 @@ pub(crate) fn project_geometry(
     let dialect = global.dialect();
     let admitted = |entry: &DirectoryEntry| {
         entry.status.is_use_flag_valid(dialect)
+            && base_geometry_use_flag_valid(
+                entry.entity_type,
+                entry.form,
+                entry.status.use_flag,
+                dialect,
+            )
             && base_geometry_line_font_valid(
                 entry.entity_type,
                 entry.form,
@@ -787,6 +808,19 @@ pub(crate) fn project_geometry(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the declared dialect",
+                    entry.status.use_flag
+                ),
+            ));
+        } else if !base_geometry_use_flag_valid(
+            entry.entity_type,
+            entry.form,
+            entry.status.use_flag,
+            dialect,
+        ) {
+            losses.push(entity_loss(
+                entry,
+                format!(
+                    "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag
                 ),
             ));

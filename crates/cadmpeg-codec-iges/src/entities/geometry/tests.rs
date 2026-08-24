@@ -10,8 +10,9 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Vector3;
 
 use super::{
-    base_geometry_line_font_valid, enforce_transform_depth, is_finite_nonzero_vector,
-    validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
+    base_geometry_line_font_valid, base_geometry_use_flag_valid, enforce_transform_depth,
+    is_finite_nonzero_vector, validate_declared_transform_frame, DeclaredInterval,
+    DeclaredTransformFrameError,
 };
 use crate::global::Dialect;
 use crate::loss::IgesLossCode;
@@ -104,6 +105,29 @@ fn base_geometry_line_font_follows_the_declared_dialect() {
 }
 
 #[test]
+fn base_geometry_use_flag_follows_the_declared_dialect() {
+    for use_flag in [0, 1, 2, 5] {
+        assert!(base_geometry_use_flag_valid(
+            110,
+            0,
+            use_flag,
+            Dialect::V4_0
+        ));
+    }
+    for use_flag in [3, 4] {
+        assert!(!base_geometry_use_flag_valid(
+            110,
+            0,
+            use_flag,
+            Dialect::V4_0
+        ));
+    }
+    assert!(base_geometry_use_flag_valid(110, 0, 3, Dialect::V5_0));
+    assert!(!base_geometry_use_flag_valid(116, 0, 3, Dialect::V4_0));
+    assert!(base_geometry_use_flag_valid(125, 0, 3, Dialect::V4_0));
+}
+
+#[test]
 fn decode_rejects_a_zero_v4_base_geometry_line_font() {
     const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
@@ -128,6 +152,58 @@ fn decode_rejects_a_zero_v4_base_geometry_line_font() {
             && loss
                 .message
                 .contains("Line Font must be nonzero for this IGES 4.0 geometry entity")
+    }));
+}
+
+#[test]
+fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                &[OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINE".into(),
+                    status: "00000300",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                }],
+                global_v4,
+                &[(1, 1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains(
+                "Entity Use Flag 03 is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
+            )
+    }));
+
+    let later = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                &[OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINE".into(),
+                    status: "00000300",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                }],
+                global_v5,
+                &[(1, 1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(later.ir().model.curves.len(), 1);
+    assert!(!later.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("base geometry values")
     }));
 }
 
