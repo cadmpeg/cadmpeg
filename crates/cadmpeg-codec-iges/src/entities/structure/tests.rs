@@ -18,6 +18,7 @@ use crate::IgesCodec;
 use super::{
     flow_join_target_valid, functional_level_identifier_valid, line_font_property_code_valid,
     network_connectivity_valid, signal_string_geometry_target,
+    subfigure_definition_directory_valid,
 };
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
@@ -2401,6 +2402,60 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
         Dialect::V5_0
     ));
     assert!(network_connectivity_valid(&[None], &[None], Dialect::V5_0));
+}
+
+#[test]
+fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
+    let entry = |line_font, subordinate, use_flag, hierarchy| DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type: 308,
+        parameter_start: 0,
+        structure: 0,
+        line_font,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate,
+            use_flag,
+            hierarchy,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+
+    assert!(!subfigure_definition_directory_valid(
+        &entry(0, 0, 2, 0),
+        Dialect::V4_0
+    ));
+    assert!(subfigure_definition_directory_valid(
+        &entry(1, 0, 2, 0),
+        Dialect::V4_0
+    ));
+    assert!(subfigure_definition_directory_valid(
+        &entry(0, 0, 2, 1),
+        Dialect::V4_0
+    ));
+    assert!(!subfigure_definition_directory_valid(
+        &entry(1, 1, 2, 0),
+        Dialect::V4_0
+    ));
+    assert!(!subfigure_definition_directory_valid(
+        &entry(1, 0, 1, 0),
+        Dialect::V4_0
+    ));
+    assert!(subfigure_definition_directory_valid(
+        &entry(0, 3, 2, 0),
+        Dialect::V5_0
+    ));
 }
 
 #[test]

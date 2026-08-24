@@ -127,6 +127,14 @@ fn network_connectivity_valid(
             || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
 }
 
+fn subfigure_definition_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.status.use_flag == 2
+        && entry.transform == 0
+        && (!matches!(dialect, Dialect::V4_0)
+            || (entry.status.subordinate == 0
+                && (entry.status.hierarchy == 1 || entry.line_font != 0)))
+}
+
 #[derive(Clone)]
 struct FlowAssociativity {
     form: i64,
@@ -2541,7 +2549,7 @@ pub(super) fn project(
             continue;
         };
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
-        if name_valid && entry.status.use_flag == 2 && entry.transform == 0 {
+        if name_valid && subfigure_definition_directory_valid(entry, global.dialect()) {
             definition_fields_valid.insert(entry.sequence);
         }
     }
@@ -2663,8 +2671,7 @@ pub(super) fn project(
             && type_flag_valid
             && designator_valid
             && display_valid
-            && entry.status.use_flag == 2
-            && entry.transform == 0
+            && subfigure_definition_directory_valid(entry, global.dialect())
         {
             network_definition_fields_valid.insert(entry.sequence);
         }
