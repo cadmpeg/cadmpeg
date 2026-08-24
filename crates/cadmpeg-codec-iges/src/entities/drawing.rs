@@ -65,8 +65,15 @@ fn drawing_directory_valid(entry: &DirectoryEntry) -> bool {
         && entry.color == 0
 }
 
-fn view_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.entity_type == 410 && matches!(entry.form, 0 | 1) && entry.status.use_flag != 0
+fn view_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 410
+        && matches!(entry.form, 0 | 1)
+        && match dialect {
+            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+                entry.status.use_flag == 1
+            }
+        }
 }
 
 fn views_visible_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
@@ -351,7 +358,11 @@ pub(super) fn project(
                 && depth.is_some()
                 && depth_values_valid
         };
-        if view_directory_valid(entry) && view_number_valid && scale_valid && form_valid {
+        if view_directory_valid(entry, global.dialect())
+            && view_number_valid
+            && scale_valid
+            && form_valid
+        {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(

@@ -72,16 +72,20 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     }
 
     let mut view = directory_entry(410, 0);
-    assert!(view_directory_valid(&view));
+    assert!(view_directory_valid(&view, Dialect::V4_0));
     view.status.subordinate = 2;
-    assert!(view_directory_valid(&view));
+    assert!(view_directory_valid(&view, Dialect::V4_0));
     view.status.subordinate = 0;
     view.status.use_flag = 2;
-    assert!(view_directory_valid(&view));
+    assert!(view_directory_valid(&view, Dialect::V4_0));
+    assert!(!view_directory_valid(&view, Dialect::V5_0));
+    assert!(!view_directory_valid(&view, Dialect::V5_3));
     view.status.use_flag = 1;
     view.status.blank = 1;
     view.status.hierarchy = 3;
-    assert!(view_directory_valid(&view));
+    assert!(view_directory_valid(&view, Dialect::V4_0));
+    assert!(view_directory_valid(&view, Dialect::V5_0));
+    assert!(view_directory_valid(&view, Dialect::V5_3));
     for field in 0..4 {
         let mut candidate = directory_entry(410, 1);
         match field {
@@ -90,12 +94,14 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(view_directory_valid(&candidate));
+        assert!(view_directory_valid(&candidate, Dialect::V4_0));
+        assert!(view_directory_valid(&candidate, Dialect::V5_3));
     }
     view.level = 2;
     view.view = 3;
     view.label_display = 5;
-    assert!(view_directory_valid(&view));
+    assert!(view_directory_valid(&view, Dialect::V4_0));
+    assert!(view_directory_valid(&view, Dialect::V5_3));
 
     for form in [3, 4, 19] {
         let mut visible = directory_entry(402, form);
