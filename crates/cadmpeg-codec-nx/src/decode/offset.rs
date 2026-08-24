@@ -18,7 +18,7 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
+    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
@@ -914,11 +914,20 @@ fn offset_support_control_hull_excludes_point(
                     .filter(|procedural| &procedural.surface == surface)
                     .and_then(|procedural| match &procedural.definition {
                         ProceduralSurfaceDefinition::Offset {
-                            support, distance, ..
-                        } => Some((support, distance)),
+                            support,
+                            distance,
+                            support_extension,
+                            ..
+                        } => Some((support, distance, support_extension)),
                         _ => None,
                     })
-                    .is_some_and(|(support, distance)| {
+                    .is_some_and(|(support, distance, support_extension)| {
+                        if matches!(
+                            support_extension.as_ref(),
+                            Some(OffsetSupportExtension::Linear)
+                        ) {
+                            return false;
+                        }
                         let allowance = allowance + distance.abs();
                         allowance.is_finite()
                             && offset_support_control_hull_excludes_point(
@@ -989,12 +998,20 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         .procedural_surfaces(construction.0.as_str())
         .filter(|candidate| &candidate.surface == surface)?;
     let ProceduralSurfaceDefinition::Offset {
-        support, distance, ..
+        support,
+        distance,
+        support_extension,
+        ..
     } = &procedural.definition
     else {
         return None;
     };
+    let linear_extension = matches!(
+        support_extension.as_ref(),
+        Some(OffsetSupportExtension::Linear)
+    );
     let domain = surface_parameter_domain_with_index(index, support);
+    let derivative_domain = (!linear_extension).then_some(domain).flatten();
     // The target lies on the offset carrier, so its distance from the base
     // carrier may be the full offset distance even for an exact fit. Enlarge
     // only the base-surface seed search; the iterations and final caller-side
@@ -1006,15 +1023,17 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     if fit_tolerance.is_some_and(|tolerance| !tolerance.is_finite() || tolerance < 0.0) {
         return None;
     }
-    if fit_tolerance.is_some_and(|tolerance| {
-        offset_support_control_hull_excludes_point(
-            index,
-            support,
-            point,
-            tolerance + distance.abs(),
-            &mut BTreeSet::new(),
-        )
-    }) {
+    if !linear_extension
+        && fit_tolerance.is_some_and(|tolerance| {
+            offset_support_control_hull_excludes_point(
+                index,
+                support,
+                point,
+                tolerance + distance.abs(),
+                &mut BTreeSet::new(),
+            )
+        })
+    {
         return None;
     }
     let mut starts = Vec::with_capacity(3);
@@ -1025,7 +1044,9 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         if !candidate.u.is_finite() || !candidate.v.is_finite() {
             return;
         }
-        clamp_surface_parameters(&mut candidate, domain);
+        if !linear_extension {
+            clamp_surface_parameters(&mut candidate, domain);
+        }
         if !starts.contains(&candidate) {
             starts.push(candidate);
         }
@@ -1042,7 +1063,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,
                 surface,
                 parameters,
-                domain,
+                derivative_domain,
                 geometry_budget,
             ) else {
                 break;
@@ -1062,7 +1083,9 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             };
             parameters.u -= step_u;
             parameters.v -= step_v;
-            clamp_surface_parameters(&mut parameters, domain);
+            if !linear_extension {
+                clamp_surface_parameters(&mut parameters, domain);
+            }
             if step_u.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.u.abs())
                 && step_v.abs() <= OFFSET_PARAMETER_STEP_EPSILON * (1.0 + parameters.v.abs())
             {
@@ -2363,5 +2386,85 @@ mod tests {
             1.1,
             &mut BTreeSet::new(),
         ));
+    }
+
+    #[test]
+    fn offset_inverse_continues_past_a_linear_support_boundary() {
+        let support = SurfaceId("synthetic:linear-support".into());
+        let offset = SurfaceId("synthetic:linear-offset".into());
+        let construction =
+            cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:linear-offset-construction".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: None,
+                normal_reversed: false,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: offset.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        });
+        ir.model
+            .procedural_surfaces
+            .push(cadmpeg_ir::geometry::ProceduralSurface {
+                id: construction,
+                surface: offset.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support,
+                    distance: 1.0,
+                    u_sense: None,
+                    v_sense: None,
+                    support_extension: Some(OffsetSupportExtension::Linear),
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            });
+
+        let fit_tolerance = f64::EPSILON.sqrt();
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let target = Point3::new(3.0, 0.25, 1.0);
+        let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, 3.0, 0.25)
+            .expect("linear offset evaluation");
+        assert!(point_distance(evaluated, target) <= fit_tolerance);
+        assert!(!offset_support_control_hull_excludes_point(
+            &index,
+            &offset,
+            target,
+            fit_tolerance,
+            &mut BTreeSet::new(),
+        ));
+        let parameters = offset_surface_parameters_with_tolerance(
+            &ir,
+            &offset,
+            target,
+            None,
+            Some(fit_tolerance),
+        )
+        .expect("linear support extension parameters");
+
+        assert!((parameters.u - 3.0).abs() <= fit_tolerance);
+        assert!((parameters.v - 0.25).abs() <= fit_tolerance);
     }
 }
