@@ -4150,6 +4150,7 @@ pub(crate) fn append_text_surface(
                     distance: *distance,
                     u_sense: None,
                     v_sense: None,
+                    support_extension: None,
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },

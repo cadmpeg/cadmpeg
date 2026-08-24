@@ -526,6 +526,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             distance,
             u_sense,
             v_sense,
+            support_extension: _,
             extension_flags,
         } = &procedural.definition
         else {

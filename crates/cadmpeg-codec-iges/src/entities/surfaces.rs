@@ -1184,6 +1184,7 @@ pub(super) fn project(
                 distance: signed_distance,
                 u_sense: Some(0),
                 v_sense: Some(0),
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

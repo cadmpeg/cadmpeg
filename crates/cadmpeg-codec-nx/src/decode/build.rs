@@ -427,6 +427,7 @@ pub(crate) fn try_decode_geometry(
                     // OFFSET_SURF status fields do not select parameter direction.
                     u_sense: None,
                     v_sense: None,
+                    support_extension: Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },

@@ -95,6 +95,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 u_sense: None,
                 v_sense: None,
                 extension_flags: Vec::new(),
+                support_extension: None,
                 revision_form: None,
             },
             cache_fit_tolerance: None,
@@ -215,6 +216,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             u_sense: None,
             v_sense: None,
             extension_flags: Vec::new(),
+            support_extension: None,
             revision_form: None,
         },
         cache_fit_tolerance: None,
@@ -260,6 +262,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             u_sense: None,
             v_sense: None,
             extension_flags: Vec::new(),
+            support_extension: None,
             revision_form: None,
         },
         cache_fit_tolerance: None,
@@ -1456,6 +1459,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 u_sense: None,
                 v_sense: None,
                 extension_flags: Vec::new(),
+                support_extension: None,
                 revision_form: None,
             },
             cache_fit_tolerance: None,
@@ -1899,6 +1903,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 u_sense: Some(0),
                 v_sense: Some(0),
                 extension_flags: Vec::new(),
+                support_extension: None,
                 revision_form: None,
             },
             cache_fit_tolerance: None,
@@ -1946,12 +1951,26 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     };
     assert_eq!(context.sides[0].pcurve, context.sides[1].pcurve);
 
-    let ProceduralSurfaceDefinition::Offset { distance, .. } =
-        &mut ir.model.procedural_surfaces[1].definition
-    else {
-        unreachable!()
-    };
-    *distance = 31.0;
+    if let ProceduralSurfaceDefinition::Offset {
+        support_extension, ..
+    } = &mut ir.model.procedural_surfaces[1].definition
+    {
+        *support_extension = Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear);
+    }
+    assert!(!crate::decode::parameterization_equivalent_surfaces(
+        &ir,
+        &offsets[0],
+        &offsets[1]
+    ));
+    if let ProceduralSurfaceDefinition::Offset {
+        distance,
+        support_extension,
+        ..
+    } = &mut ir.model.procedural_surfaces[1].definition
+    {
+        *support_extension = None;
+        *distance = 31.0;
+    }
     assert!(!crate::decode::parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],

@@ -1054,6 +1054,7 @@ fn native_procedural_surface_definition(
             distance,
             u_sense,
             v_sense,
+            support_extension: _,
             extension_flags,
             revision_form,
         } => {

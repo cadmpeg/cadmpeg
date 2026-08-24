@@ -300,6 +300,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             distance: 0.75,
             u_sense: None,
             v_sense: None,
+            support_extension: None,
             extension_flags: Vec::new(),
             revision_form: None,
         },

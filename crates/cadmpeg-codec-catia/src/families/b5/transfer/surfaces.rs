@@ -610,6 +610,7 @@ pub(super) fn emit_surfaces(
                 distance: offset.distance,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

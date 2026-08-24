@@ -5,8 +5,8 @@
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -646,6 +646,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 distance: 2.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -660,6 +661,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 distance: -5.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -690,6 +692,70 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
+    let support_id = SurfaceId("support".into());
+    let offset_id = SurfaceId("offset".into());
+    let construction = ProceduralSurfaceId("offset-construction".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 2,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 3,
+                control_points: [0.0, 1.0]
+                    .into_iter()
+                    .flat_map(|u| {
+                        [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
+                            .into_iter()
+                            .map(move |(v, z)| Point3::new(u, v, z))
+                    })
+                    .collect(),
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        },
+        Surface {
+            id: offset_id.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: offset_id.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: support_id,
+            distance: 0.0,
+            u_sense: None,
+            v_sense: None,
+            support_extension: Some(OffsetSupportExtension::Linear),
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+
+    let point =
+        model_surface_point_by_id(&index, &offset_id, 0.25, 1.2).expect("linearly extended offset");
+
+    let epsilon = 64.0 * f64::EPSILON;
+    assert!((point.x - 0.25).abs() <= epsilon);
+    assert!((point.y - 1.2).abs() <= epsilon);
+    assert!((point.z - 1.4).abs() <= epsilon);
 }
 
 #[test]
@@ -743,6 +809,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
                 distance: 2.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

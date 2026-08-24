@@ -17,8 +17,9 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, OffsetSupportExtension,
+    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -4564,6 +4565,51 @@ fn model_surface_point_by_id_inner(
         oriented_normal: Option<Vector3>,
     }
 
+    fn linear_nurbs_support_extension(
+        index: &crate::index::ModelIndex<'_>,
+        support: &crate::ids::SurfaceId,
+        u: f64,
+        v: f64,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Option<SurfaceEvaluation> {
+        let support = index.surfaces(&support.0)?;
+        let SurfaceGeometry::Nurbs(nurbs) = &support.geometry else {
+            return None;
+        };
+        let u_degree = usize::try_from(nurbs.u_degree).ok()?;
+        let v_degree = usize::try_from(nurbs.v_degree).ok()?;
+        let u_count = usize::try_from(nurbs.u_count).ok()?;
+        let v_count = usize::try_from(nurbs.v_count).ok()?;
+        let u_domain = [*nurbs.u_knots.get(u_degree)?, *nurbs.u_knots.get(u_count)?];
+        let v_domain = [*nurbs.v_knots.get(v_degree)?, *nurbs.v_knots.get(v_count)?];
+        let boundary_u = u.clamp(u_domain[0], u_domain[1]);
+        let boundary_v = v.clamp(v_domain[0], v_domain[1]);
+        if boundary_u == u && boundary_v == v {
+            return None;
+        }
+        let partials =
+            surface_partials_with_budget(&support.geometry, boundary_u, boundary_v, budget)?;
+        let normal = partials.du.cross(partials.dv);
+        let magnitude = normal.norm();
+        let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
+            Vector3::new(
+                normal.x / magnitude,
+                normal.y / magnitude,
+                normal.z / magnitude,
+            )
+        })?;
+        let du = u - boundary_u;
+        let dv = v - boundary_v;
+        Some(SurfaceEvaluation {
+            point: Point3::new(
+                partials.point.x + du * partials.du.x + dv * partials.dv.x,
+                partials.point.y + du * partials.du.y + dv * partials.dv.y,
+                partials.point.z + du * partials.du.z + dv * partials.dv.z,
+            ),
+            oriented_normal: Some(oriented_normal),
+        })
+    }
+
     fn evaluate(
         index: &crate::index::ModelIndex<'_>,
         surface_id: &crate::ids::SurfaceId,
@@ -4708,9 +4754,15 @@ fn model_surface_point_by_id_inner(
                 })
             }
             Some(ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
+                support,
+                distance,
+                support_extension,
+                ..
             }) => {
-                let support = evaluate(index, support, u, v, visiting, budget)?;
+                let support = (*support_extension == Some(OffsetSupportExtension::Linear))
+                    .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
+                    .flatten()
+                    .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
                 let normal = support.oriented_normal?;
                 Some(SurfaceEvaluation {
                     point: offset(support.point, &[(*distance, normal)]),

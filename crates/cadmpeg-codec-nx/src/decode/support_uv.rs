@@ -1700,6 +1700,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
                 distance: first_distance,
                 u_sense: first_u_sense,
                 v_sense: first_v_sense,
+                support_extension: first_support_extension,
                 extension_flags: first_extensions,
                 ..
             }),
@@ -1708,6 +1709,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
                 distance: second_distance,
                 u_sense: second_u_sense,
                 v_sense: second_v_sense,
+                support_extension: second_support_extension,
                 extension_flags: second_extensions,
                 ..
             }),
@@ -1725,6 +1727,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         first_distance.to_bits() == second_distance.to_bits()
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense
+            && first_support_extension == second_support_extension
             && first_extensions == second_extensions
             && equivalent(index, first_support, second_support, visited)
     }
