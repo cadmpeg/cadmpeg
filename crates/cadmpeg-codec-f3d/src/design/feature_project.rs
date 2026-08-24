@@ -415,13 +415,19 @@ fn ensure_feature_dependencies_precede(
                 "projected Design feature ordinal is not unique".into(),
             ));
         }
-        if feature.dependencies.iter().any(|dependency| {
-            ordinals
-                .get(dependency)
-                .is_some_and(|ordinal| *ordinal >= feature.ordinal)
-        }) {
+        if let Some((dependency, dependency_ordinal)) =
+            feature.dependencies.iter().find_map(|dependency| {
+                ordinals
+                    .get(dependency)
+                    .filter(|ordinal| **ordinal >= feature.ordinal)
+                    .map(|ordinal| (dependency, ordinal))
+            })
+        {
             return Err(CodecError::Malformed(
-                "Design feature dependency does not precede its authored timeline position".into(),
+                format!(
+                    "Design feature dependency does not precede its authored timeline position: {dependency} at ordinal {dependency_ordinal} -> {} at ordinal {}",
+                    feature.id, feature.ordinal,
+                ),
             ));
         }
     }
