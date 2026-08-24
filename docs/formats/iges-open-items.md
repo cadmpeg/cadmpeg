@@ -97,6 +97,30 @@ Type 406 Forms 5001 through 9999 are settled. Under [IGES 4.0 §4.3.7](https://w
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
+### DE-01. Type 402 Structure is over-restricted in IGES 4.0
+
+**Question.** Is the Type 402 Structure field ignored for every predefined form number through 5000 in IGES 4.0?
+
+**Known.** IGES 4.0 Table 3 marks Type 402 Structure as valid and states that it is ignored for form numbers through 5000. `crates/cadmpeg-codec-iges/src/entities/structure.rs:458-466` rejects every nonzero Structure value for legacy Forms 8, 10, and 11. `structure.rs:2125-2144` also requires Structure `0` for Forms 2, 5, 6, 9, 12, 13, and 16. The V4 envelope admits these forms. The native entity record retains the field, but the semantic associativity is not admitted when this gate fails.
+
+**Need.** Make the Type 402 Structure rule dialect-specific and add V4 witnesses for each predefined form whose Structure field is ignored. Keep the later-version zero rule separate if the later specification requires it.
+
+**Conflict.** The shared semantic gate conflicts with IGES 4.0 Table 3 and removes a conformant V4 associativity from semantic projection.
+
+**Note.** Forms 3 and 4 already use the V4 ignored-field rule. The missing coverage is the remaining predefined forms whose common validation path still tests for zero.
+
+### DE-02. V4 subfigure definition pointers are rejected
+
+**Question.** May an IGES 4.0 Type 308 or Type 320 definition use a nonzero Directory transformation or label-display pointer?
+
+**Known.** IGES 4.0 §2.5.1 applies the defining matrix and translation of a subfigure definition before instance placement. Table 3 lists the Matrix and Label Pointer fields for Types 308 and 320 as valid fields with default `0`; the general Directory label-display rule permits a Type 402 Form 5 pointer. `crates/cadmpeg-codec-iges/src/entities/structure.rs:137-151` rejects every nonzero label-display pointer in V4, and `structure.rs:154-173` rejects every nonzero definition transformation in V4. The existing V4 tests at `crates/cadmpeg-codec-iges/src/entities/structure/tests.rs:2120-2200` pin both rejections. A rejected definition cannot admit its instances or occurrences.
+
+**Need.** Separate the V4 pointer/default rules from the later profile, resolve valid Type 124 and Type 402 Form 5 targets, and replace the rejecting tests with V4 acceptance and malformed-target witnesses.
+
+**Conflict.** The V4 semantic relationship rule requires applying a definition transformation, while the decoder treats every nonzero V4 definition transformation as invalid. The V4 default value is also implemented as a zero-only rule for the label-display pointer.
+
+**Note.** The Type 308 and Type 320 native arenas already retain the raw pointer values. The loss is in semantic structure admission and occurrence expansion.
+
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology
